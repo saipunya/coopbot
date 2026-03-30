@@ -199,27 +199,31 @@ function prioritizeMatches(matches, options = {}) {
 }
 
 async function searchDatabaseSources(message, target) {
-  const structuredMatches = prioritizeMatches(
-    await LawSearchModel.searchStructuredLaws(message, target, 4),
-    { retrievalPriority: 2 },
-  );
-  const viniachaiMatches = prioritizeMatches(
-    await LawSearchModel.searchVinichai(message, 4),
-    { retrievalPriority: 2 },
-  );
-  const pdfMatches = prioritizeMatches(await LawChatbotPdfChunkModel.searchChunks(message, 4), {
-    retrievalPriority: 1,
-  });
-  const knowledgeMatches = prioritizeMatches(
-    await LawChatbotKnowledgeModel.searchKnowledge(message, target, 4),
+  const adminMatches = prioritizeMatches(
+    await LawChatbotKnowledgeModel.searchKnowledge(message, target, 6),
     {
       sourceOverride: "admin_knowledge",
-      retrievalPriority: 3,
+      retrievalPriority: 6,
       scoreBoost: 40,
     },
   );
+  const pdfMatches = prioritizeMatches(await LawChatbotPdfChunkModel.searchChunks(message, 6), {
+    retrievalPriority: 5,
+  });
+  const documentMatches = prioritizeMatches(
+    await LawChatbotPdfChunkModel.searchDocuments(message, 6),
+    { retrievalPriority: 4 },
+  );
+  const structuredMatches = prioritizeMatches(
+    await LawSearchModel.searchStructuredLaws(message, target, 6),
+    { retrievalPriority: 3 },
+  );
+  const viniachaiMatches = prioritizeMatches(
+    await LawSearchModel.searchVinichai(message, 6),
+    { retrievalPriority: 2 },
+  );
 
-  return [...knowledgeMatches, ...structuredMatches, ...viniachaiMatches, ...pdfMatches]
+  return [...adminMatches, ...pdfMatches, ...documentMatches, ...structuredMatches, ...viniachaiMatches]
     .filter(Boolean)
     .sort((a, b) => {
       const priorityDiff = (b.retrievalPriority || 0) - (a.retrievalPriority || 0);
@@ -229,7 +233,7 @@ async function searchDatabaseSources(message, target) {
 
       return (b.score || 0) - (a.score || 0);
     })
-    .slice(0, 5);
+    .slice(0, 30);
 }
 
 function searchKnowledgeSources(message, target) {
@@ -436,16 +440,60 @@ async function resolveSearchPlan(message, target, session) {
   };
 }
 
+function sortByScore(matches) {
+  return (Array.isArray(matches) ? matches : [])
+    .filter(Boolean)
+    .sort((a, b) => (b.score || 0) - (a.score || 0));
+}
+
+function selectTieredSources(groups, limit = 6) {
+  const order = [
+    "admin_knowledge",
+    "pdf_chunks",
+    "documents",
+    "structured_laws",
+    "vinichai",
+    "internet",
+    "knowledge_base",
+  ];
+
+  for (const key of order) {
+    const ranked = sortByScore(groups[key]);
+    if (ranked.length > 0) {
+      return {
+        selectedSourceTier: key,
+        selectedSources: ranked.slice(0, limit),
+      };
+    }
+  }
+
+  return {
+    selectedSourceTier: "none",
+    selectedSources: [],
+  };
+}
+
 async function collectAnswerSources(message, target, session) {
   const searchPlan = await resolveSearchPlan(message, target, session);
   const effectiveMessage = searchPlan.effectiveMessage || String(message || "").trim();
-  const databaseMatches = searchPlan.matches || [];
-  const useInternetFallback = shouldUseInternetFallback(databaseMatches);
-  const internetMatches = useInternetFallback ? await searchInternetSources(effectiveMessage, target) : [];
-  const knowledgeMatches =
-    databaseMatches.length === 0 && internetMatches.length === 0
-      ? searchKnowledgeSources(effectiveMessage, target)
-      : [];
+  const databaseMatches = Array.isArray(searchPlan.matches) ? searchPlan.matches : [];
+
+  const internetMatches = await searchInternetSources(effectiveMessage, target);
+  const knowledgeMatches = searchKnowledgeSources(effectiveMessage, target);
+
+  const grouped = {
+    admin_knowledge: databaseMatches.filter((item) => item && item.source === "admin_knowledge"),
+    pdf_chunks: databaseMatches.filter((item) => item && item.source === "pdf_chunks"),
+    documents: databaseMatches.filter((item) => item && item.source === "documents"),
+    structured_laws: databaseMatches.filter(
+      (item) => item && (item.source === "tbl_laws" || item.source === "tbl_glaws"),
+    ),
+    vinichai: databaseMatches.filter((item) => item && item.source === "tbl_vinichai"),
+    internet: internetMatches,
+    knowledge_base: knowledgeMatches,
+  };
+
+  const { selectedSourceTier, selectedSources } = selectTieredSources(grouped, 6);
 
   return {
     ...searchPlan,
@@ -453,9 +501,10 @@ async function collectAnswerSources(message, target, session) {
     databaseMatches,
     knowledgeMatches,
     internetMatches,
-    sources: [...databaseMatches, ...internetMatches, ...knowledgeMatches].slice(0, 6),
+    sources: selectedSources,
+    selectedSourceTier,
     usedInternetFallback: internetMatches.length > 0,
-    attemptedInternetFallback: useInternetFallback,
+    attemptedInternetFallback: true,
   };
 }
 
@@ -497,7 +546,7 @@ async function replyToChat(payload, session) {
     answer =
       "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนทั้งในฐานข้อมูลและแหล่งข้อมูลสาธารณะ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
-    answer = await generateChatSummary(message, sources.slice(0, wantsExplanation(message) ? 4 : 3), {
+    answer = await generateChatSummary(message, sources.slice(0, wantsExplanation(message) ? 6 : 5), {
       conversationalFollowUp: resolvedContext.usedContext,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
     });

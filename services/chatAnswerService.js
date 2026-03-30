@@ -7,6 +7,7 @@ const SOURCE_LABELS = {
   tbl_glaws: "พรฎ.กลุ่มเกษตรกร พ.ศ. 2547",
   tbl_vinichai: "หนังสือวินิจฉัย/ตีความ",
   pdf_chunks: "เอกสารที่อัปโหลด",
+  documents: "ทะเบียนเอกสาร",
   internet_search: "ข้อมูลจากอินเทอร์เน็ต",
   knowledge_base: "ฐานความรู้ภายในระบบ",
   admin_knowledge: "ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม/แก้ไข",
@@ -94,7 +95,7 @@ function dedupeSources(sources, limit = sources.length) {
 }
 
 function buildReferenceSection(sources) {
-  const topSources = dedupeSources(sources, 3);
+  const topSources = dedupeSources(sources, 5);
   return ["แหล่งอ้างอิง:", ...topSources.map(formatReferenceLine)].join("\n");
 }
 
@@ -173,8 +174,8 @@ function splitExplainSections(lines) {
   }
 
   return {
-    summary: uniqueCleanLines(summary, 3),
-    detail: uniqueCleanLines(detail, 3),
+    summary: uniqueCleanLines(summary, 6),
+    detail: uniqueCleanLines(detail, 6),
   };
 }
 
@@ -186,8 +187,8 @@ function normalizeParagraph(text) {
     .trim();
 }
 
-function joinSentences(lines) {
-  return uniqueCleanLines(lines, 3)
+function joinSentences(lines, limit = 5) {
+  return uniqueCleanLines(lines, limit)
     .map((line) => line.replace(/[.;]+$/g, "").trim())
     .filter(Boolean)
     .join(" ");
@@ -261,7 +262,7 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
     );
   }
 
-  const conciseLines = uniqueCleanLines(lines, 3);
+  const conciseLines = uniqueCleanLines(lines, 6);
 
   if (conciseLines.length === 0) {
     return "";
@@ -271,18 +272,18 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
 }
 
 function buildFallbackSummary(sources, explainMode, options = {}) {
-  const topSources = dedupeSources(sources, 3);
+  const topSources = dedupeSources(sources, 5);
   const importantPoints = uniqueCleanLines(
     topSources.map((source) => {
       const label = source.reference || source.title || source.keyword || "ข้อมูลที่เกี่ยวข้อง";
       const content = String(source.content || source.chunk_text || "").slice(0, explainMode ? 220 : 140);
       return `${label}: ${content}`;
     }),
-    explainMode ? 3 : 2,
+    explainMode ? 5 : 4,
   );
   const detailPoints = uniqueCleanLines(
     topSources.map((source) => String(source.comment || source.content || source.chunk_text || "").slice(0, 220)),
-    2,
+    3,
   );
 
   if (topSources.length === 0) {
@@ -311,8 +312,8 @@ async function generateChatSummary(message, sources, options = {}) {
   }
 
   const instruction = explainMode
-    ? "สรุปคำตอบจากข้อมูลกฎหมายที่ให้มาเป็นภาษาไทยแบบชัดเจน กระชับ ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ไม่ต้องทำเป็น bullet หรือ markdown heading โดยย่อหน้าแรกขึ้นต้นด้วย 'สรุปสาระสำคัญ:' และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด"
-    : "สรุปคำตอบจากข้อมูลกฎหมายที่ให้มาเป็นภาษาไทยแบบสั้น ชัดเจน ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ไม่ต้องทำเป็น bullet หรือ markdown heading และให้ขึ้นต้นด้วย 'สรุปสาระสำคัญ:' หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด";
+    ? "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ชัดเจน กระชับ ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ไม่ต้องทำเป็น bullet หรือ markdown heading โดยย่อหน้าแรกขึ้นต้นด้วย 'สรุปสาระสำคัญ:' และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด"
+    : "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่สั้น ชัดเจน ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ไม่ต้องทำเป็น bullet หรือ markdown heading และให้ขึ้นต้นด้วย 'สรุปสาระสำคัญ:' หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด";
 
   try {
     const conversationNote = options.conversationalFollowUp

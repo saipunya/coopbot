@@ -262,6 +262,95 @@ class LawChatbotPdfChunkModel {
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
   }
+
+  static async searchDocuments(message, limit = 5) {
+    const normalizedMessage = normalizeForSearch(message).toLowerCase();
+    const terms = [...new Set([normalizedMessage, ...segmentWords(message)])]
+      .filter(Boolean)
+      .slice(0, 8);
+
+    if (terms.length === 0) {
+      return [];
+    }
+
+    const pool = getDbPool();
+
+    if (!pool) {
+      return memoryDocuments
+        .map((row) => {
+          const rowText = normalizeForSearch(
+            `${row.title || ""} ${row.documentNumber || ""} ${row.documentDateText || ""} ${row.documentSource || ""} ${row.originalname || ""}`,
+          ).toLowerCase();
+          const coarseScore = terms.reduce((sum, term) => sum + (rowText.includes(term) ? 1 : 0), 0);
+          const score = scoreChunkMatch(message, {
+            keyword: `${row.title || ""} ${row.documentNumber || ""}`,
+            chunk_text: `${row.documentSource || ""} ${row.documentDateText || ""} ${row.originalname || ""}`,
+          }) + coarseScore;
+
+          return {
+            id: row.id,
+            source: "documents",
+            title: row.title || row.originalname || "เอกสารที่อัปโหลด",
+            reference: row.documentNumber || row.title || row.originalname || "เอกสารที่อัปโหลด",
+            content: [row.documentSource, row.documentDateText, row.originalname].filter(Boolean).join(" | "),
+            documentNumber: row.documentNumber || "",
+            documentDateText: row.documentDateText || "",
+            documentSource: row.documentSource || "",
+            score,
+          };
+        })
+        .filter((row) => row.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+    }
+
+    const whereClause = terms
+      .map(
+        () =>
+          "(LOWER(title) LIKE ? OR LOWER(document_number) LIKE ? OR LOWER(document_date_text) LIKE ? OR LOWER(document_source) LIKE ? OR LOWER(originalname) LIKE ?)",
+      )
+      .join(" OR ");
+    const params = terms.flatMap((term) => {
+      const like = `%${term}%`;
+      return [like, like, like, like, like];
+    });
+
+    const [rows] = await pool.query(
+      `SELECT id, title, document_number, document_date_text, document_source, originalname
+       FROM documents
+       WHERE ${whereClause}
+       ORDER BY id DESC
+       LIMIT 50`,
+      params,
+    );
+
+    return rows
+      .map((row) => {
+        const rowText = normalizeForSearch(
+          `${row.title || ""} ${row.document_number || ""} ${row.document_date_text || ""} ${row.document_source || ""} ${row.originalname || ""}`,
+        ).toLowerCase();
+        const coarseScore = terms.reduce((sum, term) => sum + (rowText.includes(term) ? 1 : 0), 0);
+        const score = scoreChunkMatch(message, {
+          keyword: `${row.title || ""} ${row.document_number || ""}`,
+          chunk_text: `${row.document_source || ""} ${row.document_date_text || ""} ${row.originalname || ""}`,
+        }) + coarseScore;
+
+        return {
+          id: row.id,
+          source: "documents",
+          title: row.title || row.originalname || "เอกสารที่อัปโหลด",
+          reference: row.document_number || row.title || row.originalname || "เอกสารที่อัปโหลด",
+          content: [row.document_source, row.document_date_text, row.originalname].filter(Boolean).join(" | "),
+          documentNumber: row.document_number || "",
+          documentDateText: row.document_date_text || "",
+          documentSource: row.document_source || "",
+          score,
+        };
+      })
+      .filter((row) => row.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
 }
 
 module.exports = LawChatbotPdfChunkModel;
