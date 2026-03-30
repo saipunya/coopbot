@@ -56,11 +56,17 @@ async function connectDb() {
     return pool;
   }
 
-  pool = mysql.createPool(getPoolConfig());
-  await pool.query("SELECT 1");
-  await ensureSchema();
-  console.log("Database status: connected");
-  return pool;
+  try {
+    pool = mysql.createPool(getPoolConfig());
+    await pool.query("SELECT 1");
+    await ensureSchema();
+    console.log("Database status: connected");
+    return pool;
+  } catch (error) {
+    pool = null;
+    console.error(`Database status: unavailable (${error.code || error.message})`);
+    return null;
+  }
 }
 
 function getDbPool() {

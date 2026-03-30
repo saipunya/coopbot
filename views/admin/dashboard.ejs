@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f4f7fa;
+        color: #173042;
+      }
+      .shell {
+        width: min(1080px, calc(100% - 2rem));
+        margin: 0 auto;
+        padding: 2rem 0 3rem;
+      }
+      .topbar, .card {
+        background: #fff;
+        border: 1px solid #d7e3ec;
+        border-radius: 18px;
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+      }
+      .card {
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+      }
+      .metric {
+        font-size: 2rem;
+        font-weight: 700;
+        margin: 0.35rem 0 0;
+      }
+      .logout-btn {
+        border: none;
+        border-radius: 12px;
+        background: #15547a;
+        color: #fff;
+        padding: 0.8rem 1rem;
+        cursor: pointer;
+      }
+      ul {
+        padding-left: 1.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <section class="topbar">
+        <div>
+          <p>Signed in as</p>
+          <h1 style="margin: 0;"><%= user.name %></h1>
+          <p style="margin: 0.2rem 0 0;"><%= user.position %> | <%= user.username %></p>
+        </div>
+        <form action="/admin/logout" method="post">
+          <button class="logout-btn" type="submit">Logout</button>
+        </form>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <p>Total uploads</p>
+          <p class="metric"><%= uploadData.uploadedPdfCount %></p>
+        </article>
+        <article class="card">
+          <p>Total chunks</p>
+          <p class="metric"><%= uploadData.uploadedChunkCount %></p>
+        </article>
+        <article class="card">
+          <p>Total feedback</p>
+          <p class="metric"><%= feedbackData.feedbackCount %></p>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2>Recent uploads</h2>
+        <ul>
+          <% if (uploadData.uploadedFiles.length === 0) { %>
+            <li>ยังไม่มีรายการอัปโหลดใน session นี้</li>
+          <% } %>
+          <% uploadData.uploadedFiles.forEach((file) => { %>
+            <li><%= file.originalname %> - <%= file.insertedChunkCount || 0 %> chunks</li>
+          <% }) %>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Quick links</h2>
+        <ul>
+          <li><a href="/law-chatbot">หน้าแชตสาธารณะ</a></li>
+          <li><a href="/law-chatbot/upload">หน้าจัดการอัปโหลด</a></li>
+          <li><a href="/law-chatbot/feedback">หน้าดู feedback</a></li>
+        </ul>
+      </section>
+    </div>
+  </body>
+</html>

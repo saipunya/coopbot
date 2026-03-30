@@ -32,13 +32,25 @@ async function renderUpload(req, res) {
   res.render("lawChatbot/upload", {
     title: "Upload Legal Documents",
     page: "upload",
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
     data,
   });
 }
 
 async function handleUpload(req, res) {
+  if (!req.file) {
+    return res.redirect(
+      "/law-chatbot/upload?error=" +
+        encodeURIComponent("กรุณาเลือกไฟล์ PDF, DOC หรือ DOCX ขนาดไม่เกิน 20 MB")
+    );
+  }
+
   await lawChatbotService.recordUpload(req.file);
-  res.redirect("/law-chatbot/upload");
+  return res.redirect(
+    "/law-chatbot/upload?success=" +
+      encodeURIComponent("อัปโหลดไฟล์สำเร็จและนำเข้าข้อมูลเรียบร้อยแล้ว")
+  );
 }
 
 async function renderFeedback(req, res) {

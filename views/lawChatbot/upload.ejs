@@ -3,6 +3,13 @@
 <section class="card">
   <h1>Upload Legal Documents</h1>
   <p>Upload PDF, DOC, or DOCX files to prepare the law chatbot knowledge base.</p>
+  <p>Maximum file size: <strong><%= data.maxUploadMb %> MB</strong></p>
+  <% if (errorMessage) { %>
+    <p style="color: #b42318; font-weight: 700;"><%= errorMessage %></p>
+  <% } %>
+  <% if (successMessage) { %>
+    <p style="color: #1d7a52; font-weight: 700;"><%= successMessage %></p>
+  <% } %>
   <form action="<%= data.uploadPath %>" method="post" enctype="multipart/form-data">
     <label for="lawPdf">Document file</label>
     <input id="lawPdf" type="file" name="lawPdf" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />

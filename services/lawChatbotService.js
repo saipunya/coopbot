@@ -112,6 +112,7 @@ async function saveChatFeedback(payload) {
 
 async function getUploadPageData() {
   const uploadedChunkCount = await LawChatbotPdfChunkModel.countChunks();
+  const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES || 20 * 1024 * 1024);
 
   return {
     appName: "Coopbot Law Chatbot",
@@ -121,6 +122,8 @@ async function getUploadPageData() {
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ],
+    maxUploadBytes,
+    maxUploadMb: Math.floor(maxUploadBytes / (1024 * 1024)),
     uploadedPdfCount: LawChatbotPdfChunkModel.countDocuments(),
     uploadedChunkCount,
     uploadedFiles: LawChatbotPdfChunkModel.list(10),

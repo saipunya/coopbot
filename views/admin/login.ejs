@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: linear-gradient(180deg, #eef4f8, #f8fbfd);
+        color: #173042;
+      }
+      .wrap {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+      }
+      .card {
+        width: min(440px, 100%);
+        background: #fff;
+        border: 1px solid #dbe6ee;
+        border-radius: 20px;
+        padding: 1.5rem;
+        box-shadow: 0 18px 40px rgba(17, 48, 72, 0.08);
+      }
+      input {
+        width: 100%;
+        padding: 0.95rem 1rem;
+        border: 1px solid #c9d9e6;
+        border-radius: 12px;
+        margin: 0.4rem 0 1rem;
+        box-sizing: border-box;
+      }
+      button {
+        width: 100%;
+        padding: 0.95rem 1rem;
+        border: none;
+        border-radius: 12px;
+        background: #15547a;
+        color: #fff;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .error {
+        color: #b42318;
+        font-weight: 700;
+      }
+      .back {
+        display: inline-block;
+        margin-top: 1rem;
+        color: #15547a;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <section class="card">
+        <p>Admin Area</p>
+        <h1>เข้าสู่ระบบผู้ดูแล</h1>
+        <% if (errorMessage) { %>
+          <p class="error"><%= errorMessage %></p>
+        <% } %>
+        <form action="/admin/login" method="post">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" required />
+
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" required />
+
+          <button type="submit">Login</button>
+        </form>
+        <a class="back" href="/law-chatbot">กลับไปหน้าแชต</a>
+      </section>
+    </div>
+  </body>
+</html>
