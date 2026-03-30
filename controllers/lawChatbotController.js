@@ -12,12 +12,12 @@ async function renderIndex(req, res) {
 }
 
 async function chat(req, res) {
-  const result = await lawChatbotService.replyToChat(req.body);
+  const result = await lawChatbotService.replyToChat(req.body, req.session);
   res.json(result);
 }
 
 async function chatSummary(req, res) {
-  const result = await lawChatbotService.summarizeChat(req.body);
+  const result = await lawChatbotService.summarizeChat(req.body, req.session);
   res.json(result);
 }
 

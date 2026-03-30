@@ -356,6 +356,84 @@
       word-break: break-word;
     }
 
+    .bot-answer-main {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .bot-answer-summary {
+      font-size: 0.97rem;
+      line-height: 1.7;
+      color: #18354a;
+    }
+
+    .bot-answer-summary strong {
+      color: #114d73;
+    }
+
+    .bot-reference-card {
+      margin-top: 0.15rem;
+      border: 1px solid rgba(47, 127, 184, 0.16);
+      background: linear-gradient(180deg, rgba(242, 248, 253, 0.95), rgba(236, 244, 251, 0.95));
+      border-radius: 0.85rem;
+      overflow: hidden;
+    }
+
+    .bot-reference-toggle {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: #1a5276;
+      font-weight: 700;
+      font-size: 0.84rem;
+      padding: 0.72rem 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      text-align: left;
+    }
+
+    .bot-reference-toggle:hover,
+    .bot-reference-toggle:focus-visible {
+      background: rgba(47, 127, 184, 0.08);
+      outline: none;
+    }
+
+    .bot-reference-toggle-text {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .bot-reference-toggle-icon {
+      transition: transform 160ms ease;
+      color: #2f7fb8;
+      flex: 0 0 auto;
+    }
+
+    .bot-reference-card.is-open .bot-reference-toggle-icon {
+      transform: rotate(180deg);
+    }
+
+    .bot-reference-list {
+      display: none;
+      margin: 0;
+      padding: 0 0.95rem 0.85rem 2rem;
+      color: #35566d;
+      font-size: 0.9rem;
+    }
+
+    .bot-reference-card.is-open .bot-reference-list {
+      display: block;
+    }
+
+    .bot-reference-list li {
+      margin: 0.2rem 0;
+      line-height: 1.55;
+    }
+
     .bubble-user {
       color: #fff;
       background: linear-gradient(140deg, var(--bubble-user-start), var(--bubble-user-end));
@@ -1031,9 +1109,50 @@
         return decorated;
       }
 
+      function buildReferenceToggleHtml(referenceText, terms) {
+        const referenceLines = String(referenceText || '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => line.replace(/^-\s*/, '').trim())
+          .filter(Boolean);
+
+        if (!referenceLines.length) {
+          return '';
+        }
+
+        const itemsHtml = referenceLines
+          .map((line) => `<li>${applyHighlightHtml(line, terms)}</li>`)
+          .join('');
+
+        return `
+          <div class="bot-reference-card" data-reference-card="1">
+            <button type="button" class="bot-reference-toggle" data-reference-toggle="1" aria-expanded="false">
+              <span class="bot-reference-toggle-text"><i class="bi bi-journal-text"></i>ดูแหล่งอ้างอิง</span>
+              <i class="bi bi-chevron-down bot-reference-toggle-icon"></i>
+            </button>
+            <ul class="bot-reference-list">${itemsHtml}</ul>
+          </div>
+        `;
+      }
+
       function formatBotMessageHtml(text, terms) {
-        const highlighted = applyHighlightHtml(text, terms);
-        return decorateBotFallbackHtml(highlighted);
+        const raw = String(text || '').trim();
+        if (!raw.includes('แหล่งอ้างอิง:')) {
+          const highlighted = applyHighlightHtml(raw, terms);
+          return decorateBotFallbackHtml(highlighted);
+        }
+
+        const [mainText, referenceText] = raw.split(/\n\s*\nแหล่งอ้างอิง:\s*\n/i);
+        const normalizedMain = String(mainText || raw)
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .join('\n\n');
+        const summaryHtml = decorateBotFallbackHtml(applyHighlightHtml(normalizedMain, terms));
+        const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
+
+        return `<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}</div>`;
       }
 
       const AI_SECTION_ICONS = {
@@ -1185,6 +1304,16 @@
         }
 
         div.appendChild(content);
+
+        const referenceToggle = content.querySelector('[data-reference-toggle="1"]');
+        if (referenceToggle) {
+          referenceToggle.addEventListener('click', () => {
+            const card = content.querySelector('[data-reference-card="1"]');
+            if (!card) return;
+            const isOpen = card.classList.toggle('is-open');
+            referenceToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+          });
+        }
 
         if (role === 'user') {
           row.appendChild(div);

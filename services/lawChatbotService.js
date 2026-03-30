@@ -7,6 +7,152 @@ const { chunkText, extractTextFromFile } = require("./documentTextExtractor");
 const { extractKeywords } = require("./keywordExtractionService");
 const { uniqueTokens } = require("./thaiTextUtils");
 
+const CHAT_CONTEXT_KEY = "lawChatbotContext";
+const CONTEXT_HISTORY_LIMIT = 8;
+
+function getSessionContext(session) {
+  if (!session) {
+    return [];
+  }
+
+  if (!Array.isArray(session[CHAT_CONTEXT_KEY])) {
+    session[CHAT_CONTEXT_KEY] = [];
+  }
+
+  return session[CHAT_CONTEXT_KEY];
+}
+
+function stripQuestionTail(message) {
+  return String(message || "")
+    .replace(/^(อธิบาย|รายละเอียด|ขยายความ|ยกตัวอย่าง)\s*/i, "")
+    .replace(/(คืออะไร|คืออะไรครับ|คืออะไรคะ|คืออะไร\?|คือ|หมายถึงอะไร|หมายถึง|จะจัดขึ้นเมื่อไร|จะจัดขึ้นเมื่อไหร่|จัดขึ้นเมื่อไร|จัดขึ้นเมื่อไหร่|เมื่อไร|เมื่อไหร่|ทำอย่างไร|อย่างไร|ยังไง|ได้หรือไม่|ได้ไหม|ได้หรือเปล่า|หรือไม่|หรือเปล่า|กี่วัน|กี่ครั้ง|เท่าไร|ไหม|มั้ย)\s*[\?？]*$/i, "")
+    .trim();
+}
+
+function looksLikeFollowUpQuestion(message) {
+  const text = String(message || "").trim();
+  if (!text) {
+    return false;
+  }
+
+  if (text.length <= 18) {
+    return true;
+  }
+
+  return /^(คืออะไร|คือ|เมื่อไร|เมื่อไหร่|อย่างไร|ยังไง|ได้หรือไม่|ได้ไหม|ได้หรือเปล่า|หรือไม่|สมาชิก|คณะกรรมการ|จะ|ต้อง|ควร|หาก)/.test(
+    text,
+  );
+}
+
+function extractTopicHints(message, matches) {
+  const hints = [];
+  const strippedMessage = stripQuestionTail(message);
+
+  if (strippedMessage && strippedMessage.length >= 6) {
+    hints.push(strippedMessage);
+  }
+
+  matches.slice(0, 3).forEach((item) => {
+    if (item.reference) {
+      hints.push(String(item.reference).trim());
+    }
+    if (item.title) {
+      hints.push(String(item.title).trim());
+    }
+  });
+
+  return uniqueTokens(
+    hints
+      .map((hint) => hint.replace(/\s+/g, " ").trim())
+      .filter((hint) => hint && hint.length >= 4),
+  );
+}
+
+function resolveMessageWithContext(message, target, session) {
+  const text = String(message || "").trim();
+  if (!text) {
+    return { effectiveMessage: "", usedContext: false, topicHints: [] };
+  }
+
+  const baseTopic = stripQuestionTail(text);
+  const history = getSessionContext(session)
+    .filter((item) => item && item.target === target)
+    .slice(0, CONTEXT_HISTORY_LIMIT);
+
+  if (!looksLikeFollowUpQuestion(text) || history.length === 0) {
+    return {
+      effectiveMessage: text,
+      usedContext: false,
+      topicHints: baseTopic ? [baseTopic] : [],
+    };
+  }
+
+  const recent = history[0];
+  const recentTopic = Array.isArray(recent.topicHints) ? recent.topicHints[0] : "";
+
+  if (!recentTopic) {
+    return {
+      effectiveMessage: text,
+      usedContext: false,
+      topicHints: baseTopic ? [baseTopic] : [],
+    };
+  }
+
+  const alreadyContainsTopic = baseTopic && recentTopic.includes(baseTopic);
+  const effectiveMessage = alreadyContainsTopic ? text : `${recentTopic} ${text}`.trim();
+
+  return {
+    effectiveMessage,
+    usedContext: effectiveMessage !== text,
+    topicHints: [recentTopic, ...(baseTopic ? [baseTopic] : [])].filter(Boolean),
+  };
+}
+
+function mergeTopicHints(...hintGroups) {
+  const seen = new Set();
+  const results = [];
+
+  hintGroups.flat().forEach((hint) => {
+    const normalized = String(hint || "").replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return;
+    }
+
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    results.push(normalized);
+  });
+
+  return results.slice(0, 6);
+}
+
+function storeConversationContext(session, target, originalMessage, effectiveMessage, matches, resolvedContext) {
+  if (!session) {
+    return;
+  }
+
+  const history = getSessionContext(session);
+  const topicHints = mergeTopicHints(
+    resolvedContext && Array.isArray(resolvedContext.topicHints) ? resolvedContext.topicHints : [],
+    extractTopicHints(originalMessage, matches),
+    history[0] && Array.isArray(history[0].topicHints) ? history[0].topicHints : [],
+  );
+
+  history.unshift({
+    target,
+    originalMessage,
+    effectiveMessage,
+    topicHints,
+    createdAt: new Date().toISOString(),
+  });
+
+  session[CHAT_CONTEXT_KEY] = history.slice(0, CONTEXT_HISTORY_LIMIT);
+}
+
 async function getDashboardData() {
   const uploadedChunkCount = await LawChatbotPdfChunkModel.countChunks();
 
@@ -21,7 +167,7 @@ async function getDashboardData() {
   };
 }
 
-async function replyToChat(payload) {
+async function replyToChat(payload, session) {
   const message = String(payload.message || "").trim();
   const target = payload.target === "group" ? "group" : "coop";
 
@@ -33,14 +179,17 @@ async function replyToChat(payload) {
     };
   }
 
-  const structuredMatches = await LawSearchModel.searchStructuredLaws(message, target, 4);
-  const pdfMatches = await LawChatbotPdfChunkModel.searchChunks(message, 4);
-  const fallbackMatches = LawChatbotModel.searchKnowledge(message, target);
+  const resolvedContext = resolveMessageWithContext(message, target, session);
+  const effectiveMessage = resolvedContext.effectiveMessage || message;
+
+  const structuredMatches = await LawSearchModel.searchStructuredLaws(effectiveMessage, target, 4);
+  const pdfMatches = await LawChatbotPdfChunkModel.searchChunks(effectiveMessage, 4);
+  const fallbackMatches = LawChatbotModel.searchKnowledge(effectiveMessage, target);
   const matches = [...structuredMatches, ...pdfMatches, ...fallbackMatches]
     .filter(Boolean)
     .sort((a, b) => (b.score || 0) - (a.score || 0))
     .slice(0, 5);
-  const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
+  const highlightTerms = effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8);
 
   let answer = "";
 
@@ -49,11 +198,17 @@ async function replyToChat(payload) {
       "ไม่พบข้อมูลที่ตรงชัดเจนในคลังตัวอย่างของระบบ\n\nลองระบุคำสำคัญเพิ่ม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
     const topSources = matches.slice(0, wantsExplanation(message) ? 3 : 2);
-    answer = await generateChatSummary(message, topSources);
+    answer = await generateChatSummary(message, topSources, {
+      conversationalFollowUp: resolvedContext.usedContext,
+      topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
+    });
   }
+
+  storeConversationContext(session, target, message, effectiveMessage, matches, resolvedContext);
 
   LawChatbotModel.create({
     message,
+    effectiveMessage,
     target,
     answer,
     matchedSources: matches.map((item) => ({
@@ -67,26 +222,32 @@ async function replyToChat(payload) {
     hasContext: matches.length > 0,
     answer,
     highlightTerms,
+    usedFollowUpContext: resolvedContext.usedContext,
   };
 }
 
-async function summarizeChat(payload) {
+async function summarizeChat(payload, session) {
   const message = String(payload.message || "").trim();
   if (!message) {
     return { summary: "" };
   }
 
   const target = payload.target === "group" ? "group" : "coop";
-  const structuredMatches = await LawSearchModel.searchStructuredLaws(message, target, 4);
-  const pdfMatches = await LawChatbotPdfChunkModel.searchChunks(message, 4);
-  const fallbackMatches = LawChatbotModel.searchKnowledge(message, target);
+  const resolvedContext = resolveMessageWithContext(message, target, session);
+  const effectiveMessage = resolvedContext.effectiveMessage || message;
+  const structuredMatches = await LawSearchModel.searchStructuredLaws(effectiveMessage, target, 4);
+  const pdfMatches = await LawChatbotPdfChunkModel.searchChunks(effectiveMessage, 4);
+  const fallbackMatches = LawChatbotModel.searchKnowledge(effectiveMessage, target);
   const matches = [...structuredMatches, ...pdfMatches, ...fallbackMatches]
     .filter(Boolean)
     .sort((a, b) => (b.score || 0) - (a.score || 0))
     .slice(0, 5);
 
   return {
-    summary: await generateChatSummary(message, matches),
+    summary: await generateChatSummary(message, matches, {
+      conversationalFollowUp: resolvedContext.usedContext,
+      topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
+    }),
   };
 }
 

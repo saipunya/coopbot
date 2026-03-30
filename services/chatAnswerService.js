@@ -27,7 +27,7 @@ function wantsExplanation(message) {
 }
 
 function buildSourceContext(sources) {
-  return sources
+  return dedupeSources(sources)
     .map((source, index) => {
       return [
         `แหล่งข้อมูลที่ ${index + 1}`,
@@ -47,8 +47,41 @@ function formatReferenceLine(source) {
   return `- ${tableName}: ${reference}`;
 }
 
+function dedupeSources(sources, limit = sources.length) {
+  const seen = new Set();
+  const results = [];
+
+  for (const source of sources) {
+    if (!source) {
+      continue;
+    }
+
+    const sourceName = String(source.source || "pdf_chunks").trim().toLowerCase();
+    const reference = cleanLine(source.reference || source.title || source.keyword || "");
+    const contentPreview = cleanLine(String(source.content || source.chunk_text || "").slice(0, 120));
+    const dedupeKey = [sourceName, reference || contentPreview].join("::");
+
+    if (!reference && !contentPreview) {
+      continue;
+    }
+
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+
+    seen.add(dedupeKey);
+    results.push(source);
+
+    if (results.length >= limit) {
+      break;
+    }
+  }
+
+  return results;
+}
+
 function buildReferenceSection(sources) {
-  const topSources = sources.slice(0, 3);
+  const topSources = dedupeSources(sources, 3);
   return ["แหล่งอ้างอิง:", ...topSources.map(formatReferenceLine)].join("\n");
 }
 
@@ -161,7 +194,26 @@ function buildParagraphSummary(summaryLines, detailLines, explainMode) {
   return blocks.join("\n\n").trim();
 }
 
-function normalizeModelSummary(text, explainMode, sources) {
+function decorateConversationalAnswer(answerText, options = {}) {
+  const text = String(answerText || "").trim();
+  if (!text) {
+    return text;
+  }
+
+  if (!options.conversationalFollowUp) {
+    return text;
+  }
+
+  const topicLabel = cleanLine(options.topicLabel || "");
+  const intro = topicLabel ? `สำหรับเรื่อง${topicLabel} ` : "ในกรณีนี้ ";
+
+  return text
+    .replace(/^สรุป:\s*/i, `สรุป: ${intro}`)
+    .replace(/\n\nอธิบายเพิ่มเติม:\s*/i, "\n\nอธิบายเพิ่มเติม: ")
+    .trim();
+}
+
+function normalizeModelSummary(text, explainMode, sources, options = {}) {
   const raw = normalizeParagraph(text);
 
   if (!raw) {
@@ -188,7 +240,10 @@ function normalizeModelSummary(text, explainMode, sources) {
           2,
         );
 
-    return buildParagraphSummary(fallbackSummary, fallbackDetail, true);
+    return decorateConversationalAnswer(
+      buildParagraphSummary(fallbackSummary, fallbackDetail, true),
+      options,
+    );
   }
 
   const conciseLines = uniqueCleanLines(lines, 3);
@@ -197,11 +252,11 @@ function normalizeModelSummary(text, explainMode, sources) {
     return "";
   }
 
-  return buildParagraphSummary(conciseLines, [], false);
+  return decorateConversationalAnswer(buildParagraphSummary(conciseLines, [], false), options);
 }
 
-function buildFallbackSummary(sources, explainMode) {
-  const topSources = sources.slice(0, 3);
+function buildFallbackSummary(sources, explainMode, options = {}) {
+  const topSources = dedupeSources(sources, 3);
   const importantPoints = uniqueCleanLines(
     topSources.map((source) => {
       const label = source.reference || source.title || source.keyword || "ข้อมูลที่เกี่ยวข้อง";
@@ -227,37 +282,47 @@ function buildFallbackSummary(sources, explainMode) {
     explainMode,
   );
 
-  return [answerText, buildReferenceSection(topSources)].filter(Boolean).join("\n\n");
+  return [decorateConversationalAnswer(answerText, options), buildReferenceSection(topSources)]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
-async function generateChatSummary(message, sources) {
+async function generateChatSummary(message, sources, options = {}) {
   const explainMode = wantsExplanation(message);
   const gemini = getGeminiClient();
 
   if (!gemini || sources.length === 0) {
-    return buildFallbackSummary(sources, explainMode);
+    return buildFallbackSummary(sources, explainMode, options);
   }
 
   const instruction = explainMode
-    ? "สรุปคำตอบจากข้อมูลกฎหมายที่ให้มาเป็นภาษาไทยแบบชัดเจน กระชับ และตรงประเด็น ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ใช้สำนวนธรรมชาติแบบตอบต่อเนื่อง ไม่ต้องทำเป็น bullet หรือ markdown heading โดยย่อหน้าแรกขึ้นต้นด้วย 'สรุป:' และย่อหน้าถัดไปขึ้นต้นด้วย 'อธิบายเพิ่มเติม:'"
-    : "สรุปคำตอบจากข้อมูลกฎหมายที่ให้มาเป็นภาษาไทยแบบสั้น ชัด และตรงประเด็น ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ใช้สำนวนธรรมชาติแบบตอบต่อเนื่อง ไม่ต้องทำเป็น bullet หรือ markdown heading และให้ขึ้นต้นด้วย 'สรุป:'";
+    ? "สรุปคำตอบจากข้อมูลกฎหมายที่ให้มาเป็นภาษาไทยแบบชัดเจน กระชับ และตรงประเด็น ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ใช้สำนวนธรรมชาติแบบบทสนทนาที่สุภาพและเป็นทางการเล็กน้อย ไม่ต้องทำเป็น bullet หรือ markdown heading โดยย่อหน้าแรกขึ้นต้นด้วย 'สรุป:' และย่อหน้าถัดไปขึ้นต้นด้วย 'อธิบายเพิ่มเติม:' หากเป็นคำถามต่อเนื่อง ให้ตอบเหมือนกำลังคุยเรื่องเดิมต่อ ไม่ต้องเปิดเรื่องใหม่ และหลีกเลี่ยงคำลงท้ายกันเอง เช่น นะ จ้ะ"
+    : "สรุปคำตอบจากข้อมูลกฎหมายที่ให้มาเป็นภาษาไทยแบบสั้น ชัด และตรงประเด็น ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ใช้สำนวนธรรมชาติแบบบทสนทนาที่สุภาพและเป็นทางการเล็กน้อย ไม่ต้องทำเป็น bullet หรือ markdown heading และให้ขึ้นต้นด้วย 'สรุป:' หากเป็นคำถามต่อเนื่อง ให้ตอบเหมือนกำลังคุยเรื่องเดิมต่อ และหลีกเลี่ยงคำลงท้ายกันเอง เช่น นะ จ้ะ";
 
   try {
+    const conversationNote = options.conversationalFollowUp
+      ? `\nบริบทก่อนหน้า: คำถามนี้เป็นคำถามต่อเนื่องเกี่ยวกับหัวข้อ "${options.topicLabel || "เรื่องเดิม"}"`
+      : "";
     const response = await gemini.models.generateContent({
       model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-      contents: `คำถามผู้ใช้: ${message}\n\nข้อมูลอ้างอิง:\n${buildSourceContext(sources)}`,
+      contents: `คำถามผู้ใช้: ${message}${conversationNote}\n\nข้อมูลอ้างอิง:\n${buildSourceContext(sources)}`,
       config: {
         systemInstruction: instruction,
       },
     });
 
-    const normalized = normalizeModelSummary(String(response.text || "").trim(), explainMode, sources);
+    const normalized = normalizeModelSummary(
+      String(response.text || "").trim(),
+      explainMode,
+      sources,
+      options,
+    );
     if (!normalized) {
-      return buildFallbackSummary(sources, explainMode);
+      return buildFallbackSummary(sources, explainMode, options);
     }
     return [normalized, buildReferenceSection(sources)].join("\n\n");
   } catch (error) {
-    return buildFallbackSummary(sources, explainMode);
+    return buildFallbackSummary(sources, explainMode, options);
   }
 }
 
