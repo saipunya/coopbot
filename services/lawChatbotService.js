@@ -4,11 +4,15 @@ const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const { generateChatSummary, wantsExplanation } = require("./chatAnswerService");
 const { chunkText, extractTextFromFile } = require("./documentTextExtractor");
-const { extractKeywords } = require("./keywordExtractionService");
+const {
+  extractKeywords,
+  extractDocumentKeywords,
+} = require("./keywordExtractionService");
 const { uniqueTokens } = require("./thaiTextUtils");
 
 const CHAT_CONTEXT_KEY = "lawChatbotContext";
 const CONTEXT_HISTORY_LIMIT = 8;
+const KEYWORD_CONCURRENCY = Number(process.env.KEYWORD_CONCURRENCY || 4);
 
 function getSessionContext(session) {
   if (!session) {
@@ -284,37 +288,90 @@ async function getUploadPageData() {
   };
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let index = 0;
+
+  async function worker() {
+    while (index < items.length) {
+      const currentIndex = index;
+      index += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }
+
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+async function processUploadInBackground(file, uploadRecord) {
+  try {
+    LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
+      status: "processing",
+      processingMessage: "กำลังอ่านไฟล์และแปลงข้อความ",
+    });
+
+    const extractedText = await extractTextFromFile(file);
+    const chunks = chunkText(extractedText, Number(process.env.CHUNK_SIZE || 1400));
+
+    LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
+      processingMessage: `กำลังสร้างดัชนีเอกสาร ${chunks.length} ส่วน`,
+    });
+
+    const documentKeywords = await extractDocumentKeywords(extractedText);
+    const chunkRecords = await mapWithConcurrency(
+      chunks,
+      KEYWORD_CONCURRENCY,
+      async (chunk) => {
+        const chunkKeywords = await extractKeywords(chunk);
+        const mergedKeywords = uniqueTokens([...documentKeywords, ...chunkKeywords]).slice(0, 12);
+
+        return {
+          keyword: mergedKeywords.join(", ").slice(0, 255) || "document",
+          chunkText: chunk,
+        };
+      },
+    );
+
+    const insertedChunkCount = await LawChatbotPdfChunkModel.insertChunks(chunkRecords);
+
+    LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
+      status: "completed",
+      processingMessage: "นำเข้าข้อมูลเรียบร้อยแล้ว",
+      insertedChunkCount,
+    });
+  } catch (error) {
+    LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
+      status: "failed",
+      processingMessage: error.message || "ไม่สามารถประมวลผลเอกสารได้",
+    });
+  }
+}
+
 async function recordUpload(file) {
   if (!file) {
     return null;
   }
 
-  const extractedText = await extractTextFromFile(file);
-  const chunks = chunkText(extractedText, Number(process.env.CHUNK_SIZE || 1400));
-  const chunkRecords = [];
-
-  for (const chunk of chunks) {
-    const keywords = await extractKeywords(chunk);
-    chunkRecords.push({
-      keyword: uniqueTokens(keywords).join(", ").slice(0, 255) || "document",
-      chunkText: chunk,
-    });
-  }
-
-  const insertedChunkCount = await LawChatbotPdfChunkModel.insertChunks(chunkRecords);
-
-  LawChatbotPdfChunkModel.createUpload({
+  const uploadRecord = LawChatbotPdfChunkModel.createUpload({
     filename: file.filename,
     originalname: file.originalname,
     mimetype: file.mimetype,
     size: file.size,
-    insertedChunkCount,
+    status: "queued",
+    processingMessage: "รอเริ่มประมวลผล",
+  });
+
+  setImmediate(() => {
+    void processUploadInBackground(file, uploadRecord);
   });
 
   return {
     filename: file.filename,
     originalname: file.originalname,
-    insertedChunkCount,
+    insertedChunkCount: 0,
+    status: "queued",
   };
 }
 

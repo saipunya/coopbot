@@ -37,7 +37,10 @@
     <% data.uploadedFiles.forEach((file) => { %>
       <li>
         <strong><%= file.originalname %></strong>
-        (<%= file.mimetype %>, <%= file.size %> bytes, <%= file.insertedChunkCount || 0 %> chunks)
+        (<%= file.mimetype %>, <%= file.size %> bytes, <%= file.insertedChunkCount || 0 %> chunks, <%= file.status || "queued" %>)
+        <% if (file.processingMessage) { %>
+          - <%= file.processingMessage %>
+        <% } %>
       </li>
     <% }) %>
   </ul>

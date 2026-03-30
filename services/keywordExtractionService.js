@@ -112,6 +112,44 @@ async function extractKeywords(text) {
   }
 }
 
+async function extractDocumentKeywords(text) {
+  const safeText = String(text || "").trim();
+  if (!safeText) {
+    return [];
+  }
+
+  const gemini = getGeminiClient();
+  if (!gemini) {
+    return extractFallbackKeywords(safeText);
+  }
+
+  try {
+    const response = await gemini.models.generateContent({
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      contents: safeText.slice(0, 12000),
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "ARRAY",
+          items: { type: "STRING" },
+        },
+        systemInstruction:
+          "อ่านเอกสารกฎหมายที่ได้รับและสกัด keyword ภาษาไทยที่สำคัญที่สุด 5 ถึง 12 คำ เพื่อนำไปใช้ค้นหาเอกสาร ให้ตอบกลับเป็น JSON array ของ string เท่านั้น",
+      },
+    });
+
+    const parsed = JSON.parse(String(response.text || "[]"));
+    if (!Array.isArray(parsed)) {
+      return extractFallbackKeywords(safeText);
+    }
+
+    return uniqueTokens(parsed.map((item) => String(item).trim()).filter(Boolean)).slice(0, 12);
+  } catch (error) {
+    return extractFallbackKeywords(safeText);
+  }
+}
+
 module.exports = {
   extractKeywords,
+  extractDocumentKeywords,
 };

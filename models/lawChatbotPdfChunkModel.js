@@ -66,10 +66,26 @@ class LawChatbotPdfChunkModel {
     const record = {
       id: uploadedFiles.length + 1,
       createdAt: new Date().toISOString(),
+      status: "queued",
+      processingMessage: "",
+      insertedChunkCount: 0,
       ...entry,
     };
 
     uploadedFiles.unshift(record);
+    return record;
+  }
+
+  static updateUpload(id, patch) {
+    const record = uploadedFiles.find((item) => item.id === id);
+    if (!record) {
+      return null;
+    }
+
+    Object.assign(record, patch, {
+      updatedAt: new Date().toISOString(),
+    });
+
     return record;
   }
 

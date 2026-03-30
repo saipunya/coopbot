@@ -49,7 +49,7 @@ async function handleUpload(req, res) {
   await lawChatbotService.recordUpload(req.file);
   return res.redirect(
     "/law-chatbot/upload?success=" +
-      encodeURIComponent("อัปโหลดไฟล์สำเร็จและนำเข้าข้อมูลเรียบร้อยแล้ว")
+      encodeURIComponent("อัปโหลดไฟล์สำเร็จ ระบบกำลังประมวลผลเอกสารในพื้นหลัง")
   );
 }
 

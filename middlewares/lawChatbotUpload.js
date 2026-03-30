@@ -12,15 +12,42 @@ const allowedExtensions = new Set([".pdf", ".doc", ".docx"]);
 
 fs.mkdirSync(uploadDir, { recursive: true });
 
+function decodeFileName(name) {
+  const raw = String(name || "").trim();
+  if (!raw) {
+    return "document";
+  }
+
+  try {
+    const decoded = Buffer.from(raw, "latin1").toString("utf8").trim();
+    if (decoded && /[ก-๙]|[^\u0000-\u007f]/.test(decoded)) {
+      return decoded;
+    }
+  } catch (_) {}
+
+  return raw;
+}
+
+function sanitizeStoredFileName(name) {
+  return String(name || "document")
+    .replace(/[\/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .trim();
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
-    const safeName = `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`;
+    const decodedName = decodeFileName(file.originalname);
+    file.originalname = decodedName;
+    const safeName = `${Date.now()}-${sanitizeStoredFileName(decodedName)}`;
     cb(null, safeName);
   },
 });
 
 const fileFilter = (req, file, cb) => {
+  file.originalname = decodeFileName(file.originalname);
   const extension = path.extname(file.originalname || "").toLowerCase();
   const isAllowed =
     allowedMimeTypes.has(file.mimetype) || allowedExtensions.has(extension);
