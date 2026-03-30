@@ -1,6 +1,8 @@
 const LawChatbotModel = require("../models/lawChatbotModel");
+const LawSearchModel = require("../models/lawSearchModel");
 const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
+const { generateChatSummary, wantsExplanation } = require("./chatAnswerService");
 const { chunkText, extractTextFromFile } = require("./documentTextExtractor");
 const { extractKeywords } = require("./keywordExtractionService");
 const { uniqueTokens } = require("./thaiTextUtils");
@@ -31,9 +33,13 @@ async function replyToChat(payload) {
     };
   }
 
-  const dbMatches = await LawChatbotPdfChunkModel.searchChunks(message, 3);
-  const matches =
-    dbMatches.length > 0 ? dbMatches : LawChatbotModel.searchKnowledge(message, target);
+  const structuredMatches = await LawSearchModel.searchStructuredLaws(message, target, 4);
+  const pdfMatches = await LawChatbotPdfChunkModel.searchChunks(message, 4);
+  const fallbackMatches = LawChatbotModel.searchKnowledge(message, target);
+  const matches = [...structuredMatches, ...pdfMatches, ...fallbackMatches]
+    .filter(Boolean)
+    .sort((a, b) => (b.score || 0) - (a.score || 0))
+    .slice(0, 5);
   const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
 
   let answer = "";
@@ -42,15 +48,8 @@ async function replyToChat(payload) {
     answer =
       "ไม่พบข้อมูลที่ตรงชัดเจนในคลังตัวอย่างของระบบ\n\nลองระบุคำสำคัญเพิ่ม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
-    answer = matches
-      .map((item, index) => {
-        return [
-          `${index + 1}. ${item.title || item.keyword || "ข้อความที่เกี่ยวข้อง"}`,
-          `อ้างอิง: ${item.lawNumber || item.keyword || "pdf_chunks"}`,
-          item.content || item.chunk_text,
-        ].join("\n");
-      })
-      .join("\n\n");
+    const topSources = matches.slice(0, wantsExplanation(message) ? 3 : 2);
+    answer = await generateChatSummary(message, topSources);
   }
 
   LawChatbotModel.create({
@@ -73,27 +72,21 @@ async function replyToChat(payload) {
 
 async function summarizeChat(payload) {
   const message = String(payload.message || "").trim();
-  const target = payload.target === "group" ? "กฎหมายกลุ่มเกษตรกร" : "กฎหมายสหกรณ์";
-
   if (!message) {
     return { summary: "" };
   }
 
-  const dbMatches = await LawChatbotPdfChunkModel.searchChunks(message, 3);
-  const matches =
-    dbMatches.length > 0
-      ? dbMatches
-      : LawChatbotModel.searchKnowledge(message, payload.target === "group" ? "group" : "coop");
-
-  const sourcesText =
-    matches.length === 0
-      ? "ยังไม่พบมาตราหรือหัวข้อที่ตรงชัดเจนในฐานข้อมูลตัวอย่าง"
-      : matches
-          .map((item) => `- ${item.title || item.keyword} (${item.lawNumber || item.keyword})`)
-          .join("\n");
+  const target = payload.target === "group" ? "group" : "coop";
+  const structuredMatches = await LawSearchModel.searchStructuredLaws(message, target, 4);
+  const pdfMatches = await LawChatbotPdfChunkModel.searchChunks(message, 4);
+  const fallbackMatches = LawChatbotModel.searchKnowledge(message, target);
+  const matches = [...structuredMatches, ...pdfMatches, ...fallbackMatches]
+    .filter(Boolean)
+    .sort((a, b) => (b.score || 0) - (a.score || 0))
+    .slice(0, 5);
 
   return {
-    summary: `หัวข้อที่ค้นหา: ${message}\nฐานข้อมูลที่เลือก: ${target}\nแหล่งข้อมูลที่เกี่ยวข้อง:\n${sourcesText}`,
+    summary: await generateChatSummary(message, matches),
   };
 }
 
