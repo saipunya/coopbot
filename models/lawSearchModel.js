@@ -39,6 +39,59 @@ function scoreResult(query, text, primaryLabel) {
 }
 
 class LawSearchModel {
+  static async searchVinichai(message, limit = 5) {
+    const pool = getDbPool();
+    if (!pool) {
+      return [];
+    }
+
+    const terms = uniqueTokens(segmentWords(message)).slice(0, 8);
+    if (terms.length === 0) {
+      return [];
+    }
+
+    const whereClause = terms
+      .map(
+        () =>
+          `(LOWER(vin_key) LIKE ? OR LOWER(vin_question) LIKE ? OR LOWER(vin_detail) LIKE ?)`
+      )
+      .join(" OR ");
+    const params = terms.flatMap((term) => {
+      const like = `%${term}%`;
+      return [like, like, like];
+    });
+
+    let rows;
+    try {
+      [rows] = await pool.query(
+        `SELECT id, vin_key, vin_question, vin_detail
+         FROM tbl_vinichai
+         WHERE ${whereClause}
+         LIMIT 50`,
+        params
+      );
+    } catch (_) {
+      return [];
+    }
+
+    return rows
+      .map((row) => {
+        const combinedText = [row.vin_key, row.vin_question, row.vin_detail].join(" ");
+        return {
+          id: row.id,
+          source: "tbl_vinichai",
+          title: row.vin_question || row.vin_key || "วินิจฉัยที่เกี่ยวข้อง",
+          reference: row.vin_key || "tbl_vinichai",
+          content: row.vin_detail || "",
+          comment: "",
+          score: scoreResult(message, combinedText, `${row.vin_key} ${row.vin_question}`),
+        };
+      })
+      .filter((row) => row.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
+
   static async searchStructuredLaws(message, target = "coop", limit = 5) {
     const pool = getDbPool();
     if (!pool) {

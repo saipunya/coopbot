@@ -203,6 +203,10 @@ async function searchDatabaseSources(message, target) {
     await LawSearchModel.searchStructuredLaws(message, target, 4),
     { retrievalPriority: 2 },
   );
+  const viniachaiMatches = prioritizeMatches(
+    await LawSearchModel.searchVinichai(message, 4),
+    { retrievalPriority: 2 },
+  );
   const pdfMatches = prioritizeMatches(await LawChatbotPdfChunkModel.searchChunks(message, 4), {
     retrievalPriority: 1,
   });
@@ -215,7 +219,7 @@ async function searchDatabaseSources(message, target) {
     },
   );
 
-  return [...knowledgeMatches, ...structuredMatches, ...pdfMatches]
+  return [...knowledgeMatches, ...structuredMatches, ...viniachaiMatches, ...pdfMatches]
     .filter(Boolean)
     .sort((a, b) => {
       const priorityDiff = (b.retrievalPriority || 0) - (a.retrievalPriority || 0);

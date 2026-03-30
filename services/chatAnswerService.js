@@ -5,6 +5,7 @@ let client = null;
 const SOURCE_LABELS = {
   tbl_laws: "พรบ.สหกรณ์ พ.ศ. 2542",
   tbl_glaws: "พรฎ.กลุ่มเกษตรกร พ.ศ. 2547",
+  tbl_vinichai: "หนังสือวินิจฉัย/ตีความ",
   pdf_chunks: "เอกสารที่อัปโหลด",
   internet_search: "ข้อมูลจากอินเทอร์เน็ต",
   knowledge_base: "ฐานความรู้ภายในระบบ",
