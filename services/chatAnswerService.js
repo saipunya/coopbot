@@ -34,6 +34,9 @@ function buildSourceContext(sources) {
         `ตาราง: ${SOURCE_LABELS[source.source] || source.source || "เอกสารที่อัปโหลด"}`,
         `หัวข้อ: ${source.title || "-"}`,
         `อ้างอิง: ${source.reference || "-"}`,
+        `เลขที่หนังสือ: ${source.documentNumber || "-"}`,
+        `วันที่หนังสือ: ${source.documentDateText || "-"}`,
+        `หน่วยงาน: ${source.documentSource || "-"}`,
         `เนื้อหา: ${source.content || source.chunk_text || "-"}`,
         `หมายเหตุ: ${source.comment || "-"}`,
       ].join("\n");
@@ -43,8 +46,14 @@ function buildSourceContext(sources) {
 
 function formatReferenceLine(source) {
   const tableName = SOURCE_LABELS[source.source] || source.source || "เอกสารที่อัปโหลด";
-  const reference = source.reference || source.title || "ไม่ระบุอ้างอิง";
-  return `- ${tableName}: ${reference}`;
+  const parts = [source.reference || source.title || "ไม่ระบุอ้างอิง"];
+  if (source.documentNumber && source.documentNumber !== parts[0]) {
+    parts.push(`เลขที่ ${source.documentNumber}`);
+  }
+  if (source.documentDateText) {
+    parts.push(`ลงวันที่ ${source.documentDateText}`);
+  }
+  return `- ${tableName}: ${parts.filter(Boolean).join(" | ")}`;
 }
 
 function dedupeSources(sources, limit = sources.length) {

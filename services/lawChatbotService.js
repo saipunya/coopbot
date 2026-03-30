@@ -8,6 +8,7 @@ const {
   extractKeywords,
   extractDocumentKeywords,
 } = require("./keywordExtractionService");
+const { extractDocumentMetadata } = require("./documentMetadataService");
 const { uniqueTokens } = require("./thaiTextUtils");
 
 const CHAT_CONTEXT_KEY = "lawChatbotContext";
@@ -314,9 +315,26 @@ async function processUploadInBackground(file, uploadRecord) {
 
     const extractedText = await extractTextFromFile(file);
     const chunks = chunkText(extractedText, Number(process.env.CHUNK_SIZE || 1400));
+    const documentMetadata = await extractDocumentMetadata(extractedText, file);
 
     LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
       processingMessage: `กำลังสร้างดัชนีเอกสาร ${chunks.length} ส่วน`,
+      title: documentMetadata.title || file.originalname,
+      documentNumber: documentMetadata.documentNumber || "",
+      documentDateText: documentMetadata.documentDateText || "",
+      documentSource: documentMetadata.documentSource || "",
+    });
+
+    const documentRecord = await LawChatbotPdfChunkModel.createDocument({
+      title: documentMetadata.title || file.originalname,
+      documentNumber: documentMetadata.documentNumber || "",
+      documentDate: documentMetadata.documentDate || null,
+      documentDateText: documentMetadata.documentDateText || "",
+      documentSource: documentMetadata.documentSource || "",
+      filename: file.filename,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      fileSize: file.size,
     });
 
     const documentKeywords = await extractDocumentKeywords(extractedText);
@@ -330,16 +348,21 @@ async function processUploadInBackground(file, uploadRecord) {
         return {
           keyword: mergedKeywords.join(", ").slice(0, 255) || "document",
           chunkText: chunk,
+          documentId: documentRecord.id,
         };
       },
     );
 
-    const insertedChunkCount = await LawChatbotPdfChunkModel.insertChunks(chunkRecords);
+    const insertedChunkCount = await LawChatbotPdfChunkModel.insertChunks(chunkRecords, documentRecord.id);
 
     LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
       status: "completed",
       processingMessage: "นำเข้าข้อมูลเรียบร้อยแล้ว",
       insertedChunkCount,
+      title: documentRecord.title || file.originalname,
+      documentNumber: documentRecord.documentNumber || "",
+      documentDateText: documentRecord.documentDateText || "",
+      documentSource: documentRecord.documentSource || "",
     });
   } catch (error) {
     LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {

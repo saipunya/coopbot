@@ -37,6 +37,12 @@
     <% data.uploadedFiles.forEach((file) => { %>
       <li>
         <strong><%= file.originalname %></strong>
+        <% if (file.documentNumber) { %>
+          - เลขที่ <%= file.documentNumber %>
+        <% } %>
+        <% if (file.documentDateText) { %>
+          - ลงวันที่ <%= file.documentDateText %>
+        <% } %>
         (<%= file.mimetype %>, <%= file.size %> bytes, <%= file.insertedChunkCount || 0 %> chunks, <%= file.status || "queued" %>)
         <% if (file.processingMessage) { %>
           - <%= file.processingMessage %>

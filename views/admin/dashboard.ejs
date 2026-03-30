@@ -91,7 +91,12 @@
             <li>ยังไม่มีรายการอัปโหลดใน session นี้</li>
           <% } %>
           <% uploadData.uploadedFiles.forEach((file) => { %>
-            <li><%= file.originalname %> - <%= file.insertedChunkCount || 0 %> chunks</li>
+            <li>
+              <%= file.originalname %>
+              <% if (file.documentNumber) { %> - เลขที่ <%= file.documentNumber %><% } %>
+              <% if (file.documentDateText) { %> - ลงวันที่ <%= file.documentDateText %><% } %>
+              - <%= file.insertedChunkCount || 0 %> chunks
+            </li>
           <% }) %>
         </ul>
       </section>

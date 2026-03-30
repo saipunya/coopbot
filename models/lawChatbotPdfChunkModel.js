@@ -60,6 +60,7 @@ function scoreChunkMatch(query, row) {
 
 const uploadedFiles = [];
 const memoryChunks = [];
+const memoryDocuments = [];
 
 class LawChatbotPdfChunkModel {
   static createUpload(entry) {
@@ -97,10 +98,59 @@ class LawChatbotPdfChunkModel {
     return uploadedFiles.slice(0, limit);
   }
 
-  static async insertChunks(chunks) {
+  static async createDocument(entry) {
+    const normalizedEntry = {
+      title: String(entry.title || "").slice(0, 255),
+      documentNumber: String(entry.documentNumber || "").slice(0, 100),
+      documentDate: entry.documentDate || null,
+      documentDateText: String(entry.documentDateText || "").slice(0, 100),
+      documentSource: String(entry.documentSource || "").slice(0, 255),
+      filename: String(entry.filename || "").slice(0, 255),
+      originalname: String(entry.originalname || "").slice(0, 255),
+      mimetype: String(entry.mimetype || "").slice(0, 150),
+      fileSize: Number(entry.fileSize || 0),
+    };
+
+    const pool = getDbPool();
+
+    if (!pool) {
+      const record = {
+        id: memoryDocuments.length + 1,
+        created_at: new Date().toISOString(),
+        ...normalizedEntry,
+      };
+      memoryDocuments.unshift(record);
+      return record;
+    }
+
+    const [result] = await pool.query(
+      `INSERT INTO documents
+        (title, document_number, document_date, document_date_text, document_source, filename, originalname, mimetype, file_size)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        normalizedEntry.title || null,
+        normalizedEntry.documentNumber || null,
+        normalizedEntry.documentDate || null,
+        normalizedEntry.documentDateText || null,
+        normalizedEntry.documentSource || null,
+        normalizedEntry.filename || null,
+        normalizedEntry.originalname || null,
+        normalizedEntry.mimetype || null,
+        normalizedEntry.fileSize || 0,
+      ],
+    );
+
+    return {
+      id: result.insertId,
+      ...normalizedEntry,
+    };
+  }
+
+  static async insertChunks(chunks, documentId = null) {
     const normalizedChunks = chunks.map((chunk) => ({
       keyword: String(chunk.keyword || "").slice(0, 255),
       chunkText: String(chunk.chunkText || ""),
+      documentId: documentId || chunk.documentId || null,
     }));
 
     const pool = getDbPool();
@@ -111,15 +161,16 @@ class LawChatbotPdfChunkModel {
           id: memoryChunks.length + index + 1,
           keyword: chunk.keyword,
           chunk_text: chunk.chunkText,
+          document_id: chunk.documentId,
           created_at: new Date().toISOString(),
         });
       });
       return normalizedChunks.length;
     }
 
-    const values = normalizedChunks.map((chunk) => [chunk.keyword, chunk.chunkText]);
+    const values = normalizedChunks.map((chunk) => [chunk.keyword, chunk.chunkText, chunk.documentId]);
     if (values.length > 0) {
-      await pool.query("INSERT INTO pdf_chunks (keyword, chunk_text) VALUES ?", [values]);
+      await pool.query("INSERT INTO pdf_chunks (keyword, chunk_text, document_id) VALUES ?", [values]);
     }
     return values.length;
   }
@@ -153,7 +204,21 @@ class LawChatbotPdfChunkModel {
           const haystack = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
           const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
           const score = scoreChunkMatch(message, row) + coarseScore;
-          return { ...row, score };
+          const document = memoryDocuments.find((item) => item.id === row.document_id);
+          return {
+            ...row,
+            title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
+            reference:
+              document?.documentNumber ||
+              document?.title ||
+              row.keyword ||
+              "เอกสารที่อัปโหลด",
+            documentNumber: document?.documentNumber || "",
+            documentDateText: document?.documentDateText || "",
+            documentSource: document?.documentSource || "",
+            source: "pdf_chunks",
+            score,
+          };
         })
         .filter((row) => row.score > 0)
         .sort((a, b) => b.score - a.score)
@@ -165,10 +230,13 @@ class LawChatbotPdfChunkModel {
       .join(" OR ");
     const params = terms.flatMap((term) => [`%${term}%`, `%${term}%`]);
     const [rows] = await pool.query(
-      `SELECT id, keyword, chunk_text, created_at
+      `SELECT c.id, c.keyword, c.chunk_text, c.created_at, c.document_id,
+              d.title, d.document_number, d.document_date_text, d.document_source, d.originalname
        FROM pdf_chunks
+       AS c
+       LEFT JOIN documents AS d ON d.id = c.document_id
        WHERE ${whereClause}
-       ORDER BY id DESC
+       ORDER BY c.id DESC
        LIMIT 50`,
       params
     );
@@ -178,7 +246,17 @@ class LawChatbotPdfChunkModel {
         const haystack = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
         const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
         const score = scoreChunkMatch(message, row) + coarseScore;
-        return { ...row, score };
+        return {
+          ...row,
+          source: "pdf_chunks",
+          title: row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
+          reference:
+            row.document_number || row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
+          documentNumber: row.document_number || "",
+          documentDateText: row.document_date_text || "",
+          documentSource: row.document_source || "",
+          score,
+        };
       })
       .filter((row) => row.score > 0)
       .sort((a, b) => b.score - a.score)
