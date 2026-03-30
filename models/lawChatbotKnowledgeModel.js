@@ -53,6 +53,65 @@ function scoreKnowledgeMatch(query, row) {
   return score;
 }
 
+const GENERIC_THAI_TOKENS = new Set([
+  "การ",
+  "เรื่อง",
+  "เกี่ยวกับ",
+  "ของ",
+  "ใน",
+  "ที่",
+  "และ",
+  "หรือ",
+  "ตาม",
+  "เพื่อ",
+  "จาก",
+  "โดย",
+  "ให้",
+  "ได้",
+  "ไม่",
+]);
+
+function getMeaningfulTokens(text) {
+  return uniqueTokens(segmentWords(text)).filter((token) => {
+    const trimmed = String(token || "").trim();
+    if (!trimmed) {
+      return false;
+    }
+
+    if (GENERIC_THAI_TOKENS.has(trimmed)) {
+      return false;
+    }
+
+    return trimmed.length >= 2;
+  });
+}
+
+function hasKnowledgeRelevance(query, row) {
+  const normalizedQuery = normalizeForSearch(query).toLowerCase();
+  const rowText = normalizeForSearch(
+    `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`,
+  ).toLowerCase();
+  const queryTokens = getMeaningfulTokens(query);
+  const rowTokenSet = new Set(getMeaningfulTokens(rowText));
+  const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
+  const hasExactPhrase = normalizedQuery && rowText.includes(normalizedQuery);
+  const queryBigrams = makeBigrams(queryTokens);
+  const hasBigramMatch = queryBigrams.some((bigram) => rowText.includes(bigram));
+
+  if (queryTokens.length === 0) {
+    return false;
+  }
+
+  // If the query has multiple important words, the document must contain all of them,
+  // unless a more specific phrase or bigram matches.
+  if (queryTokens.length > 1 && !(hasExactPhrase || hasBigramMatch)) {
+    return tokenHits >= queryTokens.length;
+  }
+
+  // For single-word queries, at least one hit is required.
+  return tokenHits >= 1;
+}
+
 function mapRow(row) {
   return {
     id: row.id,
@@ -161,6 +220,11 @@ class LawChatbotKnowledgeModel {
     if (!pool) {
       return memoryKnowledgeEntries
         .map((row) => {
+          const isRelevant = hasKnowledgeRelevance(message, row);
+          if (!isRelevant) {
+            return null;
+          }
+
           const haystack = normalizeForSearch(
             `${row.title} ${row.lawNumber} ${row.content} ${row.sourceNote}`,
           ).toLowerCase();
@@ -187,6 +251,7 @@ class LawChatbotKnowledgeModel {
             updatedAt: row.updatedAt,
           };
         })
+        .filter(Boolean)
         .filter((row) => row.target === target && row.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
@@ -213,10 +278,18 @@ class LawChatbotKnowledgeModel {
     );
 
     return rows
-      .map((row) => ({
-        ...mapRow(row),
-        score: scoreKnowledgeMatch(message, row),
-      }))
+      .map((row) => {
+        const isRelevant = hasKnowledgeRelevance(message, row);
+        if (!isRelevant) {
+          return null;
+        }
+
+        return {
+          ...mapRow(row),
+          score: scoreKnowledgeMatch(message, row),
+        };
+      })
+      .filter(Boolean)
       .filter((row) => row.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);

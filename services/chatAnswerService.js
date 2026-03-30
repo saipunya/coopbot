@@ -71,9 +71,17 @@ function dedupeSources(sources, limit = sources.length) {
     }
 
     const sourceName = String(source.source || "pdf_chunks").trim().toLowerCase();
+    const stableIdentity =
+      source.id ||
+      source.url ||
+      source.document_id ||
+      source.documentId ||
+      "";
     const reference = cleanLine(source.reference || source.title || source.keyword || "");
     const contentPreview = cleanLine(String(source.content || source.chunk_text || "").slice(0, 120));
-    const dedupeKey = [sourceName, reference || contentPreview].join("::");
+    const dedupeKey = stableIdentity
+      ? [sourceName, String(stableIdentity)].join("::")
+      : [sourceName, reference || contentPreview].join("::");
 
     if (!reference && !contentPreview) {
       continue;

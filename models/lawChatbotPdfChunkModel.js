@@ -191,6 +191,8 @@ class LawChatbotPdfChunkModel {
     const terms = [...new Set([normalizedMessage, ...segmentWords(message)])]
       .filter(Boolean)
       .slice(0, 8);
+    const queryTokens = uniqueTokens(segmentWords(message));
+    const minTokenHits = queryTokens.length >= 3 ? 2 : 1;
 
     if (terms.length === 0) {
       return [];
@@ -202,6 +204,14 @@ class LawChatbotPdfChunkModel {
       return memoryChunks
         .map((row) => {
           const haystack = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
+          const rowTokenSet = new Set(uniqueTokens(segmentWords(haystack)));
+          const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
+          const hasExactPhrase = normalizedMessage && haystack.includes(normalizedMessage);
+
+          if (queryTokens.length > 0 && !hasExactPhrase && tokenHits < minTokenHits) {
+            return null;
+          }
+
           const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
           const score = scoreChunkMatch(message, row) + coarseScore;
           const document = memoryDocuments.find((item) => item.id === row.document_id);
@@ -220,6 +230,7 @@ class LawChatbotPdfChunkModel {
             score,
           };
         })
+        .filter(Boolean)
         .filter((row) => row.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
@@ -244,6 +255,14 @@ class LawChatbotPdfChunkModel {
     return rows
       .map((row) => {
         const haystack = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
+        const rowTokenSet = new Set(uniqueTokens(segmentWords(haystack)));
+        const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
+        const hasExactPhrase = normalizedMessage && haystack.includes(normalizedMessage);
+
+        if (queryTokens.length > 0 && !hasExactPhrase && tokenHits < minTokenHits) {
+          return null;
+        }
+
         const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
         const score = scoreChunkMatch(message, row) + coarseScore;
         return {
@@ -258,6 +277,7 @@ class LawChatbotPdfChunkModel {
           score,
         };
       })
+      .filter(Boolean)
       .filter((row) => row.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);

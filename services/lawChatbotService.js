@@ -525,6 +525,8 @@ async function getDashboardData() {
 async function replyToChat(payload, session) {
   const message = String(payload.message || "").trim();
   const target = payload.target === "group" ? "group" : "coop";
+  const debugMode =
+    payload && (payload.debug === true || payload.debug === "true" || process.env.CHATBOT_DEBUG === "1");
 
   if (!message) {
     return {
@@ -565,16 +567,32 @@ async function replyToChat(payload, session) {
       lawNumber: item.lawNumber || item.reference || item.keyword,
       source: item.source || "",
       url: item.url || "",
+      score: Number(item.score || 0),
     })),
   });
 
-  return {
+  const result = {
     hasContext: sources.length > 0,
     answer,
     highlightTerms,
     usedFollowUpContext: resolvedContext.usedContext,
     usedInternetFallback: evidence.usedInternetFallback,
   };
+
+  if (debugMode) {
+    result.debug = {
+      selectedSourceTier: evidence.selectedSourceTier || "none",
+      sourceCount: sources.length,
+      sources: sources.map((item) => ({
+        source: item.source || "",
+        reference: item.reference || item.title || "",
+        score: Number(item.score || 0),
+        preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
+      })),
+    };
+  }
+
+  return result;
 }
 
 async function summarizeChat(payload, session) {

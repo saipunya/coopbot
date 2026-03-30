@@ -39,4 +39,39 @@ router.post("/upload", requireAdminAuth, handleUploadMiddleware, controller.hand
 router.get("/feedback", requireAdminAuth, controller.renderFeedback);
 router.post("/feedback", requireAdminAuth, controller.submitFeedback);
 
+// Debug endpoint for detailed AI decision data
+router.post('/debug-decision', async (req, res) => {
+  try {
+    const { message, target } = req.body;
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Invalid or missing message in request body' });
+    }
+    const session = req.session;
+    const evidence = await lawChatbotService.collectAnswerSources(message, target || 'coop', session);
+    res.json({
+      message,
+      target: target || 'coop',
+      selectedSourceTier: evidence.selectedSourceTier || 'none',
+      sources: evidence.allSources.map((item) => ({
+        source: item.source || '',
+        reference: item.reference || item.title || '',
+        score: Number(item.score || 0),
+        content: String(item.content || item.chunk_text || '').slice(0, 500),
+        retrievalPriority: Number(item.retrievalPriority || 0)
+      })),
+      filteredSources: evidence.filteredSources.map((item) => ({
+        source: item.source || '',
+        reference: item.reference || item.title || '',
+        score: Number(item.score || 0),
+        content: String(item.content || item.chunk_text || '').slice(0, 500),
+        retrievalPriority: Number(item.retrievalPriority || 0)
+      })),
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error in debug-decision endpoint:', error);
+    res.status(500).json({ error: 'Internal server error', message: error.message });
+  }
+});
+
 module.exports = router;
