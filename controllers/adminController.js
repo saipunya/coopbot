@@ -35,13 +35,35 @@ async function submitLogin(req, res) {
 async function renderDashboard(req, res) {
   const uploadData = await lawChatbotService.getUploadPageData();
   const feedbackData = await lawChatbotService.getFeedbackPageData();
+  const knowledgeData = await lawChatbotService.getKnowledgeAdminData();
 
   res.render("admin/dashboard", {
     title: "Admin Dashboard",
     user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
     uploadData,
     feedbackData,
+    knowledgeData,
   });
+}
+
+async function submitKnowledge(req, res) {
+  const title = String(req.body.title || "").trim();
+  const content = String(req.body.content || "").trim();
+
+  if (!title || !content) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("กรุณากรอกหัวข้อและรายละเอียดความรู้ก่อนบันทึก")
+    );
+  }
+
+  await lawChatbotService.saveKnowledgeEntry(req.body);
+  return res.redirect(
+    "/admin?success=" +
+      encodeURIComponent("บันทึกความรู้ใหม่เรียบร้อยแล้ว และพร้อมใช้ในการตอบคำถาม")
+  );
 }
 
 function logout(req, res) {
@@ -54,5 +76,6 @@ module.exports = {
   renderLogin,
   submitLogin,
   renderDashboard,
+  submitKnowledge,
   logout,
 };

@@ -1,4 +1,5 @@
 const LawChatbotModel = require("../models/lawChatbotModel");
+const LawChatbotKnowledgeModel = require("../models/lawChatbotKnowledgeModel");
 const LawSearchModel = require("../models/lawSearchModel");
 const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
@@ -9,11 +10,232 @@ const {
   extractDocumentKeywords,
 } = require("./keywordExtractionService");
 const { extractDocumentMetadata } = require("./documentMetadataService");
-const { uniqueTokens } = require("./thaiTextUtils");
+const { normalizeForSearch, segmentWords, uniqueTokens } = require("./thaiTextUtils");
 
 const CHAT_CONTEXT_KEY = "lawChatbotContext";
 const CONTEXT_HISTORY_LIMIT = 8;
 const KEYWORD_CONCURRENCY = Number(process.env.KEYWORD_CONCURRENCY || 4);
+const WEB_SEARCH_LIMIT = Number(process.env.LAW_CHATBOT_WEB_SEARCH_LIMIT || 3);
+const WEB_SEARCH_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_WEB_SEARCH_TIMEOUT_MS || 8000);
+const WEB_SEARCH_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+
+function decodeHtmlEntities(text) {
+  return String(text || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&nbsp;/gi, " ");
+}
+
+function stripHtml(text) {
+  return decodeHtmlEntities(String(text || "").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+}
+
+function normalizeSearchUrl(rawUrl) {
+  const cleaned = decodeHtmlEntities(String(rawUrl || "").trim());
+  if (!cleaned) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(cleaned, "https://duckduckgo.com");
+    const redirectUrl = parsed.searchParams.get("uddg");
+    if (redirectUrl) {
+      return decodeURIComponent(redirectUrl);
+    }
+    return parsed.toString();
+  } catch {
+    return cleaned;
+  }
+}
+
+function getUrlDomain(rawUrl) {
+  try {
+    return new URL(rawUrl).hostname.replace(/^www\./i, "");
+  } catch {
+    return "";
+  }
+}
+
+async function fetchText(url) {
+  if (typeof fetch !== "function") {
+    throw new Error("fetch is not available in this runtime");
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), WEB_SEARCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "th-TH,th;q=0.9,en;q=0.8",
+        "user-agent": WEB_SEARCH_USER_AGENT,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return await response.text();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function scoreInternetSource(query, source) {
+  const queryText = normalizeForSearch(query).toLowerCase();
+  const sourceText = normalizeForSearch(`${source.title || ""} ${source.snippet || ""} ${source.domain || ""}`).toLowerCase();
+  const queryTokens = uniqueTokens(segmentWords(query));
+  const sourceTokens = new Set(uniqueTokens(segmentWords(sourceText)));
+
+  let score = 8;
+
+  if (queryText && sourceText.includes(queryText)) {
+    score += 20;
+  }
+
+  const tokenHits = queryTokens.filter((token) => sourceTokens.has(token)).length;
+  score += tokenHits * 6;
+
+  const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
+  score += coverage * 18;
+
+  if (source.domain) {
+    score += 4;
+  }
+
+  if (source.snippet) {
+    score += 4;
+  }
+
+  return score;
+}
+
+function extractWebSearchResults(html, limit = WEB_SEARCH_LIMIT) {
+  const results = [];
+  const titlePattern = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let match = null;
+
+  while ((match = titlePattern.exec(html)) && results.length < limit) {
+    const url = normalizeSearchUrl(match[1]);
+    const title = stripHtml(match[2]);
+
+    if (!title) {
+      continue;
+    }
+
+    const windowText = html.slice(match.index, titlePattern.lastIndex + 1200);
+    const snippetMatch =
+      windowText.match(/class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|span|div)>/i) ||
+      windowText.match(/class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)$/i);
+    const snippet = stripHtml(snippetMatch?.[1] || "");
+
+    results.push({
+      title,
+      url,
+      snippet,
+      domain: getUrlDomain(url),
+    });
+  }
+
+  return results;
+}
+
+async function searchInternetSources(message, target) {
+  const query = String(message || "").trim();
+  if (!query) {
+    return [];
+  }
+
+  const targetKeyword = target === "group" ? "กลุ่มเกษตรกร" : "สหกรณ์";
+  const searchQuery = `${query} ${targetKeyword}`.trim();
+  const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}&kl=th-th&ia=web`;
+
+  try {
+    const html = await fetchText(searchUrl);
+    return extractWebSearchResults(html, WEB_SEARCH_LIMIT)
+      .map((result, index) => ({
+        ...result,
+        source: "internet_search",
+        reference: result.title || result.domain || result.url || "ข้อมูลจากอินเทอร์เน็ต",
+        content: result.snippet || result.title || "",
+        score: scoreInternetSource(searchQuery, result) - index,
+      }))
+      .filter((result) => result.score > 0)
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .slice(0, WEB_SEARCH_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function shouldUseInternetFallback(databaseMatches) {
+  if (!Array.isArray(databaseMatches) || databaseMatches.length === 0) {
+    return true;
+  }
+
+  const topScore = Number(databaseMatches[0]?.score || 0);
+  const secondScore = Number(databaseMatches[1]?.score || 0);
+  return topScore < 38 || (topScore < 45 && topScore - secondScore < 6);
+}
+
+function prioritizeMatches(matches, options = {}) {
+  const retrievalPriority = Number(options.retrievalPriority || 0);
+  const scoreBoost = Number(options.scoreBoost || 0);
+  const sourceOverride = options.sourceOverride || "";
+
+  return (Array.isArray(matches) ? matches : []).map((item) => ({
+    ...item,
+    source: sourceOverride || item.source,
+    retrievalPriority,
+    score: Number(item.score || 0) + scoreBoost,
+  }));
+}
+
+async function searchDatabaseSources(message, target) {
+  const structuredMatches = prioritizeMatches(
+    await LawSearchModel.searchStructuredLaws(message, target, 4),
+    { retrievalPriority: 2 },
+  );
+  const pdfMatches = prioritizeMatches(await LawChatbotPdfChunkModel.searchChunks(message, 4), {
+    retrievalPriority: 1,
+  });
+  const knowledgeMatches = prioritizeMatches(
+    await LawChatbotKnowledgeModel.searchKnowledge(message, target, 4),
+    {
+      sourceOverride: "admin_knowledge",
+      retrievalPriority: 3,
+      scoreBoost: 40,
+    },
+  );
+
+  return [...knowledgeMatches, ...structuredMatches, ...pdfMatches]
+    .filter(Boolean)
+    .sort((a, b) => {
+      const priorityDiff = (b.retrievalPriority || 0) - (a.retrievalPriority || 0);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+
+      return (b.score || 0) - (a.score || 0);
+    })
+    .slice(0, 5);
+}
+
+function searchKnowledgeSources(message, target) {
+  return LawChatbotModel.searchKnowledge(message, target).map((item) => ({
+    ...item,
+    source: "knowledge_base",
+    reference: item.reference || item.lawNumber || item.title || "ฐานความรู้ภายในระบบ",
+    content: item.content || "",
+  }));
+}
 
 function getSessionContext(session) {
   if (!session) {
@@ -158,17 +380,6 @@ function storeConversationContext(session, target, originalMessage, effectiveMes
   session[CHAT_CONTEXT_KEY] = history.slice(0, CONTEXT_HISTORY_LIMIT);
 }
 
-async function searchAllSources(message, target) {
-  const structuredMatches = await LawSearchModel.searchStructuredLaws(message, target, 4);
-  const pdfMatches = await LawChatbotPdfChunkModel.searchChunks(message, 4);
-  const fallbackMatches = LawChatbotModel.searchKnowledge(message, target);
-
-  return [...structuredMatches, ...pdfMatches, ...fallbackMatches]
-    .filter(Boolean)
-    .sort((a, b) => (b.score || 0) - (a.score || 0))
-    .slice(0, 5);
-}
-
 function scoreMatchSet(matches) {
   if (!matches.length) {
     return 0;
@@ -183,7 +394,7 @@ async function resolveSearchPlan(message, target, session) {
   const baseMessage = String(message || "").trim();
   const contextualCandidate = resolveMessageWithContext(baseMessage, target, session);
 
-  const standaloneMatches = await searchAllSources(baseMessage, target);
+  const standaloneMatches = await searchDatabaseSources(baseMessage, target);
   const standaloneScore = scoreMatchSet(standaloneMatches);
 
   if (!contextualCandidate.usedContext) {
@@ -194,7 +405,7 @@ async function resolveSearchPlan(message, target, session) {
     };
   }
 
-  const contextualMatches = await searchAllSources(contextualCandidate.effectiveMessage, target);
+  const contextualMatches = await searchDatabaseSources(contextualCandidate.effectiveMessage, target);
   const contextualScore = scoreMatchSet(contextualMatches);
   const shouldUseContext =
     contextualMatches.length > 0 &&
@@ -218,6 +429,29 @@ async function resolveSearchPlan(message, target, session) {
     effectiveMessage: contextualCandidate.effectiveMessage,
     matches: contextualMatches,
     resolvedContext: contextualCandidate,
+  };
+}
+
+async function collectAnswerSources(message, target, session) {
+  const searchPlan = await resolveSearchPlan(message, target, session);
+  const effectiveMessage = searchPlan.effectiveMessage || String(message || "").trim();
+  const databaseMatches = searchPlan.matches || [];
+  const useInternetFallback = shouldUseInternetFallback(databaseMatches);
+  const internetMatches = useInternetFallback ? await searchInternetSources(effectiveMessage, target) : [];
+  const knowledgeMatches =
+    databaseMatches.length === 0 && internetMatches.length === 0
+      ? searchKnowledgeSources(effectiveMessage, target)
+      : [];
+
+  return {
+    ...searchPlan,
+    effectiveMessage,
+    databaseMatches,
+    knowledgeMatches,
+    internetMatches,
+    sources: [...databaseMatches, ...internetMatches, ...knowledgeMatches].slice(0, 6),
+    usedInternetFallback: internetMatches.length > 0,
+    attemptedInternetFallback: useInternetFallback,
   };
 }
 
@@ -247,44 +481,46 @@ async function replyToChat(payload, session) {
     };
   }
 
-  const searchPlan = await resolveSearchPlan(message, target, session);
-  const resolvedContext = searchPlan.resolvedContext;
-  const effectiveMessage = searchPlan.effectiveMessage || message;
-  const matches = searchPlan.matches;
+  const evidence = await collectAnswerSources(message, target, session);
+  const resolvedContext = evidence.resolvedContext;
+  const effectiveMessage = evidence.effectiveMessage || message;
+  const sources = evidence.sources;
   const highlightTerms = effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8);
 
   let answer = "";
 
-  if (matches.length === 0) {
+  if (sources.length === 0) {
     answer =
-      "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนในระบบ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
+      "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนทั้งในฐานข้อมูลและแหล่งข้อมูลสาธารณะ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
-    const topSources = matches.slice(0, wantsExplanation(message) ? 3 : 2);
-    answer = await generateChatSummary(message, topSources, {
+    answer = await generateChatSummary(message, sources.slice(0, wantsExplanation(message) ? 4 : 3), {
       conversationalFollowUp: resolvedContext.usedContext,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
     });
   }
 
-  storeConversationContext(session, target, message, effectiveMessage, matches, resolvedContext);
+  storeConversationContext(session, target, message, effectiveMessage, sources, resolvedContext);
 
   LawChatbotModel.create({
     message,
     effectiveMessage,
     target,
     answer,
-    matchedSources: matches.map((item) => ({
-      id: item.id,
-      title: item.title || item.keyword,
-      lawNumber: item.lawNumber || item.keyword,
+    matchedSources: sources.map((item) => ({
+      id: item.id || item.url || item.reference || item.title,
+      title: item.title || item.keyword || item.reference,
+      lawNumber: item.lawNumber || item.reference || item.keyword,
+      source: item.source || "",
+      url: item.url || "",
     })),
   });
 
   return {
-    hasContext: matches.length > 0,
+    hasContext: sources.length > 0,
     answer,
     highlightTerms,
     usedFollowUpContext: resolvedContext.usedContext,
+    usedInternetFallback: evidence.usedInternetFallback,
   };
 }
 
@@ -295,13 +531,13 @@ async function summarizeChat(payload, session) {
   }
 
   const target = payload.target === "group" ? "group" : "coop";
-  const searchPlan = await resolveSearchPlan(message, target, session);
-  const resolvedContext = searchPlan.resolvedContext;
-  const effectiveMessage = searchPlan.effectiveMessage || message;
-  const matches = searchPlan.matches;
+  const evidence = await collectAnswerSources(message, target, session);
+  const resolvedContext = evidence.resolvedContext;
+  const effectiveMessage = evidence.effectiveMessage || message;
+  const sources = evidence.sources;
 
   return {
-    summary: await generateChatSummary(message, matches, {
+    summary: await generateChatSummary(message, sources, {
       conversationalFollowUp: resolvedContext.usedContext,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
     }),
@@ -462,6 +698,35 @@ async function getFeedbackPageData() {
   };
 }
 
+async function getKnowledgeAdminData() {
+  const [knowledgeCount, recentKnowledge] = await Promise.all([
+    LawChatbotKnowledgeModel.count(),
+    LawChatbotKnowledgeModel.listRecent(10),
+  ]);
+
+  return {
+    appName: "Coopbot Law Chatbot",
+    knowledgeCount,
+    recentKnowledge,
+    targets: [
+      { value: "coop", label: "สหกรณ์" },
+      { value: "group", label: "กลุ่มเกษตรกร" },
+    ],
+  };
+}
+
+async function saveKnowledgeEntry(payload) {
+  const target = payload.target === "group" ? "group" : "coop";
+
+  return LawChatbotKnowledgeModel.create({
+    target,
+    title: payload.title || "",
+    lawNumber: payload.lawNumber || "",
+    content: payload.content || "",
+    sourceNote: payload.sourceNote || payload.note || "",
+  });
+}
+
 async function saveFeedback(payload) {
   return LawChatbotFeedbackModel.create({
     name: payload.name || "Anonymous",
@@ -478,5 +743,7 @@ module.exports = {
   getUploadPageData,
   recordUpload,
   getFeedbackPageData,
+  getKnowledgeAdminData,
+  saveKnowledgeEntry,
   saveFeedback,
 };

@@ -54,10 +54,70 @@
       ul {
         padding-left: 1.2rem;
       }
+      .alert {
+        padding: 0.9rem 1rem;
+        border-radius: 14px;
+        margin-bottom: 1rem;
+        border: 1px solid transparent;
+      }
+      .alert.success {
+        background: #e8f7ee;
+        border-color: #b8e3c8;
+        color: #1f6a3a;
+      }
+      .alert.error {
+        background: #fce9e7;
+        border-color: #f1b8b1;
+        color: #9b2c22;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.9rem;
+      }
+      .field label {
+        display: block;
+        font-weight: 700;
+        margin-bottom: 0.35rem;
+      }
+      .field input,
+      .field select,
+      .field textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #c9d8e4;
+        border-radius: 12px;
+        padding: 0.8rem 0.9rem;
+        font: inherit;
+        background: #fff;
+      }
+      .field textarea {
+        min-height: 130px;
+        resize: vertical;
+      }
+      .primary-btn {
+        border: none;
+        border-radius: 12px;
+        background: #1d6f96;
+        color: #fff;
+        padding: 0.9rem 1.1rem;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .knowledge-list li {
+        margin-bottom: 0.8rem;
+      }
     </style>
   </head>
   <body>
     <div class="shell">
+      <% if (successMessage) { %>
+        <div class="alert success"><%= successMessage %></div>
+      <% } %>
+      <% if (errorMessage) { %>
+        <div class="alert error"><%= errorMessage %></div>
+      <% } %>
+
       <section class="topbar">
         <div>
           <p>Signed in as</p>
@@ -107,6 +167,68 @@
           <li><a href="/law-chatbot">หน้าแชตสาธารณะ</a></li>
           <li><a href="/law-chatbot/upload">หน้าจัดการอัปโหลด</a></li>
           <li><a href="/law-chatbot/feedback">หน้าดู feedback</a></li>
+          <li><a href="#knowledge-management">จัดการความรู้แชตบอท</a></li>
+        </ul>
+      </section>
+
+      <section class="card" id="knowledge-management">
+        <h2>เพิ่มหรือแก้ไขความรู้สำหรับตอบคำถาม</h2>
+        <p>
+          ใช้หน้านี้เพื่อเพิ่มข้อมูลที่ถูกต้องลงในฐานข้อมูล เมื่อ AI ตอบไม่ตรงข้อเท็จจริง ระบบจะนำข้อมูลชุดนี้ไปช่วยตอบในรอบถัดไป
+        </p>
+        <form action="/admin/knowledge" method="post">
+          <div class="form-grid">
+            <div class="field">
+              <label for="target">ประเภทข้อมูล</label>
+              <select id="target" name="target" required>
+                <% knowledgeData.targets.forEach((target) => { %>
+                  <option value="<%= target.value %>"><%= target.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="field">
+              <label for="lawNumber">เลขอ้างอิง / หมวด</label>
+              <input id="lawNumber" name="lawNumber" type="text" placeholder="เช่น หมวดสมาชิก หรือ ข้อ 12" />
+            </div>
+          </div>
+          <div class="field" style="margin-top: 0.9rem;">
+            <label for="title">หัวข้อ</label>
+            <input id="title" name="title" type="text" placeholder="เช่น การรับสมาชิกสหกรณ์" required />
+          </div>
+          <div class="field" style="margin-top: 0.9rem;">
+            <label for="content">รายละเอียดความรู้ / คำตอบที่ถูกต้อง</label>
+            <textarea id="content" name="content" placeholder="พิมพ์ข้อมูลที่ต้องการให้บอทใช้เป็นหลักเมื่อมีคนถามเรื่องนี้" required></textarea>
+          </div>
+          <div class="field" style="margin-top: 0.9rem;">
+            <label for="sourceNote">หมายเหตุ / แหล่งที่มา</label>
+            <input id="sourceNote" name="sourceNote" type="text" placeholder="เช่น มาตรา 15, เอกสารประชุม, หรือคำชี้แจงจากผู้เชี่ยวชาญ" />
+          </div>
+          <div style="margin-top: 1rem;">
+            <button class="primary-btn" type="submit">บันทึกความรู้ลงฐานข้อมูล</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>ความรู้ที่บันทึกล่าสุด</h2>
+        <p>ทั้งหมด <strong><%= knowledgeData.knowledgeCount %></strong> รายการ</p>
+        <ul class="knowledge-list">
+          <% if (knowledgeData.recentKnowledge.length === 0) { %>
+            <li>ยังไม่มีความรู้ที่เพิ่มเข้าฐานข้อมูล</li>
+          <% } %>
+          <% knowledgeData.recentKnowledge.forEach((item) => { %>
+            <li>
+              <strong><%= item.title %></strong>
+              <% if (item.lawNumber) { %> - <%= item.lawNumber %><% } %>
+              <br />
+              <small>
+                ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : 'สหกรณ์' %>
+                <% if (item.sourceNote) { %> | แหล่งที่มา: <%= item.sourceNote %><% } %>
+              </small>
+              <br />
+              <%= item.content %>
+            </li>
+          <% }) %>
         </ul>
       </section>
     </div>

@@ -11,6 +11,7 @@ const router = express.Router();
 router.get("/login", redirectIfAuthenticated, adminController.renderLogin);
 router.post("/login", redirectIfAuthenticated, adminController.submitLogin);
 router.get("/", requireAdminAuth, adminController.renderDashboard);
+router.post("/knowledge", requireAdminAuth, adminController.submitKnowledge);
 router.post("/logout", requireAdminAuth, adminController.logout);
 
 module.exports = router;

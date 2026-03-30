@@ -65,12 +65,37 @@ async function ensureSchema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chatbot_knowledge (
+      id int(11) NOT NULL AUTO_INCREMENT,
+      target enum('coop','group') NOT NULL DEFAULT 'coop',
+      title varchar(255) NOT NULL,
+      law_number varchar(100) DEFAULT NULL,
+      content text NOT NULL,
+      source_note varchar(255) DEFAULT NULL,
+      created_at timestamp NULL DEFAULT current_timestamp(),
+      updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+      PRIMARY KEY (id),
+      KEY idx_chatbot_knowledge_target (target)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+ 
+ 
+    `);
+
   try {
     await pool.query("ALTER TABLE pdf_chunks ADD COLUMN document_id int(11) DEFAULT NULL");
   } catch (_) {}
 
   try {
     await pool.query("ALTER TABLE pdf_chunks ADD KEY idx_pdf_chunks_document_id (document_id)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_knowledge ADD COLUMN source_note varchar(255) DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_knowledge ADD KEY idx_chatbot_knowledge_target (target)");
   } catch (_) {}
 }
 
