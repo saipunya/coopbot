@@ -1,0 +1,8 @@
+{
+  "name": "Coopbot Law Chatbot",
+  "short_name": "Coopbot",
+  "start_url": "/law-chatbot",
+  "display": "standalone",
+  "background_color": "#f4efe6",
+  "theme_color": "#da8b2d"
+}

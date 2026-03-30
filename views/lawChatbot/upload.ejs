@@ -1,0 +1,38 @@
+<%- include("../partials/header", { title, page }) %>
+
+<section class="card">
+  <h1>Upload Legal Documents</h1>
+  <p>Upload PDF files to prepare the law chatbot knowledge base.</p>
+  <form action="<%= data.uploadPath %>" method="post" enctype="multipart/form-data">
+    <label for="lawPdf">PDF file</label>
+    <input id="lawPdf" type="file" name="lawPdf" accept="application/pdf" required />
+    <button type="submit">Upload PDF</button>
+  </form>
+</section>
+
+<section class="card">
+  <p>Accepted types</p>
+  <ul>
+    <% data.acceptedTypes.forEach((type) => { %>
+      <li><%= type %></li>
+    <% }) %>
+  </ul>
+  <p>Total uploaded files: <strong><%= data.uploadedPdfCount %></strong></p>
+</section>
+
+<section class="card">
+  <h2>Recent uploads</h2>
+  <ul>
+    <% if (data.uploadedFiles.length === 0) { %>
+      <li>No uploaded PDF files yet.</li>
+    <% } %>
+    <% data.uploadedFiles.forEach((file) => { %>
+      <li>
+        <strong><%= file.originalname %></strong>
+        (<%= file.mimetype %>, <%= file.size %> bytes)
+      </li>
+    <% }) %>
+  </ul>
+</section>
+
+<%- include("../partials/footer") %>

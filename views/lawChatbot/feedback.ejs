@@ -1,0 +1,39 @@
+<%- include("../partials/header", { title, page }) %>
+
+<section class="card">
+  <h1>Feedback</h1>
+  <p>Collect feedback to improve the law chatbot responses.</p>
+  <form action="/law-chatbot/feedback" method="post">
+    <label for="name">Name</label>
+    <input id="name" name="name" type="text" placeholder="Your name" />
+
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" placeholder="you@example.com" />
+
+    <label for="message">Message</label>
+    <textarea id="message" name="message" rows="5" placeholder="Share your feedback"></textarea>
+
+    <button type="submit">Submit feedback</button>
+  </form>
+</section>
+
+<section class="card">
+  <p>Total feedback: <strong><%= data.feedbackCount %></strong></p>
+  <p>Helpful: <strong><%= data.helpfulCount %></strong></p>
+  <p>Needs improvement: <strong><%= data.needsImprovementCount %></strong></p>
+  <ul>
+    <% if (data.recentFeedback.length === 0) { %>
+      <li>No feedback yet.</li>
+    <% } %>
+    <% data.recentFeedback.forEach((item) => { %>
+      <li>
+        <strong><%= item.name %>:</strong> <%= item.message || "No message provided." %>
+        <% if (typeof item.isHelpful === "boolean") { %>
+          - <%= item.isHelpful ? "Helpful" : "Needs improvement" %>
+        <% } %>
+      </li>
+    <% }) %>
+  </ul>
+</section>
+
+<%- include("../partials/footer") %>

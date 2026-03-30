@@ -1,0 +1,28 @@
+{
+  "name": "coopbot",
+  "version": "1.0.0",
+  "description": "Express and EJS starter for coopbot",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saipunya/coopbot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/saipunya/coopbot/issues"
+  },
+  "homepage": "https://github.com/saipunya/coopbot#readme",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "ejs": "^5.0.1",
+    "express": "^5.2.1",
+    "multer": "^2.1.1"
+  }
+}
