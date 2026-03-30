@@ -9,8 +9,6 @@ const lawChatbotRoutes = require("./routes/lawChatbot");
 const app = express();
 const port = process.env.PORT || 3000;
 
-connectDb();
-
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
@@ -39,6 +37,14 @@ app.use((req, res) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`coopbot is running at http://localhost:${port}`);
+async function startServer() {
+  await connectDb();
+  app.listen(port, () => {
+    console.log(`coopbot is running at http://localhost:${port}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error("Failed to start server:", error);
+  process.exit(1);
 });

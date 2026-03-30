@@ -2,11 +2,11 @@
 
 <section class="card">
   <h1>Upload Legal Documents</h1>
-  <p>Upload PDF files to prepare the law chatbot knowledge base.</p>
+  <p>Upload PDF, DOC, or DOCX files to prepare the law chatbot knowledge base.</p>
   <form action="<%= data.uploadPath %>" method="post" enctype="multipart/form-data">
-    <label for="lawPdf">PDF file</label>
-    <input id="lawPdf" type="file" name="lawPdf" accept="application/pdf" required />
-    <button type="submit">Upload PDF</button>
+    <label for="lawPdf">Document file</label>
+    <input id="lawPdf" type="file" name="lawPdf" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
+    <button type="submit">Upload document</button>
   </form>
 </section>
 
@@ -18,18 +18,19 @@
     <% }) %>
   </ul>
   <p>Total uploaded files: <strong><%= data.uploadedPdfCount %></strong></p>
+  <p>Total chunk rows in `pdf_chunks`: <strong><%= data.uploadedChunkCount %></strong></p>
 </section>
 
 <section class="card">
   <h2>Recent uploads</h2>
   <ul>
     <% if (data.uploadedFiles.length === 0) { %>
-      <li>No uploaded PDF files yet.</li>
+      <li>No uploaded files yet.</li>
     <% } %>
     <% data.uploadedFiles.forEach((file) => { %>
       <li>
         <strong><%= file.originalname %></strong>
-        (<%= file.mimetype %>, <%= file.size %> bytes)
+        (<%= file.mimetype %>, <%= file.size %> bytes, <%= file.insertedChunkCount || 0 %> chunks)
       </li>
     <% }) %>
   </ul>

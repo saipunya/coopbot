@@ -1,4 +1,5 @@
 const conversations = [];
+const { segmentWords } = require("../services/thaiTextUtils");
 
 const knowledgeBase = [
   {
@@ -43,14 +44,6 @@ const knowledgeBase = [
   },
 ];
 
-function tokenize(text) {
-  return String(text || "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
 class LawChatbotModel {
   static create(entry) {
     const record = {
@@ -72,7 +65,7 @@ class LawChatbotModel {
   }
 
   static searchKnowledge(message, target) {
-    const terms = tokenize(message);
+    const terms = segmentWords(message);
 
     if (terms.length === 0) {
       return [];
@@ -81,7 +74,7 @@ class LawChatbotModel {
     return knowledgeBase
       .filter((item) => item.target === target)
       .map((item) => {
-        const haystack = tokenize(`${item.title} ${item.lawNumber} ${item.content}`);
+        const haystack = segmentWords(`${item.title} ${item.lawNumber} ${item.content}`);
         const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
         return { ...item, score };
       })

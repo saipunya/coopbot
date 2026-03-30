@@ -1,14 +1,20 @@
 const LawChatbotModel = require("../models/lawChatbotModel");
 const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
+const { chunkText, extractTextFromFile } = require("./documentTextExtractor");
+const { extractKeywords } = require("./keywordExtractionService");
+const { uniqueTokens } = require("./thaiTextUtils");
 
 async function getDashboardData() {
+  const uploadedChunkCount = await LawChatbotPdfChunkModel.countChunks();
+
   return {
     appName: "Coopbot Law Chatbot",
     description: "ระบบต้นแบบสำหรับค้นหากฎหมายสหกรณ์และกลุ่มเกษตรกร พร้อมเก็บคำถามและข้อเสนอแนะ",
     status: "Knowledge base ready",
     conversationCount: LawChatbotModel.count(),
     uploadedPdfCount: LawChatbotPdfChunkModel.countDocuments(),
+    uploadedChunkCount,
     recentConversations: LawChatbotModel.listRecent(6),
   };
 }
@@ -25,7 +31,9 @@ async function replyToChat(payload) {
     };
   }
 
-  const matches = LawChatbotModel.searchKnowledge(message, target);
+  const dbMatches = await LawChatbotPdfChunkModel.searchChunks(message, 3);
+  const matches =
+    dbMatches.length > 0 ? dbMatches : LawChatbotModel.searchKnowledge(message, target);
   const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
 
   let answer = "";
@@ -37,9 +45,9 @@ async function replyToChat(payload) {
     answer = matches
       .map((item, index) => {
         return [
-          `${index + 1}. ${item.title}`,
-          `อ้างอิง: ${item.lawNumber}`,
-          item.content,
+          `${index + 1}. ${item.title || item.keyword || "ข้อความที่เกี่ยวข้อง"}`,
+          `อ้างอิง: ${item.lawNumber || item.keyword || "pdf_chunks"}`,
+          item.content || item.chunk_text,
         ].join("\n");
       })
       .join("\n\n");
@@ -51,8 +59,8 @@ async function replyToChat(payload) {
     answer,
     matchedSources: matches.map((item) => ({
       id: item.id,
-      title: item.title,
-      lawNumber: item.lawNumber,
+      title: item.title || item.keyword,
+      lawNumber: item.lawNumber || item.keyword,
     })),
   });
 
@@ -71,12 +79,18 @@ async function summarizeChat(payload) {
     return { summary: "" };
   }
 
-  const matches = LawChatbotModel.searchKnowledge(message, payload.target === "group" ? "group" : "coop");
+  const dbMatches = await LawChatbotPdfChunkModel.searchChunks(message, 3);
+  const matches =
+    dbMatches.length > 0
+      ? dbMatches
+      : LawChatbotModel.searchKnowledge(message, payload.target === "group" ? "group" : "coop");
 
   const sourcesText =
     matches.length === 0
       ? "ยังไม่พบมาตราหรือหัวข้อที่ตรงชัดเจนในฐานข้อมูลตัวอย่าง"
-      : matches.map((item) => `- ${item.title} (${item.lawNumber})`).join("\n");
+      : matches
+          .map((item) => `- ${item.title || item.keyword} (${item.lawNumber || item.keyword})`)
+          .join("\n");
 
   return {
     summary: `หัวข้อที่ค้นหา: ${message}\nฐานข้อมูลที่เลือก: ${target}\nแหล่งข้อมูลที่เกี่ยวข้อง:\n${sourcesText}`,
@@ -97,11 +111,18 @@ async function saveChatFeedback(payload) {
 }
 
 async function getUploadPageData() {
+  const uploadedChunkCount = await LawChatbotPdfChunkModel.countChunks();
+
   return {
     appName: "Coopbot Law Chatbot",
     uploadPath: "/law-chatbot/upload",
-    acceptedTypes: ["application/pdf"],
+    acceptedTypes: [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ],
     uploadedPdfCount: LawChatbotPdfChunkModel.countDocuments(),
+    uploadedChunkCount,
     uploadedFiles: LawChatbotPdfChunkModel.list(10),
   };
 }
@@ -111,12 +132,33 @@ async function recordUpload(file) {
     return null;
   }
 
-  return LawChatbotPdfChunkModel.create({
+  const extractedText = await extractTextFromFile(file);
+  const chunks = chunkText(extractedText, Number(process.env.CHUNK_SIZE || 1400));
+  const chunkRecords = [];
+
+  for (const chunk of chunks) {
+    const keywords = await extractKeywords(chunk);
+    chunkRecords.push({
+      keyword: uniqueTokens(keywords).join(", ").slice(0, 255) || "document",
+      chunkText: chunk,
+    });
+  }
+
+  const insertedChunkCount = await LawChatbotPdfChunkModel.insertChunks(chunkRecords);
+
+  LawChatbotPdfChunkModel.createUpload({
     filename: file.filename,
     originalname: file.originalname,
     mimetype: file.mimetype,
     size: file.size,
+    insertedChunkCount,
   });
+
+  return {
+    filename: file.filename,
+    originalname: file.originalname,
+    insertedChunkCount,
+  };
 }
 
 async function getFeedbackPageData() {
