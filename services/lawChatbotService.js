@@ -174,7 +174,7 @@ async function replyToChat(payload, session) {
   if (!message) {
     return {
       hasContext: false,
-      answer: "กรุณาระบุคำถามก่อนส่งข้อความ",
+      answer: "กรุณาระบุคำถามหรือประเด็นที่ต้องการสอบถามก่อนส่งข้อความ",
       highlightTerms: [],
     };
   }
@@ -195,7 +195,7 @@ async function replyToChat(payload, session) {
 
   if (matches.length === 0) {
     answer =
-      "ไม่พบข้อมูลที่ตรงชัดเจนในคลังตัวอย่างของระบบ\n\nลองระบุคำสำคัญเพิ่ม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
+      "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนในระบบ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
     const topSources = matches.slice(0, wantsExplanation(message) ? 3 : 2);
     answer = await generateChatSummary(message, topSources, {

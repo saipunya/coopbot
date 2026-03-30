@@ -366,71 +366,104 @@
       font-size: 0.97rem;
       line-height: 1.7;
       color: #18354a;
+      display: flex;
+      flex-direction: column;
+      gap: 0.72rem;
     }
 
     .bot-answer-summary strong {
       color: #114d73;
     }
 
-    .bot-reference-card {
-      margin-top: 0.15rem;
-      border: 1px solid rgba(47, 127, 184, 0.16);
-      background: linear-gradient(180deg, rgba(242, 248, 253, 0.95), rgba(236, 244, 251, 0.95));
-      border-radius: 0.85rem;
-      overflow: hidden;
+    .bot-answer-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .bot-answer-section-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.38rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #14506f;
+    }
+
+    .bot-answer-bullets {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .bot-answer-bullets li {
+      position: relative;
+      padding-left: 1rem;
+      line-height: 1.62;
+      color: #18354a;
+    }
+
+    .bot-answer-bullets li::before {
+      content: '';
+      position: absolute;
+      left: 0.1rem;
+      top: 0.62rem;
+      width: 0.36rem;
+      height: 0.36rem;
+      border-radius: 999px;
+      background: #2f7fb8;
+      box-shadow: 0 0 0 3px rgba(47, 127, 184, 0.12);
     }
 
     .bot-reference-toggle {
-      width: 100%;
-      border: 0;
-      background: transparent;
-      color: #1a5276;
-      font-weight: 700;
-      font-size: 0.84rem;
-      padding: 0.72rem 0.85rem;
-      display: flex;
+      width: fit-content;
+      border: 1px solid rgba(47, 127, 184, 0.14);
+      background: rgba(244, 249, 253, 0.92);
+      color: #4c6f86;
+      font-weight: 600;
+      font-size: 0.74rem;
+      padding: 0.34rem 0.56rem;
+      display: inline-flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
+      justify-content: center;
+      gap: 0.35rem;
       text-align: left;
+      min-height: 0;
+      border-radius: 999px;
+      box-shadow: 0 4px 10px rgba(34, 63, 87, 0.05);
     }
 
     .bot-reference-toggle:hover,
     .bot-reference-toggle:focus-visible {
-      background: rgba(47, 127, 184, 0.08);
+      background: rgba(47, 127, 184, 0.12);
       outline: none;
     }
 
     .bot-reference-toggle-text {
       display: inline-flex;
       align-items: center;
-      gap: 0.45rem;
+      gap: 0.32rem;
+      white-space: nowrap;
     }
 
     .bot-reference-toggle-icon {
-      transition: transform 160ms ease;
       color: #2f7fb8;
       flex: 0 0 auto;
+      font-size: 0.7rem;
     }
 
-    .bot-reference-card.is-open .bot-reference-toggle-icon {
-      transform: rotate(180deg);
-    }
-
-    .bot-reference-list {
-      display: none;
+    .reference-modal-list {
       margin: 0;
-      padding: 0 0.95rem 0.85rem 2rem;
+      padding-left: 1.1rem;
       color: #35566d;
       font-size: 0.9rem;
     }
 
-    .bot-reference-card.is-open .bot-reference-list {
-      display: block;
-    }
-
-    .bot-reference-list li {
-      margin: 0.2rem 0;
+    .reference-modal-list li {
+      margin: 0.28rem 0;
       line-height: 1.55;
     }
 
@@ -822,6 +855,20 @@
       </div>
     </div>
 
+    <div class="modal fade" id="referenceModal" tabindex="-1" aria-labelledby="referenceModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="referenceModalLabel"><i class="bi bi-journal-text me-2"></i>แหล่งอ้างอิง</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <ul id="referenceModalList" class="reference-modal-list"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="chat-shell">
       <div class="chat-header d-none d-md-block">
         <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
@@ -887,9 +934,14 @@
       const installBtn = document.getElementById('installBtn');
       const iosInstallBtn = document.getElementById('iosInstallBtn');
       const onlineBadge = document.getElementById('onlineBadge');
+      const referenceModalElement = document.getElementById('referenceModal');
+      const referenceModalList = document.getElementById('referenceModalList');
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const isAndroidDevice = /android/i.test(window.navigator.userAgent || '');
       const isIosDevice = /iphone|ipad|ipod/i.test(window.navigator.userAgent || '');
+      const referenceModal = referenceModalElement && window.bootstrap
+        ? new window.bootstrap.Modal(referenceModalElement)
+        : null;
 
       let selectedTarget = 'coop';
       let deferredInstallPrompt = null;
@@ -1120,18 +1172,53 @@
         if (!referenceLines.length) {
           return '';
         }
+        const encodedLines = encodeURIComponent(JSON.stringify(referenceLines));
 
-        const itemsHtml = referenceLines
+        return `
+          <button type="button" class="bot-reference-toggle" data-reference-toggle="1" data-reference-lines="${encodedLines}">
+            <span class="bot-reference-toggle-text"><i class="bi bi-journal-text"></i>แหล่งอ้างอิง</span>
+            <i class="bi bi-box-arrow-up-right bot-reference-toggle-icon"></i>
+          </button>
+        `;
+      }
+
+      function openReferenceModal(encodedLines, terms) {
+        if (!referenceModal || !referenceModalList) return;
+
+        let lines = [];
+        try {
+          lines = JSON.parse(decodeURIComponent(String(encodedLines || '')));
+        } catch (_) {
+          lines = [];
+        }
+
+        referenceModalList.innerHTML = Array.isArray(lines)
+          ? lines.map((line) => `<li>${applyHighlightHtml(String(line || ''), terms)}</li>`).join('')
+          : '';
+
+        referenceModal.show();
+      }
+
+      function splitSummaryIntoBullets(text) {
+        return String(text || '')
+          .split(/(?<=[.!?])\s+|(?:\s+ทั้งนี้\s+)|(?:\s+โดย\s+)|\n+/)
+          .map((line) => line.trim())
+          .filter((line) => line.length >= 8);
+      }
+
+      function buildAnswerSectionHtml(title, icon, text, terms) {
+        const cleaned = String(text || '').trim();
+        if (!cleaned) return '';
+
+        const bulletLines = splitSummaryIntoBullets(cleaned);
+        const items = (bulletLines.length ? bulletLines : [cleaned])
           .map((line) => `<li>${applyHighlightHtml(line, terms)}</li>`)
           .join('');
 
         return `
-          <div class="bot-reference-card" data-reference-card="1">
-            <button type="button" class="bot-reference-toggle" data-reference-toggle="1" aria-expanded="false">
-              <span class="bot-reference-toggle-text"><i class="bi bi-journal-text"></i>ดูแหล่งอ้างอิง</span>
-              <i class="bi bi-chevron-down bot-reference-toggle-icon"></i>
-            </button>
-            <ul class="bot-reference-list">${itemsHtml}</ul>
+          <div class="bot-answer-section">
+            <div class="bot-answer-section-title"><i class="bi ${icon}"></i>${escapeHtml(title)}</div>
+            <ul class="bot-answer-bullets">${items}</ul>
           </div>
         `;
       }
@@ -1144,12 +1231,13 @@
         }
 
         const [mainText, referenceText] = raw.split(/\n\s*\nแหล่งอ้างอิง:\s*\n/i);
-        const normalizedMain = String(mainText || raw)
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .join('\n\n');
-        const summaryHtml = decorateBotFallbackHtml(applyHighlightHtml(normalizedMain, terms));
+        const normalizedMain = String(mainText || raw).trim();
+        const summaryMatch = normalizedMain.match(/สรุปสาระสำคัญ:\s*([\s\S]*?)(?:\n\s*\nรายละเอียดเพิ่มเติม:\s*|$)/i);
+        const detailMatch = normalizedMain.match(/รายละเอียดเพิ่มเติม:\s*([\s\S]*)$/i);
+        const summaryHtml = [
+          buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', summaryMatch ? summaryMatch[1] : normalizedMain, terms),
+          detailMatch ? buildAnswerSectionHtml('รายละเอียดเพิ่มเติม', 'bi-info-circle', detailMatch[1], terms) : ''
+        ].filter(Boolean).join('');
         const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
 
         return `<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}</div>`;
@@ -1308,10 +1396,7 @@
         const referenceToggle = content.querySelector('[data-reference-toggle="1"]');
         if (referenceToggle) {
           referenceToggle.addEventListener('click', () => {
-            const card = content.querySelector('[data-reference-card="1"]');
-            if (!card) return;
-            const isOpen = card.classList.toggle('is-open');
-            referenceToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            openReferenceModal(referenceToggle.dataset.referenceLines || '', highlightTerms);
           });
         }
 
