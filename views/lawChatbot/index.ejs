@@ -362,6 +362,37 @@
       gap: 0.75rem;
     }
 
+    .context-chip-row {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+
+    .context-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.32rem;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: #1a577c;
+      background: rgba(47, 127, 184, 0.1);
+      border: 1px solid rgba(47, 127, 184, 0.16);
+      border-radius: 999px;
+      padding: 0.26rem 0.55rem;
+      width: fit-content;
+    }
+
+    .context-reset-btn {
+      border: 0;
+      background: transparent;
+      color: #5f7485;
+      font-size: 0.74rem;
+      font-weight: 600;
+      text-decoration: underline;
+      padding: 0;
+    }
+
     .bot-answer-summary {
       font-size: 0.97rem;
       line-height: 1.7;
@@ -1200,10 +1231,51 @@
       }
 
       function splitSummaryIntoBullets(text) {
-        return String(text || '')
-          .split(/(?<=[.!?])\s+|(?:\s+ทั้งนี้\s+)|(?:\s+โดย\s+)|\n+/)
+        const raw = String(text || '').trim();
+        if (!raw) return [];
+
+        const explicitLines = raw
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+
+        if (explicitLines.length > 1) {
+          return explicitLines;
+        }
+
+        const normalized = raw.replace(/\s+/g, ' ').trim();
+        const sentenceLikeParts = normalized
+          .split(/(?<=[.!?])\s+/)
           .map((line) => line.trim())
           .filter((line) => line.length >= 8);
+
+        if (sentenceLikeParts.length > 1) {
+          return sentenceLikeParts;
+        }
+
+        const numberedMatches = normalized.match(/(?:\(?\d+\)|\d+\.)\s*[^0-9]+(?=(?:\s+\(?\d+\)|\s+\d+\.|$))/g);
+        const numberedParts = (numberedMatches || [])
+          .map((line) => line.replace(/^(\(?\d+\)|\d+\.)\s*/, '').trim())
+          .filter((line) => line.length >= 4);
+
+        if (numberedParts.length > 1) {
+          return numberedParts;
+        }
+
+        const introListMatch = normalized.match(/^(.*?(?:ได้แก่|ประกอบด้วย|มีหน้าที่ดังนี้|มีสาระสำคัญดังนี้)\s*)(.+)$/);
+        if (introListMatch) {
+          const intro = introListMatch[1].trim();
+          const items = introListMatch[2]
+            .split(/\s*[,;]\s*|\s+และ\s+/)
+            .map((line) => line.trim())
+            .filter((line) => line.length >= 6);
+
+          if (items.length > 1) {
+            return [intro, ...items];
+          }
+        }
+
+        return [normalized];
       }
 
       function buildAnswerSectionHtml(title, icon, text, terms) {
@@ -1221,6 +1293,15 @@
             <ul class="bot-answer-bullets">${items}</ul>
           </div>
         `;
+      }
+
+      async function resetConversationContext() {
+        try {
+          await fetch('/law-chatbot/reset-context', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+        } catch (_) {}
       }
 
       function formatBotMessageHtml(text, terms) {
@@ -1377,6 +1458,25 @@
 
         content.appendChild(message);
 
+        if (feedbackContext && feedbackContext.usedFollowUpContext) {
+          const contextRow = document.createElement('div');
+          contextRow.className = 'context-chip-row';
+          contextRow.innerHTML = `
+            <span class="context-badge"><i class="bi bi-link-45deg"></i>อ้างอิงจากคำถามก่อนหน้า</span>
+            <button type="button" class="context-reset-btn">เริ่มหัวข้อใหม่</button>
+          `;
+
+          const resetBtn = contextRow.querySelector('.context-reset-btn');
+          if (resetBtn) {
+            resetBtn.addEventListener('click', async () => {
+              await resetConversationContext();
+              contextRow.innerHTML = '<span class="context-badge"><i class="bi bi-check2-circle"></i>เริ่มหัวข้อใหม่แล้ว</span>';
+            });
+          }
+
+          content.insertBefore(contextRow, message);
+        }
+
         if (
           role === 'bot' &&
           !isLoading &&
@@ -1464,7 +1564,8 @@
           if (hasContext && answerText) {
             const botRow = addBubble(answerText, 'bot', false, dbHighlightTerms, {
               question: trimmed,
-              target: selectedTarget
+              target: selectedTarget,
+              usedFollowUpContext: Boolean(data && data.usedFollowUpContext)
             });
             focusFirstAnswer(botRow);
           }

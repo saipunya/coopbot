@@ -26,6 +26,14 @@ async function chatFeedback(req, res) {
   res.json({ success: true });
 }
 
+async function resetContext(req, res) {
+  if (req.session) {
+    req.session.lawChatbotContext = [];
+  }
+
+  res.json({ success: true });
+}
+
 async function renderUpload(req, res) {
   const data = await lawChatbotService.getUploadPageData();
 
@@ -73,6 +81,7 @@ module.exports = {
   chat,
   chatSummary,
   chatFeedback,
+  resetContext,
   renderUpload,
   handleUpload,
   renderFeedback,

@@ -158,6 +158,69 @@ function storeConversationContext(session, target, originalMessage, effectiveMes
   session[CHAT_CONTEXT_KEY] = history.slice(0, CONTEXT_HISTORY_LIMIT);
 }
 
+async function searchAllSources(message, target) {
+  const structuredMatches = await LawSearchModel.searchStructuredLaws(message, target, 4);
+  const pdfMatches = await LawChatbotPdfChunkModel.searchChunks(message, 4);
+  const fallbackMatches = LawChatbotModel.searchKnowledge(message, target);
+
+  return [...structuredMatches, ...pdfMatches, ...fallbackMatches]
+    .filter(Boolean)
+    .sort((a, b) => (b.score || 0) - (a.score || 0))
+    .slice(0, 5);
+}
+
+function scoreMatchSet(matches) {
+  if (!matches.length) {
+    return 0;
+  }
+
+  const top = Number(matches[0]?.score || 0);
+  const second = Number(matches[1]?.score || 0);
+  return top + second * 0.35;
+}
+
+async function resolveSearchPlan(message, target, session) {
+  const baseMessage = String(message || "").trim();
+  const contextualCandidate = resolveMessageWithContext(baseMessage, target, session);
+
+  const standaloneMatches = await searchAllSources(baseMessage, target);
+  const standaloneScore = scoreMatchSet(standaloneMatches);
+
+  if (!contextualCandidate.usedContext) {
+    return {
+      effectiveMessage: baseMessage,
+      matches: standaloneMatches,
+      resolvedContext: contextualCandidate,
+    };
+  }
+
+  const contextualMatches = await searchAllSources(contextualCandidate.effectiveMessage, target);
+  const contextualScore = scoreMatchSet(contextualMatches);
+  const shouldUseContext =
+    contextualMatches.length > 0 &&
+    (standaloneMatches.length === 0 ||
+      contextualScore >= standaloneScore + 8 ||
+      contextualScore >= standaloneScore * 1.2);
+
+  if (!shouldUseContext) {
+    return {
+      effectiveMessage: baseMessage,
+      matches: standaloneMatches,
+      resolvedContext: {
+        ...contextualCandidate,
+        effectiveMessage: baseMessage,
+        usedContext: false,
+      },
+    };
+  }
+
+  return {
+    effectiveMessage: contextualCandidate.effectiveMessage,
+    matches: contextualMatches,
+    resolvedContext: contextualCandidate,
+  };
+}
+
 async function getDashboardData() {
   const uploadedChunkCount = await LawChatbotPdfChunkModel.countChunks();
 
@@ -184,16 +247,10 @@ async function replyToChat(payload, session) {
     };
   }
 
-  const resolvedContext = resolveMessageWithContext(message, target, session);
-  const effectiveMessage = resolvedContext.effectiveMessage || message;
-
-  const structuredMatches = await LawSearchModel.searchStructuredLaws(effectiveMessage, target, 4);
-  const pdfMatches = await LawChatbotPdfChunkModel.searchChunks(effectiveMessage, 4);
-  const fallbackMatches = LawChatbotModel.searchKnowledge(effectiveMessage, target);
-  const matches = [...structuredMatches, ...pdfMatches, ...fallbackMatches]
-    .filter(Boolean)
-    .sort((a, b) => (b.score || 0) - (a.score || 0))
-    .slice(0, 5);
+  const searchPlan = await resolveSearchPlan(message, target, session);
+  const resolvedContext = searchPlan.resolvedContext;
+  const effectiveMessage = searchPlan.effectiveMessage || message;
+  const matches = searchPlan.matches;
   const highlightTerms = effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8);
 
   let answer = "";
@@ -238,15 +295,10 @@ async function summarizeChat(payload, session) {
   }
 
   const target = payload.target === "group" ? "group" : "coop";
-  const resolvedContext = resolveMessageWithContext(message, target, session);
-  const effectiveMessage = resolvedContext.effectiveMessage || message;
-  const structuredMatches = await LawSearchModel.searchStructuredLaws(effectiveMessage, target, 4);
-  const pdfMatches = await LawChatbotPdfChunkModel.searchChunks(effectiveMessage, 4);
-  const fallbackMatches = LawChatbotModel.searchKnowledge(effectiveMessage, target);
-  const matches = [...structuredMatches, ...pdfMatches, ...fallbackMatches]
-    .filter(Boolean)
-    .sort((a, b) => (b.score || 0) - (a.score || 0))
-    .slice(0, 5);
+  const searchPlan = await resolveSearchPlan(message, target, session);
+  const resolvedContext = searchPlan.resolvedContext;
+  const effectiveMessage = searchPlan.effectiveMessage || message;
+  const matches = searchPlan.matches;
 
   return {
     summary: await generateChatSummary(message, matches, {

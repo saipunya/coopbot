@@ -33,6 +33,7 @@ router.get("/", attachCurrentUser, controller.renderIndex);
 router.post("/chat", attachCurrentUser, controller.chat);
 router.post("/chat-summary", attachCurrentUser, controller.chatSummary);
 router.post("/chat-feedback", attachCurrentUser, controller.chatFeedback);
+router.post("/reset-context", attachCurrentUser, controller.resetContext);
 router.get("/upload", requireAdminAuth, controller.renderUpload);
 router.post("/upload", requireAdminAuth, handleUploadMiddleware, controller.handleUpload);
 router.get("/feedback", requireAdminAuth, controller.renderFeedback);
