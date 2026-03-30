@@ -6,6 +6,11 @@ const {
   uniqueTokens,
 } = require("../services/thaiTextUtils");
 
+function extractLawNumber(text) {
+  const match = String(text || "").match(/\d+/);
+  return match ? match[0] : null;
+}
+
 function scoreResult(query, text, primaryLabel) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const normalizedText = normalizeForSearch(text).toLowerCase();
@@ -132,6 +137,8 @@ class LawSearchModel {
       params
     );
 
+    const queryLawNumber = extractLawNumber(message);
+
     return rows
       .map((row) => {
         const combinedText = [
@@ -141,6 +148,12 @@ class LawSearchModel {
           row.law_comment,
         ].join(" ");
 
+        let score = scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`);
+
+        if (queryLawNumber && extractLawNumber(row.law_number) === queryLawNumber) {
+          score += 45;
+        }
+
         return {
           id: row.id,
           source: sourceName,
@@ -148,7 +161,7 @@ class LawSearchModel {
           reference: row.law_number || row.law_part || sourceName,
           content: row.law_detail || "",
           comment: row.law_comment || "",
-          score: scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`),
+          score,
         };
       })
       .filter((row) => row.score > 0)
