@@ -2,6 +2,12 @@ const { GoogleGenAI } = require("@google/genai");
 
 let client = null;
 
+const SOURCE_LABELS = {
+  tbl_laws: "พรบ.สหกรณ์ พ.ศ. 2542",
+  tbl_glaws: "พรฎ.กลุ่มเกษตรกร พ.ศ. 2547",
+  pdf_chunks: "เอกสารที่อัปโหลด",
+};
+
 function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {
@@ -25,7 +31,7 @@ function buildSourceContext(sources) {
     .map((source, index) => {
       return [
         `แหล่งข้อมูลที่ ${index + 1}`,
-        `ตาราง: ${source.source || "pdf_chunks"}`,
+        `ตาราง: ${SOURCE_LABELS[source.source] || source.source || "เอกสารที่อัปโหลด"}`,
         `หัวข้อ: ${source.title || "-"}`,
         `อ้างอิง: ${source.reference || "-"}`,
         `เนื้อหา: ${source.content || source.chunk_text || "-"}`,
@@ -36,20 +42,22 @@ function buildSourceContext(sources) {
 }
 
 function formatReferenceLine(source) {
-  const tableName = source.source || "pdf_chunks";
+  const tableName = SOURCE_LABELS[source.source] || source.source || "เอกสารที่อัปโหลด";
   const reference = source.reference || source.title || "ไม่ระบุอ้างอิง";
-  return `  - ${tableName}: ${reference}`;
+  return `- ${tableName}: ${reference}`;
 }
 
 function buildReferenceSection(sources) {
   const topSources = sources.slice(0, 3);
-  return ["- แหล่งอ้างอิง", ...topSources.map(formatReferenceLine)].join("\n");
+  return ["แหล่งอ้างอิง:", ...topSources.map(formatReferenceLine)].join("\n");
 }
 
 function cleanLine(text) {
   return String(text || "")
     .replace(/^#{1,6}\s*/, "")
     .replace(/^[*-]\s*/, "")
+    .replace(/^สรุป:\s*/i, "")
+    .replace(/^อธิบายเพิ่มเติม:\s*/i, "")
     .replace(/^สรุปคำตอบดังนี้:?\s*/i, "")
     .replace(/^คำตอบ(?:สรุป)?ดังนี้:?\s*/i, "")
     .replace(/\s+/g, " ")
@@ -122,8 +130,39 @@ function splitExplainSections(lines) {
   };
 }
 
+function normalizeParagraph(text) {
+  return String(text || "")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function joinSentences(lines) {
+  return uniqueCleanLines(lines, 3)
+    .map((line) => line.replace(/[.;]+$/g, "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function buildParagraphSummary(summaryLines, detailLines, explainMode) {
+  const summaryText = joinSentences(summaryLines);
+  const detailText = joinSentences(detailLines);
+  const blocks = [];
+
+  if (summaryText) {
+    blocks.push(`สรุป: ${summaryText}`);
+  }
+
+  if (explainMode && detailText) {
+    blocks.push(`อธิบายเพิ่มเติม: ${detailText}`);
+  }
+
+  return blocks.join("\n\n").trim();
+}
+
 function normalizeModelSummary(text, explainMode, sources) {
-  const raw = String(text || "").trim();
+  const raw = normalizeParagraph(text);
 
   if (!raw) {
     return "";
@@ -149,12 +188,7 @@ function normalizeModelSummary(text, explainMode, sources) {
           2,
         );
 
-    return [
-      "- สรุปใจความสำคัญ",
-      ...fallbackSummary.map((line) => `  - ${line}`),
-      "- คำอธิบายเพิ่มเติม",
-      ...fallbackDetail.map((line) => `  - ${line}`),
-    ].join("\n");
+    return buildParagraphSummary(fallbackSummary, fallbackDetail, true);
   }
 
   const conciseLines = uniqueCleanLines(lines, 3);
@@ -163,10 +197,7 @@ function normalizeModelSummary(text, explainMode, sources) {
     return "";
   }
 
-  return [
-    "- สรุปใจความสำคัญ",
-    ...conciseLines.map((line) => `  - ${line}`),
-  ].join("\n");
+  return buildParagraphSummary(conciseLines, [], false);
 }
 
 function buildFallbackSummary(sources, explainMode) {
@@ -188,21 +219,15 @@ function buildFallbackSummary(sources, explainMode) {
     return "ไม่พบข้อมูลที่เกี่ยวข้องชัดเจน กรุณาระบุคำค้นให้เฉพาะเจาะจงขึ้น";
   }
 
-  return [
-    "- สรุปใจความสำคัญ",
-    ...importantPoints,
-    ...(explainMode
-      ? [
-          "- คำอธิบายเพิ่มเติม",
-          ...(detailPoints.length
-            ? detailPoints.map((line) => `  - ${line}`)
-            : ["  - หากต้องการรายละเอียดเพิ่ม สามารถพิมพ์คำว่า อธิบาย แล้วตามด้วยประเด็นที่ต้องการได้"]),
-        ]
-      : []),
-    ...buildReferenceSection(topSources).split("\n"),
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const answerText = buildParagraphSummary(
+    importantPoints,
+    detailPoints.length
+      ? detailPoints
+      : ["หากต้องการรายละเอียดเพิ่ม สามารถพิมพ์คำว่า อธิบาย แล้วตามด้วยประเด็นที่ต้องการได้"],
+    explainMode,
+  );
+
+  return [answerText, buildReferenceSection(topSources)].filter(Boolean).join("\n\n");
 }
 
 async function generateChatSummary(message, sources) {
@@ -214,8 +239,8 @@ async function generateChatSummary(message, sources) {
   }
 
   const instruction = explainMode
-    ? "สรุปคำตอบจากข้อมูลกฎหมายที่ให้มาเป็นภาษาไทยแบบชัดเจน กระชับ และตรงประเด็น ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ห้ามใช้ markdown heading ห้ามขึ้นต้นด้วยคำเกริ่น เช่น สรุปคำตอบดังนี้ ให้มีเพียง 2 section คือ - สรุปใจความสำคัญ และ - คำอธิบายเพิ่มเติม แต่ละข้อย่อยต้องขึ้นต้นด้วย '  - ' และเน้นอธิบายเฉพาะเมื่อผู้ใช้ขอ"
-    : "สรุปคำตอบจากข้อมูลกฎหมายที่ให้มาเป็นภาษาไทยแบบสั้น ชัด และตรงประเด็น ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ห้ามใช้ markdown heading และห้ามเกริ่นนำยาว ให้มีเพียง section เดียวคือ - สรุปใจความสำคัญ และแต่ละข้อย่อยต้องขึ้นต้นด้วย '  - '";
+    ? "สรุปคำตอบจากข้อมูลกฎหมายที่ให้มาเป็นภาษาไทยแบบชัดเจน กระชับ และตรงประเด็น ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ใช้สำนวนธรรมชาติแบบตอบต่อเนื่อง ไม่ต้องทำเป็น bullet หรือ markdown heading โดยย่อหน้าแรกขึ้นต้นด้วย 'สรุป:' และย่อหน้าถัดไปขึ้นต้นด้วย 'อธิบายเพิ่มเติม:'"
+    : "สรุปคำตอบจากข้อมูลกฎหมายที่ให้มาเป็นภาษาไทยแบบสั้น ชัด และตรงประเด็น ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ใช้สำนวนธรรมชาติแบบตอบต่อเนื่อง ไม่ต้องทำเป็น bullet หรือ markdown heading และให้ขึ้นต้นด้วย 'สรุป:'";
 
   try {
     const response = await gemini.models.generateContent({
@@ -230,7 +255,7 @@ async function generateChatSummary(message, sources) {
     if (!normalized) {
       return buildFallbackSummary(sources, explainMode);
     }
-    return [normalized, buildReferenceSection(sources)].join("\n");
+    return [normalized, buildReferenceSection(sources)].join("\n\n");
   } catch (error) {
     return buildFallbackSummary(sources, explainMode);
   }
@@ -239,4 +264,5 @@ async function generateChatSummary(message, sources) {
 module.exports = {
   generateChatSummary,
   wantsExplanation,
+  SOURCE_LABELS,
 };

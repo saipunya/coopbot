@@ -1255,37 +1255,7 @@
             focusFirstAnswer(botRow);
           }
 
-          const aiLoadingRow = addBubble('🤖 รอสักครู่! กำลังประมวลผล...', 'bot', true, [], null, false);
-
-          void (async () => {
-            try {
-              const summaryResponse = await fetch('/law-chatbot/chat-summary', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: trimmed, target: selectedTarget })
-              });
-
-              const summaryData = await summaryResponse.json();
-              const summaryText = summaryData && summaryData.summary ? String(summaryData.summary).trim() : '';
-
-              if (aiLoadingRow && aiLoadingRow.parentNode) {
-                aiLoadingRow.remove();
-              }
-
-              if (!summaryText) return;
-
-              const summaryRow = addBubble(`🤖 สรุปโดย AI (coopbot)\n${summaryText}`, 'bot', false, buildHighlightTerms(trimmed), {
-                question: trimmed,
-                target: selectedTarget,
-                variant: 'ai'
-              }, false);
-              saveRecentChats();
-            } catch (_) {
-              if (aiLoadingRow && aiLoadingRow.parentNode) {
-                aiLoadingRow.remove();
-              }
-            }
-          })();
+          saveRecentChats();
         } catch (_) {
           chatMessages.lastElementChild.remove();
           const botRow = addBubble('ขออภัยครับ! ไม่พบข้อมูลที่ชัดเจน ลองเปลี่ยนคำค้นหา', 'bot', false, [], {
