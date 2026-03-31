@@ -238,6 +238,7 @@ function prioritizeMatches(matches, options = {}) {
 
 function classifyQuestionIntent(message) {
   const text = normalizeForSearch(String(message || "")).toLowerCase();
+  const asksExplanation = wantsExplanation(text);
 
   const asksLawSection =
     /มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+/.test(text);
@@ -250,6 +251,10 @@ function classifyQuestionIntent(message) {
     /คืออะไร|หมายถึง|เท่าไร|เท่าไหร่|กี่บาท|กี่เปอร์เซ็นต์|กี่ร้อยละ|เมื่อไร|เมื่อไหร่|ต้อง|ควร|ได้ไหม|ได้หรือไม่/.test(
       text,
     );
+
+  if (asksExplanation) {
+    return "explain";
+  }
 
   if (asksLawSection) {
     return "law_section";
@@ -272,6 +277,25 @@ function classifyQuestionIntent(message) {
 
 function getSourceRoutingPlan(intent) {
   switch (intent) {
+    case "explain":
+      return {
+        priorities: {
+          structured_laws: 6,
+          documents: 5,
+          pdf_chunks: 5,
+          vinichai: 4,
+          admin_knowledge: 4,
+          knowledge_base: 1,
+        },
+        limits: {
+          structured_laws: 4,
+          documents: 3,
+          pdf_chunks: 5,
+          vinichai: 3,
+          admin_knowledge: 2,
+          knowledge_base: 1,
+        },
+      };
     case "law_section":
       return {
         priorities: {
