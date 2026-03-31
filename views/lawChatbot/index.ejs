@@ -905,7 +905,7 @@
       <div class="page-brand">
         <div class="brand-icon"><i class="bi bi-robot"></i></div>
         <div class="brand-title">
-          <h5>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (version 1.0)</h5>
+          <h6>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (version 1.0)</h5>
           <p>ค้นหากฎหมายสหกรณ์แบบ PWA สำหรับมือถือและเดสก์ท็อป</p>
         </div>
       </div>
@@ -2068,7 +2068,9 @@
         initVoiceRecognition();
       }
       restoreRecentChats();
-      if (!chatMessages.querySelector('.bubble')) addBubble('ถ้าต้องการถามเรื่องใหม่ ให้กดเคลียร์ประวัติก่อน และถ้าต้องการถามเรื่องเดิมต่อเนื่อง ก็พิมพ์ถามต่อได้เลย', 'bot');
+      if (!chatMessages.querySelector('.bubble')) addBubble('ถ้าต้องการถามเรื่องใหม่ ให้กด <i class="bi bi-trash-fill"></i> ก่อน และถ้าต้องการถามเรื่องเดิมต่อเนื่อง ก็พิมพ์ถามต่อได้เลย', 'bot', false, [], null, true, {
+        renderedHtml: 'ถ้าต้องการถามเรื่องใหม่ ให้กด <i class="bi bi-trash-fill"></i> ก่อน และถ้าต้องการถามเรื่องเดิมต่อเนื่อง ก็พิมพ์ถามต่อได้เลย'
+      });
 
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
