@@ -881,7 +881,7 @@
       <div class="page-brand">
         <div class="brand-icon"><i class="bi bi-robot"></i></div>
         <div class="brand-title">
-          <h2>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (version 1.0)</h2>
+          <h4>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (version 1.0)</h4>
           <p>ค้นหากฎหมายสหกรณ์แบบ PWA สำหรับมือถือและเดสก์ท็อป</p>
         </div>
       </div>
@@ -1039,7 +1039,7 @@
         </div>
         <div id="voiceStatus" class="small text-muted mt-1"></div>
         <div class="composer-hint">
-          <span><strong>ทิป:</strong> สั้น ๆ เพื่อค้นหาได้เร็วขึ้น</span>
+          <span><strong>ทิป:</strong> ถ้าต้องการถามเรื่องใหม่ ให้กดเคลียร์ประวัติ</span>
           <span><i class="bi bi-phone"></i> รองรับการติดตั้งเป็นแอป</span>
         </div>
       </form>
@@ -1683,7 +1683,7 @@
           const contextRow = document.createElement('div');
           contextRow.className = 'context-chip-row';
           contextRow.innerHTML = `
-            <span class="context-badge"><i class="bi bi-link-45deg"></i>อ้างอิงจากคำถามก่อนหน้า</span>
+            <span class="context-badge"><i class="bi bi-link-45deg"></i>ถามต่อเรื่องเดิมได้เลย ถ้าจะถามเรื่องใหม่ให้กดเคลียร์ประวัติ</span>
             <button type="button" class="context-reset-btn">เริ่มหัวข้อใหม่</button>
           `;
 
@@ -2002,7 +2002,7 @@
         await resetConversationContext();
         chatMessages.innerHTML = '';
         localStorage.removeItem(CHAT_CACHE_KEY);
-        addBubble('เริ่มหัวข้อใหม่แล้ว กรุณาระบุประเด็นที่ต้องการสอบถามได้เลย', 'bot');
+        addBubble('ล้างประวัติแล้ว ถ้าต้องการถามเรื่องใหม่ให้พิมพ์ได้เลย และถ้าจะถามเรื่องเดิมต่อเนื่องครั้งถัดไปก็พิมพ์ถามต่อได้ทันที', 'bot');
       });
 
       if (toggleHeaderBtn) {
@@ -2044,7 +2044,7 @@
         initVoiceRecognition();
       }
       restoreRecentChats();
-      if (!chatMessages.querySelector('.bubble')) addBubble('กรุณาใส่คำที่เกี่ยวข้องเท่านั้น !', 'bot');
+      if (!chatMessages.querySelector('.bubble')) addBubble('ถ้าต้องการถามเรื่องใหม่ ให้กดเคลียร์ประวัติก่อน และถ้าต้องการถามเรื่องเดิมต่อเนื่อง ก็พิมพ์ถามต่อได้เลย', 'bot');
 
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
