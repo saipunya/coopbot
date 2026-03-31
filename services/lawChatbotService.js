@@ -641,7 +641,7 @@ async function replyToChat(payload, session) {
     answer =
       "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนทั้งในฐานข้อมูลและแหล่งข้อมูลสาธารณะ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
-    answer = await generateChatSummary(message, sources.slice(0, wantsExplanation(message) ? 6 : 5), {
+    answer = await generateChatSummary(message, wantsExplanation(message) ? sources : sources.slice(0, 5), {
       conversationalFollowUp: resolvedContext.usedContext,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
     });
