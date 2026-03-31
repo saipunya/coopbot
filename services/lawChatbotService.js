@@ -226,18 +226,33 @@ async function searchInternetSources(message, target) {
 
   try {
     const html = await fetchText(searchUrl);
-    return extractWebSearchResults(html, WEB_SEARCH_LIMIT)
-      .map((result, index) => ({
+    if (process.env.DEBUG_INTERNET_SEARCH === "true") {
+      console.log("[searchInternetSources] HTML length:", html?.length || 0);
+      console.log("[searchInternetSources] Has result__a:", html?.includes("result__a"));
+    }
+    const rawResults = extractWebSearchResults(html, WEB_SEARCH_LIMIT);
+    if (process.env.DEBUG_INTERNET_SEARCH === "true") {
+      console.log("[searchInternetSources] Raw results:", rawResults?.length || 0);
+    }
+    const scoredResults = rawResults.map((result, index) => {
+      const baseScore = scoreInternetSource(searchQuery, result);
+      return {
         ...result,
         source: "internet_search",
         reference: result.title || result.domain || result.url || "ข้อมูลจากอินเทอร์เน็ต",
         content: result.snippet || result.title || "",
-        score: scoreInternetSource(searchQuery, result) - index,
-      }))
+        score: baseScore,
+      };
+    });
+    if (process.env.DEBUG_INTERNET_SEARCH === "true") {
+      console.log("[searchInternetSources] Scores:", scoredResults.map(r => r.score));
+    }
+    return scoredResults
       .filter((result) => result.score > 0)
       .sort((a, b) => (b.score || 0) - (a.score || 0))
       .slice(0, WEB_SEARCH_LIMIT);
-  } catch {
+  } catch (err) {
+    console.error("[searchInternetSources] Error:", err?.message || err);
     return [];
   }
 }
@@ -720,15 +735,17 @@ function selectTieredSources(groups, intent = "general") {
 async function collectAnswerSources(message, target, session) {
   const startedAt = nowMs();
   const questionIntent = classifyQuestionIntent(message);
-  const searchPlan = await resolveSearchPlan(message, target, session);
-  const afterDatabaseSearchAt = nowMs();
-  const effectiveMessage = searchPlan.effectiveMessage || String(message || "").trim();
+  const effectiveMessage = String(message || "").trim();
+
+  // Search DB and Internet in parallel for faster response
+  const [searchPlan, internetMatches] = await Promise.all([
+    resolveSearchPlan(message, target, session),
+    searchInternetSources(effectiveMessage, target),
+  ]);
+  const afterSearchAt = nowMs();
+
+  const resolvedEffectiveMessage = searchPlan.effectiveMessage || effectiveMessage;
   const databaseMatches = Array.isArray(searchPlan.matches) ? searchPlan.matches : [];
-  const shouldUseInternetFallback = databaseMatches.length === 0;
-  const internetMatches = shouldUseInternetFallback
-    ? await searchInternetSources(effectiveMessage, target)
-    : [];
-  const afterInternetSearchAt = nowMs();
 
   const grouped = {
     structured_laws: databaseMatches.filter(
@@ -747,17 +764,15 @@ async function collectAnswerSources(message, target, session) {
   return {
     ...searchPlan,
     questionIntent,
-    effectiveMessage,
+    effectiveMessage: resolvedEffectiveMessage,
     databaseMatches,
     internetMatches,
     sources: selectedSources,
     selectedSourceTier,
-    usedInternetFallback: internetMatches.length > 0,
-    attemptedInternetFallback: shouldUseInternetFallback,
+    usedInternetSearch: internetMatches.length > 0,
     timing: {
-      databaseSearchMs: Math.round(afterDatabaseSearchAt - startedAt),
-      internetSearchMs: Math.round(afterInternetSearchAt - afterDatabaseSearchAt),
-      totalSourceCollectionMs: Math.round(afterInternetSearchAt - startedAt),
+      parallelSearchMs: Math.round(afterSearchAt - startedAt),
+      totalSourceCollectionMs: Math.round(afterSearchAt - startedAt),
     },
   };
 }
@@ -910,6 +925,8 @@ async function replyToChat(payload, session) {
     result.debug = {
       selectedSourceTier: evidence.selectedSourceTier || "none",
       sourceCount: sources.length,
+      databaseMatches: evidence.databaseMatches?.length || 0,
+      internetMatches: evidence.internetMatches?.length || 0,
       timing: {
         ...(evidence.timing || {}),
         answerGenerationMs: Math.round(afterAnswerGenerationAt - afterCollectSourcesAt),
