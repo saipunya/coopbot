@@ -90,6 +90,22 @@
       white-space: nowrap;
     }
 
+    .clear-chat-btn {
+      border-radius: 999px;
+      box-shadow: 0 8px 18px rgba(139, 46, 46, 0.16);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.42rem 0.72rem;
+      font-size: 0.72rem;
+      min-height: 2.35rem;
+      font-weight: 700;
+    }
+
+    .clear-chat-btn span {
+      white-space: nowrap;
+    }
+
     .lawbot-app.headers-collapsed .page-header {
       display: none;
     }
@@ -784,10 +800,17 @@
         display: none;
       }
 
-      .floating-controls #clearChatBtn {
+      .clear-chat-btn {
         width: 2.5rem;
         height: 2.5rem;
+        padding: 0;
+        justify-content: center;
+        gap: 0;
         font-size: 0.98rem;
+      }
+
+      .clear-chat-btn span {
+        display: none;
       }
       .brand-title p {
         display: none;
@@ -872,8 +895,9 @@
         <i class="bi bi-layout-text-sidebar-reverse"></i>
         <span>ซ่อนหัวระบบ</span>
       </button>
-      <button type="button" id="clearChatBtn" class="btn btn-sm btn-outline-danger icon-chip-btn" title="ล้างประวัติแชต" aria-label="ล้างประวัติแชต">
-        <i class="bi bi-trash3"></i>
+      <button type="button" id="clearChatBtn" class="btn btn-sm btn-outline-danger clear-chat-btn" title="ลบประวัติแชต" aria-label="ลบประวัติแชต">
+        <i class="bi bi-trash-fill"></i>
+        <span>ลบประวัติ</span>
       </button>
     </div>
 
@@ -881,7 +905,7 @@
       <div class="page-brand">
         <div class="brand-icon"><i class="bi bi-robot"></i></div>
         <div class="brand-title">
-          <h4>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (version 1.0)</h4>
+          <h5>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (version 1.0)</h5>
           <p>ค้นหากฎหมายสหกรณ์แบบ PWA สำหรับมือถือและเดสก์ท็อป</p>
         </div>
       </div>
