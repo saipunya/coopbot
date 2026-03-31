@@ -189,6 +189,8 @@
         display: flex;
         justify-content: flex-end;
         margin-top: 0.85rem;
+        gap: 0.65rem;
+        flex-wrap: wrap;
       }
       .danger-btn {
         border: none;
@@ -199,6 +201,22 @@
         cursor: pointer;
         font-weight: 700;
         box-shadow: 0 10px 24px rgba(146, 47, 36, 0.18);
+      }
+      .secondary-btn {
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(145deg, #7c8c98, #607180);
+        color: #fff;
+        padding: 0.7rem 0.9rem;
+        cursor: pointer;
+        font-weight: 700;
+        box-shadow: 0 10px 24px rgba(96, 113, 128, 0.16);
+      }
+      .suggestion-meta {
+        margin-top: 0.45rem;
+        color: var(--text-sub);
+        font-size: 0.92rem;
+        line-height: 1.6;
       }
       .soft-list {
         list-style: none;
@@ -305,6 +323,7 @@
           <li><a href="/law-chatbot/upload">หน้าจัดการอัปโหลด</a></li>
           <li><a href="/law-chatbot/feedback">หน้าดู feedback</a></li>
           <li><a href="#knowledge-management">จัดการความรู้แชตบอท</a></li>
+          <li><a href="#knowledge-suggestions">ตรวจข้อเสนอจากผู้ใช้งาน</a></li>
         </ul>
       </section>
 
@@ -368,6 +387,37 @@
                 <form action="/admin/knowledge/delete" method="post" onsubmit="return confirm('ยืนยันการลบข้อมูลฐานความรู้นี้ใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />
                   <button class="danger-btn" type="submit">ลบรายการนี้</button>
+                </form>
+              </div>
+            </li>
+          <% }) %>
+        </ul>
+      </section>
+
+      <section class="card" id="knowledge-suggestions">
+        <h2>ข้อเสนอคำตอบจากผู้ใช้งาน</h2>
+        <p>รอตรวจสอบ <strong><%= knowledgeData.pendingSuggestionCount %></strong> รายการ</p>
+        <ul class="knowledge-list soft-list">
+          <% if (knowledgeData.pendingSuggestions.length === 0) { %>
+            <li>ยังไม่มีข้อเสนอคำตอบที่รออนุมัติ</li>
+          <% } %>
+          <% knowledgeData.pendingSuggestions.forEach((item) => { %>
+            <li>
+              <strong><%= item.title %></strong>
+              <div class="suggestion-meta">
+                ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : 'สหกรณ์' %>
+                <% if (item.sourceType) { %> | ช่องทาง: <%= item.sourceType === 'voice' ? 'เสียง' : 'ข้อความ' %><% } %>
+                <% if (item.createdAt) { %> | ส่งเมื่อ: <%= item.createdAt %><% } %>
+              </div>
+              <div style="margin-top: 0.6rem; color: var(--text-main); white-space: pre-line;"><%= item.content %></div>
+              <div class="knowledge-actions">
+                <form action="/admin/knowledge-suggestions/approve" method="post" onsubmit="return confirm('ยืนยันการอนุมัติและนำเข้าฐานความรู้ใช่หรือไม่');">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <button class="primary-btn" type="submit">อนุมัติและนำเข้า</button>
+                </form>
+                <form action="/admin/knowledge-suggestions/reject" method="post" onsubmit="return confirm('ยืนยันการปฏิเสธข้อเสนอนี้ใช่หรือไม่');">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <button class="secondary-btn" type="submit">ปฏิเสธ</button>
                 </form>
               </div>
             </li>

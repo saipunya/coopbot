@@ -35,6 +35,7 @@ router.post("/chat", attachCurrentUser, controller.chat);
 router.post("/chat-summary", attachCurrentUser, controller.chatSummary);
 router.post("/chat-feedback", attachCurrentUser, controller.chatFeedback);
 router.post("/admin-knowledge", requireAdminAuth, controller.saveKnowledgeFromChat);
+router.post("/knowledge-suggestion", attachCurrentUser, controller.submitKnowledgeSuggestion);
 router.post("/reset-context", attachCurrentUser, controller.resetContext);
 router.get("/upload", requireAdminAuth, controller.renderUpload);
 router.post("/upload", requireAdminAuth, handleUploadMiddleware, controller.handleUpload);

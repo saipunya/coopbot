@@ -39,6 +39,39 @@ function buildLawNumberPatterns(number) {
   ]);
 }
 
+function isDirectLawNumberQuery(text) {
+  const normalized = normalizeForSearch(text).toLowerCase();
+  return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+(?:\s|$)/.test(normalized);
+}
+
+async function findExactLawRows(pool, tableConfig, queryLawNumber) {
+  const [tableName, idField, numberField, partField, detailField, commentField, sourceName] = tableConfig;
+  const number = String(queryLawNumber || "").trim();
+  if (!number) {
+    return [];
+  }
+
+  const exactTerms = [
+    `มาตรา ${number}`,
+    `มาตรา${number}`,
+    `ข้อ ${number}`,
+    `ข้อ${number}`,
+    number,
+  ];
+
+  const [rows] = await pool.query(
+    `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
+            ${detailField} AS law_detail, ${commentField} AS law_comment
+       FROM ${tableName}
+      WHERE TRIM(${numberField}) IN (?, ?, ?, ?, ?)
+         OR REPLACE(TRIM(${numberField}), ' ', '') IN (?, ?, ?, ?, ?)
+      LIMIT 20`,
+    [...exactTerms, ...exactTerms.map((term) => term.replace(/\s+/g, ""))],
+  );
+
+  return rows.map((row) => ({ ...row, __sourceName: sourceName }));
+}
+
 function scoreResult(query, text, primaryLabel) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const normalizedText = normalizeForSearch(text).toLowerCase();
@@ -152,6 +185,29 @@ class LawSearchModel {
               ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws"],
             ];
 
+    if (queryLawNumber && isDirectLawNumberQuery(message)) {
+      const exactRowGroups = await Promise.all(
+        tableConfigs.map((tableConfig) => findExactLawRows(pool, tableConfig, queryLawNumber)),
+      );
+
+      const exactRanked = exactRowGroups
+        .flat()
+        .map((row) => ({
+          id: row.id,
+          source: row.__sourceName,
+          title: row.law_part || row.law_number || "กฎหมายที่เกี่ยวข้อง",
+          reference: row.law_number || row.law_part || row.__sourceName,
+          content: row.law_detail || "",
+          comment: row.law_comment || "",
+          score: 999,
+        }))
+        .filter((row) => extractLawNumber(row.reference || row.title || "") === queryLawNumber);
+
+      if (exactRanked.length > 0) {
+        return exactRanked.slice(0, limit);
+      }
+    }
+
     const rowGroups = await Promise.all(
       tableConfigs.map(async ([tableName, idField, numberField, partField, detailField, commentField, sourceName]) => {
         const lawNumberPatterns = buildLawNumberPatterns(queryLawNumber);
@@ -180,7 +236,7 @@ class LawSearchModel {
       }),
     );
 
-    return rowGroups
+    const rankedResults = rowGroups
       .flat()
       .map((row) => {
         const combinedText = [
@@ -225,8 +281,19 @@ class LawSearchModel {
         };
       })
       .filter((row) => row.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+      .sort((a, b) => b.score - a.score);
+
+    if (queryLawNumber && isDirectLawNumberQuery(message)) {
+      const exactLawMatches = rankedResults.filter(
+        (row) => extractLawNumber(row.reference || row.title || "") === queryLawNumber,
+      );
+
+      if (exactLawMatches.length > 0) {
+        return exactLawMatches.slice(0, limit);
+      }
+    }
+
+    return rankedResults.slice(0, limit);
   }
 }
 

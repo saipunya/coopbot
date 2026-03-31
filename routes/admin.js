@@ -15,6 +15,8 @@ router.get("/auth/google/callback", redirectIfAuthenticated, adminController.han
 router.get("/", requireAdminAuth, adminController.renderDashboard);
 router.post("/knowledge", requireAdminAuth, adminController.submitKnowledge);
 router.post("/knowledge/delete", requireAdminAuth, adminController.deleteKnowledge);
+router.post("/knowledge-suggestions/approve", requireAdminAuth, adminController.approveKnowledgeSuggestion);
+router.post("/knowledge-suggestions/reject", requireAdminAuth, adminController.rejectKnowledgeSuggestion);
 router.post("/logout", requireAdminAuth, adminController.logout);
 
 module.exports = router;

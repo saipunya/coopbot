@@ -673,8 +673,46 @@
       --bs-btn-hover-border-color: #0f5b87;
     }
 
+    .feedback-actions .btn-knowledge-suggestion {
+      --bs-btn-color: #1d4f8b;
+      --bs-btn-border-color: #a5c0df;
+      --bs-btn-bg: rgba(255, 255, 255, 0.94);
+      --bs-btn-hover-color: #fff;
+      --bs-btn-hover-bg: #2a6ca8;
+      --bs-btn-hover-border-color: #2a6ca8;
+    }
+
     .bubble-content .feedback-actions {
       margin-left: auto;
+    }
+
+    .knowledge-suggestion-form .form-label {
+      font-weight: 600;
+      color: var(--primary-strong);
+      margin-bottom: 0.35rem;
+    }
+
+    .knowledge-suggestion-form .form-control,
+    .knowledge-suggestion-form .form-select {
+      border-color: #c8d9e7;
+      border-radius: 0.75rem;
+    }
+
+    .knowledge-suggestion-form .form-control:focus,
+    .knowledge-suggestion-form .form-select:focus {
+      border-color: #6aa6cc;
+      box-shadow: 0 0 0 0.18rem rgba(47, 127, 184, 0.14);
+    }
+
+    .knowledge-suggestion-hint {
+      font-size: 0.82rem;
+      color: var(--text-sub);
+      line-height: 1.6;
+    }
+
+    .suggestion-voice-btn {
+      border-radius: 0.75rem;
+      white-space: nowrap;
     }
 
     .hl-hit {
@@ -1038,6 +1076,47 @@
       </div>
     </div>
 
+    <div class="modal fade" id="knowledgeSuggestionModal" tabindex="-1" aria-labelledby="knowledgeSuggestionModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <form id="knowledgeSuggestionForm" class="knowledge-suggestion-form">
+            <div class="modal-header">
+              <h5 class="modal-title" id="knowledgeSuggestionModalLabel"><i class="bi bi-lightbulb me-2"></i>เสนอคำตอบที่ถูกต้อง</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div id="knowledgeSuggestionAlert" class="alert alert-danger d-none" role="alert"></div>
+              <input type="hidden" id="knowledgeSuggestionTarget" name="target" value="coop" />
+              <input type="hidden" id="knowledgeSuggestionSourceType" name="sourceType" value="text" />
+
+              <div class="row g-3">
+                <div class="col-12">
+                  <label for="knowledgeSuggestionTitle" class="form-label">คำถามที่ต้องการเสนอคำตอบ</label>
+                  <input id="knowledgeSuggestionTitle" name="title" type="text" class="form-control" readonly />
+                </div>
+                <div class="col-12">
+                  <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                    <label for="knowledgeSuggestionContent" class="form-label mb-0">คำตอบที่ต้องการเสนอ</label>
+                    <button type="button" id="knowledgeSuggestionVoiceBtn" class="btn btn-outline-secondary btn-sm suggestion-voice-btn">
+                      <i class="bi bi-mic-fill"></i> พูดเพื่อกรอกข้อความ
+                    </button>
+                  </div>
+                  <textarea id="knowledgeSuggestionContent" name="content" class="form-control mt-2" rows="6" placeholder="พิมพ์หรือพูดคำตอบที่ถูกต้องที่ต้องการให้ผู้ดูแลตรวจสอบ" required></textarea>
+                  <div class="knowledge-suggestion-hint mt-2">
+                    ข้อเสนอของคุณจะยังไม่ถูกนำเข้าฐานความรู้ทันที ระบบจะส่งให้ผู้ดูแลตรวจสอบก่อนอนุมัติ
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+              <button type="submit" id="knowledgeSuggestionSubmitBtn" class="btn btn-primary">ส่งให้ผู้ดูแลตรวจสอบ</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <div class="chat-shell">
       <div class="chat-header d-none d-md-block">
         <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
@@ -1107,6 +1186,15 @@
       const adminKnowledgeContentInput = document.getElementById('adminKnowledgeContent');
       const adminKnowledgeSourceNoteInput = document.getElementById('adminKnowledgeSourceNote');
       const adminKnowledgeSubmitBtn = document.getElementById('adminKnowledgeSubmitBtn');
+      const knowledgeSuggestionModalElement = document.getElementById('knowledgeSuggestionModal');
+      const knowledgeSuggestionForm = document.getElementById('knowledgeSuggestionForm');
+      const knowledgeSuggestionAlert = document.getElementById('knowledgeSuggestionAlert');
+      const knowledgeSuggestionTargetInput = document.getElementById('knowledgeSuggestionTarget');
+      const knowledgeSuggestionSourceTypeInput = document.getElementById('knowledgeSuggestionSourceType');
+      const knowledgeSuggestionTitleInput = document.getElementById('knowledgeSuggestionTitle');
+      const knowledgeSuggestionContentInput = document.getElementById('knowledgeSuggestionContent');
+      const knowledgeSuggestionSubmitBtn = document.getElementById('knowledgeSuggestionSubmitBtn');
+      const knowledgeSuggestionVoiceBtn = document.getElementById('knowledgeSuggestionVoiceBtn');
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const isAndroidDevice = /android/i.test(window.navigator.userAgent || '');
       const isIosDevice = /iphone|ipad|ipod/i.test(window.navigator.userAgent || '');
@@ -1116,6 +1204,9 @@
       const adminKnowledgeModal = adminKnowledgeModalElement && window.bootstrap
         ? new window.bootstrap.Modal(adminKnowledgeModalElement)
         : null;
+      const knowledgeSuggestionModal = knowledgeSuggestionModalElement && window.bootstrap
+        ? new window.bootstrap.Modal(knowledgeSuggestionModalElement)
+        : null;
 
       let selectedTarget = 'all';
       let deferredInstallPrompt = null;
@@ -1124,6 +1215,9 @@
       let isSubmitting = false;
       let shouldSubmitVoiceOnEnd = false;
       let pendingAdminKnowledgeResolve = null;
+      let pendingKnowledgeSuggestionResolve = null;
+      let suggestionRecognition = null;
+      let isSuggestionListening = false;
 
       function setOnlineState() {
         const online = navigator.onLine;
@@ -1607,6 +1701,101 @@
         return openAdminKnowledgeModal({ question, answerShown, target });
       }
 
+      function setKnowledgeSuggestionAlert(message = '', type = 'danger') {
+        if (!knowledgeSuggestionAlert) return;
+        if (!message) {
+          knowledgeSuggestionAlert.className = 'alert d-none';
+          knowledgeSuggestionAlert.textContent = '';
+          return;
+        }
+
+        knowledgeSuggestionAlert.className = `alert alert-${type}`;
+        knowledgeSuggestionAlert.textContent = message;
+      }
+
+      function openKnowledgeSuggestionModal({ question, target }) {
+        if (!knowledgeSuggestionModal || !knowledgeSuggestionForm) {
+          return Promise.reject(new Error('ไม่สามารถเปิดฟอร์มเสนอคำตอบได้'));
+        }
+
+        if (pendingKnowledgeSuggestionResolve) {
+          pendingKnowledgeSuggestionResolve({ cancelled: true });
+          pendingKnowledgeSuggestionResolve = null;
+        }
+
+        setKnowledgeSuggestionAlert('');
+        knowledgeSuggestionForm.reset();
+        knowledgeSuggestionTitleInput.value = String(question || '').trim();
+        knowledgeSuggestionContentInput.value = '';
+        knowledgeSuggestionTargetInput.value = target === 'group' ? 'group' : 'coop';
+        knowledgeSuggestionSourceTypeInput.value = 'text';
+        knowledgeSuggestionSubmitBtn.disabled = false;
+        knowledgeSuggestionSubmitBtn.textContent = 'ส่งให้ผู้ดูแลตรวจสอบ';
+        if (knowledgeSuggestionVoiceBtn) {
+          knowledgeSuggestionVoiceBtn.innerHTML = '<i class="bi bi-mic-fill"></i> พูดเพื่อกรอกข้อความ';
+        }
+
+        knowledgeSuggestionModal.show();
+        setTimeout(() => knowledgeSuggestionContentInput.focus(), 120);
+
+        return new Promise((resolve) => {
+          pendingKnowledgeSuggestionResolve = resolve;
+        });
+      }
+
+      async function saveKnowledgeSuggestionFromChat({ question, target }) {
+        return openKnowledgeSuggestionModal({ question, target });
+      }
+
+      function ensureSuggestionRecognition() {
+        if (!SpeechRecognition || suggestionRecognition) return;
+
+        suggestionRecognition = new SpeechRecognition();
+        suggestionRecognition.lang = 'th-TH';
+        suggestionRecognition.interimResults = true;
+        suggestionRecognition.continuous = false;
+        suggestionRecognition.maxAlternatives = 1;
+
+        let finalTranscript = '';
+
+        suggestionRecognition.onstart = () => {
+          isSuggestionListening = true;
+          finalTranscript = '';
+          if (knowledgeSuggestionVoiceBtn) {
+            knowledgeSuggestionVoiceBtn.innerHTML = '<i class="bi bi-stop-fill"></i> หยุดกรอกเสียง';
+          }
+        };
+
+        suggestionRecognition.onresult = (event) => {
+          let interimTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            const result = event.results[i];
+            const text = result[0] && result[0].transcript ? result[0].transcript : '';
+            if (result.isFinal) finalTranscript += `${text} `;
+            else interimTranscript += text;
+          }
+
+          const combined = `${finalTranscript}${interimTranscript}`.trim();
+          knowledgeSuggestionContentInput.value = combined;
+          knowledgeSuggestionSourceTypeInput.value = 'voice';
+        };
+
+        suggestionRecognition.onerror = () => {
+          isSuggestionListening = false;
+          if (knowledgeSuggestionVoiceBtn) {
+            knowledgeSuggestionVoiceBtn.innerHTML = '<i class="bi bi-mic-fill"></i> พูดเพื่อกรอกข้อความ';
+          }
+          setKnowledgeSuggestionAlert('ไม่สามารถรับข้อความเสียงได้ ลองพิมพ์แทนหรือกดใหม่อีกครั้ง');
+        };
+
+        suggestionRecognition.onend = () => {
+          isSuggestionListening = false;
+          if (knowledgeSuggestionVoiceBtn) {
+            knowledgeSuggestionVoiceBtn.innerHTML = '<i class="bi bi-mic-fill"></i> พูดเพื่อกรอกข้อความ';
+          }
+        };
+      }
+
       function attachFeedbackActions(container, { question, answerShown, target }) {
         if (!question || !answerShown) return;
 
@@ -1631,6 +1820,13 @@
             data-answer-shown="${escapeHtml(answerShown)}"
             data-target="${escapeHtml(target || selectedTarget)}"
           >ควรปรับปรุง</button>
+          <button
+            type="button"
+            class="btn btn-outline-primary btn-sm btn-knowledge-suggestion"
+            data-knowledge-suggestion="1"
+            data-question="${escapeHtml(question)}"
+            data-target="${escapeHtml(target || selectedTarget)}"
+          >เสนอคำตอบที่ถูกต้อง</button>
         `;
 
         if (isAdminUser) {
@@ -1917,6 +2113,40 @@
             delete wrap.dataset.adminKnowledgeSaving;
           }
         }
+
+        const knowledgeSuggestionButton = event.target.closest('[data-knowledge-suggestion="1"]');
+        if (knowledgeSuggestionButton) {
+          const wrap = knowledgeSuggestionButton.closest('.feedback-actions');
+          if (!wrap || wrap.dataset.knowledgeSuggestionSaving === '1') return;
+
+          wrap.dataset.knowledgeSuggestionSaving = '1';
+          knowledgeSuggestionButton.disabled = true;
+
+          try {
+            const result = await saveKnowledgeSuggestionFromChat({
+              question: knowledgeSuggestionButton.dataset.question || '',
+              target: knowledgeSuggestionButton.dataset.target || selectedTarget
+            });
+
+            if (result && !result.cancelled) {
+              wrap.insertAdjacentHTML(
+                'beforeend',
+                '<span class="text-primary small">ส่งข้อเสนอให้ผู้ดูแลตรวจสอบแล้ว</span>'
+              );
+              knowledgeSuggestionButton.remove();
+            } else {
+              knowledgeSuggestionButton.disabled = false;
+            }
+          } catch (_) {
+            wrap.insertAdjacentHTML(
+              'beforeend',
+              '<span class="text-danger small">ส่งข้อเสนอคำตอบไม่สำเร็จ</span>'
+            );
+            knowledgeSuggestionButton.disabled = false;
+          } finally {
+            delete wrap.dataset.knowledgeSuggestionSaving;
+          }
+        }
       });
 
       if (adminKnowledgeForm) {
@@ -1979,6 +2209,102 @@
           if (adminKnowledgeSubmitBtn) {
             adminKnowledgeSubmitBtn.disabled = false;
             adminKnowledgeSubmitBtn.textContent = 'บันทึกเข้าฐานความรู้';
+          }
+        });
+      }
+
+      if (knowledgeSuggestionVoiceBtn) {
+        knowledgeSuggestionVoiceBtn.addEventListener('click', () => {
+          if (!SpeechRecognition) {
+            setKnowledgeSuggestionAlert('เบราว์เซอร์นี้ไม่รองรับการกรอกข้อความด้วยเสียง');
+            return;
+          }
+
+          ensureSuggestionRecognition();
+          if (!suggestionRecognition) return;
+
+          if (isSuggestionListening) {
+            suggestionRecognition.stop();
+            return;
+          }
+
+          setKnowledgeSuggestionAlert('');
+          try {
+            suggestionRecognition.start();
+          } catch (_) {
+            setKnowledgeSuggestionAlert('ไม่สามารถเริ่มรับข้อความเสียงได้ ลองใหม่อีกครั้ง');
+          }
+        });
+      }
+
+      if (knowledgeSuggestionForm) {
+        knowledgeSuggestionForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const payload = {
+            title: String(knowledgeSuggestionTitleInput.value || '').trim(),
+            question: String(knowledgeSuggestionTitleInput.value || '').trim(),
+            target: String(knowledgeSuggestionTargetInput.value || '').trim() === 'group' ? 'group' : 'coop',
+            content: String(knowledgeSuggestionContentInput.value || '').trim(),
+            sourceType: String(knowledgeSuggestionSourceTypeInput.value || '').trim() === 'voice' ? 'voice' : 'text',
+          };
+
+          if (!payload.title || !payload.content) {
+            setKnowledgeSuggestionAlert('กรุณากรอกคำตอบที่ต้องการเสนอ');
+            return;
+          }
+
+          setKnowledgeSuggestionAlert('');
+          knowledgeSuggestionSubmitBtn.disabled = true;
+          knowledgeSuggestionSubmitBtn.textContent = 'กำลังส่ง...';
+
+          try {
+            const response = await fetch('/law-chatbot/knowledge-suggestion', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+            if (!response.ok || !data || !data.success) {
+              throw new Error((data && data.message) || 'ไม่สามารถส่งข้อเสนอคำตอบได้');
+            }
+
+            if (pendingKnowledgeSuggestionResolve) {
+              pendingKnowledgeSuggestionResolve(data);
+              pendingKnowledgeSuggestionResolve = null;
+            }
+
+            knowledgeSuggestionModal.hide();
+          } catch (error) {
+            setKnowledgeSuggestionAlert(error.message || 'ไม่สามารถส่งข้อเสนอคำตอบได้');
+            knowledgeSuggestionSubmitBtn.disabled = false;
+            knowledgeSuggestionSubmitBtn.textContent = 'ส่งให้ผู้ดูแลตรวจสอบ';
+          }
+        });
+      }
+
+      if (knowledgeSuggestionModalElement) {
+        knowledgeSuggestionModalElement.addEventListener('hidden.bs.modal', () => {
+          if (isSuggestionListening && suggestionRecognition) {
+            suggestionRecognition.stop();
+          }
+          if (pendingKnowledgeSuggestionResolve) {
+            pendingKnowledgeSuggestionResolve({ cancelled: true });
+            pendingKnowledgeSuggestionResolve = null;
+          }
+          if (knowledgeSuggestionForm) {
+            knowledgeSuggestionForm.reset();
+          }
+          if (knowledgeSuggestionSourceTypeInput) {
+            knowledgeSuggestionSourceTypeInput.value = 'text';
+          }
+          setKnowledgeSuggestionAlert('');
+          if (knowledgeSuggestionSubmitBtn) {
+            knowledgeSuggestionSubmitBtn.disabled = false;
+            knowledgeSuggestionSubmitBtn.textContent = 'ส่งให้ผู้ดูแลตรวจสอบ';
+          }
+          if (knowledgeSuggestionVoiceBtn) {
+            knowledgeSuggestionVoiceBtn.innerHTML = '<i class="bi bi-mic-fill"></i> พูดเพื่อกรอกข้อความ';
           }
         });
       }

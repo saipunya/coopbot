@@ -115,11 +115,60 @@ function scoreChunkMatch(query, row) {
     score -= 18;
   }
 
-  const replacementGlyphHits = (rawChunkText.match(/�||||||||||||||/g) || []).length;
+  const replacementGlyphHits = (rawChunkText.match(/[\uFFFD\uF700-\uF8FF]/g) || []).length;
   score -= Math.min(replacementGlyphHits, 20) * 2;
 
   if (rawChunkText.length > 0 && replacementGlyphHits / rawChunkText.length > 0.02) {
     score -= 20;
+  }
+
+  // Penalize chunks with control characters or garbled OCR text
+  const controlCharHits = (rawChunkText.match(/[\x00-\x1F]/g) || []).length;
+  if (controlCharHits > 5) {
+    score -= Math.min(controlCharHits, 30) * 2;
+  }
+
+  // Boost chunks where keyword/content contains specific query terms
+  const keywordLower = rawKeyword.toLowerCase();
+  const chunkLower = rawChunkText.toLowerCase();
+  const queryLower = normalizedQuery;
+
+  if (queryLower.includes("บำรุง") || queryLower.includes("สันนิบาต")) {
+    // Strong boost for chunks directly about ค่าบำรุงสันนิบาต
+    if (keywordLower.includes("บำรุง") && keywordLower.includes("สันนิบาต")) {
+      score += 40;
+    } else if (keywordLower.includes("บำรุง") || keywordLower.includes("สันนิบาต")) {
+      score += 20;
+    }
+    
+    // Boost for content mentioning อัตรา, กฎกระทรวง, ร้อยละ (rate/regulation terms)
+    if (chunkLower.includes("อัตรา") || chunkLower.includes("กฎกระทรวง") || chunkLower.includes("ร้อยละ")) {
+      score += 15;
+    }
+    
+    // Penalize unrelated topics
+    if (keywordLower.includes("เดินทาง") || keywordLower.includes("ฝึกอบรม")) {
+      score -= 40;
+    }
+    if (keywordLower.includes("ชำระบัญชี") || keywordLower.includes("จ่ายคืนค่าหุ้น")) {
+      score -= 25;
+    }
+    if (keywordLower.includes("สมาชิกสมทบ") || keywordLower.includes("ข้อบังคับ")) {
+      score -= 20;
+    }
+    // Penalize chunks about unrelated financial operations
+    if (keywordLower.includes("เฉลี่ยค่าหุ้น") || keywordLower.includes("จ่ายคืนค่าหุ้น") || keywordLower.includes("ปันผล")) {
+      score -= 35;
+    }
+    if (keywordLower.includes("องค์ความรู้") || keywordLower.includes("km")) {
+      score -= 25;
+    }
+  }
+
+  // Heavy penalty for garbled OCR text (Thai encoding issues)
+  const thaiGarbledHits = (rawChunkText.match(/[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/g) || []).length;
+  if (thaiGarbledHits > 0) {
+    score -= Math.min(thaiGarbledHits, 30) * 5;
   }
 
   score += scoreAmountSignals(query, `${rawKeyword} ${rawChunkText}`);
@@ -324,6 +373,47 @@ class LawChatbotPdfChunkModel {
       .map(() => "(LOWER(keyword) LIKE ? OR LOWER(chunk_text) LIKE ?)")
       .join(" OR ");
     const params = terms.flatMap((term) => [`%${term}%`, `%${term}%`]);
+
+    // Build relevance ordering: prioritize specific token combinations in keyword
+    // This helps surface chunks with compound terms like "ค่าบำรุงสันนิบาต" over generic matches
+    // Exclude full phrase and common question words from ordering tokens
+    const specificTokens = terms.filter(
+      (t) =>
+        t &&
+        t.length >= 4 &&
+        t.length <= 20 &&
+        !["ต้อง", "จ่าย", "ไหม", "หรือไม่", "ได้ไหม"].includes(t),
+    );
+    const orderParams = [];
+    let orderClause = "c.id DESC";
+
+    if (specificTokens.length >= 2) {
+      // Prioritize rows where keyword contains multiple specific tokens
+      const keywordConditions = specificTokens
+        .slice(0, 3)
+        .map(() => "LOWER(c.keyword) LIKE ?")
+        .join(" AND ");
+      orderClause = `
+        CASE
+          WHEN ${keywordConditions} THEN 0
+          WHEN LOWER(c.keyword) LIKE ? THEN 1
+          ELSE 2
+        END ASC,
+        c.id DESC`;
+      orderParams.push(
+        ...specificTokens.slice(0, 3).map((t) => `%${t}%`),
+        `%${specificTokens[0]}%`,
+      );
+    } else if (specificTokens.length === 1) {
+      orderClause = `
+        CASE
+          WHEN LOWER(c.keyword) LIKE ? THEN 0
+          ELSE 1
+        END ASC,
+        c.id DESC`;
+      orderParams.push(`%${specificTokens[0]}%`);
+    }
+
     const [rows] = await pool.query(
       `SELECT c.id, c.keyword, c.chunk_text, c.created_at, c.document_id,
               d.title, d.document_number, d.document_date_text, d.document_source, d.originalname
@@ -331,9 +421,9 @@ class LawChatbotPdfChunkModel {
        AS c
        LEFT JOIN documents AS d ON d.id = c.document_id
        WHERE ${whereClause}
-       ORDER BY c.id DESC
-       LIMIT 200`,
-      params
+       ORDER BY ${orderClause}
+       LIMIT 500`,
+      [...params, ...orderParams]
     );
 
     return rows

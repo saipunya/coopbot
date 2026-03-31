@@ -129,6 +129,62 @@ async function deleteKnowledge(req, res) {
   );
 }
 
+async function approveKnowledgeSuggestion(req, res) {
+  const id = Number(req.body.id || 0);
+  if (!id) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบรายการข้อเสนอที่ต้องการอนุมัติ")
+    );
+  }
+
+  const result = await lawChatbotService.approveKnowledgeSuggestion(id, {
+    reviewedBy:
+      (req.session.adminUser && (req.session.adminUser.email || req.session.adminUser.username || req.session.adminUser.name)) ||
+      "admin",
+  });
+
+  if (!result.ok) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบข้อเสนอที่ต้องการอนุมัติ หรือรายการนี้ถูกดำเนินการไปแล้ว")
+    );
+  }
+
+  return res.redirect(
+    "/admin?success=" +
+      encodeURIComponent("อนุมัติข้อเสนอและนำเข้าฐานความรู้เรียบร้อยแล้ว")
+  );
+}
+
+async function rejectKnowledgeSuggestion(req, res) {
+  const id = Number(req.body.id || 0);
+  if (!id) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบรายการข้อเสนอที่ต้องการปฏิเสธ")
+    );
+  }
+
+  const rejected = await lawChatbotService.rejectKnowledgeSuggestion(id, {
+    reviewedBy:
+      (req.session.adminUser && (req.session.adminUser.email || req.session.adminUser.username || req.session.adminUser.name)) ||
+      "admin",
+  });
+
+  if (!rejected) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบข้อเสนอที่ต้องการปฏิเสธ หรือรายการนี้ถูกดำเนินการไปแล้ว")
+    );
+  }
+
+  return res.redirect(
+    "/admin?success=" +
+      encodeURIComponent("ปฏิเสธข้อเสนอเรียบร้อยแล้ว")
+  );
+}
+
 function logout(req, res) {
   req.session.destroy(() => {
     res.redirect("/admin/login?success=" + encodeURIComponent("ออกจากระบบเรียบร้อยแล้ว"));
@@ -143,5 +199,7 @@ module.exports = {
   renderDashboard,
   submitKnowledge,
   deleteKnowledge,
+  approveKnowledgeSuggestion,
+  rejectKnowledgeSuggestion,
   logout,
 };

@@ -1,5 +1,6 @@
 const LawChatbotModel = require("../models/lawChatbotModel");
 const LawChatbotKnowledgeModel = require("../models/lawChatbotKnowledgeModel");
+const LawChatbotKnowledgeSuggestionModel = require("../models/lawChatbotKnowledgeSuggestionModel");
 const LawSearchModel = require("../models/lawSearchModel");
 const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
@@ -21,9 +22,15 @@ const WEB_SEARCH_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_WEB_SEARCH_TIMEOUT_
 const WEB_SEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
 const answerCache = new Map();
+const suggestionThrottleMap = new Map();
 
 function nowMs() {
   return Number(process.hrtime.bigint()) / 1e6;
+}
+
+function isStandaloneLawLookup(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+\b/.test(text);
 }
 
 function buildAnswerCacheKey(message, target) {
@@ -32,7 +39,7 @@ function buildAnswerCacheKey(message, target) {
 
 function shouldUseAnswerCache(message) {
   const text = String(message || "").trim();
-  return Boolean(text) && !looksLikeFollowUpQuestion(text);
+  return Boolean(text) && !looksLikeFollowUpQuestion(text) && !isStandaloneLawLookup(text);
 }
 
 function getCachedAnswer(cacheKey) {
@@ -65,6 +72,18 @@ function setCachedAnswer(cacheKey, value) {
 
 function clearAnswerCache() {
   answerCache.clear();
+}
+
+function cleanupSuggestionThrottle() {
+  if (suggestionThrottleMap.size <= 200) {
+    return;
+  }
+
+  for (const [key, value] of suggestionThrottleMap.entries()) {
+    if (Date.now() - value.createdAt > 10 * 60 * 1000) {
+      suggestionThrottleMap.delete(key);
+    }
+  }
 }
 
 function decodeHtmlEntities(text) {
@@ -244,6 +263,8 @@ function classifyQuestionIntent(message) {
     /มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+/.test(text);
   const asksDocumentStyle =
     /กฎกระทรวง|ประกาศ|หนังสือเวียน|ข้อหารือ|หนังสือสั่งการ|หนังสือกรม|เอกสาร|ฉบับ/.test(text);
+  const asksFeeOrAmountStyle =
+    /ค่าบำรุง|สันนิบาต|อัตรา|ร้อยละ|เปอร์เซ็นต์|%|จำนวนเงิน|ต้องจ่าย|ชำระ|จ่าย/.test(text);
   const asksQaStyle =
     /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ|ถามตอบ|คำถามคำตอบ/.test(text);
   const asksShortAnswer =
@@ -260,7 +281,7 @@ function classifyQuestionIntent(message) {
     return "law_section";
   }
 
-  if (asksDocumentStyle) {
+  if (asksDocumentStyle || asksFeeOrAmountStyle) {
     return "document";
   }
 
@@ -322,7 +343,7 @@ function getSourceRoutingPlan(intent) {
           pdf_chunks: 6,
           structured_laws: 3,
           vinichai: 3,
-          admin_knowledge: 2,
+          admin_knowledge: 5,
           knowledge_base: 1,
         },
         limits: {
@@ -330,7 +351,7 @@ function getSourceRoutingPlan(intent) {
           pdf_chunks: 4,
           structured_laws: 2,
           vinichai: 1,
-          admin_knowledge: 1,
+          admin_knowledge: 2,
           knowledge_base: 1,
         },
       };
@@ -451,7 +472,7 @@ async function searchDatabaseSources(message, target) {
 
       return (b.score || 0) - (a.score || 0);
     })
-    .slice(0, 30);
+    .slice(0, 120);
 }
 
 function getSessionContext(session) {
@@ -476,6 +497,10 @@ function stripQuestionTail(message) {
 function looksLikeFollowUpQuestion(message) {
   const text = String(message || "").trim();
   if (!text) {
+    return false;
+  }
+
+  if (isStandaloneLawLookup(text)) {
     return false;
   }
 
@@ -657,15 +682,20 @@ function sortByScore(matches) {
 
 function selectTieredSources(groups, intent = "general") {
   const routingPlan = getSourceRoutingPlan(intent);
-  const plan = [
-    { key: "structured_laws", limit: routingPlan.limits.structured_laws || 3 },
-    { key: "admin_knowledge", limit: routingPlan.limits.admin_knowledge || 2 },
-    { key: "vinichai", limit: routingPlan.limits.vinichai || 2 },
-    { key: "documents", limit: routingPlan.limits.documents || 2 },
-    { key: "pdf_chunks", limit: routingPlan.limits.pdf_chunks || 3 },
-    { key: "internet", limit: 2 },
-    { key: "knowledge_base", limit: routingPlan.limits.knowledge_base || 1 },
+
+  // Build plan sorted by priority (highest first)
+  const planItems = [
+    { key: "structured_laws", limit: routingPlan.limits.structured_laws || 3, priority: routingPlan.priorities.structured_laws || 0 },
+    { key: "admin_knowledge", limit: routingPlan.limits.admin_knowledge || 2, priority: routingPlan.priorities.admin_knowledge || 0 },
+    { key: "vinichai", limit: routingPlan.limits.vinichai || 2, priority: routingPlan.priorities.vinichai || 0 },
+    { key: "documents", limit: routingPlan.limits.documents || 2, priority: routingPlan.priorities.documents || 0 },
+    { key: "pdf_chunks", limit: routingPlan.limits.pdf_chunks || 3, priority: routingPlan.priorities.pdf_chunks || 0 },
+    { key: "internet", limit: 2, priority: 0 },
+    { key: "knowledge_base", limit: routingPlan.limits.knowledge_base || 1, priority: routingPlan.priorities.knowledge_base || 0 },
   ];
+
+  // Sort by priority descending so higher priority sources are selected first
+  const plan = planItems.sort((a, b) => b.priority - a.priority);
 
   const selected = [];
   const usedTiers = [];
@@ -678,9 +708,12 @@ function selectTieredSources(groups, intent = "general") {
     }
   });
 
+  // Sort all selected sources by score descending so highest-scoring sources appear first
+  const sortedSelected = sortByScore(selected);
+
   return {
     selectedSourceTier: usedTiers.join(" > ") || "none",
-    selectedSources: selected,
+    selectedSources: sortedSelected,
   };
 }
 
@@ -1072,20 +1105,100 @@ async function getFeedbackPageData() {
 }
 
 async function getKnowledgeAdminData() {
-  const [knowledgeCount, recentKnowledge] = await Promise.all([
+  const [knowledgeCount, recentKnowledge, pendingSuggestionCount, pendingSuggestions] = await Promise.all([
     LawChatbotKnowledgeModel.count(),
     LawChatbotKnowledgeModel.listRecent(10),
+    LawChatbotKnowledgeSuggestionModel.countPending(),
+    LawChatbotKnowledgeSuggestionModel.listPending(12),
   ]);
 
   return {
     appName: "Coopbot Law Chatbot",
     knowledgeCount,
     recentKnowledge,
+    pendingSuggestionCount,
+    pendingSuggestions,
     targets: [
       { value: "coop", label: "สหกรณ์" },
       { value: "group", label: "กลุ่มเกษตรกร" },
     ],
   };
+}
+
+async function submitKnowledgeSuggestion(payload, meta = {}) {
+  const title = String(payload.title || payload.question || "").trim();
+  const content = String(payload.content || "").trim();
+  const target = payload.target === "group" ? "group" : "coop";
+  const sourceType = payload.sourceType === "voice" ? "voice" : "text";
+
+  if (!title || !content) {
+    throw new Error("กรุณาระบุคำถามและคำตอบที่ต้องการเสนอ");
+  }
+
+  if (content.length < 10) {
+    throw new Error("กรุณาอธิบายคำตอบที่ต้องการเสนอให้ชัดเจนมากขึ้น");
+  }
+
+  const sessionKey = String(meta.sessionId || meta.ip || "anonymous").trim() || "anonymous";
+  const normalizedFingerprint = normalizeForSearch(`${target} ${title} ${content}`).toLowerCase();
+  const throttleKey = `${sessionKey}::${normalizedFingerprint}`;
+  const now = Date.now();
+  const previous = suggestionThrottleMap.get(throttleKey);
+
+  if (previous && now - previous.createdAt < 3 * 60 * 1000) {
+    throw new Error("มีการส่งข้อเสนอแนะเดิมเข้ามาแล้ว กรุณารอสักครู่ก่อนส่งซ้ำ");
+  }
+
+  cleanupSuggestionThrottle();
+  suggestionThrottleMap.set(throttleKey, { createdAt: now });
+
+  return LawChatbotKnowledgeSuggestionModel.create({
+    target,
+    title,
+    content,
+    sourceType,
+    submittedBy: meta.submittedBy || "",
+    submitterSession: meta.sessionId || "",
+    submitterIp: meta.ip || "",
+    status: "pending",
+  });
+}
+
+async function approveKnowledgeSuggestion(id, reviewMeta = {}) {
+  const suggestion = await LawChatbotKnowledgeSuggestionModel.findById(id);
+  if (!suggestion || suggestion.status !== "pending") {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const sourceNoteParts = [
+    suggestion.sourceType === "voice" ? "ข้อเสนอจากผู้ใช้งาน (เสียง)" : "ข้อเสนอจากผู้ใช้งาน",
+    suggestion.submittedBy ? `โดย ${suggestion.submittedBy}` : "",
+  ].filter(Boolean);
+
+  const entry = await saveKnowledgeEntry({
+    target: suggestion.target,
+    title: suggestion.title,
+    content: suggestion.content,
+    sourceNote: sourceNoteParts.join(" | "),
+  });
+
+  const updated = await LawChatbotKnowledgeSuggestionModel.updateStatus(id, "approved", {
+    reviewedBy: reviewMeta.reviewedBy || "",
+    reviewNote: reviewMeta.reviewNote || "",
+  });
+
+  return {
+    ok: updated,
+    entry,
+    suggestion,
+  };
+}
+
+async function rejectKnowledgeSuggestion(id, reviewMeta = {}) {
+  return LawChatbotKnowledgeSuggestionModel.updateStatus(id, "rejected", {
+    reviewedBy: reviewMeta.reviewedBy || "",
+    reviewNote: reviewMeta.reviewNote || "",
+  });
 }
 
 async function saveKnowledgeEntry(payload) {
@@ -1125,6 +1238,9 @@ module.exports = {
   recordUpload,
   getFeedbackPageData,
   getKnowledgeAdminData,
+  submitKnowledgeSuggestion,
+  approveKnowledgeSuggestion,
+  rejectKnowledgeSuggestion,
   saveKnowledgeEntry,
   deleteKnowledgeEntry,
   saveFeedback,

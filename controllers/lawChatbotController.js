@@ -45,6 +45,37 @@ async function saveKnowledgeFromChat(req, res) {
   });
 }
 
+async function submitKnowledgeSuggestion(req, res) {
+  const title = String(req.body.title || req.body.question || "").trim();
+  const content = String(req.body.content || "").trim();
+
+  if (!title || !content) {
+    return res.status(400).json({
+      success: false,
+      message: "กรุณาระบุคำถามและคำตอบที่ต้องการเสนอ",
+    });
+  }
+
+  try {
+    const entry = await lawChatbotService.submitKnowledgeSuggestion(req.body, {
+      submittedBy: req.body.name || "",
+      sessionId: req.sessionID || "",
+      ip: req.ip || req.headers["x-forwarded-for"] || "",
+    });
+
+    return res.json({
+      success: true,
+      message: "ส่งข้อเสนอคำตอบเรียบร้อยแล้ว ระบบจะรอผู้ดูแลตรวจสอบก่อนนำเข้า",
+      entry,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "ไม่สามารถส่งข้อเสนอคำตอบได้",
+    });
+  }
+}
+
 async function resetContext(req, res) {
   if (req.session) {
     req.session.lawChatbotContext = [];
@@ -101,6 +132,7 @@ module.exports = {
   chatSummary,
   chatFeedback,
   saveKnowledgeFromChat,
+  submitKnowledgeSuggestion,
   resetContext,
   renderUpload,
   handleUpload,
