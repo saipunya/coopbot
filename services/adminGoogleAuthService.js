@@ -15,6 +15,12 @@ function getGoogleConfig() {
   };
 }
 
+function debugGoogleAuth(...args) {
+  if (process.env.GOOGLE_AUTH_DEBUG === "1") {
+    console.log("[google-auth]", ...args);
+  }
+}
+
 function buildGoogleRedirectUri(req) {
   const explicit = String(process.env.GOOGLE_REDIRECT_URI || "").trim();
   if (explicit) {
@@ -39,14 +45,20 @@ function createGoogleAuthUrl(req) {
   }
 
   const url = new URL(GOOGLE_OAUTH_BASE_URL);
+  const redirectUri = buildGoogleRedirectUri(req);
   url.searchParams.set("client_id", config.clientId);
-  url.searchParams.set("redirect_uri", buildGoogleRedirectUri(req));
+  url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "openid email profile");
   url.searchParams.set("state", state);
   url.searchParams.set("access_type", "online");
   url.searchParams.set("include_granted_scopes", "true");
   url.searchParams.set("prompt", "select_account");
+  debugGoogleAuth("create-auth-url", {
+    host: req.get("host"),
+    redirectUri,
+    state,
+  });
   return url.toString();
 }
 
@@ -55,6 +67,11 @@ async function exchangeCodeForTokens(code, redirectUri) {
   if (!config.enabled) {
     throw new Error("Google OAuth is not configured.");
   }
+
+  debugGoogleAuth("exchange-code-start", {
+    redirectUri,
+    codeLength: String(code || "").length,
+  });
 
   const response = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
@@ -71,6 +88,12 @@ async function exchangeCodeForTokens(code, redirectUri) {
   });
 
   const payload = await response.json();
+  debugGoogleAuth("exchange-code-result", {
+    ok: response.ok,
+    status: response.status,
+    error: payload.error || "",
+    errorDescription: payload.error_description || "",
+  });
   if (!response.ok) {
     throw new Error(payload.error_description || payload.error || "Google token exchange failed.");
   }
@@ -79,8 +102,19 @@ async function exchangeCodeForTokens(code, redirectUri) {
 }
 
 async function fetchGoogleProfile(idToken) {
+  debugGoogleAuth("fetch-profile-start", {
+    idTokenLength: String(idToken || "").length,
+  });
   const response = await fetch(`${GOOGLE_TOKEN_INFO_URL}?id_token=${encodeURIComponent(String(idToken || ""))}`);
   const payload = await response.json();
+  debugGoogleAuth("fetch-profile-result", {
+    ok: response.ok,
+    status: response.status,
+    email: payload.email || "",
+    emailVerified: payload.email_verified || "",
+    error: payload.error || "",
+    errorDescription: payload.error_description || "",
+  });
 
   if (!response.ok || payload.error_description || payload.error) {
     throw new Error(payload.error_description || payload.error || "Unable to verify Google token.");
@@ -93,6 +127,14 @@ async function loginWithGoogleCallback(req) {
   const state = String(req.query.state || "");
   const code = String(req.query.code || "");
   const sessionState = req.session?.googleOAuthState || "";
+
+  debugGoogleAuth("callback-received", {
+    host: req.get("host"),
+    queryState: state,
+    sessionState,
+    hasCode: Boolean(code),
+    queryError: String(req.query.error || ""),
+  });
 
   if (!state || !sessionState || state !== sessionState) {
     throw new Error("สถานะการเข้าสู่ระบบ Google ไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
