@@ -31,6 +31,13 @@ function wantsExplanation(message) {
   return /อธิบาย|รายละเอียด|ขยายความ|ยกตัวอย่าง/.test(text);
 }
 
+function wantsAmountAnswer(message) {
+  const text = String(message || "").trim();
+  return /เท่าไร|เท่าไหร่|กี่บาท|กี่เปอร์เซ็นต์|กี่ร้อยละ|อัตรา|จำนวนเงิน|ค่าบำรุง|ชำระ|จ่าย/.test(
+    text,
+  );
+}
+
 function buildSourceContext(sources) {
   return dedupeSources(sources)
     .map((source, index) => {
@@ -224,6 +231,85 @@ function buildParagraphSummary(summaryLines, detailLines, explainMode) {
   return blocks.join("\n\n").trim();
 }
 
+function extractAmountHighlights(sources, limit = 4) {
+  const amountPattern =
+    /[^\n]{0,80}\d[\d,]*(?:\.\d+)?\s*(?:บาท|ร้อยละ|เปอร์เซ็นต์|%|ต่อปี|ต่อเดือน|ต่อราย|ต่อรายปี)?[^\n]{0,120}/g;
+  const scored = [];
+
+  for (const source of dedupeSources(sources, 8)) {
+    const rawText = String(
+      [source.reference, source.title, source.content, source.chunk_text, source.comment]
+        .filter(Boolean)
+        .join(" "),
+    );
+    const matches = rawText.match(amountPattern) || [];
+
+    for (const match of matches) {
+      const cleaned = cleanLine(match);
+      if (!cleaned) {
+        continue;
+      }
+
+      let score = 0;
+      if (/(ค่าบำรุง|สันนิบาต)/.test(cleaned)) score += 4;
+      if (/(บาท|ร้อยละ|เปอร์เซ็นต์|%)/.test(cleaned)) score += 4;
+      if (/(อัตรา|จำนวนเงิน|ชำระ|จ่าย)/.test(cleaned)) score += 3;
+      if (/\d/.test(cleaned)) score += 2;
+
+      scored.push({
+        score,
+        text: cleaned,
+      });
+    }
+  }
+
+  return uniqueCleanLines(
+    scored.sort((a, b) => b.score - a.score).map((item) => item.text),
+    limit,
+  );
+}
+
+function splitContentSegments(text) {
+  return String(text || "")
+    .split(/[\n\r]+|(?<=\.)\s+|(?<=;)\s+|(?<=:)\s+/)
+    .map((segment) => cleanLine(segment))
+    .filter(Boolean);
+}
+
+function extractNumericEvidence(sources, limit = 5) {
+  const scored = [];
+
+  for (const source of dedupeSources(sources, 10)) {
+    const sourceLabel = cleanLine(source.reference || source.title || source.keyword || "");
+    const segments = splitContentSegments(
+      [source.content, source.chunk_text, source.comment].filter(Boolean).join("\n"),
+    );
+
+    for (const segment of segments) {
+      if (!/\d/.test(segment)) {
+        continue;
+      }
+
+      let score = 0;
+      if (/(บาท|ร้อยละ|เปอร์เซ็นต์|%)/.test(segment)) score += 8;
+      if (/(อัตรา|จำนวนเงิน|ค่าบำรุง|ชำระ|จ่าย|เรียกเก็บ)/.test(segment)) score += 7;
+      if (/\d[\d,]*(?:\.\d+)?\s*(บาท|ร้อยละ|เปอร์เซ็นต์|%)/.test(segment)) score += 12;
+      if (source.source === "pdf_chunks") score += 4;
+      if (sourceLabel && segment.length < 240) score += 2;
+
+      scored.push({
+        score,
+        text: sourceLabel ? `${sourceLabel}: ${segment}` : segment,
+      });
+    }
+  }
+
+  return uniqueCleanLines(
+    scored.sort((a, b) => b.score - a.score).map((item) => item.text),
+    limit,
+  );
+}
+
 function decorateConversationalAnswer(answerText, options = {}) {
   const text = String(answerText || "").trim();
   if (!text) {
@@ -282,21 +368,45 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
     return "";
   }
 
+  if (options.amountMode) {
+    const amountHighlights = extractAmountHighlights(sources, 3);
+    const numericEvidence = extractNumericEvidence(sources, 3);
+    const hasNumericLine = conciseLines.some((line) =>
+      /\d[\d,]*(?:\.\d+)?\s*(?:บาท|ร้อยละ|เปอร์เซ็นต์|%)/.test(line),
+    );
+    const mergedLines = hasNumericLine
+      ? conciseLines
+      : uniqueCleanLines([...numericEvidence, ...amountHighlights, ...conciseLines], 7);
+
+    return decorateConversationalAnswer(buildParagraphSummary(mergedLines, [], false), options);
+  }
+
   return decorateConversationalAnswer(buildParagraphSummary(conciseLines, [], false), options);
 }
 
 function buildFallbackSummary(sources, explainMode, options = {}) {
   const topSources = dedupeSources(sources, 5);
+  const amountHighlights = options.amountMode ? extractAmountHighlights(topSources, explainMode ? 5 : 3) : [];
+  const numericEvidence = options.amountMode ? extractNumericEvidence(topSources, explainMode ? 5 : 3) : [];
   const importantPoints = uniqueCleanLines(
-    topSources.map((source) => {
-      const label = source.reference || source.title || source.keyword || "ข้อมูลที่เกี่ยวข้อง";
-      const content = String(source.content || source.chunk_text || "").slice(0, explainMode ? 420 : 180);
-      return `${label}: ${content}`;
-    }),
+    [
+      ...numericEvidence,
+      ...amountHighlights,
+      ...topSources.map((source) => {
+        const label = source.reference || source.title || source.keyword || "ข้อมูลที่เกี่ยวข้อง";
+        const content = String(source.content || source.chunk_text || "").slice(0, explainMode ? 420 : 180);
+        return `${label}: ${content}`;
+      }),
+    ],
     explainMode ? 8 : 5,
   );
   const detailPoints = uniqueCleanLines(
-    topSources.map((source) => String(source.comment || source.content || source.chunk_text || "").slice(0, explainMode ? 420 : 260)),
+    [
+      ...numericEvidence,
+      ...topSources.map((source) =>
+        String(source.comment || source.content || source.chunk_text || "").slice(0, explainMode ? 420 : 260),
+      ),
+    ],
     explainMode ? 6 : 4,
   );
 
@@ -319,15 +429,22 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
 
 async function generateChatSummary(message, sources, options = {}) {
   const explainMode = wantsExplanation(message);
+  const amountMode = wantsAmountAnswer(message);
   const gemini = getGeminiClient();
 
   if (!gemini || sources.length === 0) {
-    return buildFallbackSummary(sources, explainMode, options);
+    return buildFallbackSummary(sources, explainMode, {
+      ...options,
+      amountMode,
+    });
   }
 
+  const amountInstruction = amountMode
+    ? "หากข้อมูลอ้างอิงมีจำนวนเงิน อัตรา ร้อยละ เปอร์เซ็นต์ หรือยอดที่ต้องชำระ ให้ระบุค่านั้นอย่างชัดเจนเป็นข้อแรกของ 'สรุปสาระสำคัญ:' พร้อมถ้อยคำที่บอกว่าเป็นจำนวนหรืออัตราเท่าใด และห้ามตอบกว้าง ๆ เฉพาะชื่อแหล่งที่มาโดยไม่บอกตัวเลข"
+    : "";
   const instruction = explainMode
-    ? "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง หากข้อมูลมีจำนวนมากเกินไปให้สรุปแบบยังคงประเด็นสำคัญ เงื่อนไข ขั้นตอน ข้อยกเว้น และข้อมูลอ้างอิงที่จำเป็นให้ครบถ้วน ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 5 ถึง 8 ข้อ และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 4 ถึง 8 ข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด"
-    : "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ค่อนข้างกระชับ แต่มีรายละเอียดเพียงพอและตรงประเด็น พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 4 ถึง 6 ข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด";
+    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง หากข้อมูลมีจำนวนมากเกินไปให้สรุปแบบยังคงประเด็นสำคัญ เงื่อนไข ขั้นตอน ข้อยกเว้น และข้อมูลอ้างอิงที่จำเป็นให้ครบถ้วน ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 5 ถึง 8 ข้อ และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 4 ถึง 8 ข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
+    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ค่อนข้างกระชับ แต่มีรายละเอียดเพียงพอและตรงประเด็น พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 4 ถึง 6 ข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
 
   try {
     const conversationNote = options.conversationalFollowUp
@@ -345,14 +462,23 @@ async function generateChatSummary(message, sources, options = {}) {
       String(response.text || "").trim(),
       explainMode,
       sources,
-      options,
+      {
+        ...options,
+        amountMode,
+      },
     );
     if (!normalized) {
-      return buildFallbackSummary(sources, explainMode, options);
+      return buildFallbackSummary(sources, explainMode, {
+        ...options,
+        amountMode,
+      });
     }
     return [normalized, buildReferenceSection(sources)].join("\n\n");
   } catch (error) {
-    return buildFallbackSummary(sources, explainMode, options);
+    return buildFallbackSummary(sources, explainMode, {
+      ...options,
+      amountMode,
+    });
   }
 }
 

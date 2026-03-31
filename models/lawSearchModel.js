@@ -11,6 +11,34 @@ function extractLawNumber(text) {
   return match ? match[0] : null;
 }
 
+function detectLawScope(text) {
+  const normalized = normalizeForSearch(text).toLowerCase();
+  const asksCoop = /พรบ|พระราชบัญญัติ|สหกรณ์/.test(normalized);
+  const asksGroup = /พรฎ|พระราชกฤษฎีกา|กลุ่มเกษตรกร/.test(normalized);
+
+  if (asksCoop && !asksGroup) {
+    return "coop";
+  }
+
+  if (asksGroup && !asksCoop) {
+    return "group";
+  }
+
+  return "all";
+}
+
+function buildLawNumberPatterns(number) {
+  if (!number) {
+    return [];
+  }
+
+  return uniqueTokens([
+    `มาตรา ${number}`,
+    `มาตรา${number}`,
+    number,
+  ]);
+}
+
 function scoreResult(query, text, primaryLabel) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const normalizedText = normalizeForSearch(text).toLowerCase();
@@ -109,12 +137,13 @@ class LawSearchModel {
     }
 
     const queryLawNumber = extractLawNumber(message);
+    const inferredScope = target === "all" ? detectLawScope(message) : target;
     const tableConfigs =
-      target === "group"
+      inferredScope === "group"
         ? [
             ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws"],
           ]
-        : target === "coop"
+        : inferredScope === "coop"
           ? [
               ["tbl_laws", "law_id", "law_number", "law_part", "law_detail", "law_comment", "tbl_laws"],
             ]
@@ -125,13 +154,15 @@ class LawSearchModel {
 
     const rowGroups = await Promise.all(
       tableConfigs.map(async ([tableName, idField, numberField, partField, detailField, commentField, sourceName]) => {
-        const whereClause = terms
+        const lawNumberPatterns = buildLawNumberPatterns(queryLawNumber);
+        const searchTerms = uniqueTokens([...terms, ...lawNumberPatterns]).slice(0, 12);
+        const whereClause = searchTerms
           .map(
             () =>
               `(LOWER(${numberField}) LIKE ? OR LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`,
           )
           .join(" OR ");
-        const params = terms.flatMap((term) => {
+        const params = searchTerms.flatMap((term) => {
           const like = `%${term}%`;
           return [like, like, like, like];
         });
@@ -162,7 +193,25 @@ class LawSearchModel {
         let score = scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`);
 
         if (queryLawNumber && extractLawNumber(row.law_number) === queryLawNumber) {
-          score += 45;
+          score += 90;
+        }
+
+        if (queryLawNumber && normalizeForSearch(row.law_number).includes(`มาตรา ${queryLawNumber}`)) {
+          score += 50;
+        }
+
+        if (
+          inferredScope === "coop" &&
+          row.__sourceName === "tbl_laws"
+        ) {
+          score += 40;
+        }
+
+        if (
+          inferredScope === "group" &&
+          row.__sourceName === "tbl_glaws"
+        ) {
+          score += 40;
         }
 
         return {

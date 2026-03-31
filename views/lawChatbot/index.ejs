@@ -1709,7 +1709,7 @@
           const contextRow = document.createElement('div');
           contextRow.className = 'context-chip-row';
           contextRow.innerHTML = `
-            <span class="context-badge"><i class="bi bi-link-45deg"></i>ถามต่อเรื่องเดิมได้เลย ถ้าจะถามเรื่องใหม่ให้กดเคลียร์ประวัติ</span>
+            <span class="context-badge"><i class="bi bi-link-45deg"></i>โหมดถามต่อเรื่องเดิม: พิมพ์ถามต่อได้เลย ถ้าจะเริ่มเรื่องใหม่ให้กด <i class="bi bi-trash-fill"></i></span>
             <button type="button" class="context-reset-btn">เริ่มหัวข้อใหม่</button>
           `;
 
@@ -2028,7 +2028,9 @@
         await resetConversationContext();
         chatMessages.innerHTML = '';
         localStorage.removeItem(CHAT_CACHE_KEY);
-        addBubble('ล้างประวัติแล้ว ถ้าต้องการถามเรื่องใหม่ให้พิมพ์ได้เลย และถ้าจะถามเรื่องเดิมต่อเนื่องครั้งถัดไปก็พิมพ์ถามต่อได้ทันที', 'bot');
+        addBubble('ล้างประวัติแล้ว คำถามถัดไปจะถือเป็นคำถามใหม่ หากต้องการถามต่อเรื่องเดิม ให้พิมพ์ถามต่อในบทสนทนาเดิมโดยไม่ต้องกด <i class="bi bi-trash-fill"></i>', 'bot', false, [], null, true, {
+          renderedHtml: 'ล้างประวัติแล้ว คำถามถัดไปจะถือเป็นคำถามใหม่ หากต้องการถามต่อเรื่องเดิม ให้พิมพ์ถามต่อในบทสนทนาเดิมโดยไม่ต้องกด <i class="bi bi-trash-fill"></i>'
+        });
       });
 
       if (toggleHeaderBtn) {
@@ -2070,8 +2072,8 @@
         initVoiceRecognition();
       }
       restoreRecentChats();
-      if (!chatMessages.querySelector('.bubble')) addBubble('ถ้าต้องการถามเรื่องใหม่ ให้กด <i class="bi bi-trash-fill"></i> ก่อน และถ้าต้องการถามเรื่องเดิมต่อเนื่อง ก็พิมพ์ถามต่อได้เลย', 'bot', false, [], null, true, {
-        renderedHtml: 'ถ้าต้องการถามเรื่องใหม่ ให้กด <i class="bi bi-trash-fill"></i> ก่อน และถ้าต้องการถามเรื่องเดิมต่อเนื่อง ก็พิมพ์ถามต่อได้เลย'
+      if (!chatMessages.querySelector('.bubble')) addBubble('แนวทางการถามมี 2 แบบ: 1) ถามต่อหน้าเดิม คือคำถามต่อเนื่องจากคำถามก่อนหน้า ให้พิมพ์ถามต่อได้เลย 2) ถ้าต้องการตั้งคำถามใหม่ ให้กด <i class="bi bi-trash-fill"></i> ก่อน', 'bot', false, [], null, true, {
+        renderedHtml: 'แนวทางการถามมี 2 แบบ: 1) ถามต่อหน้าเดิม คือคำถามต่อเนื่องจากคำถามก่อนหน้า ให้พิมพ์ถามต่อได้เลย 2) ถ้าต้องการตั้งคำถามใหม่ ให้กด <i class="bi bi-trash-fill"></i> ก่อน'
       });
 
       if ('serviceWorker' in navigator) {

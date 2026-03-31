@@ -1,5 +1,6 @@
 const LawChatbotModel = require("../models/lawChatbotModel");
 const LawChatbotKnowledgeModel = require("../models/lawChatbotKnowledgeModel");
+const LawSearchModel = require("../models/lawSearchModel");
 const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const { generateChatSummary, wantsExplanation } = require("./chatAnswerService");
@@ -235,35 +236,188 @@ function prioritizeMatches(matches, options = {}) {
   }));
 }
 
+function classifyQuestionIntent(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+
+  const asksLawSection =
+    /มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+/.test(text);
+  const asksDocumentStyle =
+    /กฎกระทรวง|ประกาศ|หนังสือเวียน|ข้อหารือ|หนังสือสั่งการ|หนังสือกรม|เอกสาร|ฉบับ/.test(text);
+  const asksQaStyle =
+    /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ|ถามตอบ|คำถามคำตอบ/.test(text);
+  const asksShortAnswer =
+    text.length <= 60 &&
+    /คืออะไร|หมายถึง|เท่าไร|เท่าไหร่|กี่บาท|กี่เปอร์เซ็นต์|กี่ร้อยละ|เมื่อไร|เมื่อไหร่|ต้อง|ควร|ได้ไหม|ได้หรือไม่/.test(
+      text,
+    );
+
+  if (asksLawSection) {
+    return "law_section";
+  }
+
+  if (asksDocumentStyle) {
+    return "document";
+  }
+
+  if (asksQaStyle) {
+    return "qa";
+  }
+
+  if (asksShortAnswer) {
+    return "short_answer";
+  }
+
+  return "general";
+}
+
+function getSourceRoutingPlan(intent) {
+  switch (intent) {
+    case "law_section":
+      return {
+        priorities: {
+          structured_laws: 7,
+          admin_knowledge: 4,
+          vinichai: 3,
+          documents: 2,
+          pdf_chunks: 2,
+          knowledge_base: 1,
+        },
+        limits: {
+          structured_laws: 4,
+          admin_knowledge: 1,
+          vinichai: 1,
+          documents: 1,
+          pdf_chunks: 1,
+          knowledge_base: 1,
+        },
+      };
+    case "document":
+      return {
+        priorities: {
+          documents: 6,
+          pdf_chunks: 6,
+          structured_laws: 3,
+          vinichai: 3,
+          admin_knowledge: 2,
+          knowledge_base: 1,
+        },
+        limits: {
+          documents: 2,
+          pdf_chunks: 4,
+          structured_laws: 2,
+          vinichai: 1,
+          admin_knowledge: 1,
+          knowledge_base: 1,
+        },
+      };
+    case "qa":
+      return {
+        priorities: {
+          vinichai: 6,
+          admin_knowledge: 5,
+          structured_laws: 3,
+          documents: 2,
+          pdf_chunks: 2,
+          knowledge_base: 1,
+        },
+        limits: {
+          vinichai: 3,
+          admin_knowledge: 2,
+          structured_laws: 2,
+          documents: 1,
+          pdf_chunks: 1,
+          knowledge_base: 1,
+        },
+      };
+    case "short_answer":
+      return {
+        priorities: {
+          admin_knowledge: 6,
+          structured_laws: 5,
+          vinichai: 3,
+          documents: 2,
+          pdf_chunks: 2,
+          knowledge_base: 1,
+        },
+        limits: {
+          admin_knowledge: 3,
+          structured_laws: 2,
+          vinichai: 1,
+          documents: 1,
+          pdf_chunks: 1,
+          knowledge_base: 1,
+        },
+      };
+    default:
+      return {
+        priorities: {
+          structured_laws: 5,
+          admin_knowledge: 4,
+          vinichai: 4,
+          documents: 3,
+          pdf_chunks: 3,
+          knowledge_base: 1,
+        },
+        limits: {
+          structured_laws: 3,
+          admin_knowledge: 2,
+          vinichai: 2,
+          documents: 2,
+          pdf_chunks: 3,
+          knowledge_base: 1,
+        },
+      };
+  }
+}
+
 async function searchDatabaseSources(message, target) {
+  const intent = classifyQuestionIntent(message);
+  const routingPlan = getSourceRoutingPlan(intent);
   const [
     rawKnowledgeMatches,
     rawDocumentMatches,
     rawPdfMatches,
     rawFallbackKnowledge,
+    rawStructuredMatches,
+    rawVinichaiMatches,
   ] = await Promise.all([
     LawChatbotKnowledgeModel.searchKnowledge(message, target, 5),
     LawChatbotPdfChunkModel.searchDocuments(message, 5),
     LawChatbotPdfChunkModel.searchChunks(message, 6),
     Promise.resolve(LawChatbotModel.searchKnowledge(message, target)),
+    LawSearchModel.searchStructuredLaws(message, target, 6),
+    LawSearchModel.searchVinichai(message, 5),
   ]);
 
   const knowledgeMatches = prioritizeMatches(rawKnowledgeMatches, {
-    retrievalPriority: 4,
+    retrievalPriority: routingPlan.priorities.admin_knowledge || 4,
     sourceOverride: "admin_knowledge",
   });
   const documentMatches = prioritizeMatches(rawDocumentMatches, {
-    retrievalPriority: 3,
+    retrievalPriority: routingPlan.priorities.documents || 3,
   });
   const pdfMatches = prioritizeMatches(rawPdfMatches, {
-    retrievalPriority: 2,
+    retrievalPriority: routingPlan.priorities.pdf_chunks || 2,
   });
   const fallbackKnowledge = prioritizeMatches(rawFallbackKnowledge, {
-    retrievalPriority: 1,
+    retrievalPriority: routingPlan.priorities.knowledge_base || 1,
     sourceOverride: "knowledge_base",
   });
+  const structuredMatches = prioritizeMatches(rawStructuredMatches, {
+    retrievalPriority: routingPlan.priorities.structured_laws || 5,
+  });
+  const vinichaiMatches = prioritizeMatches(rawVinichaiMatches, {
+    retrievalPriority: routingPlan.priorities.vinichai || 4,
+  });
 
-  return [...knowledgeMatches, ...documentMatches, ...pdfMatches, ...fallbackKnowledge]
+  return [
+    ...structuredMatches,
+    ...knowledgeMatches,
+    ...vinichaiMatches,
+    ...documentMatches,
+    ...pdfMatches,
+    ...fallbackKnowledge,
+  ]
     .filter(Boolean)
     .sort((a, b) => {
       const priorityDiff = (b.retrievalPriority || 0) - (a.retrievalPriority || 0);
@@ -477,13 +631,16 @@ function sortByScore(matches) {
     .sort((a, b) => (b.score || 0) - (a.score || 0));
 }
 
-function selectTieredSources(groups) {
+function selectTieredSources(groups, intent = "general") {
+  const routingPlan = getSourceRoutingPlan(intent);
   const plan = [
-    { key: "admin_knowledge", limit: 2 },
-    { key: "documents", limit: 2 },
-    { key: "pdf_chunks", limit: 3 },
+    { key: "structured_laws", limit: routingPlan.limits.structured_laws || 3 },
+    { key: "admin_knowledge", limit: routingPlan.limits.admin_knowledge || 2 },
+    { key: "vinichai", limit: routingPlan.limits.vinichai || 2 },
+    { key: "documents", limit: routingPlan.limits.documents || 2 },
+    { key: "pdf_chunks", limit: routingPlan.limits.pdf_chunks || 3 },
     { key: "internet", limit: 2 },
-    { key: "knowledge_base", limit: 1 },
+    { key: "knowledge_base", limit: routingPlan.limits.knowledge_base || 1 },
   ];
 
   const selected = [];
@@ -505,6 +662,7 @@ function selectTieredSources(groups) {
 
 async function collectAnswerSources(message, target, session) {
   const startedAt = nowMs();
+  const questionIntent = classifyQuestionIntent(message);
   const searchPlan = await resolveSearchPlan(message, target, session);
   const afterDatabaseSearchAt = nowMs();
   const effectiveMessage = searchPlan.effectiveMessage || String(message || "").trim();
@@ -516,17 +674,22 @@ async function collectAnswerSources(message, target, session) {
   const afterInternetSearchAt = nowMs();
 
   const grouped = {
+    structured_laws: databaseMatches.filter(
+      (item) => item && (item.source === "tbl_laws" || item.source === "tbl_glaws"),
+    ),
     admin_knowledge: databaseMatches.filter((item) => item && item.source === "admin_knowledge"),
+    vinichai: databaseMatches.filter((item) => item && item.source === "tbl_vinichai"),
     documents: databaseMatches.filter((item) => item && item.source === "documents"),
     pdf_chunks: databaseMatches.filter((item) => item && item.source === "pdf_chunks"),
     knowledge_base: databaseMatches.filter((item) => item && item.source === "knowledge_base"),
     internet: internetMatches,
   };
 
-  const { selectedSourceTier, selectedSources } = selectTieredSources(grouped, 6);
+  const { selectedSourceTier, selectedSources } = selectTieredSources(grouped, questionIntent);
 
   return {
     ...searchPlan,
+    questionIntent,
     effectiveMessage,
     databaseMatches,
     internetMatches,

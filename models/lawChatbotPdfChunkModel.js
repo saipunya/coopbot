@@ -41,6 +41,38 @@ function buildCandidateTerms(message) {
   return uniqueTokens([normalizedMessage, ...fallbackTokens].filter(Boolean)).slice(0, 8);
 }
 
+function looksLikeAmountQuery(query) {
+  const text = normalizeForSearch(query).toLowerCase();
+  return /เท่าไร|เท่าไหร่|กี่บาท|กี่เปอร์เซ็นต์|กี่ร้อยละ|อัตรา|จำนวนเงิน|ค่าบำรุง|ชำระ|จ่าย/.test(text);
+}
+
+function scoreAmountSignals(query, rawText) {
+  if (!looksLikeAmountQuery(query)) {
+    return 0;
+  }
+
+  const text = String(rawText || "");
+  let score = 0;
+
+  if (/\d/.test(text)) {
+    score += 14;
+  }
+
+  if (/บาท|ร้อยละ|เปอร์เซ็นต์|%|อัตรา|จำนวนเงิน|ชำระ|จ่าย/.test(text)) {
+    score += 18;
+  }
+
+  if (/ค่าบำรุง|สันนิบาต/.test(text)) {
+    score += 16;
+  }
+
+  if (/\d[\d,]*(?:\.\d+)?\s*(บาท|ร้อยละ|เปอร์เซ็นต์|%)/.test(text)) {
+    score += 28;
+  }
+
+  return score;
+}
+
 function scoreChunkMatch(query, row) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const rowText = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
@@ -89,6 +121,8 @@ function scoreChunkMatch(query, row) {
   if (rawChunkText.length > 0 && replacementGlyphHits / rawChunkText.length > 0.02) {
     score -= 20;
   }
+
+  score += scoreAmountSignals(query, `${rawKeyword} ${rawChunkText}`);
 
   return score;
 }
