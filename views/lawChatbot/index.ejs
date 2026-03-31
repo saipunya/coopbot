@@ -905,7 +905,7 @@
       <div class="page-brand">
         <div class="brand-icon"><i class="bi bi-robot"></i></div>
         <div class="brand-title">
-          <h6>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (version 1.0)</h5>
+          <h6><strong>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร</strong> (ver 1.0)</h6>
           <p>ค้นหากฎหมายสหกรณ์แบบ PWA สำหรับมือถือและเดสก์ท็อป</p>
         </div>
       </div>
@@ -1052,13 +1052,15 @@
 
       <form id="chatForm" class="chat-input-wrap" autocomplete="off">
         <div class="input-group">
-          <input id="chatInput" type="text" class="form-control" placeholder="ถ้าต้องการถามหัวข้อใหม่ ให้กดลบเคลียร์ประวัติ..." maxlength="500" required />
+          <input id="chatInput" type="text" class="form-control" placeholder="พิมพ์คำถามของคุณที่นี่" maxlength="500" required />
           <button id="voiceBtn" type="button" class="btn btn-outline-secondary" title="ค้นหาด้วยเสียง" aria-label="ค้นหาด้วยเสียง">
             <i class="bi bi-mic-fill"></i>
           </button>
-          <button id="debugBtn" type="button" class="btn btn-outline-secondary" title="ส่งคำถามพร้อม debug timing" aria-label="ส่งคำถามพร้อม debug timing">
-            Debug
-          </button>
+          <% if (currentUser) { %>
+            <button id="debugBtn" type="button" class="btn btn-outline-secondary" title="ส่งคำถามพร้อม debug timing" aria-label="ส่งคำถามพร้อม debug timing">
+              Debug
+            </button>
+          <% } %>
           <button id="sendBtn" type="submit" class="btn btn-primary px-4">ส่ง</button>
         </div>
         <div id="voiceStatus" class="small text-muted mt-1"></div>
