@@ -5,6 +5,16 @@ const {
   segmentWords,
   uniqueTokens,
 } = require("../services/thaiTextUtils");
+const {
+  createEmbedding,
+  bufferToEmbedding,
+  cosineSimilarity,
+} = require("../services/embeddingService");
+
+// Cache for embeddings to avoid repeated DB queries
+let embeddingCache = null;
+let embeddingCacheTime = 0;
+const EMBEDDING_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const GENERIC_QUERY_TOKENS = new Set([
   "ค่า",
@@ -547,6 +557,137 @@ class LawChatbotPdfChunkModel {
         };
       })
       .filter((row) => row.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
+
+  /**
+   * Load and cache embeddings from database
+   */
+  static async loadEmbeddingCache() {
+    const now = Date.now();
+    if (embeddingCache && now - embeddingCacheTime < EMBEDDING_CACHE_TTL_MS) {
+      return embeddingCache;
+    }
+
+    const pool = getDbPool();
+    if (!pool) {
+      return [];
+    }
+
+    const [rows] = await pool.query(`
+      SELECT c.id, c.keyword, c.chunk_text, c.embedding, c.document_id,
+             d.title, d.document_number, d.document_date_text, d.document_source, d.originalname
+      FROM pdf_chunks AS c
+      LEFT JOIN documents AS d ON d.id = c.document_id
+      WHERE c.embedding IS NOT NULL
+    `);
+
+    // Pre-convert embeddings to Float32Array
+    embeddingCache = rows.map((row) => ({
+      ...row,
+      embeddingVector: bufferToEmbedding(row.embedding),
+      embedding: undefined,
+    })).filter((row) => row.embeddingVector);
+
+    embeddingCacheTime = now;
+    return embeddingCache;
+  }
+
+  /**
+   * Semantic search using embeddings
+   * @param {string} message - User query
+   * @param {number} limit - Max results
+   * @returns {Promise<Array>} - Semantically similar chunks
+   */
+  static async semanticSearch(message, limit = 10) {
+    // Create embedding for query
+    const queryEmbedding = await createEmbedding(message);
+    if (!queryEmbedding) {
+      console.warn("[semanticSearch] Failed to create query embedding");
+      return [];
+    }
+
+    // Get cached embeddings
+    const cachedRows = await this.loadEmbeddingCache();
+    if (cachedRows.length === 0) {
+      return [];
+    }
+
+    // Calculate similarity scores
+    const scored = cachedRows
+      .map((row) => {
+        const similarity = cosineSimilarity(queryEmbedding, row.embeddingVector);
+        return {
+          id: row.id,
+          keyword: row.keyword,
+          chunk_text: row.chunk_text,
+          document_id: row.document_id,
+          title: row.title,
+          document_number: row.document_number,
+          document_date_text: row.document_date_text,
+          document_source: row.document_source,
+          originalname: row.originalname,
+          similarity,
+          source: "pdf_chunks",
+          reference: row.document_number || row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
+          documentNumber: row.document_number || "",
+          documentDateText: row.document_date_text || "",
+          documentSource: row.document_source || "",
+          // Convert similarity (0-1) to score scale similar to keyword search
+          score: Math.round(similarity * 200),
+        };
+      })
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+
+    return scored;
+  }
+
+  /**
+   * Hybrid search combining keyword and semantic search
+   * @param {string} message - User query
+   * @param {number} limit - Max results
+   * @returns {Promise<Array>} - Combined results
+   */
+  static async hybridSearch(message, limit = 10) {
+    // Run keyword and semantic search in parallel
+    const [keywordResults, semanticResults] = await Promise.all([
+      this.searchChunks(message, limit),
+      this.semanticSearch(message, limit),
+    ]);
+
+    // Merge results, preferring keyword matches but boosting with semantic scores
+    const resultMap = new Map();
+
+    // Add keyword results first
+    keywordResults.forEach((result) => {
+      resultMap.set(result.id, {
+        ...result,
+        keywordScore: result.score,
+        semanticScore: 0,
+      });
+    });
+
+    // Add/merge semantic results
+    semanticResults.forEach((result) => {
+      if (resultMap.has(result.id)) {
+        // Boost existing result with semantic score
+        const existing = resultMap.get(result.id);
+        existing.semanticScore = result.score;
+        existing.score = existing.keywordScore + Math.round(result.score * 0.3); // 30% semantic boost
+      } else {
+        // Add new semantic-only result
+        resultMap.set(result.id, {
+          ...result,
+          keywordScore: 0,
+          semanticScore: result.score,
+        });
+      }
+    });
+
+    // Sort by combined score and return top results
+    return Array.from(resultMap.values())
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
   }

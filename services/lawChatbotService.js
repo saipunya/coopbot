@@ -443,7 +443,7 @@ async function searchDatabaseSources(message, target) {
   ] = await Promise.all([
     LawChatbotKnowledgeModel.searchKnowledge(message, target, 5),
     LawChatbotPdfChunkModel.searchDocuments(message, 5),
-    LawChatbotPdfChunkModel.searchChunks(message, 6),
+    LawChatbotPdfChunkModel.hybridSearch(message, 6),
     Promise.resolve(LawChatbotModel.searchKnowledge(message, target)),
     LawSearchModel.searchStructuredLaws(message, target, 6),
     LawSearchModel.searchVinichai(message, 5),

@@ -1,4 +1,5 @@
 const { GoogleGenAI } = require("@google/genai");
+const { normalizeForSearch, segmentWords, uniqueTokens } = require("./thaiTextUtils");
 
 let client = null;
 
