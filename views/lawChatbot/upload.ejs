@@ -1,51 +1,203 @@
 <%- include("../partials/header", { title, page }) %>
 
-<section class="card">
-  <h1>Upload Legal Documents</h1>
-  <p>Upload PDF, DOC, or DOCX files to prepare the law chatbot knowledge base.</p>
-  <p>Maximum file size: <strong><%= data.maxUploadMb %> MB</strong></p>
-  <% if (errorMessage) { %>
-    <p style="color: #b42318; font-weight: 700;"><%= errorMessage %></p>
-  <% } %>
-  <% if (successMessage) { %>
-    <p style="color: #1d7a52; font-weight: 700;"><%= successMessage %></p>
-  <% } %>
-  <form action="<%= data.uploadPath %>" method="post" enctype="multipart/form-data">
-    <label for="lawPdf">Document file</label>
-    <input id="lawPdf" type="file" name="lawPdf" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
-    <button type="submit">Upload document</button>
-  </form>
+<style>
+  .upload-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
+    gap: 1rem;
+    align-items: stretch;
+  }
+  .upload-hero .card {
+    margin-bottom: 0;
+  }
+  .upload-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    padding: 0.45rem 0.75rem;
+    border-radius: 999px;
+    margin-bottom: 0.85rem;
+  }
+  .upload-title {
+    margin: 0 0 0.45rem;
+    color: var(--accent-strong);
+    font-size: clamp(1.55rem, 2.8vw, 2.1rem);
+    line-height: 1.15;
+  }
+  .upload-lead {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.7;
+  }
+  .upload-stat-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 247, 252, 0.92));
+  }
+  .upload-stat-row {
+    display: grid;
+    gap: 0.9rem;
+  }
+  .upload-stat {
+    padding: 0.95rem 1rem;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.88);
+  }
+  .upload-stat strong {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 1.55rem;
+    color: var(--accent-strong);
+  }
+  .upload-form {
+    margin-top: 1rem;
+    padding: 1.15rem;
+    border-radius: 18px;
+    background: rgba(241, 246, 251, 0.9);
+    border: 1px solid var(--line);
+  }
+  .upload-form input[type="file"] {
+    padding: 0.8rem;
+    background: #fff;
+  }
+  .alert-note {
+    padding: 0.9rem 1rem;
+    border-radius: 14px;
+    margin: 0.9rem 0 0;
+    border: 1px solid transparent;
+    font-weight: 700;
+  }
+  .alert-note.error {
+    background: #fce9e7;
+    border-color: #f1b8b1;
+    color: #9b2c22;
+  }
+  .alert-note.success {
+    background: #e8f7ee;
+    border-color: #b8e3c8;
+    color: #1f6a3a;
+  }
+  .soft-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.8rem;
+  }
+  .soft-list li {
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.78);
+  }
+  .upload-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.75rem;
+    margin-top: 0.45rem;
+    font-size: 0.88rem;
+    color: var(--subtle);
+  }
+  .type-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    padding: 0;
+    list-style: none;
+  }
+  .type-chip-list li {
+    padding: 0.5rem 0.8rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    border: 1px solid rgba(21, 84, 122, 0.14);
+    font-size: 0.83rem;
+  }
+  @media (max-width: 820px) {
+    .upload-hero {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<section class="upload-hero">
+  <section class="card">
+    <div class="upload-kicker">กฎหมายสหกรณ์และกลุ่มเกษตรกร</div>
+    <h1 class="upload-title">อัปโหลดเอกสารเพื่อเสริมฐานความรู้ของแชตบอท</h1>
+    <p class="upload-lead">นำเข้าไฟล์ PDF, DOC หรือ DOCX เพื่อให้ระบบอ่านเนื้อหา แยกข้อความ และเตรียมข้อมูลไว้สำหรับใช้ตอบคำถามในหน้าแชทให้แม่นยำขึ้น</p>
+
+    <% if (errorMessage) { %>
+      <div class="alert-note error"><%= errorMessage %></div>
+    <% } %>
+    <% if (successMessage) { %>
+      <div class="alert-note success"><%= successMessage %></div>
+    <% } %>
+
+    <form class="upload-form" action="<%= data.uploadPath %>" method="post" enctype="multipart/form-data">
+      <label for="lawPdf">เลือกไฟล์เอกสาร</label>
+      <input id="lawPdf" type="file" name="lawPdf" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
+      <p style="margin-top: -0.2rem;">ขนาดไฟล์สูงสุด <strong><%= data.maxUploadMb %> MB</strong></p>
+      <button type="submit">อัปโหลดเอกสาร</button>
+    </form>
+  </section>
+
+  <section class="card upload-stat-card">
+    <div>
+      <h2 style="margin-top: 0; color: var(--accent-strong);">สถานะข้อมูล</h2>
+      <p>ภาพรวมของเอกสารที่ถูกเตรียมไว้สำหรับใช้ตอบคำถามในระบบ</p>
+    </div>
+    <div class="upload-stat-row">
+      <div class="upload-stat">
+        ไฟล์ที่อัปโหลดแล้ว
+        <strong><%= data.uploadedPdfCount %></strong>
+      </div>
+      <div class="upload-stat">
+        จำนวน chunk ทั้งหมด
+        <strong><%= data.uploadedChunkCount %></strong>
+      </div>
+    </div>
+  </section>
 </section>
 
 <section class="card">
-  <p>Accepted types</p>
-  <ul>
+  <h2 style="margin-top: 0; color: var(--accent-strong);">ประเภทไฟล์ที่รองรับ</h2>
+  <ul class="type-chip-list">
     <% data.acceptedTypes.forEach((type) => { %>
       <li><%= type %></li>
     <% }) %>
   </ul>
-  <p>Total uploaded files: <strong><%= data.uploadedPdfCount %></strong></p>
-  <p>Total chunk rows in `pdf_chunks`: <strong><%= data.uploadedChunkCount %></strong></p>
 </section>
 
 <section class="card">
-  <h2>Recent uploads</h2>
-  <ul>
+  <h2 style="margin-top: 0; color: var(--accent-strong);">รายการอัปโหลดล่าสุด</h2>
+  <ul class="soft-list">
     <% if (data.uploadedFiles.length === 0) { %>
-      <li>No uploaded files yet.</li>
+      <li>ยังไม่มีรายการอัปโหลด</li>
     <% } %>
     <% data.uploadedFiles.forEach((file) => { %>
       <li>
         <strong><%= file.originalname %></strong>
-        <% if (file.documentNumber) { %>
-          - เลขที่ <%= file.documentNumber %>
-        <% } %>
-        <% if (file.documentDateText) { %>
-          - ลงวันที่ <%= file.documentDateText %>
-        <% } %>
-        (<%= file.mimetype %>, <%= file.size %> bytes, <%= file.insertedChunkCount || 0 %> chunks, <%= file.status || "queued" %>)
+        <div class="upload-meta">
+          <% if (file.documentNumber) { %>
+            <span>เลขที่ <%= file.documentNumber %></span>
+          <% } %>
+          <% if (file.documentDateText) { %>
+            <span>ลงวันที่ <%= file.documentDateText %></span>
+          <% } %>
+          <span><%= file.mimetype %></span>
+          <span><%= file.size %> bytes</span>
+          <span><%= file.insertedChunkCount || 0 %> chunks</span>
+          <span>สถานะ <%= file.status || "queued" %></span>
+        </div>
         <% if (file.processingMessage) { %>
-          - <%= file.processingMessage %>
+          <div class="upload-meta"><span><%= file.processingMessage %></span></div>
         <% } %>
       </li>
     <% }) %>

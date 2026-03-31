@@ -1,10 +1,17 @@
 const lawChatbotService = require("../services/lawChatbotService");
 const { loginAdmin } = require("../services/adminAuthService");
+const {
+  createGoogleAuthUrl,
+  getGoogleConfig,
+  loginWithGoogleCallback,
+} = require("../services/adminGoogleAuthService");
 
 function renderLogin(req, res) {
   res.render("admin/login", {
     title: "Admin Login",
     errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    googleLoginEnabled: getGoogleConfig().enabled,
   });
 }
 
@@ -30,6 +37,38 @@ async function submitLogin(req, res) {
 
   req.session.adminUser = result.user;
   return res.redirect("/admin");
+}
+
+function redirectToGoogleLogin(req, res) {
+  try {
+    const authUrl = createGoogleAuthUrl(req);
+    return res.redirect(authUrl);
+  } catch (error) {
+    return res.redirect(
+      "/admin/login?error=" +
+        encodeURIComponent("Google Login ยังไม่ได้ตั้งค่าในระบบ")
+    );
+  }
+}
+
+async function handleGoogleCallback(req, res) {
+  if (req.query.error) {
+    return res.redirect(
+      "/admin/login?error=" +
+        encodeURIComponent("การเข้าสู่ระบบด้วย Google ถูกยกเลิกหรือไม่สำเร็จ")
+    );
+  }
+
+  try {
+    const result = await loginWithGoogleCallback(req);
+    req.session.adminUser = result.user;
+    return res.redirect("/admin");
+  } catch (error) {
+    return res.redirect(
+      "/admin/login?error=" +
+        encodeURIComponent(error.message || "ไม่สามารถเข้าสู่ระบบด้วย Google ได้")
+    );
+  }
 }
 
 async function renderDashboard(req, res) {
@@ -75,6 +114,8 @@ function logout(req, res) {
 module.exports = {
   renderLogin,
   submitLogin,
+  redirectToGoogleLogin,
+  handleGoogleCallback,
   renderDashboard,
   submitKnowledge,
   logout,

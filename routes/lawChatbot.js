@@ -1,6 +1,7 @@
 const express = require("express");
 
 const controller = require("../controllers/lawChatbotController");
+const lawChatbotService = require("../services/lawChatbotService");
 const {
   attachCurrentUser,
   requireAdminAuth,
@@ -33,6 +34,7 @@ router.get("/", attachCurrentUser, controller.renderIndex);
 router.post("/chat", attachCurrentUser, controller.chat);
 router.post("/chat-summary", attachCurrentUser, controller.chatSummary);
 router.post("/chat-feedback", attachCurrentUser, controller.chatFeedback);
+router.post("/admin-knowledge", requireAdminAuth, controller.saveKnowledgeFromChat);
 router.post("/reset-context", attachCurrentUser, controller.resetContext);
 router.get("/upload", requireAdminAuth, controller.renderUpload);
 router.post("/upload", requireAdminAuth, handleUploadMiddleware, controller.handleUpload);
@@ -47,19 +49,20 @@ router.post('/debug-decision', async (req, res) => {
       return res.status(400).json({ error: 'Invalid or missing message in request body' });
     }
     const session = req.session;
-    const evidence = await lawChatbotService.collectAnswerSources(message, target || 'coop', session);
+    const evidence = await lawChatbotService.collectAnswerSources(message, target || 'all', session);
     res.json({
       message,
-      target: target || 'coop',
+      target: target || 'all',
       selectedSourceTier: evidence.selectedSourceTier || 'none',
-      sources: evidence.allSources.map((item) => ({
+      timing: evidence.timing || {},
+      sources: (evidence.sources || []).map((item) => ({
         source: item.source || '',
         reference: item.reference || item.title || '',
         score: Number(item.score || 0),
         content: String(item.content || item.chunk_text || '').slice(0, 500),
         retrievalPriority: Number(item.retrievalPriority || 0)
       })),
-      filteredSources: evidence.filteredSources.map((item) => ({
+      databaseSources: (evidence.databaseMatches || []).map((item) => ({
         source: item.source || '',
         reference: item.reference || item.title || '',
         score: Number(item.score || 0),

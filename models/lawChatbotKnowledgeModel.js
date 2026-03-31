@@ -209,7 +209,7 @@ class LawChatbotKnowledgeModel {
     return rows.map(mapRow);
   }
 
-  static async searchKnowledge(message, target, limit = 5) {
+  static async searchKnowledge(message, target = "all", limit = 5) {
     const terms = uniqueTokens(segmentWords(message)).slice(0, 8);
     if (terms.length === 0) {
       return [];
@@ -252,7 +252,7 @@ class LawChatbotKnowledgeModel {
           };
         })
         .filter(Boolean)
-        .filter((row) => row.target === target && row.score > 0)
+        .filter((row) => (target === "all" ? true : row.target === target) && row.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
     }
@@ -268,14 +268,21 @@ class LawChatbotKnowledgeModel {
       return [like, like, like, like];
     });
 
-    const [rows] = await pool.query(
-      `SELECT id, target, title, law_number, content, source_note, created_at, updated_at
-       FROM chatbot_knowledge
-       WHERE target = ? AND (${whereClause})
-       ORDER BY id DESC
-       LIMIT 50`,
-      [target, ...params],
-    );
+    const sql =
+      target === "all"
+        ? `SELECT id, target, title, law_number, content, source_note, created_at, updated_at
+           FROM chatbot_knowledge
+           WHERE ${whereClause}
+           ORDER BY id DESC
+           LIMIT 50`
+        : `SELECT id, target, title, law_number, content, source_note, created_at, updated_at
+           FROM chatbot_knowledge
+           WHERE target = ? AND (${whereClause})
+           ORDER BY id DESC
+           LIMIT 50`;
+    const sqlParams = target === "all" ? params : [target, ...params];
+
+    const [rows] = await pool.query(sql, sqlParams);
 
     return rows
       .map((row) => {

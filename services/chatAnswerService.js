@@ -202,17 +202,23 @@ function joinSentences(lines, limit = 5) {
     .join(" ");
 }
 
+function buildSectionLines(lines, limit = 5) {
+  return uniqueCleanLines(lines, limit)
+    .map((line) => line.replace(/[.;]+$/g, "").trim())
+    .filter(Boolean);
+}
+
 function buildParagraphSummary(summaryLines, detailLines, explainMode) {
-  const summaryText = joinSentences(summaryLines);
-  const detailText = joinSentences(detailLines);
+  const summaryItems = buildSectionLines(summaryLines, 5);
+  const detailItems = buildSectionLines(detailLines, 5);
   const blocks = [];
 
-  if (summaryText) {
-    blocks.push(`สรุปสาระสำคัญ: ${summaryText}`);
+  if (summaryItems.length) {
+    blocks.push(`สรุปสาระสำคัญ:\n${summaryItems.join("\n")}`);
   }
 
-  if (explainMode && detailText) {
-    blocks.push(`รายละเอียดเพิ่มเติม: ${detailText}`);
+  if (explainMode && detailItems.length) {
+    blocks.push(`รายละเอียดเพิ่มเติม:\n${detailItems.join("\n")}`);
   }
 
   return blocks.join("\n\n").trim();
@@ -232,7 +238,7 @@ function decorateConversationalAnswer(answerText, options = {}) {
   const intro = topicLabel ? `ในกรณี${topicLabel} ` : "ในกรณีนี้ ";
 
   return text
-    .replace(/^สรุปสาระสำคัญ:\s*/i, `สรุปสาระสำคัญ: ${intro}`)
+    .replace(/^สรุปสาระสำคัญ:\s*/i, `สรุปสาระสำคัญ:\n${intro}`)
     .replace(/\n\nรายละเอียดเพิ่มเติม:\s*/i, "\n\nรายละเอียดเพิ่มเติม: ")
     .trim();
 }
@@ -320,8 +326,8 @@ async function generateChatSummary(message, sources, options = {}) {
   }
 
   const instruction = explainMode
-    ? "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ชัดเจน กระชับ ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ไม่ต้องทำเป็น bullet หรือ markdown heading โดยย่อหน้าแรกขึ้นต้นด้วย 'สรุปสาระสำคัญ:' และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด"
-    : "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่สั้น ชัดเจน ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น ไม่ต้องทำเป็น bullet หรือ markdown heading และให้ขึ้นต้นด้วย 'สรุปสาระสำคัญ:' หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด";
+    ? "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ชัดเจน กระชับ ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดหลายข้อ และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดหลายข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด"
+    : "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่สั้น ชัดเจน ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดหลายข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด";
 
   try {
     const conversationNote = options.conversationalFollowUp

@@ -18,6 +18,42 @@ function normalizeText(text) {
     .trim();
 }
 
+function shouldFallbackToPdfOcr(text) {
+  const normalized = normalizeText(text);
+  const minimumTextLength = Number(process.env.PDF_TEXT_MIN_LENGTH || 80);
+
+  if (normalized.length < minimumTextLength) {
+    return true;
+  }
+
+  const thaiChars = (normalized.match(/[\u0E00-\u0E7F]/g) || []).length;
+  const latinChars = (normalized.match(/[A-Za-z]/g) || []).length;
+  const replacementGlyphHits = (normalized.match(/�||||||||||||||/g) || []).length;
+  const garbledSpacingHits = (normalized.match(/[ก-๙]\s(?=[ก-๙])/g) || []).length;
+
+  const totalLetters = thaiChars + latinChars;
+  if (replacementGlyphHits >= 4) {
+    return true;
+  }
+
+  if (normalized.length > 0 && replacementGlyphHits / normalized.length > 0.01) {
+    return true;
+  }
+
+  // Thai legal PDFs should usually contain a healthy amount of Thai script.
+  if (totalLetters >= 120 && thaiChars > 0 && thaiChars / totalLetters < 0.35) {
+    return true;
+  }
+
+  // Text layers that split almost every Thai word into single-character spacing
+  // tend to search very poorly, so OCR gives better recall.
+  if (garbledSpacingHits >= 20) {
+    return true;
+  }
+
+  return false;
+}
+
 function chunkText(text, maxLength = 1400) {
   const paragraphs = normalizeText(text)
     .split(/\n{2,}/)
@@ -141,9 +177,7 @@ async function extractPdfTextWithOcr(document) {
 async function extractPdfText(filePath) {
   const document = await loadPdfDocument(filePath);
   const textLayer = await extractPdfTextLayer(document);
-  const minimumTextLength = Number(process.env.PDF_TEXT_MIN_LENGTH || 80);
-
-  if (textLayer.length >= minimumTextLength) {
+  if (!shouldFallbackToPdfOcr(textLayer)) {
     return textLayer;
   }
 

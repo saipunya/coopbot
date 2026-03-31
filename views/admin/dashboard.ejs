@@ -4,30 +4,78 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title><%= title %></title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet" />
     <style>
+      :root {
+        --bg-start: #e6eef6;
+        --bg-end: #f5f9fc;
+        --surface: rgba(255, 255, 255, 0.88);
+        --surface-strong: #ffffff;
+        --surface-soft: #f1f6fb;
+        --primary: #15547a;
+        --primary-strong: #0f4667;
+        --primary-soft: #d2e8f7;
+        --text-main: #1f2a37;
+        --text-sub: #5d6a79;
+        --border: #d8e2ea;
+        --ok: #1d7a52;
+        --warn: #8b2e2e;
+        --shadow-soft: 0 18px 45px rgba(18, 52, 77, 0.16);
+      }
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
-        font-family: Arial, sans-serif;
-        background: #f4f7fa;
-        color: #173042;
+        font-family: 'Sarabun', Arial, sans-serif;
+        background:
+          radial-gradient(circle at 14% 18%, rgba(35, 126, 184, 0.14), transparent 38%),
+          radial-gradient(circle at 85% 10%, rgba(23, 84, 122, 0.12), transparent 32%),
+          linear-gradient(160deg, var(--bg-start), var(--bg-end));
+        background-attachment: fixed;
+        color: var(--text-main);
       }
       .shell {
         width: min(1080px, calc(100% - 2rem));
         margin: 0 auto;
-        padding: 2rem 0 3rem;
+        padding: 1.4rem 0 3rem;
       }
       .topbar, .card {
-        background: #fff;
-        border: 1px solid #d7e3ec;
-        border-radius: 18px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        box-shadow: var(--shadow-soft);
+        backdrop-filter: blur(14px);
       }
       .topbar {
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 1rem;
-        padding: 1rem 1.25rem;
+        padding: 1.1rem 1.25rem;
         margin-bottom: 1rem;
+      }
+      .hero-title {
+        margin: 0;
+        color: var(--primary-strong);
+        font-size: clamp(1.45rem, 2.6vw, 2rem);
+      }
+      .hero-subtitle {
+        margin: 0.28rem 0 0;
+        color: var(--text-sub);
+        line-height: 1.6;
+      }
+      .topbar-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.45rem 0.78rem;
+        border-radius: 999px;
+        background: var(--primary-soft);
+        color: var(--primary-strong);
+        font-weight: 700;
+        font-size: 0.82rem;
+        margin-bottom: 0.75rem;
       }
       .grid {
         display: grid;
@@ -38,27 +86,48 @@
         padding: 1.25rem;
         margin-bottom: 1rem;
       }
+      .metric-card {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 247, 252, 0.92));
+      }
+      .metric-label {
+        margin: 0;
+        color: var(--text-sub);
+      }
       .metric {
         font-size: 2rem;
         font-weight: 700;
         margin: 0.35rem 0 0;
+        color: var(--primary-strong);
       }
       .logout-btn {
         border: none;
-        border-radius: 12px;
-        background: #15547a;
+        border-radius: 14px;
+        background: linear-gradient(145deg, var(--primary), var(--primary-strong));
         color: #fff;
-        padding: 0.8rem 1rem;
+        padding: 0.85rem 1.05rem;
         cursor: pointer;
+        font-weight: 700;
+        box-shadow: 0 10px 24px rgba(15, 70, 103, 0.18);
       }
       ul {
         padding-left: 1.2rem;
       }
+      a {
+        color: var(--primary-strong);
+      }
+      h2 {
+        color: var(--primary-strong);
+      }
+      p {
+        color: var(--text-sub);
+      }
       .alert {
         padding: 0.9rem 1rem;
-        border-radius: 14px;
+        border-radius: 16px;
         margin-bottom: 1rem;
         border: 1px solid transparent;
+        box-shadow: 0 8px 20px rgba(18, 52, 77, 0.08);
       }
       .alert.success {
         background: #e8f7ee;
@@ -86,26 +155,78 @@
         width: 100%;
         box-sizing: border-box;
         border: 1px solid #c9d8e4;
-        border-radius: 12px;
+        border-radius: 14px;
         padding: 0.8rem 0.9rem;
         font: inherit;
-        background: #fff;
+        background: var(--surface-strong);
+        color: var(--text-main);
       }
       .field textarea {
         min-height: 130px;
         resize: vertical;
       }
+      .field input:focus,
+      .field select:focus,
+      .field textarea:focus {
+        outline: none;
+        border-color: #6aa6cc;
+        box-shadow: 0 0 0 0.18rem rgba(47, 127, 184, 0.14);
+      }
       .primary-btn {
         border: none;
-        border-radius: 12px;
-        background: #1d6f96;
+        border-radius: 14px;
+        background: linear-gradient(145deg, var(--primary), var(--primary-strong));
         color: #fff;
         padding: 0.9rem 1.1rem;
         cursor: pointer;
         font-weight: 700;
+        box-shadow: 0 10px 24px rgba(15, 70, 103, 0.18);
       }
       .knowledge-list li {
         margin-bottom: 0.8rem;
+      }
+      .soft-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 0.8rem;
+      }
+      .soft-list li {
+        padding: 0.95rem 1rem;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.76);
+      }
+      .quick-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        padding: 0;
+        margin: 0;
+        list-style: none;
+      }
+      .quick-links a {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        text-decoration: none;
+        padding: 0.7rem 0.95rem;
+        border-radius: 999px;
+        background: var(--primary-soft);
+        color: var(--primary-strong);
+        border: 1px solid rgba(21, 84, 122, 0.14);
+        font-weight: 700;
+      }
+      .section-note {
+        margin-top: -0.15rem;
+        margin-bottom: 1rem;
+      }
+      @media (max-width: 760px) {
+        .topbar {
+          flex-direction: column;
+          align-items: stretch;
+        }
       }
     </style>
   </head>
@@ -120,9 +241,9 @@
 
       <section class="topbar">
         <div>
-          <p>Signed in as</p>
-          <h1 style="margin: 0;"><%= user.name %></h1>
-          <p style="margin: 0.2rem 0 0;"><%= user.position %> | <%= user.username %></p>
+          <div class="topbar-badge">Admin Dashboard</div>
+          <h1 class="hero-title"><%= user.name %></h1>
+          <p class="hero-subtitle"><%= user.position %> | <%= user.username %></p>
         </div>
         <form action="/admin/logout" method="post">
           <button class="logout-btn" type="submit">Logout</button>
@@ -130,23 +251,24 @@
       </section>
 
       <section class="grid">
-        <article class="card">
-          <p>Total uploads</p>
+        <article class="card metric-card">
+          <p class="metric-label">Total uploads</p>
           <p class="metric"><%= uploadData.uploadedPdfCount %></p>
         </article>
-        <article class="card">
-          <p>Total chunks</p>
+        <article class="card metric-card">
+          <p class="metric-label">Total chunks</p>
           <p class="metric"><%= uploadData.uploadedChunkCount %></p>
         </article>
-        <article class="card">
-          <p>Total feedback</p>
+        <article class="card metric-card">
+          <p class="metric-label">Total feedback</p>
           <p class="metric"><%= feedbackData.feedbackCount %></p>
         </article>
       </section>
 
       <section class="card">
         <h2>Recent uploads</h2>
-        <ul>
+        <p class="section-note">เอกสารล่าสุดที่ถูกนำเข้าเพื่อใช้เป็นฐานความรู้ของแชตบอท</p>
+        <ul class="soft-list">
           <% if (uploadData.uploadedFiles.length === 0) { %>
             <li>ยังไม่มีรายการอัปโหลดใน session นี้</li>
           <% } %>
@@ -163,7 +285,7 @@
 
       <section class="card">
         <h2>Quick links</h2>
-        <ul>
+        <ul class="quick-links">
           <li><a href="/law-chatbot">หน้าแชตสาธารณะ</a></li>
           <li><a href="/law-chatbot/upload">หน้าจัดการอัปโหลด</a></li>
           <li><a href="/law-chatbot/feedback">หน้าดู feedback</a></li>
@@ -173,7 +295,7 @@
 
       <section class="card" id="knowledge-management">
         <h2>เพิ่มหรือแก้ไขความรู้สำหรับตอบคำถาม</h2>
-        <p>
+        <p class="section-note">
           ใช้หน้านี้เพื่อเพิ่มข้อมูลที่ถูกต้องลงในฐานข้อมูล เมื่อ AI ตอบไม่ตรงข้อเท็จจริง ระบบจะนำข้อมูลชุดนี้ไปช่วยตอบในรอบถัดไป
         </p>
         <form action="/admin/knowledge" method="post">
@@ -212,7 +334,7 @@
       <section class="card">
         <h2>ความรู้ที่บันทึกล่าสุด</h2>
         <p>ทั้งหมด <strong><%= knowledgeData.knowledgeCount %></strong> รายการ</p>
-        <ul class="knowledge-list">
+        <ul class="knowledge-list soft-list">
           <% if (knowledgeData.recentKnowledge.length === 0) { %>
             <li>ยังไม่มีความรู้ที่เพิ่มเข้าฐานข้อมูล</li>
           <% } %>

@@ -1,6 +1,5 @@
 const LawChatbotModel = require("../models/lawChatbotModel");
 const LawChatbotKnowledgeModel = require("../models/lawChatbotKnowledgeModel");
-const LawSearchModel = require("../models/lawSearchModel");
 const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const { generateChatSummary, wantsExplanation } = require("./chatAnswerService");
@@ -14,11 +13,58 @@ const { normalizeForSearch, segmentWords, uniqueTokens } = require("./thaiTextUt
 
 const CHAT_CONTEXT_KEY = "lawChatbotContext";
 const CONTEXT_HISTORY_LIMIT = 8;
+const ANSWER_CACHE_TTL_MS = Number(process.env.LAW_CHATBOT_ANSWER_CACHE_TTL_MS || 5 * 60 * 1000);
 const KEYWORD_CONCURRENCY = Number(process.env.KEYWORD_CONCURRENCY || 4);
 const WEB_SEARCH_LIMIT = Number(process.env.LAW_CHATBOT_WEB_SEARCH_LIMIT || 3);
 const WEB_SEARCH_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_WEB_SEARCH_TIMEOUT_MS || 8000);
 const WEB_SEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+const answerCache = new Map();
+
+function nowMs() {
+  return Number(process.hrtime.bigint()) / 1e6;
+}
+
+function buildAnswerCacheKey(message, target) {
+  return `${target}::${normalizeForSearch(message).toLowerCase()}`;
+}
+
+function shouldUseAnswerCache(message) {
+  const text = String(message || "").trim();
+  return Boolean(text) && !looksLikeFollowUpQuestion(text);
+}
+
+function getCachedAnswer(cacheKey) {
+  const cached = answerCache.get(cacheKey);
+  if (!cached) {
+    return null;
+  }
+
+  if (Date.now() - cached.createdAt > ANSWER_CACHE_TTL_MS) {
+    answerCache.delete(cacheKey);
+    return null;
+  }
+
+  return cached.value;
+}
+
+function setCachedAnswer(cacheKey, value) {
+  answerCache.set(cacheKey, {
+    createdAt: Date.now(),
+    value,
+  });
+
+  if (answerCache.size > 200) {
+    const oldestKey = answerCache.keys().next().value;
+    if (oldestKey) {
+      answerCache.delete(oldestKey);
+    }
+  }
+}
+
+function clearAnswerCache() {
+  answerCache.clear();
+}
 
 function decodeHtmlEntities(text) {
   return String(text || "")
@@ -153,7 +199,8 @@ async function searchInternetSources(message, target) {
     return [];
   }
 
-  const targetKeyword = target === "group" ? "กลุ่มเกษตรกร" : "สหกรณ์";
+  const targetKeyword =
+    target === "group" ? "กลุ่มเกษตรกร" : target === "coop" ? "สหกรณ์" : "สหกรณ์ กลุ่มเกษตรกร";
   const searchQuery = `${query} ${targetKeyword}`.trim();
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}&kl=th-th&ia=web`;
 
@@ -175,16 +222,6 @@ async function searchInternetSources(message, target) {
   }
 }
 
-function shouldUseInternetFallback(databaseMatches) {
-  if (!Array.isArray(databaseMatches) || databaseMatches.length === 0) {
-    return true;
-  }
-
-  const topScore = Number(databaseMatches[0]?.score || 0);
-  const secondScore = Number(databaseMatches[1]?.score || 0);
-  return topScore < 38 || (topScore < 45 && topScore - secondScore < 6);
-}
-
 function prioritizeMatches(matches, options = {}) {
   const retrievalPriority = Number(options.retrievalPriority || 0);
   const scoreBoost = Number(options.scoreBoost || 0);
@@ -199,31 +236,34 @@ function prioritizeMatches(matches, options = {}) {
 }
 
 async function searchDatabaseSources(message, target) {
-  const adminMatches = prioritizeMatches(
-    await LawChatbotKnowledgeModel.searchKnowledge(message, target, 6),
-    {
-      sourceOverride: "admin_knowledge",
-      retrievalPriority: 6,
-      scoreBoost: 40,
-    },
-  );
-  const pdfMatches = prioritizeMatches(await LawChatbotPdfChunkModel.searchChunks(message, 6), {
-    retrievalPriority: 5,
-  });
-  const documentMatches = prioritizeMatches(
-    await LawChatbotPdfChunkModel.searchDocuments(message, 6),
-    { retrievalPriority: 4 },
-  );
-  const structuredMatches = prioritizeMatches(
-    await LawSearchModel.searchStructuredLaws(message, target, 6),
-    { retrievalPriority: 3 },
-  );
-  const viniachaiMatches = prioritizeMatches(
-    await LawSearchModel.searchVinichai(message, 6),
-    { retrievalPriority: 2 },
-  );
+  const [
+    rawKnowledgeMatches,
+    rawDocumentMatches,
+    rawPdfMatches,
+    rawFallbackKnowledge,
+  ] = await Promise.all([
+    LawChatbotKnowledgeModel.searchKnowledge(message, target, 5),
+    LawChatbotPdfChunkModel.searchDocuments(message, 5),
+    LawChatbotPdfChunkModel.searchChunks(message, 6),
+    Promise.resolve(LawChatbotModel.searchKnowledge(message, target)),
+  ]);
 
-  return [...adminMatches, ...pdfMatches, ...documentMatches, ...structuredMatches, ...viniachaiMatches]
+  const knowledgeMatches = prioritizeMatches(rawKnowledgeMatches, {
+    retrievalPriority: 4,
+    sourceOverride: "admin_knowledge",
+  });
+  const documentMatches = prioritizeMatches(rawDocumentMatches, {
+    retrievalPriority: 3,
+  });
+  const pdfMatches = prioritizeMatches(rawPdfMatches, {
+    retrievalPriority: 2,
+  });
+  const fallbackKnowledge = prioritizeMatches(rawFallbackKnowledge, {
+    retrievalPriority: 1,
+    sourceOverride: "knowledge_base",
+  });
+
+  return [...knowledgeMatches, ...documentMatches, ...pdfMatches, ...fallbackKnowledge]
     .filter(Boolean)
     .sort((a, b) => {
       const priorityDiff = (b.retrievalPriority || 0) - (a.retrievalPriority || 0);
@@ -234,15 +274,6 @@ async function searchDatabaseSources(message, target) {
       return (b.score || 0) - (a.score || 0);
     })
     .slice(0, 30);
-}
-
-function searchKnowledgeSources(message, target) {
-  return LawChatbotModel.searchKnowledge(message, target).map((item) => ({
-    ...item,
-    source: "knowledge_base",
-    reference: item.reference || item.lawNumber || item.title || "ฐานความรู้ภายในระบบ",
-    content: item.content || "",
-  }));
 }
 
 function getSessionContext(session) {
@@ -446,51 +477,50 @@ function sortByScore(matches) {
     .sort((a, b) => (b.score || 0) - (a.score || 0));
 }
 
-function selectTieredSources(groups, limit = 6) {
-  const order = [
-    "admin_knowledge",
-    "pdf_chunks",
-    "documents",
-    "structured_laws",
-    "vinichai",
-    "internet",
-    "knowledge_base",
+function selectTieredSources(groups) {
+  const plan = [
+    { key: "admin_knowledge", limit: 2 },
+    { key: "documents", limit: 2 },
+    { key: "pdf_chunks", limit: 3 },
+    { key: "internet", limit: 2 },
+    { key: "knowledge_base", limit: 1 },
   ];
 
-  for (const key of order) {
-    const ranked = sortByScore(groups[key]);
+  const selected = [];
+  const usedTiers = [];
+
+  plan.forEach(({ key, limit }) => {
+    const ranked = sortByScore(groups[key]).slice(0, limit);
     if (ranked.length > 0) {
-      return {
-        selectedSourceTier: key,
-        selectedSources: ranked.slice(0, limit),
-      };
+      usedTiers.push(key);
+      selected.push(...ranked);
     }
-  }
+  });
 
   return {
-    selectedSourceTier: "none",
-    selectedSources: [],
+    selectedSourceTier: usedTiers.join(" > ") || "none",
+    selectedSources: selected,
   };
 }
 
 async function collectAnswerSources(message, target, session) {
+  const startedAt = nowMs();
   const searchPlan = await resolveSearchPlan(message, target, session);
+  const afterDatabaseSearchAt = nowMs();
   const effectiveMessage = searchPlan.effectiveMessage || String(message || "").trim();
   const databaseMatches = Array.isArray(searchPlan.matches) ? searchPlan.matches : [];
-
-  const internetMatches = await searchInternetSources(effectiveMessage, target);
-  const knowledgeMatches = searchKnowledgeSources(effectiveMessage, target);
+  const shouldUseInternetFallback = databaseMatches.length === 0;
+  const internetMatches = shouldUseInternetFallback
+    ? await searchInternetSources(effectiveMessage, target)
+    : [];
+  const afterInternetSearchAt = nowMs();
 
   const grouped = {
     admin_knowledge: databaseMatches.filter((item) => item && item.source === "admin_knowledge"),
-    pdf_chunks: databaseMatches.filter((item) => item && item.source === "pdf_chunks"),
     documents: databaseMatches.filter((item) => item && item.source === "documents"),
-    structured_laws: databaseMatches.filter(
-      (item) => item && (item.source === "tbl_laws" || item.source === "tbl_glaws"),
-    ),
-    vinichai: databaseMatches.filter((item) => item && item.source === "tbl_vinichai"),
+    pdf_chunks: databaseMatches.filter((item) => item && item.source === "pdf_chunks"),
+    knowledge_base: databaseMatches.filter((item) => item && item.source === "knowledge_base"),
     internet: internetMatches,
-    knowledge_base: knowledgeMatches,
   };
 
   const { selectedSourceTier, selectedSources } = selectTieredSources(grouped, 6);
@@ -499,12 +529,16 @@ async function collectAnswerSources(message, target, session) {
     ...searchPlan,
     effectiveMessage,
     databaseMatches,
-    knowledgeMatches,
     internetMatches,
     sources: selectedSources,
     selectedSourceTier,
     usedInternetFallback: internetMatches.length > 0,
-    attemptedInternetFallback: true,
+    attemptedInternetFallback: shouldUseInternetFallback,
+    timing: {
+      databaseSearchMs: Math.round(afterDatabaseSearchAt - startedAt),
+      internetSearchMs: Math.round(afterInternetSearchAt - afterDatabaseSearchAt),
+      totalSourceCollectionMs: Math.round(afterInternetSearchAt - startedAt),
+    },
   };
 }
 
@@ -523,8 +557,10 @@ async function getDashboardData() {
 }
 
 async function replyToChat(payload, session) {
+  const startedAt = nowMs();
   const message = String(payload.message || "").trim();
-  const target = payload.target === "group" ? "group" : "coop";
+  const target =
+    payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
   const debugMode =
     payload && (payload.debug === true || payload.debug === "true" || process.env.CHATBOT_DEBUG === "1");
 
@@ -536,7 +572,64 @@ async function replyToChat(payload, session) {
     };
   }
 
+  const cacheKey = buildAnswerCacheKey(message, target);
+  const canUseCache = shouldUseAnswerCache(message);
+  const cachedAnswer = canUseCache ? getCachedAnswer(cacheKey) : null;
+  if (cachedAnswer) {
+    storeConversationContext(
+      session,
+      target,
+      message,
+      cachedAnswer.effectiveMessage || message,
+      cachedAnswer.sources || [],
+      cachedAnswer.resolvedContext || { usedContext: false, topicHints: [] },
+    );
+
+    LawChatbotModel.create({
+      message,
+      effectiveMessage: cachedAnswer.effectiveMessage || message,
+      target,
+      answer: cachedAnswer.answer,
+      matchedSources: (cachedAnswer.sources || []).map((item) => ({
+        id: item.id || item.url || item.reference || item.title,
+        title: item.title || item.keyword || item.reference,
+        lawNumber: item.lawNumber || item.reference || item.keyword,
+        source: item.source || "",
+        url: item.url || "",
+        score: Number(item.score || 0),
+      })),
+    });
+
+    const cachedResult = {
+      hasContext: cachedAnswer.hasContext,
+      answer: cachedAnswer.answer,
+      highlightTerms: cachedAnswer.highlightTerms,
+      usedFollowUpContext: false,
+      usedInternetFallback: cachedAnswer.usedInternetFallback,
+    };
+
+    if (debugMode) {
+      cachedResult.debug = {
+        selectedSourceTier: cachedAnswer.selectedSourceTier || "cache",
+        sourceCount: Array.isArray(cachedAnswer.sources) ? cachedAnswer.sources.length : 0,
+        timing: {
+          cacheHit: true,
+          totalReplyMs: Math.round(nowMs() - startedAt),
+        },
+        sources: (cachedAnswer.sources || []).map((item) => ({
+          source: item.source || "",
+          reference: item.reference || item.title || "",
+          score: Number(item.score || 0),
+          preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
+        })),
+      };
+    }
+
+    return cachedResult;
+  }
+
   const evidence = await collectAnswerSources(message, target, session);
+  const afterCollectSourcesAt = nowMs();
   const resolvedContext = evidence.resolvedContext;
   const effectiveMessage = evidence.effectiveMessage || message;
   const sources = evidence.sources;
@@ -553,6 +646,7 @@ async function replyToChat(payload, session) {
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
     });
   }
+  const afterAnswerGenerationAt = nowMs();
 
   storeConversationContext(session, target, message, effectiveMessage, sources, resolvedContext);
 
@@ -579,10 +673,28 @@ async function replyToChat(payload, session) {
     usedInternetFallback: evidence.usedInternetFallback,
   };
 
+  if (canUseCache && !resolvedContext.usedContext) {
+    setCachedAnswer(cacheKey, {
+      hasContext: sources.length > 0,
+      answer,
+      highlightTerms,
+      usedInternetFallback: evidence.usedInternetFallback,
+      selectedSourceTier: evidence.selectedSourceTier || "none",
+      effectiveMessage,
+      resolvedContext,
+      sources,
+    });
+  }
+
   if (debugMode) {
     result.debug = {
       selectedSourceTier: evidence.selectedSourceTier || "none",
       sourceCount: sources.length,
+      timing: {
+        ...(evidence.timing || {}),
+        answerGenerationMs: Math.round(afterAnswerGenerationAt - afterCollectSourcesAt),
+        totalReplyMs: Math.round(afterAnswerGenerationAt - startedAt),
+      },
       sources: sources.map((item) => ({
         source: item.source || "",
         reference: item.reference || item.title || "",
@@ -601,7 +713,8 @@ async function summarizeChat(payload, session) {
     return { summary: "" };
   }
 
-  const target = payload.target === "group" ? "group" : "coop";
+  const target =
+    payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
   const evidence = await collectAnswerSources(message, target, session);
   const resolvedContext = evidence.resolvedContext;
   const effectiveMessage = evidence.effectiveMessage || message;
@@ -622,7 +735,7 @@ async function saveChatFeedback(payload) {
     message: payload.message || "",
     answerShown: payload.answerShown || "",
     isHelpful: Boolean(payload.isHelpful),
-    target: payload.target || "coop",
+    target: payload.target || "all",
     expectedAnswer: payload.expectedAnswer || "",
     suggestedLawNumber: payload.suggestedLawNumber || "",
   });
@@ -736,6 +849,8 @@ async function recordUpload(file) {
     return null;
   }
 
+  clearAnswerCache();
+
   const uploadRecord = LawChatbotPdfChunkModel.createUpload({
     filename: file.filename,
     originalname: file.originalname,
@@ -789,6 +904,8 @@ async function getKnowledgeAdminData() {
 async function saveKnowledgeEntry(payload) {
   const target = payload.target === "group" ? "group" : "coop";
 
+  clearAnswerCache();
+
   return LawChatbotKnowledgeModel.create({
     target,
     title: payload.title || "",
@@ -808,6 +925,7 @@ async function saveFeedback(payload) {
 
 module.exports = {
   getDashboardData,
+  collectAnswerSources,
   replyToChat,
   summarizeChat,
   saveChatFeedback,

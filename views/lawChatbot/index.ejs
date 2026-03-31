@@ -614,6 +614,49 @@
       --bs-btn-font-size: 0.76rem;
     }
 
+    .timing-debug {
+      margin-top: 0.55rem;
+      padding: 0.5rem 0.65rem;
+      border-radius: 0.6rem;
+      background: rgba(15, 70, 103, 0.06);
+      border: 1px dashed rgba(15, 70, 103, 0.22);
+      color: #355166;
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+
+    .admin-knowledge-form .form-label {
+      font-weight: 600;
+      color: var(--primary-strong);
+      margin-bottom: 0.35rem;
+    }
+
+    .admin-knowledge-form .form-control,
+    .admin-knowledge-form .form-select {
+      border-color: #c8d9e7;
+      border-radius: 0.75rem;
+    }
+
+    .admin-knowledge-form .form-control:focus,
+    .admin-knowledge-form .form-select:focus {
+      border-color: #6aa6cc;
+      box-shadow: 0 0 0 0.18rem rgba(47, 127, 184, 0.14);
+    }
+
+    .admin-knowledge-hint {
+      font-size: 0.82rem;
+      color: var(--text-sub);
+    }
+
+    .feedback-actions .btn-admin-knowledge {
+      --bs-btn-color: #0f4667;
+      --bs-btn-border-color: #8fb8d6;
+      --bs-btn-bg: rgba(255, 255, 255, 0.94);
+      --bs-btn-hover-color: #fff;
+      --bs-btn-hover-bg: #0f5b87;
+      --bs-btn-hover-border-color: #0f5b87;
+    }
+
     .bubble-content .feedback-actions {
       margin-left: auto;
     }
@@ -844,6 +887,15 @@
       </div>
       <div class="page-actions">
         <span id="onlineBadge" class="status-chip"><i class="bi bi-wifi"></i>ออนไลน์</span>
+        <% if (currentUser) { %>
+          <a href="/admin" class="btn btn-sm btn-outline-primary" title="ไปยังหน้าแอดมิน">
+            <i class="bi bi-speedometer2 me-1"></i>หน้า Admin
+          </a>
+        <% } else { %>
+          <a href="/admin/login" class="btn btn-sm btn-outline-primary" title="เข้าสู่ระบบผู้ดูแล">
+            <i class="bi bi-shield-lock me-1"></i>Admin Login
+          </a>
+        <% } %>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#developerModal" title="ข้อมูลผู้พัฒนา" aria-label="ผู้พัฒนาระบบ">
           <i class="bi bi-person-badge me-1"></i>ผู้พัฒนาระบบ
         </button>
@@ -914,27 +966,60 @@
       </div>
     </div>
 
+    <div class="modal fade" id="adminKnowledgeModal" tabindex="-1" aria-labelledby="adminKnowledgeModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <form id="adminKnowledgeForm" class="admin-knowledge-form">
+            <div class="modal-header">
+              <h5 class="modal-title" id="adminKnowledgeModalLabel"><i class="bi bi-journal-check me-2"></i>บันทึกคำตอบที่ถูกต้อง</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div id="adminKnowledgeAlert" class="alert alert-danger d-none" role="alert"></div>
+              <input type="hidden" id="adminKnowledgeQuestion" name="question" />
+
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label for="adminKnowledgeTarget" class="form-label">ประเภทข้อมูล</label>
+                  <select id="adminKnowledgeTarget" name="target" class="form-select" required>
+                    <option value="coop">สหกรณ์</option>
+                    <option value="group">กลุ่มเกษตรกร</option>
+                  </select>
+                </div>
+                <div class="col-md-8">
+                  <label for="adminKnowledgeLawNumber" class="form-label">เลขอ้างอิง / หมวด</label>
+                  <input id="adminKnowledgeLawNumber" name="lawNumber" type="text" class="form-control" placeholder="เช่น ข้อ 12 หรือ หมวดสมาชิก" />
+                </div>
+                <div class="col-12">
+                  <label for="adminKnowledgeTitle" class="form-label">หัวข้อ</label>
+                  <input id="adminKnowledgeTitle" name="title" type="text" class="form-control" placeholder="สรุปหัวข้อสำหรับเก็บเข้าฐานความรู้" required />
+                </div>
+                <div class="col-12">
+                  <label for="adminKnowledgeContent" class="form-label">คำตอบที่ถูกต้อง</label>
+                  <textarea id="adminKnowledgeContent" name="content" class="form-control" rows="6" placeholder="พิมพ์คำตอบหรือรายละเอียดที่ต้องการให้บอทใช้อ้างอิง" required></textarea>
+                  <div class="admin-knowledge-hint mt-2">ระบบจะนำข้อมูลนี้ไปใช้เป็นฐานความรู้ในการตอบคำถามรอบถัดไป</div>
+                </div>
+                <div class="col-12">
+                  <label for="adminKnowledgeSourceNote" class="form-label">แหล่งที่มา / หมายเหตุ</label>
+                  <input id="adminKnowledgeSourceNote" name="sourceNote" type="text" class="form-control" placeholder="เช่น มาตรา 15, มติที่ประชุม, หรือข้อชี้แจงเพิ่มเติม" />
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+              <button type="submit" id="adminKnowledgeSubmitBtn" class="btn btn-primary">บันทึกเข้าฐานความรู้</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <div class="chat-shell">
       <div class="chat-header d-none d-md-block">
         <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
           <div>
-            <h1 class="h5 mb-1">แชทบอทกฎหมายสหกรณ์ (version 1.0)</h1>
-            <p class="mb-0 small text-muted">ระบบค้นหากฎหมายสหกรณ์แบบ PWA สำหรับมือถือและเดสก์ท็อป</p>
-          </div>
-          <div class="target-law-wrap">
-            <div class="btn-group btn-group-sm" role="group" aria-label="เลือกฐานกฎหมาย">
-              <button type="button" class="btn btn-primary target-law-btn active" data-target="coop">กฎหมายสหกรณ์</button>
-              <button type="button" class="btn btn-outline-primary target-law-btn" data-target="group">กฎหมายกลุ่มเกษตรกร</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="d-md-none px-2 pt-2 pb-1">
-        <div class="target-law-wrap">
-          <div class="btn-group btn-group-sm w-100" role="group" aria-label="เลือกฐานกฎหมาย">
-            <button type="button" class="btn btn-primary target-law-btn active flex-fill" data-target="coop">กฎหมายสหกรณ์</button>
-            <button type="button" class="btn btn-outline-primary target-law-btn flex-fill" data-target="group">กฎหมายกลุ่มเกษตรกร</button>
+            <h1 class="h5 mb-1">แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (version 1.0)</h1>
+            <p class="mb-0 small text-muted">ระบบค้นหากฎหมายแบบหน้าเดียว ครอบคลุมสหกรณ์และกลุ่มเกษตรกร</p>
           </div>
         </div>
       </div>
@@ -946,6 +1031,9 @@
           <input id="chatInput" type="text" class="form-control" placeholder="ใช้คำที่เกี่ยวข้องเท่านั้น..." maxlength="500" required />
           <button id="voiceBtn" type="button" class="btn btn-outline-secondary" title="ค้นหาด้วยเสียง" aria-label="ค้นหาด้วยเสียง">
             <i class="bi bi-mic-fill"></i>
+          </button>
+          <button id="debugBtn" type="button" class="btn btn-outline-secondary" title="ส่งคำถามพร้อม debug timing" aria-label="ส่งคำถามพร้อม debug timing">
+            Debug
           </button>
           <button id="sendBtn" type="submit" class="btn btn-primary px-4">ส่ง</button>
         </div>
@@ -961,9 +1049,11 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     (() => {
-      const CHAT_CACHE_KEY = 'lawbot-chat-cache-v1';
+      const CHAT_CACHE_KEY = 'lawbot-chat-cache-v2';
       const CHAT_CACHE_LIMIT = 20;
       const HEADER_COLLAPSE_KEY = 'lawbot-header-collapsed-v1';
+      const LEGACY_CHAT_CACHE_KEYS = ['lawbot-chat-cache-v1'];
+      const isAdminUser = <%- JSON.stringify(Boolean(currentUser)) %>;
 
       const chatMessages = document.getElementById('chatMessages');
       const chatForm = document.getElementById('chatForm');
@@ -971,29 +1061,43 @@
       const voiceBtn = document.getElementById('voiceBtn');
       const voiceStatus = document.getElementById('voiceStatus');
       const sendBtn = document.getElementById('sendBtn');
+      const debugBtn = document.getElementById('debugBtn');
       const clearChatBtn = document.getElementById('clearChatBtn');
       const toggleHeaderBtn = document.getElementById('toggleHeaderBtn');
       const lawbotApp = document.querySelector('.lawbot-app');
       const quickButtons = document.querySelectorAll('.quick-btn');
-      const targetLawButtons = document.querySelectorAll('.target-law-btn');
       const installBtn = document.getElementById('installBtn');
       const iosInstallBtn = document.getElementById('iosInstallBtn');
       const onlineBadge = document.getElementById('onlineBadge');
       const referenceModalElement = document.getElementById('referenceModal');
       const referenceModalList = document.getElementById('referenceModalList');
+      const adminKnowledgeModalElement = document.getElementById('adminKnowledgeModal');
+      const adminKnowledgeForm = document.getElementById('adminKnowledgeForm');
+      const adminKnowledgeAlert = document.getElementById('adminKnowledgeAlert');
+      const adminKnowledgeQuestionInput = document.getElementById('adminKnowledgeQuestion');
+      const adminKnowledgeTargetInput = document.getElementById('adminKnowledgeTarget');
+      const adminKnowledgeLawNumberInput = document.getElementById('adminKnowledgeLawNumber');
+      const adminKnowledgeTitleInput = document.getElementById('adminKnowledgeTitle');
+      const adminKnowledgeContentInput = document.getElementById('adminKnowledgeContent');
+      const adminKnowledgeSourceNoteInput = document.getElementById('adminKnowledgeSourceNote');
+      const adminKnowledgeSubmitBtn = document.getElementById('adminKnowledgeSubmitBtn');
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const isAndroidDevice = /android/i.test(window.navigator.userAgent || '');
       const isIosDevice = /iphone|ipad|ipod/i.test(window.navigator.userAgent || '');
       const referenceModal = referenceModalElement && window.bootstrap
         ? new window.bootstrap.Modal(referenceModalElement)
         : null;
+      const adminKnowledgeModal = adminKnowledgeModalElement && window.bootstrap
+        ? new window.bootstrap.Modal(adminKnowledgeModalElement)
+        : null;
 
-      let selectedTarget = 'coop';
+      let selectedTarget = 'all';
       let deferredInstallPrompt = null;
       let recognition = null;
       let isListening = false;
       let isSubmitting = false;
       let shouldSubmitVoiceOnEnd = false;
+      let pendingAdminKnowledgeResolve = null;
 
       function setOnlineState() {
         const online = navigator.onLine;
@@ -1001,15 +1105,6 @@
           ? '<i class="bi bi-wifi"></i>ออนไลน์'
           : '<i class="bi bi-wifi-off"></i>ออฟไลน์';
         onlineBadge.style.color = online ? 'var(--ok)' : 'var(--warn)';
-      }
-
-      function updateTargetButtons() {
-        targetLawButtons.forEach((button) => {
-          const isActive = button.dataset.target === selectedTarget;
-          button.classList.toggle('active', isActive);
-          button.classList.toggle('btn-primary', isActive);
-          button.classList.toggle('btn-outline-primary', !isActive);
-        });
       }
 
       function autoScroll() {
@@ -1088,6 +1183,9 @@
 
       function updateSendButtonState() {
         sendBtn.disabled = isListening || isSubmitting;
+        if (debugBtn) {
+          debugBtn.disabled = isListening || isSubmitting;
+        }
       }
 
       function initVoiceRecognition() {
@@ -1432,31 +1530,123 @@
         }
       }
 
+      function setAdminKnowledgeAlert(message = '', type = 'danger') {
+        if (!adminKnowledgeAlert) return;
+        if (!message) {
+          adminKnowledgeAlert.className = 'alert d-none';
+          adminKnowledgeAlert.textContent = '';
+          return;
+        }
+
+        adminKnowledgeAlert.className = `alert alert-${type}`;
+        adminKnowledgeAlert.textContent = message;
+      }
+
+      function openAdminKnowledgeModal({ question, answerShown, target }) {
+        if (!adminKnowledgeModal || !adminKnowledgeForm) {
+          return Promise.reject(new Error('ไม่สามารถเปิดฟอร์มบันทึกคำตอบได้'));
+        }
+
+        if (pendingAdminKnowledgeResolve) {
+          pendingAdminKnowledgeResolve({ cancelled: true });
+          pendingAdminKnowledgeResolve = null;
+        }
+
+        setAdminKnowledgeAlert('');
+        adminKnowledgeForm.reset();
+        adminKnowledgeQuestionInput.value = String(question || '').trim();
+        adminKnowledgeTitleInput.value = String(question || '').trim();
+        adminKnowledgeContentInput.value = String(answerShown || '').trim();
+        adminKnowledgeLawNumberInput.value = '';
+        adminKnowledgeSourceNoteInput.value = '';
+        adminKnowledgeTargetInput.value = target === 'group' ? 'group' : 'coop';
+        if (target !== 'coop' && target !== 'group') {
+          adminKnowledgeTargetInput.value = 'coop';
+        }
+
+        adminKnowledgeSubmitBtn.disabled = false;
+        adminKnowledgeSubmitBtn.textContent = 'บันทึกเข้าฐานความรู้';
+        adminKnowledgeModal.show();
+        setTimeout(() => {
+          adminKnowledgeTitleInput.focus();
+          adminKnowledgeTitleInput.select();
+        }, 120);
+
+        return new Promise((resolve) => {
+          pendingAdminKnowledgeResolve = resolve;
+        });
+      }
+
+      async function saveKnowledgeFromChat({ question, answerShown, target }) {
+        return openAdminKnowledgeModal({ question, answerShown, target });
+      }
+
       function attachFeedbackActions(container, { question, answerShown, target }) {
         if (!question || !answerShown) return;
 
         const wrap = document.createElement('div');
         wrap.className = 'feedback-actions';
         wrap.innerHTML = `
-          <button type="button" class="btn btn-outline-success btn-sm" data-helpful="1">มีประโยชน์</button>
-          <button type="button" class="btn btn-outline-warning btn-sm" data-helpful="0">ควรปรับปรุง</button>
+          <button
+            type="button"
+            class="btn btn-outline-success btn-sm"
+            data-feedback-action="1"
+            data-helpful="1"
+            data-question="${escapeHtml(question)}"
+            data-answer-shown="${escapeHtml(answerShown)}"
+            data-target="${escapeHtml(target || selectedTarget)}"
+          >มีประโยชน์</button>
+          <button
+            type="button"
+            class="btn btn-outline-warning btn-sm"
+            data-feedback-action="1"
+            data-helpful="0"
+            data-question="${escapeHtml(question)}"
+            data-answer-shown="${escapeHtml(answerShown)}"
+            data-target="${escapeHtml(target || selectedTarget)}"
+          >ควรปรับปรุง</button>
         `;
 
-        wrap.querySelectorAll('button').forEach((button) => {
-          button.addEventListener('click', async () => {
-            if (wrap.dataset.sent === '1') return;
-            const isHelpful = button.dataset.helpful === '1';
-            try {
-              await submitFeedback({ question, answerShown, isHelpful, target });
-              wrap.dataset.sent = '1';
-              wrap.innerHTML = '<span class="text-success small">ขอบคุณสำหรับข้อเสนอแนะ</span>';
-            } catch (_) {
-              wrap.innerHTML = '<span class="text-danger small">บันทึกข้อเสนอแนะไม่สำเร็จ</span>';
-            }
-          });
-        });
+        if (isAdminUser) {
+          wrap.insertAdjacentHTML(
+            'beforeend',
+            `
+              <button
+                type="button"
+                class="btn btn-admin-knowledge btn-sm"
+                data-admin-knowledge="1"
+                data-question="${escapeHtml(question)}"
+                data-answer-shown="${escapeHtml(answerShown)}"
+                data-target="${escapeHtml(target || selectedTarget)}"
+              >บันทึกเป็นคำตอบที่ถูกต้อง</button>
+            `
+          );
+        }
 
         container.appendChild(wrap);
+      }
+
+      function buildTimingDebugHtml(debug) {
+        const timing = debug && debug.timing ? debug.timing : null;
+        if (!timing) return '';
+
+        const lines = [];
+        if (typeof timing.databaseSearchMs === 'number') lines.push(`ค้นฐานข้อมูล ${timing.databaseSearchMs} ms`);
+        if (typeof timing.internetSearchMs === 'number') lines.push(`ค้นอินเทอร์เน็ต ${timing.internetSearchMs} ms`);
+        if (typeof timing.totalSourceCollectionMs === 'number') lines.push(`รวมค้นแหล่งข้อมูล ${timing.totalSourceCollectionMs} ms`);
+        if (typeof timing.answerGenerationMs === 'number') lines.push(`สรุปคำตอบ ${timing.answerGenerationMs} ms`);
+        if (typeof timing.totalReplyMs === 'number') lines.push(`รวมทั้งหมด ${timing.totalReplyMs} ms`);
+
+        const sourceTier = debug && debug.selectedSourceTier ? `แหล่งที่ใช้: ${escapeHtml(debug.selectedSourceTier)}` : '';
+        const summary = lines.length ? escapeHtml(lines.join(' | ')) : '';
+        if (!summary && !sourceTier) return '';
+
+        return `
+          <div class="timing-debug">
+            ${sourceTier ? `<div>${sourceTier}</div>` : ''}
+            ${summary ? `<div>${summary}</div>` : ''}
+          </div>
+        `;
       }
 
       function addBubble(text, role, isLoading = false, highlightTerms = [], feedbackContext = null, shouldAutoScroll = true, restoreOptions = {}) {
@@ -1475,14 +1665,11 @@
 
         const message = document.createElement('span');
         message.className = 'bubble-message';
-        const isAiVariant = feedbackContext && feedbackContext.variant === 'ai';
         if (role === 'bot' && !isLoading) {
           if (restoreOptions && typeof restoreOptions.renderedHtml === 'string' && restoreOptions.renderedHtml) {
             message.innerHTML = restoreOptions.renderedHtml;
           } else {
-            message.innerHTML = isAiVariant
-              ? formatAiSummaryHtml(text, highlightTerms)
-              : formatBotMessageHtml(text, highlightTerms);
+            message.innerHTML = formatBotMessageHtml(text, highlightTerms);
           }
         } else if (restoreOptions && typeof restoreOptions.renderedHtml === 'string' && restoreOptions.renderedHtml) {
           message.innerHTML = restoreOptions.renderedHtml;
@@ -1525,6 +1712,13 @@
           });
         }
 
+        if (role === 'bot' && !isLoading && feedbackContext && feedbackContext.debug) {
+          const timingHtml = buildTimingDebugHtml(feedbackContext.debug);
+          if (timingHtml) {
+            content.insertAdjacentHTML('beforeend', timingHtml);
+          }
+        }
+
         div.appendChild(content);
 
         const referenceToggle = content.querySelector('[data-reference-toggle="1"]');
@@ -1565,6 +1759,7 @@
 
       function restoreRecentChats() {
         try {
+          LEGACY_CHAT_CACHE_KEYS.forEach((key) => localStorage.removeItem(key));
           const raw = localStorage.getItem(CHAT_CACHE_KEY);
           if (!raw) return;
           const parsed = JSON.parse(raw);
@@ -1582,7 +1777,7 @@
         } catch (_) {}
       }
 
-      async function submitMessage(message) {
+      async function submitMessage(message, options = {}) {
         const trimmed = String(message || '').trim();
         if (!trimmed) return;
 
@@ -1600,7 +1795,7 @@
           const response = await fetch('/law-chatbot/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: trimmed, target: selectedTarget })
+            body: JSON.stringify({ message: trimmed, target: selectedTarget, debug: Boolean(options.debug) })
           });
           const data = await response.json();
           chatMessages.lastElementChild.remove();
@@ -1614,6 +1809,8 @@
             const botRow = addBubble(answerText, 'bot', false, dbHighlightTerms, {
               question: trimmed,
               target: selectedTarget,
+              variant: 'ai',
+              debug: data && data.debug ? data.debug : null,
               usedFollowUpContext: Boolean(data && data.usedFollowUpContext)
             });
             focusFirstAnswer(botRow);
@@ -1623,9 +1820,9 @@
         } catch (_) {
           chatMessages.lastElementChild.remove();
           const botRow = addBubble('ขออภัยครับ! ไม่พบข้อมูลที่ชัดเจน ลองเปลี่ยนคำค้นหา', 'bot', false, [], {
-
             question: trimmed,
-            target: selectedTarget
+            target: selectedTarget,
+            variant: 'ai'
           });
           focusFirstAnswer(botRow);
         } finally {
@@ -1639,12 +1836,141 @@
         }
       }
 
+      chatMessages.addEventListener('click', async (event) => {
+        const feedbackButton = event.target.closest('[data-feedback-action="1"]');
+        if (feedbackButton) {
+          const wrap = feedbackButton.closest('.feedback-actions');
+          if (!wrap || wrap.dataset.feedbackSent === '1') return;
+
+          const question = feedbackButton.dataset.question || '';
+          const answerShown = feedbackButton.dataset.answerShown || '';
+          const target = feedbackButton.dataset.target || selectedTarget;
+          const isHelpful = feedbackButton.dataset.helpful === '1';
+
+          try {
+            await submitFeedback({ question, answerShown, isHelpful, target });
+            wrap.dataset.feedbackSent = '1';
+            wrap.innerHTML = '<span class="text-success small">ขอบคุณสำหรับข้อเสนอแนะ</span>';
+          } catch (_) {
+            wrap.innerHTML = '<span class="text-danger small">บันทึกข้อเสนอแนะไม่สำเร็จ</span>';
+          }
+          return;
+        }
+
+        const adminKnowledgeButton = event.target.closest('[data-admin-knowledge="1"]');
+        if (adminKnowledgeButton) {
+          const wrap = adminKnowledgeButton.closest('.feedback-actions');
+          if (!wrap || wrap.dataset.adminKnowledgeSaving === '1') return;
+
+          wrap.dataset.adminKnowledgeSaving = '1';
+          adminKnowledgeButton.disabled = true;
+
+          try {
+            const result = await saveKnowledgeFromChat({
+              question: adminKnowledgeButton.dataset.question || '',
+              answerShown: adminKnowledgeButton.dataset.answerShown || '',
+              target: adminKnowledgeButton.dataset.target || selectedTarget
+            });
+
+            if (result && !result.cancelled) {
+              wrap.insertAdjacentHTML(
+                'beforeend',
+                '<span class="text-primary small">บันทึกเข้าฐานความรู้แล้ว</span>'
+              );
+              adminKnowledgeButton.remove();
+            } else {
+              adminKnowledgeButton.disabled = false;
+            }
+          } catch (_) {
+            wrap.insertAdjacentHTML(
+              'beforeend',
+              '<span class="text-danger small">บันทึกคำตอบที่ถูกต้องไม่สำเร็จ</span>'
+            );
+            adminKnowledgeButton.disabled = false;
+          } finally {
+            delete wrap.dataset.adminKnowledgeSaving;
+          }
+        }
+      });
+
+      if (adminKnowledgeForm) {
+        adminKnowledgeForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const payload = {
+            question: String(adminKnowledgeQuestionInput.value || '').trim(),
+            target: String(adminKnowledgeTargetInput.value || '').trim() === 'group' ? 'group' : 'coop',
+            lawNumber: String(adminKnowledgeLawNumberInput.value || '').trim(),
+            title: String(adminKnowledgeTitleInput.value || '').trim(),
+            content: String(adminKnowledgeContentInput.value || '').trim(),
+            sourceNote: String(adminKnowledgeSourceNoteInput.value || '').trim(),
+          };
+
+          if (!payload.title || !payload.content) {
+            setAdminKnowledgeAlert('กรุณากรอกหัวข้อและคำตอบที่ถูกต้องก่อนบันทึก');
+            return;
+          }
+
+          setAdminKnowledgeAlert('');
+          adminKnowledgeSubmitBtn.disabled = true;
+          adminKnowledgeSubmitBtn.textContent = 'กำลังบันทึก...';
+
+          try {
+            const response = await fetch('/law-chatbot/admin-knowledge', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+            if (!response.ok || !data || !data.success) {
+              throw new Error((data && data.message) || 'ไม่สามารถบันทึกคำตอบที่ถูกต้องได้');
+            }
+
+            if (pendingAdminKnowledgeResolve) {
+              pendingAdminKnowledgeResolve(data);
+              pendingAdminKnowledgeResolve = null;
+            }
+
+            adminKnowledgeModal.hide();
+          } catch (error) {
+            setAdminKnowledgeAlert(error.message || 'ไม่สามารถบันทึกคำตอบที่ถูกต้องได้');
+            adminKnowledgeSubmitBtn.disabled = false;
+            adminKnowledgeSubmitBtn.textContent = 'บันทึกเข้าฐานความรู้';
+          }
+        });
+      }
+
+      if (adminKnowledgeModalElement) {
+        adminKnowledgeModalElement.addEventListener('hidden.bs.modal', () => {
+          if (pendingAdminKnowledgeResolve) {
+            pendingAdminKnowledgeResolve({ cancelled: true });
+            pendingAdminKnowledgeResolve = null;
+          }
+          if (adminKnowledgeForm) {
+            adminKnowledgeForm.reset();
+          }
+          setAdminKnowledgeAlert('');
+          if (adminKnowledgeSubmitBtn) {
+            adminKnowledgeSubmitBtn.disabled = false;
+            adminKnowledgeSubmitBtn.textContent = 'บันทึกเข้าฐานความรู้';
+          }
+        });
+      }
+
       chatForm.addEventListener('submit', (event) => {
         event.preventDefault();
         const currentMessage = chatInput.value;
         chatInput.value = '';
         submitMessage(currentMessage);
       });
+
+      if (debugBtn) {
+        debugBtn.addEventListener('click', () => {
+          const currentMessage = chatInput.value;
+          chatInput.value = '';
+          submitMessage(currentMessage, { debug: true });
+        });
+      }
 
       voiceBtn.addEventListener('click', () => {
         if (!SpeechRecognition) {
@@ -1672,17 +1998,11 @@
 
       quickButtons.forEach((button) => button.addEventListener('click', () => submitMessage(button.dataset.question || '')));
 
-      targetLawButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-          selectedTarget = button.dataset.target || 'coop';
-          updateTargetButtons();
-        });
-      });
-
-      clearChatBtn.addEventListener('click', () => {
+      clearChatBtn.addEventListener('click', async () => {
+        await resetConversationContext();
         chatMessages.innerHTML = '';
         localStorage.removeItem(CHAT_CACHE_KEY);
-        addBubble('สวัสดีครับ! ยินดีรับใช้ท่านเสมอครับ', 'bot');
+        addBubble('เริ่มหัวข้อใหม่แล้ว กรุณาระบุประเด็นที่ต้องการสอบถามได้เลย', 'bot');
       });
 
       if (toggleHeaderBtn) {
@@ -1714,7 +2034,6 @@
       window.addEventListener('online', setOnlineState);
       window.addEventListener('offline', setOnlineState);
 
-      updateTargetButtons();
       setOnlineState();
       updateInstallButtons();
       updateVoiceButton();

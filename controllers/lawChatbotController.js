@@ -26,6 +26,25 @@ async function chatFeedback(req, res) {
   res.json({ success: true });
 }
 
+async function saveKnowledgeFromChat(req, res) {
+  const title = String(req.body.title || req.body.question || "").trim();
+  const content = String(req.body.content || "").trim();
+
+  if (!title || !content) {
+    return res.status(400).json({
+      success: false,
+      message: "กรุณาระบุหัวข้อและคำตอบที่ถูกต้องก่อนบันทึก",
+    });
+  }
+
+  const entry = await lawChatbotService.saveKnowledgeEntry(req.body);
+  return res.json({
+    success: true,
+    message: "บันทึกคำตอบที่ถูกต้องเรียบร้อยแล้ว",
+    entry,
+  });
+}
+
 async function resetContext(req, res) {
   if (req.session) {
     req.session.lawChatbotContext = [];
@@ -81,6 +100,7 @@ module.exports = {
   chat,
   chatSummary,
   chatFeedback,
+  saveKnowledgeFromChat,
   resetContext,
   renderUpload,
   handleUpload,

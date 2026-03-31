@@ -8,20 +8,30 @@
     <style>
       :root {
         color-scheme: light;
-        --bg: #f4efe6;
-        --panel: #fffaf2;
-        --ink: #1e2a39;
-        --accent: #da8b2d;
-        --line: #dfd2bf;
+        --bg-start: #e6eef6;
+        --bg-end: #f5f9fc;
+        --panel: rgba(255, 255, 255, 0.88);
+        --panel-strong: #ffffff;
+        --ink: #1f2a37;
+        --subtle: #5d6a79;
+        --accent: #15547a;
+        --accent-strong: #0f4667;
+        --accent-soft: #d2e8f7;
+        --line: #d8e2ea;
+        --ok: #1d7a52;
+        --warn: #8b2e2e;
+        --shadow-soft: 0 18px 45px rgba(18, 52, 77, 0.16);
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        font-family: Arial, sans-serif;
+        font-family: 'Sarabun', Arial, sans-serif;
         color: var(--ink);
         background:
-          radial-gradient(circle at top left, rgba(218, 139, 45, 0.18), transparent 30%),
-          linear-gradient(180deg, #f9f3ea 0%, var(--bg) 100%);
+          radial-gradient(circle at 14% 18%, rgba(35, 126, 184, 0.14), transparent 38%),
+          radial-gradient(circle at 85% 10%, rgba(23, 84, 122, 0.12), transparent 32%),
+          linear-gradient(160deg, var(--bg-start), var(--bg-end));
+        background-attachment: fixed;
       }
       .shell {
         width: min(1080px, calc(100% - 2rem));
@@ -32,6 +42,8 @@
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 20px;
+        box-shadow: var(--shadow-soft);
+        backdrop-filter: blur(14px);
       }
       .topbar {
         display: flex;
@@ -51,15 +63,17 @@
         display: flex;
         gap: 0.75rem;
         padding: 0.4rem;
+        background: rgba(255, 255, 255, 0.72);
       }
       .nav a {
         text-decoration: none;
         color: var(--ink);
         padding: 0.7rem 1rem;
         border-radius: 14px;
+        font-weight: 600;
       }
       .nav a.active {
-        background: var(--accent);
+        background: linear-gradient(145deg, var(--accent), var(--accent-strong));
         color: white;
       }
       .card {
@@ -78,23 +92,33 @@
       }
       .button, button {
         border: none;
-        background: var(--accent);
+        background: linear-gradient(145deg, var(--accent), var(--accent-strong));
         color: white;
         border-radius: 12px;
         padding: 0.9rem 1.1rem;
         text-decoration: none;
         cursor: pointer;
+        font-weight: 700;
+        box-shadow: 0 10px 24px rgba(15, 70, 103, 0.18);
       }
-      input, textarea {
+      input, textarea, select {
         width: 100%;
         padding: 0.9rem 1rem;
         border-radius: 12px;
         border: 1px solid var(--line);
         margin: 0.35rem 0 1rem;
         font: inherit;
+        background: var(--panel-strong);
+        color: var(--ink);
       }
       label {
         font-weight: 700;
+      }
+      p {
+        color: var(--subtle);
+      }
+      a {
+        color: var(--accent-strong);
       }
       ul {
         padding-left: 1.2rem;

@@ -64,7 +64,7 @@ class LawChatbotModel {
     return conversations.slice(0, limit);
   }
 
-  static searchKnowledge(message, target) {
+  static searchKnowledge(message, target = "all") {
     const terms = segmentWords(message);
 
     if (terms.length === 0) {
@@ -72,7 +72,7 @@ class LawChatbotModel {
     }
 
     return knowledgeBase
-      .filter((item) => item.target === target)
+      .filter((item) => (target === "all" ? true : item.target === target))
       .map((item) => {
         const haystack = segmentWords(`${item.title} ${item.lawNumber} ${item.content}`);
         const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);

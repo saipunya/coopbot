@@ -6,6 +6,41 @@ const {
   uniqueTokens,
 } = require("../services/thaiTextUtils");
 
+const GENERIC_QUERY_TOKENS = new Set([
+  "ค่า",
+  "สหกรณ์",
+  "กลุ่ม",
+  "เกษตรกร",
+  "กฎหมาย",
+  "พระราชบัญญัติ",
+  "พรบ",
+  "พร",
+  "บ",
+  "มาตรา",
+  "ข้อ",
+  "ระเบียบ",
+]);
+
+function buildCandidateTerms(message) {
+  const normalizedMessage = normalizeForSearch(message).toLowerCase();
+  const queryTokens = uniqueTokens(segmentWords(message));
+  const specificTokens = queryTokens.filter(
+    (token) => token && token.length >= 3 && !GENERIC_QUERY_TOKENS.has(token),
+  );
+
+  const terms = uniqueTokens([
+    normalizedMessage,
+    ...specificTokens,
+  ]).filter(Boolean);
+
+  if (terms.length > 0) {
+    return terms.slice(0, 8);
+  }
+
+  const fallbackTokens = queryTokens.filter((token) => token && token.length >= 3);
+  return uniqueTokens([normalizedMessage, ...fallbackTokens].filter(Boolean)).slice(0, 8);
+}
+
 function scoreChunkMatch(query, row) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const rowText = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
@@ -56,6 +91,18 @@ function scoreChunkMatch(query, row) {
   }
 
   return score;
+}
+
+function getMinimumTokenHits(queryTokens) {
+  if (queryTokens.length >= 5) {
+    return 2;
+  }
+
+  if (queryTokens.length >= 3) {
+    return 1;
+  }
+
+  return 1;
 }
 
 const uploadedFiles = [];
@@ -188,11 +235,9 @@ class LawChatbotPdfChunkModel {
 
   static async searchChunks(message, limit = 5) {
     const normalizedMessage = normalizeForSearch(message).toLowerCase();
-    const terms = [...new Set([normalizedMessage, ...segmentWords(message)])]
-      .filter(Boolean)
-      .slice(0, 8);
+    const terms = buildCandidateTerms(message);
     const queryTokens = uniqueTokens(segmentWords(message));
-    const minTokenHits = queryTokens.length >= 3 ? 2 : 1;
+    const minTokenHits = getMinimumTokenHits(queryTokens);
 
     if (terms.length === 0) {
       return [];
@@ -207,12 +252,17 @@ class LawChatbotPdfChunkModel {
           const rowTokenSet = new Set(uniqueTokens(segmentWords(haystack)));
           const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
           const hasExactPhrase = normalizedMessage && haystack.includes(normalizedMessage);
+          const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
 
-          if (queryTokens.length > 0 && !hasExactPhrase && tokenHits < minTokenHits) {
+          if (
+            queryTokens.length > 0 &&
+            !hasExactPhrase &&
+            tokenHits < minTokenHits &&
+            coarseScore < 1
+          ) {
             return null;
           }
 
-          const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
           const score = scoreChunkMatch(message, row) + coarseScore;
           const document = memoryDocuments.find((item) => item.id === row.document_id);
           return {
@@ -248,7 +298,7 @@ class LawChatbotPdfChunkModel {
        LEFT JOIN documents AS d ON d.id = c.document_id
        WHERE ${whereClause}
        ORDER BY c.id DESC
-       LIMIT 50`,
+       LIMIT 200`,
       params
     );
 
@@ -258,12 +308,17 @@ class LawChatbotPdfChunkModel {
         const rowTokenSet = new Set(uniqueTokens(segmentWords(haystack)));
         const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
         const hasExactPhrase = normalizedMessage && haystack.includes(normalizedMessage);
+        const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
 
-        if (queryTokens.length > 0 && !hasExactPhrase && tokenHits < minTokenHits) {
+        if (
+          queryTokens.length > 0 &&
+          !hasExactPhrase &&
+          tokenHits < minTokenHits &&
+          coarseScore < 1
+        ) {
           return null;
         }
 
-        const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
         const score = scoreChunkMatch(message, row) + coarseScore;
         return {
           ...row,

@@ -97,7 +97,7 @@ class LawSearchModel {
       .slice(0, limit);
   }
 
-  static async searchStructuredLaws(message, target = "coop", limit = 5) {
+  static async searchStructuredLaws(message, target = "all", limit = 5) {
     const pool = getDbPool();
     if (!pool) {
       return [];
@@ -108,38 +108,49 @@ class LawSearchModel {
       return [];
     }
 
-    const isGroupTarget = target === "group";
-    const tableName = isGroupTarget ? "tbl_glaws" : "tbl_laws";
-    const idField = isGroupTarget ? "glaw_id" : "law_id";
-    const numberField = isGroupTarget ? "glaw_number" : "law_number";
-    const partField = isGroupTarget ? "glaw_part" : "law_part";
-    const detailField = isGroupTarget ? "glaw_detail" : "law_detail";
-    const commentField = isGroupTarget ? "glaw_comment" : "law_comment";
-    const sourceName = isGroupTarget ? "tbl_glaws" : "tbl_laws";
+    const queryLawNumber = extractLawNumber(message);
+    const tableConfigs =
+      target === "group"
+        ? [
+            ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws"],
+          ]
+        : target === "coop"
+          ? [
+              ["tbl_laws", "law_id", "law_number", "law_part", "law_detail", "law_comment", "tbl_laws"],
+            ]
+          : [
+              ["tbl_laws", "law_id", "law_number", "law_part", "law_detail", "law_comment", "tbl_laws"],
+              ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws"],
+            ];
 
-    const whereClause = terms
-      .map(
-        () =>
-          `(LOWER(${numberField}) LIKE ? OR LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`
-      )
-      .join(" OR ");
-    const params = terms.flatMap((term) => {
-      const like = `%${term}%`;
-      return [like, like, like, like];
-    });
+    const rowGroups = await Promise.all(
+      tableConfigs.map(async ([tableName, idField, numberField, partField, detailField, commentField, sourceName]) => {
+        const whereClause = terms
+          .map(
+            () =>
+              `(LOWER(${numberField}) LIKE ? OR LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`,
+          )
+          .join(" OR ");
+        const params = terms.flatMap((term) => {
+          const like = `%${term}%`;
+          return [like, like, like, like];
+        });
 
-    const [rows] = await pool.query(
-      `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
-              ${detailField} AS law_detail, ${commentField} AS law_comment
-       FROM ${tableName}
-       WHERE ${whereClause}
-       LIMIT 50`,
-      params
+        const [rows] = await pool.query(
+          `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
+                  ${detailField} AS law_detail, ${commentField} AS law_comment
+           FROM ${tableName}
+           WHERE ${whereClause}
+           LIMIT 50`,
+          params,
+        );
+
+        return rows.map((row) => ({ ...row, __sourceName: sourceName }));
+      }),
     );
 
-    const queryLawNumber = extractLawNumber(message);
-
-    return rows
+    return rowGroups
+      .flat()
       .map((row) => {
         const combinedText = [
           row.law_number,
@@ -156,9 +167,9 @@ class LawSearchModel {
 
         return {
           id: row.id,
-          source: sourceName,
+          source: row.__sourceName,
           title: row.law_part || row.law_number || "กฎหมายที่เกี่ยวข้อง",
-          reference: row.law_number || row.law_part || sourceName,
+          reference: row.law_number || row.law_part || row.__sourceName,
           content: row.law_detail || "",
           comment: row.law_comment || "",
           score,
