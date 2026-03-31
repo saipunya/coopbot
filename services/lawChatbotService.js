@@ -915,6 +915,11 @@ async function saveKnowledgeEntry(payload) {
   });
 }
 
+async function deleteKnowledgeEntry(id) {
+  clearAnswerCache();
+  return LawChatbotKnowledgeModel.removeById(id);
+}
+
 async function saveFeedback(payload) {
   return LawChatbotFeedbackModel.create({
     name: payload.name || "Anonymous",
@@ -934,5 +939,6 @@ module.exports = {
   getFeedbackPageData,
   getKnowledgeAdminData,
   saveKnowledgeEntry,
+  deleteKnowledgeEntry,
   saveFeedback,
 };

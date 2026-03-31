@@ -105,6 +105,30 @@ async function submitKnowledge(req, res) {
   );
 }
 
+async function deleteKnowledge(req, res) {
+  const id = Number(req.body.id || 0);
+
+  if (!id) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบรายการฐานความรู้ที่ต้องการลบ")
+    );
+  }
+
+  const removed = await lawChatbotService.deleteKnowledgeEntry(id);
+  if (!removed) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบข้อมูลฐานความรู้ที่ต้องการลบ หรืออาจถูกลบไปแล้ว")
+    );
+  }
+
+  return res.redirect(
+    "/admin?success=" +
+      encodeURIComponent("ลบข้อมูลฐานความรู้เรียบร้อยแล้ว")
+  );
+}
+
 function logout(req, res) {
   req.session.destroy(() => {
     res.redirect("/admin/login?success=" + encodeURIComponent("ออกจากระบบเรียบร้อยแล้ว"));
@@ -118,5 +142,6 @@ module.exports = {
   handleGoogleCallback,
   renderDashboard,
   submitKnowledge,
+  deleteKnowledge,
   logout,
 };

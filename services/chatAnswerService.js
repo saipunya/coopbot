@@ -209,8 +209,8 @@ function buildSectionLines(lines, limit = 5) {
 }
 
 function buildParagraphSummary(summaryLines, detailLines, explainMode) {
-  const summaryItems = buildSectionLines(summaryLines, 5);
-  const detailItems = buildSectionLines(detailLines, 5);
+  const summaryItems = buildSectionLines(summaryLines, explainMode ? 6 : 6);
+  const detailItems = buildSectionLines(detailLines, explainMode ? 6 : 4);
   const blocks = [];
 
   if (summaryItems.length) {
@@ -261,13 +261,13 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
       ? summary
       : uniqueCleanLines(
           sources.map((source) => source.reference || source.title || source.keyword),
-          3,
+          4,
         );
     const fallbackDetail = detail.length
       ? detail
       : uniqueCleanLines(
           sources.map((source) => String(source.content || source.chunk_text || "").slice(0, 220)),
-          2,
+          3,
         );
 
     return decorateConversationalAnswer(
@@ -276,7 +276,7 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
     );
   }
 
-  const conciseLines = uniqueCleanLines(lines, 6);
+  const conciseLines = uniqueCleanLines(lines, 7);
 
   if (conciseLines.length === 0) {
     return "";
@@ -290,14 +290,14 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
   const importantPoints = uniqueCleanLines(
     topSources.map((source) => {
       const label = source.reference || source.title || source.keyword || "ข้อมูลที่เกี่ยวข้อง";
-      const content = String(source.content || source.chunk_text || "").slice(0, explainMode ? 220 : 140);
+      const content = String(source.content || source.chunk_text || "").slice(0, explainMode ? 260 : 180);
       return `${label}: ${content}`;
     }),
-    explainMode ? 5 : 4,
+    explainMode ? 6 : 5,
   );
   const detailPoints = uniqueCleanLines(
-    topSources.map((source) => String(source.comment || source.content || source.chunk_text || "").slice(0, 220)),
-    3,
+    topSources.map((source) => String(source.comment || source.content || source.chunk_text || "").slice(0, 260)),
+    4,
   );
 
   if (topSources.length === 0) {
@@ -326,8 +326,8 @@ async function generateChatSummary(message, sources, options = {}) {
   }
 
   const instruction = explainMode
-    ? "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ชัดเจน กระชับ ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดหลายข้อ และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดหลายข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด"
-    : "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่สั้น ชัดเจน ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดหลายข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด";
+    ? "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ชัดเจน มีรายละเอียดพอสมควร ตรงประเด็น และใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 4 ถึง 6 ข้อ และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 3 ถึง 6 ข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด"
+    : "อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ค่อนข้างกระชับ แต่มีรายละเอียดเพียงพอและตรงประเด็น พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 4 ถึง 6 ข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด";
 
   try {
     const conversationNote = options.conversationalFollowUp

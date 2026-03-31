@@ -14,6 +14,7 @@ router.get("/auth/google", redirectIfAuthenticated, adminController.redirectToGo
 router.get("/auth/google/callback", redirectIfAuthenticated, adminController.handleGoogleCallback);
 router.get("/", requireAdminAuth, adminController.renderDashboard);
 router.post("/knowledge", requireAdminAuth, adminController.submitKnowledge);
+router.post("/knowledge/delete", requireAdminAuth, adminController.deleteKnowledge);
 router.post("/logout", requireAdminAuth, adminController.logout);
 
 module.exports = router;

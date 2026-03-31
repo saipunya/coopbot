@@ -185,6 +185,21 @@
       .knowledge-list li {
         margin-bottom: 0.8rem;
       }
+      .knowledge-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 0.85rem;
+      }
+      .danger-btn {
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(145deg, #b63d2f, #922f24);
+        color: #fff;
+        padding: 0.7rem 0.9rem;
+        cursor: pointer;
+        font-weight: 700;
+        box-shadow: 0 10px 24px rgba(146, 47, 36, 0.18);
+      }
       .soft-list {
         list-style: none;
         padding: 0;
@@ -349,6 +364,12 @@
               </small>
               <br />
               <%= item.content %>
+              <div class="knowledge-actions">
+                <form action="/admin/knowledge/delete" method="post" onsubmit="return confirm('ยืนยันการลบข้อมูลฐานความรู้นี้ใช่หรือไม่');">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <button class="danger-btn" type="submit">ลบรายการนี้</button>
+                </form>
+              </div>
             </li>
           <% }) %>
         </ul>

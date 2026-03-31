@@ -182,6 +182,32 @@ class LawChatbotKnowledgeModel {
     return rows[0]?.total || 0;
   }
 
+  static async removeById(id) {
+    const normalizedId = Number(id || 0);
+    if (!normalizedId) {
+      return false;
+    }
+
+    const pool = getDbPool();
+
+    if (!pool) {
+      const index = memoryKnowledgeEntries.findIndex((row) => Number(row.id) === normalizedId);
+      if (index === -1) {
+        return false;
+      }
+
+      memoryKnowledgeEntries.splice(index, 1);
+      return true;
+    }
+
+    const [result] = await pool.query(
+      "DELETE FROM chatbot_knowledge WHERE id = ? LIMIT 1",
+      [normalizedId],
+    );
+
+    return Number(result.affectedRows || 0) > 0;
+  }
+
   static async listRecent(limit = 10) {
     const pool = getDbPool();
 
