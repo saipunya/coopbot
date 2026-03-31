@@ -30,7 +30,7 @@ function buildGoogleRedirectUri(req) {
   const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
   const protocol = forwardedProto || req.protocol || "http";
   const host = req.get("host");
-  return `${protocol}://${host}/admin/auth/google/callback`;
+  return `${protocol}://${host}/auth/google/callback`;
 }
 
 function createGoogleAuthUrl(req) {
