@@ -1,6 +1,28 @@
 const { getDbPool } = require("../config/db");
 
 class UserModel {
+  static async findById(userId) {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for user lookup.");
+    }
+
+    const normalizedUserId = Number(userId || 0);
+    if (!normalizedUserId) {
+      return null;
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, google_id, email, name, avatar_url, plan, premium_expires_at, status, created_at, updated_at
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [normalizedUserId]
+    );
+
+    return rows[0] || null;
+  }
+
   static async upsertGoogleUser(payload = {}) {
     const pool = getDbPool();
     if (!pool) {

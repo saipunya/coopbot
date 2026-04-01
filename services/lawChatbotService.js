@@ -7,6 +7,7 @@ const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const LawChatbotAnswerCacheModel = require("../models/lawChatbotAnswerCacheModel");
 const PaymentRequestModel = require("../models/paymentRequestModel");
 const UserModel = require("../models/userModel");
+const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
 const runtimeFlags = require("../config/runtimeFlags");
 const { buildQuestionCacheIdentity } = require("./lawChatbotAnswerCacheUtils");
 const { sendPaymentRequestNotification } = require("./telegramService");
@@ -1537,6 +1538,57 @@ async function getFeedbackPageData() {
   };
 }
 
+async function getUserDashboardData(user) {
+  const signedInUser = user || {};
+  const userId = Number(signedInUser.userId || signedInUser.id || 0);
+  if (!userId) {
+    throw new Error("Please sign in before opening the user dashboard.");
+  }
+
+  const usageMonth = UserMonthlyUsageModel.getYearMonth();
+  const [persistedUser, usage, recentRequests] = await Promise.all([
+    UserModel.findById(userId),
+    UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth),
+    PaymentRequestModel.listByUserId(userId, 10),
+  ]);
+
+  const profile = persistedUser
+    ? {
+        ...signedInUser,
+        id: persistedUser.id,
+        userId: persistedUser.id,
+        username: persistedUser.email,
+        email: persistedUser.email,
+        name: persistedUser.name || signedInUser.name || persistedUser.email,
+        picture: persistedUser.avatar_url || signedInUser.picture || signedInUser.avatarUrl || "",
+        avatarUrl: persistedUser.avatar_url || signedInUser.avatarUrl || signedInUser.picture || "",
+        googleId: persistedUser.google_id || signedInUser.googleId || "",
+        plan: persistedUser.plan || signedInUser.plan || "free",
+        status: persistedUser.status || signedInUser.status || "active",
+        premiumExpiresAt: persistedUser.premium_expires_at || signedInUser.premiumExpiresAt || null,
+      }
+    : signedInUser;
+
+  const normalizedPlan = String(profile.plan || "free").trim().toLowerCase();
+  const questionCount = Number(usage?.question_count || 0);
+  const questionLimit = normalizedPlan === "free" ? 20 : null;
+  const remainingQuestions =
+    normalizedPlan === "free" ? Math.max(0, 20 - questionCount) : null;
+
+  return {
+    appName: "Coopbot Law Chatbot",
+    user: profile,
+    usage: {
+      usageMonth,
+      questionCount,
+      questionLimit,
+      remainingQuestions,
+      isUnlimited: normalizedPlan !== "free",
+    },
+    recentRequests,
+  };
+}
+
 async function getPaymentRequestPageData(user) {
   const signedInUser = user || {};
   const userId = Number(signedInUser.userId || signedInUser.id || 0);
@@ -1787,6 +1839,7 @@ module.exports = {
   getUploadPageData,
   recordUpload,
   getFeedbackPageData,
+  getUserDashboardData,
   getPaymentRequestPageData,
   getAdminPaymentRequestsData,
   getAdminPaymentRequestDetail,

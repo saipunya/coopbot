@@ -5,6 +5,19 @@ const GOOGLE_OAUTH_BASE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_TOKEN_INFO_URL = "https://oauth2.googleapis.com/tokeninfo";
 
+function sanitizeReturnPath(value, fallbackPath = "/user") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (path.startsWith("/auth/google")) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
 function getGoogleConfig() {
   const clientId = String(process.env.GOOGLE_CLIENT_ID || "").trim();
   const clientSecret = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
@@ -58,6 +71,7 @@ function createGoogleAuthUrl(req) {
   const state = crypto.randomBytes(24).toString("hex");
   if (req.session) {
     req.session.googleOAuthState = state;
+    req.session.googleOAuthReturnTo = sanitizeReturnPath(req.query?.returnTo, "/user");
   }
 
   const url = new URL(GOOGLE_OAUTH_BASE_URL);
@@ -194,18 +208,21 @@ async function loginWithGoogleCallback(req) {
 
   return {
     ok: true,
+    returnTo: sanitizeReturnPath(req.session?.googleOAuthReturnTo, "/user"),
     user: {
       id: persistedUser?.id || profile.sub,
       username: persistedUser?.email || profile.email,
-      group: "google-admin",
+      group: "google-user",
       name: persistedUser?.name || profile.name || profile.email,
-      position: "Google Account",
+      position: "Google User",
       status: persistedUser?.status || "active",
       email: persistedUser?.email || profile.email,
       authProvider: "google",
       picture: persistedUser?.avatar_url || profile.picture || "",
+      avatarUrl: persistedUser?.avatar_url || profile.picture || "",
       googleId: persistedUser?.google_id || profile.sub,
       plan: persistedUser?.plan || "free",
+      premiumExpiresAt: persistedUser?.premium_expires_at || null,
       userId: persistedUser?.id || null,
     },
   };

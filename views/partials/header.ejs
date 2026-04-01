@@ -140,7 +140,8 @@
         <a class="brand" href="/law-chatbot">Coopbot</a>
         <nav class="nav">
           <a class="<%= page === 'index' ? 'active' : '' %>" href="/law-chatbot">Dashboard</a>
-          <% if (signedInUser) { %>
+          <% if (isGoogleUser) { %>
+            <a class="<%= page === 'user' ? 'active' : '' %>" href="/user">Account</a>
             <a class="<%= page === 'payment-request' ? 'active' : '' %>" href="/law-chatbot/payment-request">Payment</a>
           <% } %>
           <% if (currentUser) { %>

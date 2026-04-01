@@ -1,0 +1,340 @@
+<%- include("../partials/header", { title, page }) %>
+
+<style>
+  .user-hero,
+  .user-grid,
+  .request-list {
+    margin-bottom: 1rem;
+  }
+
+  .user-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.9fr);
+    gap: 1rem;
+  }
+
+  .profile-card {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .profile-avatar {
+    width: 88px;
+    height: 88px;
+    border-radius: 24px;
+    overflow: hidden;
+    flex: 0 0 auto;
+    background: linear-gradient(145deg, #d2e8f7, #ffffff);
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+    font-size: 2rem;
+    font-weight: 700;
+  }
+
+  .profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .profile-meta h1 {
+    margin: 0 0 0.3rem;
+    color: var(--accent-strong);
+  }
+
+  .profile-meta p {
+    margin: 0.2rem 0;
+  }
+
+  .chip-row {
+    display: flex;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.45rem 0.8rem;
+    font-size: 0.92rem;
+    font-weight: 700;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .chip.ok {
+    background: #e8f7ee;
+    color: var(--ok);
+  }
+
+  .chip.warn {
+    background: #fff0db;
+    color: #925b13;
+  }
+
+  .hero-actions {
+    display: grid;
+    gap: 0.8rem;
+    align-content: start;
+  }
+
+  .action-stack {
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .action-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+  }
+
+  .ghost-button {
+    background: #fff;
+    color: var(--accent-strong);
+    border: 1px solid var(--line);
+    box-shadow: none;
+  }
+
+  .ghost-button:hover {
+    background: #f5f9fc;
+  }
+
+  .logout-form {
+    margin: 0;
+  }
+
+  .logout-form button {
+    width: 100%;
+  }
+
+  .user-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .stat-card h2 {
+    margin: 0 0 0.55rem;
+    font-size: 1rem;
+    color: var(--accent-strong);
+  }
+
+  .stat-value {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .stat-note {
+    margin: 0.45rem 0 0;
+    color: var(--subtle);
+    line-height: 1.55;
+  }
+
+  .request-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .request-item {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  .request-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.45rem;
+  }
+
+  .request-head strong {
+    color: var(--accent-strong);
+  }
+
+  .request-meta {
+    display: flex;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    color: var(--subtle);
+    font-size: 0.95rem;
+  }
+
+  @media (max-width: 920px) {
+    .user-hero,
+    .user-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 620px) {
+    .profile-card {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>
+
+<%
+  const profile = data.user || {};
+  const usage = data.usage || {};
+  const plan = String(profile.plan || "free").toLowerCase();
+  const planLabel = plan === "premium" ? "Premium" : "Free";
+  const premiumExpiresAt = profile.premiumExpiresAt
+    ? new Date(profile.premiumExpiresAt).toLocaleString("th-TH", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : "";
+%>
+
+<% if (errorMessage) { %>
+  <section class="card" style="background: #fce9e7; border-color: #f1b8b1; color: #9b2c22;">
+    <strong><%= errorMessage %></strong>
+  </section>
+<% } %>
+
+<% if (successMessage) { %>
+  <section class="card" style="background: #e8f7ee; border-color: #b8e3c8; color: #1f6a3a;">
+    <strong><%= successMessage %></strong>
+  </section>
+<% } %>
+
+<section class="user-hero">
+  <article class="card profile-card">
+    <div class="profile-avatar" aria-hidden="true">
+      <% if (profile.picture || profile.avatarUrl) { %>
+        <img src="<%= profile.picture || profile.avatarUrl %>" alt="User avatar" />
+      <% } else { %>
+        <span><%= String(profile.name || profile.email || "U").trim().charAt(0).toUpperCase() %></span>
+      <% } %>
+    </div>
+    <div class="profile-meta">
+      <p style="margin: 0; font-weight: 700; color: var(--accent);">Google Account</p>
+      <h1><%= profile.name || profile.email || "ผู้ใช้งาน" %></h1>
+      <p><strong>อีเมล:</strong> <%= profile.email || "-" %></p>
+      <p><strong>สถานะ:</strong> <%= profile.status || "active" %></p>
+      <div class="chip-row">
+        <span class="chip"><%= planLabel %> Plan</span>
+        <% if (plan === "premium") { %>
+          <span class="chip ok">ใช้งานแบบไม่จำกัดรายเดือน</span>
+        <% } else { %>
+          <span class="chip warn">โควต้าฟรีรายเดือน <%= usage.questionLimit || 20 %> ครั้ง</span>
+        <% } %>
+      </div>
+    </div>
+  </article>
+
+  <aside class="card hero-actions">
+    <div>
+      <h2 style="margin: 0 0 0.35rem; color: var(--accent-strong);">ทางลัดสำหรับผู้ใช้</h2>
+      <p style="margin: 0;">เข้าสู่หน้าใช้งานหลัก ดูสถานะแพ็กเกจ และส่งคำขออัปเกรดได้จากที่นี่</p>
+    </div>
+    <div class="action-stack">
+      <a class="button action-link" href="/law-chatbot">ไปหน้าแชตบอท</a>
+      <a class="button action-link ghost-button" href="/law-chatbot/payment-request">ส่งคำขออัปเกรดแพ็กเกจ</a>
+      <form class="logout-form" action="/user/logout" method="post">
+        <button type="submit" class="ghost-button">ออกจากระบบ</button>
+      </form>
+    </div>
+  </aside>
+</section>
+
+<section class="user-grid">
+  <article class="card stat-card">
+    <h2>แพ็กเกจปัจจุบัน</h2>
+    <p class="stat-value"><%= planLabel %></p>
+    <p class="stat-note">
+      <% if (plan === "premium" && premiumExpiresAt) { %>
+        Premium ใช้งานได้ถึง <strong><%= premiumExpiresAt %></strong>
+      <% } else if (plan === "premium") { %>
+        บัญชีนี้เปิดใช้งาน Premium อยู่ในขณะนี้
+      <% } else { %>
+        บัญชีนี้ใช้งานในแพ็กเกจ Free
+      <% } %>
+    </p>
+  </article>
+
+  <article class="card stat-card">
+    <h2>การใช้งานเดือนนี้</h2>
+    <p class="stat-value"><%= usage.questionCount || 0 %></p>
+    <p class="stat-note">
+      <% if (usage.isUnlimited) { %>
+        แพ็กเกจปัจจุบันไม่จำกัดจำนวนคำถามรายเดือน
+      <% } else { %>
+        ใช้ไป <strong><%= usage.questionCount || 0 %></strong> จาก <strong><%= usage.questionLimit || 20 %></strong> ครั้ง ของเดือน <strong><%= usage.usageMonth || "-" %></strong>
+      <% } %>
+    </p>
+  </article>
+
+  <article class="card stat-card">
+    <h2>คงเหลือใช้งาน</h2>
+    <p class="stat-value"><%= usage.isUnlimited ? "ไม่จำกัด" : (usage.remainingQuestions || 0) %></p>
+    <p class="stat-note">
+      <% if (usage.isUnlimited) { %>
+        ใช้งานถามตอบต่อได้ทันทีโดยไม่ติดโควต้ารายเดือน
+      <% } else { %>
+        หากต้องการถามได้มากขึ้น สามารถส่งคำขออัปเกรดเป็น Premium ได้
+      <% } %>
+    </p>
+  </article>
+</section>
+
+<section class="card">
+  <div style="display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap;">
+    <div>
+      <h2 style="margin: 0 0 0.35rem; color: var(--accent-strong);">ประวัติคำขอชำระเงิน</h2>
+      <p style="margin: 0;">ติดตามสถานะคำขออัปเกรดแพ็กเกจล่าสุดของบัญชีนี้</p>
+    </div>
+    <a class="button action-link ghost-button" href="/law-chatbot/payment-request">สร้างคำขอใหม่</a>
+  </div>
+
+  <ul class="request-list" style="margin-top: 1rem;">
+    <% if (!data.recentRequests || !data.recentRequests.length) { %>
+      <li class="request-item">
+        <strong>ยังไม่มีคำขอชำระเงิน</strong>
+        <p style="margin: 0.35rem 0 0;">เมื่อคุณส่งคำขออัปเกรดแพ็กเกจ รายการล่าสุดจะปรากฏที่ส่วนนี้</p>
+      </li>
+    <% } %>
+
+    <% (data.recentRequests || []).forEach((item) => { %>
+      <li class="request-item">
+        <div class="request-head">
+          <strong><%= item.plan_name %></strong>
+          <span class="chip <%= item.status === 'approved' ? 'ok' : item.status === 'rejected' ? 'warn' : '' %>">
+            <%= item.status %>
+          </span>
+        </div>
+        <div class="request-meta">
+          <span>จำนวนเงิน <strong><%= Number(item.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></strong> บาท</span>
+          <span>ส่งเมื่อ <strong><%= new Date(item.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) %></strong></span>
+        </div>
+        <% if (item.note) { %>
+          <p style="margin: 0.65rem 0 0;"><strong>หมายเหตุ:</strong> <%= item.note %></p>
+        <% } %>
+        <% if (item.slip_image) { %>
+          <p style="margin: 0.55rem 0 0;">
+            <a href="<%= item.slip_image %>" target="_blank" rel="noopener">ดูสลิปที่แนบไว้</a>
+          </p>
+        <% } %>
+      </li>
+    <% }) %>
+  </ul>
+</section>
+
+<%- include("../partials/footer") %>

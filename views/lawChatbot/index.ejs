@@ -121,8 +121,8 @@
 
     .page-header {
       width: min(1160px, 100%);
-      border-radius: 1.1rem;
-      padding: 0.85rem 0.95rem;
+      border-radius: 0.95rem;
+      padding: 0.48rem 0.62rem;
       border: 1px solid rgba(255, 255, 255, 0.68);
       background: rgba(255, 255, 255, 0.88);
       box-shadow: var(--shadow-soft);
@@ -130,29 +130,29 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 0.75rem;
+      gap: 0.45rem;
       flex-wrap: wrap;
     }
 
     .page-brand {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.5rem;
       min-width: 0;
-      flex: 1 1 320px;
+      flex: 1 1 260px;
     }
 
     .brand-icon {
-      width: 2.6rem;
-      height: 2.6rem;
-      border-radius: 0.9rem;
+      width: 2.1rem;
+      height: 2.1rem;
+      border-radius: 0.72rem;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       background: linear-gradient(145deg, #2b84bb, #0f4667);
       color: #fff;
-      font-size: 1.05rem;
-      box-shadow: 0 8px 18px rgba(15, 70, 103, 0.22);
+      font-size: 0.9rem;
+      box-shadow: 0 6px 14px rgba(15, 70, 103, 0.18);
       flex: 0 0 auto;
     }
 
@@ -160,32 +160,158 @@
       min-width: 0;
     }
 
-    .brand-title h1 {
+    .brand-heading {
+      display: flex;
+      align-items: center;
+      gap: 0.38rem;
+      min-width: 0;
+    }
+
+    .brand-title h6 {
       margin: 0;
-      font-size: clamp(1.12rem, 1.8vw, 1.45rem);
-      line-height: 1.18;
+      font-size: clamp(0.92rem, 1.4vw, 1.05rem);
+      line-height: 1.08;
       color: var(--primary-strong);
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .brand-title p {
-      margin: 0.15rem 0 0;
-      font-size: 0.86rem;
-      color: var(--text-sub);
-      line-height: 1.45;
+      display: none;
+    }
+
+    .page-identity {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+      padding: 0.42rem 0.5rem;
+      border-radius: 0.85rem;
+      border: 1px solid rgba(21, 84, 122, 0.12);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(241, 246, 251, 0.94));
+      box-shadow: 0 6px 16px rgba(34, 63, 87, 0.06);
+      flex: 0 1 315px;
+    }
+
+    .page-identity-avatar {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 0.68rem;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      background: linear-gradient(145deg, var(--primary), var(--primary-strong));
+      box-shadow: 0 5px 12px rgba(15, 70, 103, 0.16);
+      flex: 0 0 auto;
+      font-size: 0.82rem;
+    }
+
+    .page-identity-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .page-identity-admin .page-identity-avatar {
+      background: linear-gradient(145deg, #b9851f, #8f5f11);
+    }
+
+    .page-identity-guest .page-identity-avatar {
+      background: linear-gradient(145deg, #6f879b, #56697c);
+    }
+
+    .page-identity-text {
+      min-width: 0;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 0.38rem;
+      flex: 1 1 auto;
+    }
+
+    .page-identity-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 1.1rem;
+      padding: 0.08rem 0.42rem;
+      border-radius: 999px;
+      background: rgba(21, 84, 122, 0.1);
+      color: var(--primary-strong);
+      font-size: 0.64rem;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }
+
+    .page-identity-name {
+      font-size: 0.84rem;
+      line-height: 1.05;
+      color: var(--primary-strong);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .page-identity-meta {
+      display: none;
+    }
+
+    .page-identity-actions {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 0.3rem;
+      margin-top: 0;
+      justify-content: flex-end;
+    }
+
+    .page-identity-action {
+      border-radius: 999px;
+      min-height: 1.7rem;
+      padding: 0.28rem 0.58rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+      text-decoration: none;
+      border: 1px solid rgba(21, 84, 122, 0.16);
+      background: #fff;
+      color: var(--primary-strong);
+      box-shadow: none;
+      white-space: nowrap;
+    }
+
+    .page-identity-action.primary {
+      background: linear-gradient(145deg, var(--primary), var(--primary-strong));
+      border-color: transparent;
+      color: #fff;
+    }
+
+    .page-identity-action:hover,
+    .page-identity-action:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 14px rgba(34, 63, 87, 0.08);
+      color: inherit;
     }
 
     .page-actions {
       display: flex;
       align-items: center;
       justify-content: flex-end;
-      gap: 0.45rem;
-      flex-wrap: wrap;
-      margin-left: auto;
+      gap: 0.25rem;
+      flex-wrap: nowrap;
     }
 
     .icon-chip-btn {
-      width: 2.2rem;
-      height: 2.2rem;
+      width: 1.95rem;
+      height: 1.95rem;
       padding: 0;
       display: inline-flex;
       align-items: center;
@@ -206,13 +332,14 @@
       background: rgba(255, 255, 255, 0.86);
       border: 1px solid var(--border);
       border-radius: 999px;
-      padding: 0.36rem 0.75rem;
-      font-size: 0.82rem;
+      padding: 0.2rem 0.48rem;
+      font-size: 0.72rem;
       color: var(--text-sub);
       display: inline-flex;
       align-items: center;
-      gap: 0.35rem;
+      gap: 0.25rem;
       backdrop-filter: blur(6px);
+      line-height: 1;
     }
 
     .quick-questions {
@@ -804,6 +931,16 @@
       to { background-color: #fff2a2; }
     }
 
+    @media (min-width: 768px) {
+      .floating-controls {
+        top: auto;
+        bottom: calc(env(safe-area-inset-bottom) + 9rem);
+        right: 1rem;
+        flex-direction: row;
+        align-items: center;
+      }
+    }
+
     @media (max-width: 767.98px) {
       .lawbot-app {
         padding: 0.3rem;
@@ -813,9 +950,9 @@
         overflow: hidden;
       }
       .page-header {
-        padding: 0.45rem 0.55rem;
-        border-radius: 0.8rem;
-        align-items: flex-start;
+        padding: 0.32rem 0.38rem;
+        border-radius: 0.72rem;
+        align-items: center;
       }
 
       .floating-controls {
@@ -823,6 +960,8 @@
         bottom: calc(env(safe-area-inset-bottom) + 6.2rem);
         right: 0.6rem;
         gap: 0.5rem;
+        flex-direction: column;
+        align-items: stretch;
       }
 
       .header-toggle-btn {
@@ -854,41 +993,90 @@
         display: none;
       }
       .page-brand {
-        gap: 0.45rem;
+        gap: 0.38rem;
         flex: 1 1 auto;
         min-width: 0;
+        width: auto;
       }
       .brand-icon {
-        width: 2.15rem;
-        height: 2.15rem;
-        border-radius: 0.75rem;
-        font-size: 0.95rem;
+        width: 1.9rem;
+        height: 1.9rem;
+        border-radius: 0.62rem;
+        font-size: 0.8rem;
       }
-      .brand-title h1 {
-        font-size: 0.98rem;
-        line-height: 1.12;
+      .brand-title h6 {
+        font-size: 0.84rem;
+        line-height: 1.06;
+      }
+      .brand-heading {
+        gap: 0.25rem;
+      }
+      .page-identity {
+        order: 2;
+        width: auto;
+        min-width: 0;
+        padding: 0.26rem 0.34rem;
+        gap: 0.35rem;
+        border-radius: 0.72rem;
+        flex: 1 1 auto;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+      }
+      .page-identity-avatar {
+        width: 1.8rem;
+        height: 1.8rem;
+        border-radius: 0.56rem;
+        font-size: 0.72rem;
+      }
+      .page-identity-text {
+        gap: 0.24rem;
+      }
+      .page-identity-name {
+        font-size: 0.75rem;
+      }
+      .page-identity-badge {
+        min-height: 1rem;
+        padding: 0.06rem 0.32rem;
+        font-size: 0.56rem;
+      }
+      .page-identity-actions {
+        gap: 0.18rem;
+      }
+      .page-identity-action {
+        min-width: 1.55rem;
+        min-height: 1.55rem;
+        padding: 0;
+        font-size: 0;
+        border-radius: 999px;
+      }
+      .page-identity-action i {
+        font-size: 0.72rem;
+        margin: 0 !important;
+      }
+      .page-identity-action-text {
+        display: none;
       }
       .page-actions {
-        width: 100%;
-        justify-content: flex-start;
+        order: 3;
+        width: auto;
+        justify-content: flex-end;
         margin-left: 0;
-        gap: 0.28rem;
+        gap: 0.18rem;
       }
       .page-actions .btn {
-        width: 2.2rem;
-        height: 2.2rem;
+        width: 1.85rem;
+        height: 1.85rem;
         padding: 0;
         font-size: 0;
         line-height: 1;
         justify-content: center;
       }
       .page-actions .btn i {
-        font-size: 0.96rem;
+        font-size: 0.78rem;
         margin-right: 0 !important;
       }
       .status-chip {
-        padding: 0.28rem 0.52rem;
-        font-size: 0.76rem;
+        padding: 0.14rem 0.34rem;
+        font-size: 0.64rem;
       }
       .quick-questions { border-radius: 0.9rem; }
       .chat-shell {
@@ -939,32 +1127,91 @@
       </button>
     </div>
 
+    <%
+      const headerUserVariant = currentUser ? "admin" : (isGoogleUser ? "google" : "guest");
+      const headerUserName = currentUser
+        ? "Admin"
+        : (signedInUser && (signedInUser.name || signedInUser.email))
+          ? (signedInUser.name || signedInUser.email)
+          : "Guest";
+      const headerUserRole = currentUser
+        ? "Admin"
+        : isGoogleUser
+          ? "Google"
+          : "Guest";
+      const headerUserMeta = currentUser
+        ? "ผู้ดูแลระบบ"
+        : isGoogleUser
+          ? ((signedInUser && signedInUser.email) || "เข้าสู่ระบบด้วย Google")
+          : "ยังไม่ได้เข้าสู่ระบบ";
+      const headerUserImage = !currentUser && isGoogleUser && signedInUser
+        ? (signedInUser.picture || signedInUser.avatarUrl || "")
+        : "";
+      const headerUserIcon = currentUser
+        ? "bi-shield-lock-fill"
+        : isGoogleUser
+          ? "bi-person-badge-fill"
+          : "bi-person-circle";
+    %>
+
     <div class="page-header">
       <div class="page-brand">
         <div class="brand-icon"><i class="bi bi-robot"></i></div>
         <div class="brand-title">
-          <h6><strong>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร</strong> (ver 1.0)</h6>
+          <div class="brand-heading">
+            <h6><strong>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร</strong> (ver 1.0)</h6>
+            <span id="onlineBadge" class="status-chip"><i class="bi bi-wifi"></i>ออนไลน์</span>
+          </div>
           <p>ค้นหากฎหมายสหกรณ์แบบ PWA สำหรับมือถือและเดสก์ท็อป</p>
         </div>
       </div>
+      <div class="page-identity page-identity-<%= headerUserVariant %>">
+        <div class="page-identity-avatar" aria-hidden="true">
+          <% if (headerUserImage) { %>
+            <img src="<%= headerUserImage %>" alt="User profile" />
+          <% } else { %>
+            <i class="bi <%= headerUserIcon %>"></i>
+          <% } %>
+        </div>
+        <div class="page-identity-text">
+          <strong class="page-identity-name" title="<%= headerUserMeta %>"><%= headerUserName %></strong>
+          <span class="page-identity-badge"><%= headerUserRole %></span>
+        </div>
+        <div class="page-identity-actions">
+          <% if (isGoogleUser) { %>
+            <a href="/user" class="page-identity-action primary" title="ไปยังหน้าบัญชีผู้ใช้">
+              <i class="bi bi-person-circle"></i><span class="page-identity-action-text">บัญชี</span>
+            </a>
+          <% } else { %>
+            <a href="/auth/google?returnTo=%2Flaw-chatbot" class="page-identity-action primary" title="เข้าสู่ระบบด้วย Google">
+              <i class="bi bi-google"></i><span class="page-identity-action-text">Google</span>
+            </a>
+          <% } %>
+
+          <% if (currentUser) { %>
+            <a href="/admin" class="page-identity-action" title="ไปยังหน้าแอดมิน">
+              <i class="bi bi-speedometer2"></i><span class="page-identity-action-text">Admin</span>
+            </a>
+          <% } else if (!isGoogleUser) { %>
+            <a href="/admin/login" class="page-identity-action" title="เข้าสู่ระบบผู้ดูแล">
+              <i class="bi bi-shield-lock"></i><span class="page-identity-action-text">Admin</span>
+            </a>
+          <% } %>
+        </div>
+      </div>
       <div class="page-actions">
-        <span id="onlineBadge" class="status-chip"><i class="bi bi-wifi"></i>ออนไลน์</span>
-        <% if (currentUser) { %>
-          <a href="/admin" class="btn btn-sm btn-outline-primary" title="ไปยังหน้าแอดมิน">
-            <i class="bi bi-speedometer2 me-1"></i>หน้า Admin
-          </a>
-        <% } else { %>
-          <a href="/admin/login" class="btn btn-sm btn-outline-primary" title="เข้าสู่ระบบผู้ดูแล">
-            <i class="bi bi-shield-lock me-1"></i>Admin Login
-          </a>
-        <% } %>
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#developerModal" title="ข้อมูลผู้พัฒนา" aria-label="ผู้พัฒนาระบบ">
-          <i class="bi bi-person-badge me-1"></i>ผู้พัฒนาระบบ
+        <button type="button" class="btn btn-sm btn-outline-secondary icon-chip-btn" data-bs-toggle="modal" data-bs-target="#developerModal" title="ข้อมูลผู้พัฒนา" aria-label="ผู้พัฒนาระบบ">
+          <i class="bi bi-person-badge"></i>
+          <span class="visually-hidden">ผู้พัฒนาระบบ</span>
         </button>
        
-        <button id="installBtn" class="btn btn-sm btn-success btn-install"><i class="bi bi-android2 me-1"></i>ติดตั้ง</button>
-        <button id="iosInstallBtn" type="button" class="btn btn-sm btn-outline-primary btn-install-ios" data-bs-toggle="modal" data-bs-target="#iosInstallModal">
-          <i class="bi bi-apple me-1"></i>iPhone/iPad
+        <button id="installBtn" class="btn btn-sm btn-success btn-install icon-chip-btn" title="ติดตั้งแอป" aria-label="ติดตั้งแอป">
+          <i class="bi bi-android2"></i>
+          <span class="visually-hidden">ติดตั้งแอป</span>
+        </button>
+        <button id="iosInstallBtn" type="button" class="btn btn-sm btn-outline-primary btn-install-ios icon-chip-btn" data-bs-toggle="modal" data-bs-target="#iosInstallModal" title="วิธีติดตั้งบน iPhone และ iPad" aria-label="วิธีติดตั้งบน iPhone และ iPad">
+          <i class="bi bi-apple"></i>
+          <span class="visually-hidden">iPhone/iPad</span>
         </button>
       </div>
     </div>
@@ -1121,7 +1368,7 @@
       <div class="chat-header d-none d-md-block">
         <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
           <div>
-            <h1 class="h5 mb-1">แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (version 1.0)</h1>
+            <h1 class="h5 mb-1">แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (v1.0)</h1>
             <p class="mb-0 small text-muted">ระบบค้นหากฎหมายแบบหน้าเดียว ครอบคลุมสหกรณ์และกลุ่มเกษตรกร</p>
           </div>
         </div>
@@ -2367,8 +2614,8 @@
         await resetConversationContext();
         chatMessages.innerHTML = '';
         localStorage.removeItem(CHAT_CACHE_KEY);
-        addBubble('ล้างประวัติแล้ว คำถามถัดไปจะถือเป็นคำถามใหม่ หากต้องการถามต่อเรื่องเดิม ให้พิมพ์ถามต่อในบทสนทนาเดิมโดยไม่ต้องกด <i class="bi bi-trash-fill"></i>', 'bot', false, [], null, true, {
-          renderedHtml: 'ล้างประวัติแล้ว คำถามถัดไปจะถือเป็นคำถามใหม่ หากต้องการถามต่อเรื่องเดิม ให้พิมพ์ถามต่อในบทสนทนาเดิมโดยไม่ต้องกด <i class="bi bi-trash-fill"></i>'
+        addBubble('ล้างประวัติแล้ว', 'bot', false, [], null, true, {
+          renderedHtml: 'ล้างประวัติแล้ว'
         });
       });
 
@@ -2411,8 +2658,8 @@
         initVoiceRecognition();
       }
       restoreRecentChats();
-      if (!chatMessages.querySelector('.bubble')) addBubble('แนวทางการถามมี 2 แบบ: 1) ถามต่อหน้าเดิม คือคำถามต่อเนื่องจากคำถามก่อนหน้า ให้พิมพ์ถามต่อได้เลย 2) ถ้าต้องการตั้งคำถามใหม่ ให้กด <i class="bi bi-trash-fill"></i> ก่อน', 'bot', false, [], null, true, {
-        renderedHtml: 'แนวทางการถามมี 2 แบบ: 1) ถามต่อหน้าเดิม คือคำถามต่อเนื่องจากคำถามก่อนหน้า ให้พิมพ์ถามต่อได้เลย 2) ถ้าต้องการตั้งคำถามใหม่ ให้กด <i class="bi bi-trash-fill"></i> ก่อน'
+      if (!chatMessages.querySelector('.bubble')) addBubble('ตั้งคำถามด้วยข้อความกระชับ bot จะตอบข้อมูลได้ดีขึ้น', 'bot', false, [], null, true, {
+        renderedHtml: 'ตั้งคำถามด้วยข้อความกระชับ bot จะตอบข้อมูลได้ดีขึ้น'
       });
 
       if ('serviceWorker' in navigator) {

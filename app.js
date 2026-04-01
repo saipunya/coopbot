@@ -8,6 +8,7 @@ const { connectDb } = require("./config/db");
 const adminController = require("./controllers/adminController");
 const adminRoutes = require("./routes/admin");
 const lawChatbotRoutes = require("./routes/lawChatbot");
+const userRoutes = require("./routes/user");
 const { attachCurrentUser, redirectIfAuthenticated } = require("./middlewares/authMiddleware");
 const { createSessionStore } = require("./services/mysqlSessionStore");
 
@@ -24,6 +25,7 @@ app.set("views", path.join(__dirname, "views"));
 app.set("trust proxy", 1);
 
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/uploads/paymentRequests", express.static(path.join(__dirname, "uploads", "paymentRequests")));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(
@@ -64,6 +66,7 @@ app.get("/auth/google/callback", adminController.handleGoogleCallback);
 
 app.use("/admin", adminRoutes);
 app.use("/law-chatbot", lawChatbotRoutes);
+app.use("/user", userRoutes);
 
 app.use((req, res) => {
   res.status(404).render("lawChatbot/index", {
@@ -82,8 +85,8 @@ app.use((req, res) => {
 
 async function startServer() {
   await connectDb();
-  console.log("GOOGLE_REDIRECT_URI =", process.env.GOOGLE_REDIRECT_URI);
-  console.log("GOOGLE_CLIENT_ID =", process.env.GOOGLE_CLIENT_ID);
+  // console.log("GOOGLE_REDIRECT_URI =", process.env.GOOGLE_REDIRECT_URI);
+  // console.log("GOOGLE_CLIENT_ID =", process.env.GOOGLE_CLIENT_ID);
   console.log(
     "SESSION_STORE =",
     sessionStore.getActiveStoreType ? sessionStore.getActiveStoreType() : sessionStore.storeType || "memory"

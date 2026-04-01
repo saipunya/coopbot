@@ -87,11 +87,12 @@ async function handleGoogleCallback(req, res) {
   try {
     const result = await loginWithGoogleCallback(req);
     req.session.user = result.user;
-    req.session.adminUser = result.user;
+    delete req.session.adminUser;
+    delete req.session.googleOAuthReturnTo;
     return saveSessionAndRedirect(
       req,
       res,
-      "/admin",
+      result.returnTo || "/user",
       "ไม่สามารถบันทึกสถานะการเข้าสู่ระบบด้วย Google ได้",
       "Failed to save session after Google callback:"
     );
