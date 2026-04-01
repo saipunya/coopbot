@@ -1,4 +1,5 @@
 const { getOpenAiConfig, generateOpenAiCompletion, getOpenAiClient } = require("./openAiService");
+const { isAiEnabled } = require("./runtimeSettingsService");
 const { normalizeForSearch, segmentWords, uniqueTokens } = require("./thaiTextUtils");
 
 const SOURCE_LABELS = {
@@ -595,13 +596,14 @@ async function generateChatSummary(message, sources, options = {}) {
   const amountMode = wantsAmountAnswer(message);
   const decisionMode = wantsDecisionAnswer(message);
   const openAiConfig = getOpenAiConfig();
+  const aiEnabled = await isAiEnabled();
 
   // Filter out low-quality sources before sending to Gemini
   const topScore = sources.length > 0 ? Math.max(...sources.map((s) => s.score || 0)) : 0;
   const filteredSources = filterHighQualitySources(sources, topScore);
   const effectiveSources = filteredSources.length > 0 ? filteredSources : sources.slice(0, 3);
 
-  if (options.forceFallback || !openAiConfig || effectiveSources.length === 0) {
+  if (options.forceFallback || !aiEnabled || !openAiConfig || effectiveSources.length === 0) {
     return buildFallbackSummary(sources, explainMode, {
       ...options,
       amountMode,

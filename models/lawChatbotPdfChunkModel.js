@@ -604,7 +604,6 @@ class LawChatbotPdfChunkModel {
     // Create embedding for query
     const queryEmbedding = await createEmbedding(message);
     if (!queryEmbedding) {
-      console.warn("[semanticSearch] Failed to create query embedding");
       return [];
     }
 

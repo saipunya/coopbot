@@ -1041,6 +1041,10 @@ async function collectAnswerSources(message, target, session, options = {}) {
   const startedAt = nowMs();
   const questionIntent = classifyQuestionIntent(message);
   const effectiveMessage = String(message || "").trim();
+  const allowInternetFallback =
+    typeof options.allowInternetFallback === "boolean"
+      ? options.allowInternetFallback
+      : await isAiEnabled();
 
   const searchPlan = await resolveSearchPlan(message, target, session, options);
   const afterDbSearchAt = nowMs();
@@ -1048,8 +1052,9 @@ async function collectAnswerSources(message, target, session, options = {}) {
   const resolvedEffectiveMessage = searchPlan.effectiveMessage || effectiveMessage;
   const databaseMatches = Array.isArray(searchPlan.matches) ? searchPlan.matches : [];
   const shouldSearchInternet =
-    isClearlyCurrentOrExternalQuestion(resolvedEffectiveMessage) ||
-    isLowConfidenceDatabaseResult(databaseMatches, questionIntent);
+    allowInternetFallback &&
+    (isClearlyCurrentOrExternalQuestion(resolvedEffectiveMessage) ||
+      isLowConfidenceDatabaseResult(databaseMatches, questionIntent));
   let internetMatches = [];
   const remainingBudgetBeforeInternetMs = getRemainingBudgetMs(
     options.requestStartedAt,
@@ -1096,6 +1101,7 @@ async function collectAnswerSources(message, target, session, options = {}) {
     usedInternetFallback,
     usedInternetSearch: shouldSearchInternet && !shouldSkipInternetForBudget,
     skippedInternetSearch: shouldSkipInternetForBudget,
+    allowInternetFallback,
     timing: {
       dbSearchMs: Math.round(afterDbSearchAt - startedAt),
       internetSearchMs: Math.round(afterInternetSearchAt - afterDbSearchAt),
@@ -1138,19 +1144,7 @@ async function replyToChat(payload, session) {
   }
 
   const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target);
-
-  if (!(await isAiEnabled())) {
-    return {
-      hasContext: true,
-      answer:
-        "ผู้ดูแลระบบปิดการใช้งาน AI ชั่วคราว กรุณาลองใหม่อีกครั้งภายหลัง หรือเปิดใช้งานจากหน้า Admin ก่อนใช้งานต่อ",
-      highlightTerms: [],
-      usedFollowUpContext: false,
-      usedInternetFallback: false,
-      fromCache: false,
-      aiDisabled: true,
-    };
-  }
+  const aiEnabled = await isAiEnabled();
 
   if (runtimeFlags.useMockAI) {
     const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
@@ -1166,7 +1160,7 @@ async function replyToChat(payload, session) {
   }
 
   const cacheKey = buildAnswerCacheKey(message, target);
-  const canUseCache = shouldUseAnswerCache(message) && !debugMode;
+  const canUseCache = aiEnabled && shouldUseAnswerCache(message) && !debugMode;
   const cachedAnswer = canUseCache ? getCachedAnswer(cacheKey) : null;
   if (cachedAnswer) {
     storeConversationContext(
@@ -1268,6 +1262,7 @@ async function replyToChat(payload, session) {
   const evidence = await collectAnswerSources(message, target, session, {
     requestStartedAt: startedAt,
     totalBudgetMs: CHAT_REPLY_BUDGET_MS,
+    allowInternetFallback: aiEnabled,
   });
   const afterCollectSourcesAt = nowMs();
   const resolvedContext = evidence.resolvedContext;
@@ -1279,7 +1274,9 @@ async function replyToChat(payload, session) {
 
   if (sources.length === 0) {
     answer =
-      "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนทั้งในฐานข้อมูลและแหล่งข้อมูลสาธารณะ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
+      aiEnabled
+        ? "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนทั้งในฐานข้อมูลและแหล่งข้อมูลสาธารณะ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร"
+        : "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนในฐานข้อมูลและเอกสารภายในระบบ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
     const remainingBudgetBeforeAnswerMs = getRemainingBudgetMs(startedAt, CHAT_REPLY_BUDGET_MS);
     answer = await generateChatSummary(message, wantsExplanation(message) ? sources : sources.slice(0, 5), {
@@ -1380,14 +1377,13 @@ async function summarizeChat(payload, session) {
   if (!message) {
     return { summary: "" };
   }
-
-  if (!(await isAiEnabled())) {
-    return { summary: "ขณะนี้ผู้ดูแลระบบปิดการใช้งาน AI ชั่วคราว" };
-  }
+  const aiEnabled = await isAiEnabled();
 
   const target =
     payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
-  const evidence = await collectAnswerSources(message, target, session);
+  const evidence = await collectAnswerSources(message, target, session, {
+    allowInternetFallback: aiEnabled,
+  });
   const resolvedContext = evidence.resolvedContext;
   const effectiveMessage = evidence.effectiveMessage || message;
   const sources = evidence.sources;
