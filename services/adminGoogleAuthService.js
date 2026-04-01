@@ -39,28 +39,14 @@ function buildRequestOrigin(req) {
   return `${protocol}://${host}`;
 }
 
-function buildGoogleRedirectUri(req) {
-  const explicit = String(process.env.GOOGLE_REDIRECT_URI || "").trim();
-  const requestOrigin = buildRequestOrigin(req);
+function buildGoogleRedirectUri() {
+  const redirectUri = String(process.env.GOOGLE_REDIRECT_URI || "").trim();
 
-  if (explicit) {
-    try {
-      const explicitUrl = new URL(explicit);
-      const requestUrl = new URL(`${requestOrigin}/`);
-
-      // Keep the configured production path, but swap in the current local origin
-      // so localhost testing uses the same browser session and OAuth state.
-      if (isLoopbackHost(requestUrl.hostname) && !isLoopbackHost(explicitUrl.hostname)) {
-        return `${requestOrigin}${explicitUrl.pathname}${explicitUrl.search}`;
-      }
-    } catch (error) {
-      return explicit;
-    }
-
-    return explicit;
+  if (!redirectUri) {
+    throw new Error("GOOGLE_REDIRECT_URI is not configured");
   }
 
-  return `${requestOrigin}/auth/google/callback`;
+  return redirectUri;
 }
 
 function createGoogleAuthUrl(req) {
