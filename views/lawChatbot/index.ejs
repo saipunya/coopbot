@@ -1900,6 +1900,15 @@
         return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       }
 
+      function sanitizeDisplayText(text) {
+        return String(text || '')
+          .replace(/(^|\n)\s*\/\/\s*/g, '$1')
+          .replace(/(^|[\s(])\/\/(?=[\s)]|$)/g, '$1')
+          .replace(/[ \t]{2,}/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+      }
+
       function buildHighlightTerms(query) {
         const source = String(query || '').trim();
         if (!source) return [];
@@ -1940,7 +1949,7 @@
       }
 
       function buildReferenceToggleHtml(referenceText, terms) {
-        const referenceLines = String(referenceText || '')
+        const referenceLines = sanitizeDisplayText(referenceText)
           .split('\n')
           .map((line) => line.trim())
           .filter(Boolean)
@@ -1971,14 +1980,14 @@
         }
 
         referenceModalList.innerHTML = Array.isArray(lines)
-          ? lines.map((line) => `<li>${applyHighlightHtml(String(line || ''), terms)}</li>`).join('')
+          ? lines.map((line) => `<li>${applyHighlightHtml(sanitizeDisplayText(String(line || '')), terms)}</li>`).join('')
           : '';
 
         referenceModal.show();
       }
 
       function splitSummaryIntoBullets(text) {
-        const raw = String(text || '').trim();
+        const raw = sanitizeDisplayText(text);
         if (!raw) return [];
 
         // Step 1: split on explicit newlines (already-formatted AI output)
@@ -2078,7 +2087,7 @@
       }
 
       function formatBotMessageHtml(text, terms, options = {}) {
-        const raw = String(text || '').trim();
+        const raw = sanitizeDisplayText(text);
         const inlineActionHtml = buildInlineActionHtml(options);
         if (!raw.includes('แหล่งอ้างอิง:')) {
           const highlighted = applyHighlightHtml(raw, terms);
@@ -2407,6 +2416,7 @@
       }
 
       function addBubble(text, role, isLoading = false, highlightTerms = [], feedbackContext = null, shouldAutoScroll = true, restoreOptions = {}) {
+        const displayText = role === 'bot' ? sanitizeDisplayText(text) : String(text || '');
         const row = document.createElement('div');
         row.className = `message-row ${role === 'user' ? 'message-user' : 'message-bot'}`;
 
@@ -2426,12 +2436,12 @@
           if (restoreOptions && typeof restoreOptions.renderedHtml === 'string' && restoreOptions.renderedHtml) {
             message.innerHTML = restoreOptions.renderedHtml;
           } else {
-            message.innerHTML = formatBotMessageHtml(text, highlightTerms, feedbackContext || {});
+            message.innerHTML = formatBotMessageHtml(displayText, highlightTerms, feedbackContext || {});
           }
         } else if (restoreOptions && typeof restoreOptions.renderedHtml === 'string' && restoreOptions.renderedHtml) {
           message.innerHTML = restoreOptions.renderedHtml;
         } else {
-          message.textContent = text;
+          message.textContent = displayText;
         }
 
         content.appendChild(message);
@@ -2466,7 +2476,7 @@
         ) {
           attachFeedbackActions(content, {
             question: feedbackContext.question,
-            answerShown: text,
+            answerShown: displayText,
             target: feedbackContext.target || selectedTarget
           });
         }

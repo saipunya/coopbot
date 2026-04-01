@@ -67,12 +67,16 @@ function buildSourceContext(sources) {
 
 function formatReferenceLine(source) {
   const tableName = SOURCE_LABELS[source.source] || source.source || "เอกสารที่อัปโหลด";
-  const parts = [source.reference || source.title || "ไม่ระบุอ้างอิง"];
-  if (source.documentNumber && source.documentNumber !== parts[0]) {
-    parts.push(`เลขที่ ${source.documentNumber}`);
+  const primaryReference = cleanLine(source.reference || source.title || "ไม่ระบุอ้างอิง");
+  const parts = [primaryReference];
+  const documentNumber = cleanLine(source.documentNumber || "");
+  const documentDateText = cleanLine(source.documentDateText || "");
+
+  if (documentNumber && documentNumber !== parts[0]) {
+    parts.push(`เลขที่ ${documentNumber}`);
   }
-  if (source.documentDateText) {
-    parts.push(`ลงวันที่ ${source.documentDateText}`);
+  if (documentDateText) {
+    parts.push(`ลงวันที่ ${documentDateText}`);
   }
   return `- ${tableName}: ${parts.filter(Boolean).join(" | ")}`;
 }
@@ -123,8 +127,14 @@ function buildReferenceSection(sources, limit = 5) {
   return ["แหล่งอ้างอิง:", ...topSources.map(formatReferenceLine)].join("\n");
 }
 
-function cleanLine(text) {
+function stripStandaloneDoubleSlash(text) {
   return String(text || "")
+    .replace(/(^|\n)\s*\/\/\s*/g, "$1")
+    .replace(/(^|[\s(])\/\/(?=[\s)]|$)/g, "$1");
+}
+
+function cleanLine(text) {
+  return stripStandaloneDoubleSlash(text)
     .replace(/^#{1,6}\s*/, "")
     .replace(/^[*-]\s*/, "")
     .replace(/^สรุป:\s*/i, "")
@@ -256,7 +266,7 @@ function splitExplainSections(lines) {
 }
 
 function normalizeParagraph(text) {
-  return String(text || "")
+  return stripStandaloneDoubleSlash(text)
     .replace(/^#{1,6}\s*/gm, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -554,12 +564,7 @@ function buildDatabaseOnlyAnswer(sources, options = {}) {
     return "ไม่ปรากฏข้อมูลที่เกี่ยวข้องอย่างชัดเจนในฐานข้อมูล กรุณาระบุคำค้นหรือประเด็นที่ต้องการสอบถามเพิ่มเติม";
   }
 
-  const intro =
-    options.questionIntent === "law_section"
-      ? "ข้อมูลที่พบจากฐานข้อมูลกฎหมาย (แสดงเฉพาะรายการที่ผ่านการกรองและใช้ตอบ):"
-      : "ข้อมูลที่พบจากฐานข้อมูล (แสดงเฉพาะรายการที่ผ่านการกรองและใช้ตอบ):";
-
-  return [intro, ...sourceBlocks, buildReferenceSection(displayedSources, displayedSources.length)]
+  return [...sourceBlocks, buildReferenceSection(displayedSources, displayedSources.length)]
     .filter(Boolean)
     .join("\n\n");
 }
