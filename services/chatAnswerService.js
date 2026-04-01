@@ -375,6 +375,76 @@ function getSourceDisplayPriority(sourceName, questionIntent = "general") {
   return 0;
 }
 
+function extractDisplaySequenceNumber(source = {}) {
+  const candidates = [
+    source.lawNumber,
+    source.reference,
+    source.title,
+    source.keyword,
+  ];
+
+  for (const candidate of candidates) {
+    const text = String(candidate || "");
+    const lawMatch = text.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*(\d{1,4})/);
+    if (lawMatch) {
+      return Number(lawMatch[1]);
+    }
+
+    const genericMatch = text.match(/\d{1,6}/);
+    if (genericMatch) {
+      return Number(genericMatch[0]);
+    }
+  }
+
+  return Number.POSITIVE_INFINITY;
+}
+
+function getSourceStableOrderValue(source = {}) {
+  const numericId = Number(source.id || source.document_id || source.documentId || 0);
+  if (Number.isFinite(numericId) && numericId > 0) {
+    return numericId;
+  }
+
+  const createdAtValue = Date.parse(source.created_at || source.createdAt || source.updated_at || source.updatedAt || "");
+  if (Number.isFinite(createdAtValue)) {
+    return createdAtValue;
+  }
+
+  return Number.POSITIVE_INFINITY;
+}
+
+function compareDatabaseOnlySourceDisplayOrder(left, right) {
+  const leftSource = String(left?.source || "").trim().toLowerCase();
+  const rightSource = String(right?.source || "").trim().toLowerCase();
+  if (leftSource !== rightSource) {
+    return 0;
+  }
+
+  const leftSequence = extractDisplaySequenceNumber(left);
+  const rightSequence = extractDisplaySequenceNumber(right);
+  if (Number.isFinite(leftSequence) || Number.isFinite(rightSequence)) {
+    if (leftSequence !== rightSequence) {
+      return leftSequence - rightSequence;
+    }
+  }
+
+  const leftDocumentId = Number(left?.document_id || left?.documentId || 0);
+  const rightDocumentId = Number(right?.document_id || right?.documentId || 0);
+  if (leftDocumentId || rightDocumentId) {
+    if (leftDocumentId !== rightDocumentId) {
+      return leftDocumentId - rightDocumentId;
+    }
+  }
+
+  const leftStableOrder = getSourceStableOrderValue(left);
+  const rightStableOrder = getSourceStableOrderValue(right);
+  if (leftStableOrder !== rightStableOrder) {
+    return leftStableOrder - rightStableOrder;
+  }
+
+  return 0;
+}
+
 function orderSourcesForDatabaseOnly(sources, options = {}) {
   const sourceLimit = Math.max(1, Number(options.sourceLimit || 8));
   const quotaBySource = {
@@ -398,7 +468,7 @@ function orderSourcesForDatabaseOnly(sources, options = {}) {
   });
 
   grouped.forEach((items, key) => {
-    items.sort((left, right) => {
+    const rankedItems = [...items].sort((left, right) => {
       const scoreDiff = Number(right.score || 0) - Number(left.score || 0);
       if (scoreDiff !== 0) {
         return scoreDiff;
@@ -412,13 +482,16 @@ function orderSourcesForDatabaseOnly(sources, options = {}) {
         options.originalMessage || "",
       );
     });
-    grouped.set(key, items);
+    grouped.set(key, rankedItems);
   });
 
   const ordered = [];
   const pushSourceItems = (sourceName, limit) => {
     const items = grouped.get(sourceName) || [];
-    items.slice(0, Math.max(0, limit)).forEach((item) => ordered.push(item));
+    const selectedItems = items
+      .slice(0, Math.max(0, limit))
+      .sort(compareDatabaseOnlySourceDisplayOrder);
+    selectedItems.forEach((item) => ordered.push(item));
     grouped.delete(sourceName);
   };
 
@@ -475,7 +548,8 @@ function extractRelevantSegmentsFromSource(source, message, options = {}) {
   const rawText = [source.content, source.chunk_text, source.comment].filter(Boolean).join("\n");
   const segments = splitContentSegments(rawText);
   const scoredSegments = segments
-    .map((segment) => ({
+    .map((segment, index) => ({
+      index,
       text: segment,
       score: scoreSourceSegment(segment, message, source, options),
     }))
@@ -487,8 +561,7 @@ function extractRelevantSegmentsFromSource(source, message, options = {}) {
       }
       return item.score >= 2 || hasCoreLegalSignal(item.text);
     })
-    .sort((left, right) => right.score - left.score)
-    .map((item) => item.text);
+    .sort((left, right) => right.score - left.score);
 
   const segmentLimit =
     options.questionIntent === "law_section"
@@ -496,7 +569,11 @@ function extractRelevantSegmentsFromSource(source, message, options = {}) {
       : options.explainMode
         ? 5
         : 4;
-  const uniqueSegments = uniqueCleanLines(scoredSegments, segmentLimit);
+  const selectedSegments = scoredSegments
+    .slice(0, segmentLimit)
+    .sort((left, right) => left.index - right.index)
+    .map((item) => item.text);
+  const uniqueSegments = uniqueCleanLines(selectedSegments, segmentLimit);
 
   if (uniqueSegments.length > 0) {
     return uniqueSegments;
