@@ -11,18 +11,24 @@ function normalizeQuestionForAnswerCache(message) {
     .trim();
 }
 
-function buildQuestionHash(target, normalizedQuestion) {
+function buildQuestionHash(target, normalizedQuestion, scopeKey = "") {
   return crypto
     .createHash("sha256")
-    .update(`${String(target || "all").trim()}::${String(normalizedQuestion || "").trim()}`)
+    .update(
+      [
+        String(target || "all").trim(),
+        String(scopeKey || "").trim(),
+        String(normalizedQuestion || "").trim(),
+      ].join("::"),
+    )
     .digest("hex");
 }
 
-function buildQuestionCacheIdentity(message, target) {
+function buildQuestionCacheIdentity(message, target, scopeKey = "") {
   const normalizedQuestion = normalizeQuestionForAnswerCache(message);
   return {
     normalizedQuestion,
-    questionHash: normalizedQuestion ? buildQuestionHash(target, normalizedQuestion) : "",
+    questionHash: normalizedQuestion ? buildQuestionHash(target, normalizedQuestion, scopeKey) : "",
   };
 }
 

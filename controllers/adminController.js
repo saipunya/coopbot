@@ -305,7 +305,9 @@ async function approvePaymentRequest(req, res) {
 
   return res.redirect(
     `/admin/payment-requests/${id}?success=` +
-      encodeURIComponent("อนุมัติคำขอชำระเงินและเปิดใช้งาน Premium 30 วันเรียบร้อยแล้ว")
+      encodeURIComponent(
+        `อนุมัติคำขอชำระเงินและเปิดใช้งานแพ็กเกจ ${result.planLabel || "ที่ร้องขอ"} 30 วันเรียบร้อยแล้ว`
+      )
   );
 }
 
@@ -333,7 +335,9 @@ async function rejectPaymentRequest(req, res) {
 
   return res.redirect(
     `/admin/payment-requests/${id}?success=` +
-      encodeURIComponent("ปฏิเสธคำขอชำระเงินเรียบร้อยแล้ว ผู้ใช้คงอยู่ในแผน Free")
+      encodeURIComponent(
+        `ปฏิเสธคำขอชำระเงินแพ็กเกจ ${result.planLabel || "ที่ร้องขอ"} เรียบร้อยแล้ว สถานะแผนปัจจุบันของผู้ใช้ยังคงเดิม`
+      )
   );
 }
 

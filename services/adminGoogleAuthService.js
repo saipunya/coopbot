@@ -222,6 +222,8 @@ async function loginWithGoogleCallback(req) {
       avatarUrl: persistedUser?.avatar_url || profile.picture || "",
       googleId: persistedUser?.google_id || profile.sub,
       plan: persistedUser?.plan || "free",
+      planStartedAt: persistedUser?.plan_started_at || null,
+      planExpiresAt: persistedUser?.plan_expires_at || null,
       premiumExpiresAt: persistedUser?.premium_expires_at || null,
       userId: persistedUser?.id || null,
     },

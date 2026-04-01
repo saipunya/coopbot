@@ -10,9 +10,19 @@ const UserModel = require("../models/userModel");
 const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
 const runtimeFlags = require("../config/runtimeFlags");
 const { isAiEnabled } = require("./runtimeSettingsService");
+const { getOpenAiConfig } = require("./openAiService");
 const { buildQuestionCacheIdentity } = require("./lawChatbotAnswerCacheUtils");
 const { sendPaymentRequestNotification } = require("./telegramService");
 const { generateChatSummary, wantsExplanation } = require("./chatAnswerService");
+const {
+  getPlanDurationDays,
+  getPlanLabel,
+  getPlanPriceBaht,
+  isPaidPlan,
+  listPurchasablePlans,
+  normalizePlanCode,
+  resolveUserPlanContext,
+} = require("./planService");
 const { chunkText, extractTextFromFile } = require("./documentTextExtractor");
 const {
   extractKeywords,
@@ -86,8 +96,44 @@ function isStandaloneLawLookup(message) {
   return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+\b/.test(text);
 }
 
-function buildAnswerCacheKey(message, target) {
-  return `${target}::${normalizeForSearch(message).toLowerCase()}`;
+function buildAnswerCacheScope(planContext = {}) {
+  const planCode = normalizePlanCode(planContext.code || planContext.plan || "free");
+  const promptProfileCode =
+    String(planContext.promptProfile?.code || "").trim().toLowerCase() || "template";
+  const internetMode = planContext.useInternet
+    ? String(planContext.internetMode || "full").trim().toLowerCase()
+    : "none";
+
+  return [planCode, promptProfileCode, internetMode].join("::");
+}
+
+function buildAnswerCacheKey(message, target, planContext = {}) {
+  return `${target}::${buildAnswerCacheScope(planContext)}::${normalizeForSearch(message).toLowerCase()}`;
+}
+
+function resolveChatPlanContext(session, options = {}) {
+  const aiAvailable = Boolean(options.aiAvailable);
+  const baseUser =
+    session?.adminUser
+      ? { plan: "premium" }
+      : session?.user || { plan: "free" };
+  const configuredContext = resolveUserPlanContext(baseUser);
+  const effectiveUseAI = aiAvailable && configuredContext.useAI;
+  const effectiveUseInternet = effectiveUseAI && configuredContext.useInternet;
+  const promptProfile = effectiveUseAI
+    ? configuredContext.promptProfile
+    : {
+        ...configuredContext.promptProfile,
+        code: configuredContext.code === "free" ? "template" : "dbonly",
+        aiSourceLimit: 0,
+      };
+
+  return {
+    ...configuredContext,
+    useAI: effectiveUseAI,
+    useInternet: effectiveUseInternet,
+    promptProfile,
+  };
 }
 
 function shouldUseAnswerCache(message) {
@@ -133,7 +179,9 @@ function shouldPersistDbAnswerCache(answer, options = {}) {
     return false;
   }
 
-  return !/(เข้าสู่ระบบด้วย google|guest ครบ 2 ครั้ง|ครบ 20 ครั้ง|อัปเกรดแพลน|mock ai|โหมดทดสอบ)/i.test(text);
+  return !/(เข้าสู่ระบบด้วย google|guest ครบ|ใช้สิทธิ์ถามคำถามครบ|อัปเกรดแพลน|mock ai|โหมดทดสอบ)/i.test(
+    text,
+  );
 }
 
 function buildDbCachedChatResult(cacheEntry, message) {
@@ -305,6 +353,7 @@ async function searchInternetSources(message, target, options = {}) {
   const searchQuery = `${query} ${targetKeyword}`.trim();
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}&kl=th-th&ia=web`;
   const timeoutMs = Math.max(1000, Number(options.timeoutMs || WEB_SEARCH_TIMEOUT_MS));
+  const resultLimit = Math.max(1, Number(options.limit || WEB_SEARCH_LIMIT));
 
   try {
     const html = await fetchText(searchUrl, timeoutMs);
@@ -312,7 +361,7 @@ async function searchInternetSources(message, target, options = {}) {
       console.log("[searchInternetSources] HTML length:", html?.length || 0);
       console.log("[searchInternetSources] Has result__a:", html?.includes("result__a"));
     }
-    const rawResults = extractWebSearchResults(html, WEB_SEARCH_LIMIT);
+    const rawResults = extractWebSearchResults(html, resultLimit);
     if (process.env.DEBUG_INTERNET_SEARCH === "true") {
       console.log("[searchInternetSources] Raw results:", rawResults?.length || 0);
     }
@@ -332,7 +381,7 @@ async function searchInternetSources(message, target, options = {}) {
     return scoredResults
       .filter((result) => result.score > 0)
       .sort((a, b) => (b.score || 0) - (a.score || 0))
-      .slice(0, WEB_SEARCH_LIMIT);
+      .slice(0, resultLimit);
   } catch (err) {
     console.error("[searchInternetSources] Error:", err?.message || err);
     return [];
@@ -970,8 +1019,9 @@ function getFinalSourceCompactionPlan(intent = "general") {
   }
 }
 
-function compactSourcesForSummarization(groups, intent = "general") {
+function compactSourcesForSummarization(groups, intent = "general", options = {}) {
   const plan = getFinalSourceCompactionPlan(intent);
+  const targetLimit = Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const compacted = [];
   const pushUnique = (items, limit) => {
     dedupeSourcesConservatively(items)
@@ -989,7 +1039,7 @@ function compactSourcesForSummarization(groups, intent = "general") {
   pushUnique([...(groups.documents || []), ...(groups.pdf_chunks || [])], plan.quotas.document_like || 0);
   pushUnique(groups.internet, plan.quotas.internet || 0);
 
-  if (compacted.length < plan.totalLimit) {
+  if (compacted.length < targetLimit) {
     const fallbackPool = [
       ...(groups.vinichai || []),
       ...(groups.knowledge_base || []),
@@ -1000,13 +1050,130 @@ function compactSourcesForSummarization(groups, intent = "general") {
       ...(groups.internet || []),
     ];
 
-    pushUnique(fallbackPool, plan.totalLimit - compacted.length);
+    pushUnique(fallbackPool, targetLimit - compacted.length);
   }
 
-  return sortByScore(compacted).slice(0, plan.totalLimit);
+  return sortByScore(compacted).slice(0, targetLimit || plan.totalLimit);
 }
 
-function selectTieredSources(groups, intent = "general") {
+function getDatabaseOnlySelectionPlan(intent = "general") {
+  switch (intent) {
+    case "law_section":
+      return {
+        totalLimit: 12,
+        quotas: {
+          admin_knowledge: 2,
+          tbl_laws: 4,
+          tbl_glaws: 3,
+          pdf_chunks: 3,
+          tbl_vinichai: 1,
+          documents: 1,
+          knowledge_base: 1,
+        },
+      };
+    case "explain":
+      return {
+        totalLimit: 14,
+        quotas: {
+          admin_knowledge: 3,
+          tbl_laws: 3,
+          tbl_glaws: 3,
+          pdf_chunks: 4,
+          tbl_vinichai: 1,
+          documents: 1,
+          knowledge_base: 1,
+        },
+      };
+    default:
+      return {
+        totalLimit: 12,
+        quotas: {
+          admin_knowledge: 3,
+          tbl_laws: 3,
+          tbl_glaws: 2,
+          pdf_chunks: 3,
+          tbl_vinichai: 1,
+          documents: 1,
+          knowledge_base: 1,
+        },
+      };
+  }
+}
+
+function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
+  const plan = getDatabaseOnlySelectionPlan(intent);
+  const targetLimit = Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
+  const selected = [];
+  const usedTiers = [];
+
+  const pushUnique = (items, limit, tierName) => {
+    const ranked = dedupeSourcesConservatively(items).slice(0, limit);
+    if (ranked.length === 0) {
+      return;
+    }
+
+    usedTiers.push(tierName);
+    ranked.forEach((item) => {
+      if (selected.find((existing) => areNearDuplicateSources(existing, item))) {
+        return;
+      }
+      selected.push(item);
+    });
+  };
+
+  const structuredLaws = Array.isArray(groups.structured_laws) ? groups.structured_laws : [];
+
+  pushUnique(groups.admin_knowledge || [], plan.quotas.admin_knowledge || 0, "admin_knowledge");
+  pushUnique(
+    structuredLaws.filter((item) => item && item.source === "tbl_laws"),
+    plan.quotas.tbl_laws || 0,
+    "tbl_laws",
+  );
+  pushUnique(
+    structuredLaws.filter((item) => item && item.source === "tbl_glaws"),
+    plan.quotas.tbl_glaws || 0,
+    "tbl_glaws",
+  );
+  pushUnique(groups.pdf_chunks || [], plan.quotas.pdf_chunks || 0, "pdf_chunks");
+  pushUnique(groups.vinichai || [], plan.quotas.tbl_vinichai || 0, "tbl_vinichai");
+  pushUnique(groups.documents || [], plan.quotas.documents || 0, "documents");
+  pushUnique(groups.knowledge_base || [], plan.quotas.knowledge_base || 0, "knowledge_base");
+
+  if (selected.length < targetLimit) {
+    const fallbackPool = dedupeSourcesConservatively([
+      ...(groups.admin_knowledge || []),
+      ...structuredLaws.filter((item) => item && item.source === "tbl_laws"),
+      ...structuredLaws.filter((item) => item && item.source === "tbl_glaws"),
+      ...(groups.pdf_chunks || []),
+      ...(groups.vinichai || []),
+      ...(groups.documents || []),
+      ...(groups.knowledge_base || []),
+    ]);
+
+    fallbackPool.forEach((item) => {
+      if (selected.length >= targetLimit) {
+        return;
+      }
+
+      if (selected.find((existing) => areNearDuplicateSources(existing, item))) {
+        return;
+      }
+
+      selected.push(item);
+    });
+  }
+
+  return {
+    selectedSourceTier: usedTiers.join(" > ") || "none",
+    selectedSources: selected.slice(0, targetLimit || plan.totalLimit),
+  };
+}
+
+function selectTieredSources(groups, intent = "general", options = {}) {
+  if (options.databaseOnlyMode) {
+    return selectDatabaseOnlySources(groups, intent, options);
+  }
+
   const routingPlan = getSourceRoutingPlan(intent);
 
   // Build plan sorted by priority (highest first)
@@ -1046,6 +1213,7 @@ function selectTieredSources(groups, intent = "general") {
       internet: selected.filter((item) => item && item.source === "internet_search"),
     },
     intent,
+    options,
   );
 
   return {
@@ -1087,6 +1255,7 @@ async function collectAnswerSources(message, target, session, options = {}) {
     );
     internetMatches = await searchInternetSources(resolvedEffectiveMessage, target, {
       timeoutMs: internetTimeoutMs,
+      limit: options.internetLimit,
     });
   }
   const afterInternetSearchAt = nowMs();
@@ -1103,7 +1272,10 @@ async function collectAnswerSources(message, target, session, options = {}) {
     internet: internetMatches,
   };
 
-  const { selectedSourceTier, selectedSources } = selectTieredSources(grouped, questionIntent);
+  const { selectedSourceTier, selectedSources } = selectTieredSources(grouped, questionIntent, {
+    databaseOnlyMode: options.databaseOnlyMode === true,
+    sourceLimit: options.sourceLimit,
+  });
   const afterSourceSelectionAt = nowMs();
   const usedInternetFallback = selectedSources.some((item) => item && item.source === "internet_search");
 
@@ -1144,6 +1316,21 @@ async function getDashboardData() {
   };
 }
 
+function enrichPaymentRequestRecord(record = {}) {
+  const planCode = normalizePlanCode(record.plan_name || record.planName || "free");
+  const currentPlanCode = normalizePlanCode(record.user_plan || "free");
+
+  return {
+    ...record,
+    planCode,
+    planLabel: getPlanLabel(planCode),
+    userPlanCode: currentPlanCode,
+    userPlanLabel: getPlanLabel(currentPlanCode),
+    planPriceBaht: Number(record.amount || getPlanPriceBaht(planCode) || 0),
+    userPlanExpiresAt: record.plan_expires_at || record.premium_expires_at || null,
+  };
+}
+
 async function replyToChat(payload, session) {
   const startedAt = nowMs();
   const message = String(payload.message || "").trim();
@@ -1160,8 +1347,14 @@ async function replyToChat(payload, session) {
     };
   }
 
-  const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target);
-  const aiEnabled = await isAiEnabled();
+  const aiRuntimeEnabled = await isAiEnabled();
+  const openAiConfig = getOpenAiConfig();
+  const aiFeatureAvailable = aiRuntimeEnabled && Boolean(openAiConfig);
+  const planContext = resolveChatPlanContext(session, {
+    aiAvailable: aiFeatureAvailable,
+  });
+  const cacheScope = buildAnswerCacheScope(planContext);
+  const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target, cacheScope);
 
   if (runtimeFlags.useMockAI) {
     const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
@@ -1176,8 +1369,8 @@ async function replyToChat(payload, session) {
     };
   }
 
-  const cacheKey = buildAnswerCacheKey(message, target);
-  const canUseCache = aiEnabled && shouldUseAnswerCache(message) && !debugMode;
+  const cacheKey = buildAnswerCacheKey(message, target, planContext);
+  const canUseCache = shouldUseAnswerCache(message) && !debugMode;
   const cachedAnswer = canUseCache ? getCachedAnswer(cacheKey) : null;
   if (cachedAnswer) {
     storeConversationContext(
@@ -1279,7 +1472,10 @@ async function replyToChat(payload, session) {
   const evidence = await collectAnswerSources(message, target, session, {
     requestStartedAt: startedAt,
     totalBudgetMs: CHAT_REPLY_BUDGET_MS,
-    allowInternetFallback: aiEnabled,
+    allowInternetFallback: planContext.useInternet,
+    databaseOnlyMode: !planContext.useAI,
+    sourceLimit: planContext.sourceLimit,
+    internetLimit: planContext.maxInternetSources,
   });
   const afterCollectSourcesAt = nowMs();
   const resolvedContext = evidence.resolvedContext;
@@ -1291,19 +1487,26 @@ async function replyToChat(payload, session) {
 
   if (sources.length === 0) {
     answer =
-      aiEnabled
+      evidence.usedInternetSearch
         ? "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนทั้งในฐานข้อมูลและแหล่งข้อมูลสาธารณะ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร"
         : "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนในฐานข้อมูลและเอกสารภายในระบบ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
     const remainingBudgetBeforeAnswerMs = getRemainingBudgetMs(startedAt, CHAT_REPLY_BUDGET_MS);
+    const answerSourceLimit = !planContext.useAI || wantsExplanation(message)
+      ? Math.max(1, Number(planContext.sourceLimit || sources.length || 1))
+      : Math.max(1, Number(planContext.promptProfile?.aiSourceLimit || 5));
     const answerSources =
-      !aiEnabled || wantsExplanation(message) ? sources : sources.slice(0, 5);
+      !planContext.useAI || wantsExplanation(message)
+        ? sources.slice(0, answerSourceLimit)
+        : sources.slice(0, answerSourceLimit);
     answer = await generateChatSummary(message, answerSources, {
       conversationalFollowUp: resolvedContext.usedContext,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
-      forceFallback: remainingBudgetBeforeAnswerMs < MIN_AI_SUMMARY_BUDGET_MS,
+      forceFallback: !planContext.useAI || remainingBudgetBeforeAnswerMs < MIN_AI_SUMMARY_BUDGET_MS,
       aiTimeoutMs: Math.max(1000, remainingBudgetBeforeAnswerMs - 500),
       questionIntent: evidence.questionIntent,
+      databaseOnlyMode: !planContext.useAI,
+      promptProfile: planContext.promptProfile,
     });
   }
   const afterAnswerGenerationAt = nowMs();
@@ -1341,6 +1544,8 @@ async function replyToChat(payload, session) {
       highlightTerms,
       usedInternetFallback: evidence.usedInternetFallback,
       selectedSourceTier: evidence.selectedSourceTier || "none",
+      planCode: planContext.code,
+      promptProfile: planContext.promptProfile?.code || "template",
       effectiveMessage,
       resolvedContext,
       sources,
@@ -1362,6 +1567,8 @@ async function replyToChat(payload, session) {
           selectedSourceTier: evidence.selectedSourceTier || "none",
           effectiveMessage,
           sourceCount: sources.length,
+          planCode: planContext.code,
+          promptProfile: planContext.promptProfile?.code || "template",
         },
       });
     } catch (error) {
@@ -1397,15 +1604,21 @@ async function summarizeChat(payload, session) {
   if (!message) {
     return { summary: "" };
   }
-  const aiEnabled = await isAiEnabled();
+  const aiRuntimeEnabled = await isAiEnabled();
+  const openAiConfig = getOpenAiConfig();
+  const planContext = resolveChatPlanContext(session, {
+    aiAvailable: aiRuntimeEnabled && Boolean(openAiConfig),
+  });
 
   const target =
     payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
   const evidence = await collectAnswerSources(message, target, session, {
-    allowInternetFallback: aiEnabled,
+    allowInternetFallback: planContext.useInternet,
+    databaseOnlyMode: !planContext.useAI,
+    sourceLimit: planContext.sourceLimit,
+    internetLimit: planContext.maxInternetSources,
   });
   const resolvedContext = evidence.resolvedContext;
-  const effectiveMessage = evidence.effectiveMessage || message;
   const sources = evidence.sources;
 
   return {
@@ -1413,6 +1626,8 @@ async function summarizeChat(payload, session) {
       conversationalFollowUp: resolvedContext.usedContext,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
       questionIntent: evidence.questionIntent,
+      databaseOnlyMode: !planContext.useAI,
+      promptProfile: planContext.promptProfile,
     }),
   };
 }
@@ -1599,64 +1814,69 @@ async function getUserDashboardData(user) {
         avatarUrl: persistedUser.avatar_url || signedInUser.avatarUrl || signedInUser.picture || "",
         googleId: persistedUser.google_id || signedInUser.googleId || "",
         plan: persistedUser.plan || signedInUser.plan || "free",
+        planStartedAt: persistedUser.plan_started_at || signedInUser.planStartedAt || null,
+        planExpiresAt: persistedUser.plan_expires_at || signedInUser.planExpiresAt || null,
         status: persistedUser.status || signedInUser.status || "active",
         premiumExpiresAt: persistedUser.premium_expires_at || signedInUser.premiumExpiresAt || null,
       }
     : signedInUser;
 
-  const normalizedPlan = String(profile.plan || "free").trim().toLowerCase();
+  const planContext = resolveUserPlanContext(profile);
   const questionCount = Number(usage?.question_count || 0);
-  const questionLimit = normalizedPlan === "free" ? 20 : null;
+  const questionLimit = Number.isFinite(planContext.monthlyLimit) ? planContext.monthlyLimit : null;
   const remainingQuestions =
-    normalizedPlan === "free" ? Math.max(0, 20 - questionCount) : null;
+    Number.isFinite(questionLimit) ? Math.max(0, questionLimit - questionCount) : null;
 
   return {
     appName: "Coopbot Law Chatbot",
     user: profile,
+    planContext,
     usage: {
       usageMonth,
       questionCount,
       questionLimit,
       remainingQuestions,
-      isUnlimited: normalizedPlan !== "free",
+      isUnlimited: planContext.isUnlimited,
     },
-    recentRequests,
+    recentRequests: recentRequests.map((item) => enrichPaymentRequestRecord(item)),
   };
 }
 
 async function getPaymentRequestPageData(user) {
   const signedInUser = user || {};
   const userId = Number(signedInUser.userId || signedInUser.id || 0);
+  const currentPlanContext = resolveUserPlanContext(signedInUser);
 
   return {
     appName: "Coopbot Law Chatbot",
-    plans: [
-      { value: "premium-monthly", label: "Premium Monthly" },
-      { value: "premium-yearly", label: "Premium Yearly" },
-    ],
+    plans: listPurchasablePlans(),
+    currentPlanContext,
     user: signedInUser,
-    recentRequests: userId ? await PaymentRequestModel.listByUserId(userId, 10) : [],
+    recentRequests: userId
+      ? (await PaymentRequestModel.listByUserId(userId, 10)).map((item) => enrichPaymentRequestRecord(item))
+      : [],
   };
 }
 
 async function submitPaymentRequest(payload, file, user) {
   const signedInUser = user || {};
   const userId = Number(signedInUser.userId || signedInUser.id || 0);
-  const planName = String(payload.planName || "").trim();
-  const amount = Number(payload.amount || 0);
+  const planCode = normalizePlanCode(payload.planName || "");
   const note = String(payload.note || "").trim();
 
   if (!userId) {
     throw new Error("Please sign in before submitting a payment request.");
   }
 
-  if (!planName || !Number.isFinite(amount) || amount <= 0) {
-    throw new Error("Please provide a valid plan and amount.");
+  if (!isPaidPlan(planCode)) {
+    throw new Error("Please select a valid paid plan.");
   }
+
+  const amount = getPlanPriceBaht(planCode);
 
   const paymentRequest = await PaymentRequestModel.create({
     userId,
-    planName,
+    planName: planCode,
     amount,
     slipImage: file ? `/uploads/paymentRequests/${file.filename}` : "",
     note,
@@ -1673,7 +1893,7 @@ async function submitPaymentRequest(payload, file, user) {
 }
 
 async function getAdminPaymentRequestsData() {
-  const requests = await PaymentRequestModel.listAll(100);
+  const requests = (await PaymentRequestModel.listAll(100)).map((item) => enrichPaymentRequestRecord(item));
 
   return {
     totalCount: requests.length,
@@ -1690,7 +1910,7 @@ async function getAdminPaymentRequestDetail(id) {
     return null;
   }
 
-  return { request };
+  return { request: enrichPaymentRequestRecord(request) };
 }
 
 async function approvePaymentRequest(id, reviewMeta = {}) {
@@ -1699,7 +1919,14 @@ async function approvePaymentRequest(id, reviewMeta = {}) {
     return { ok: false, reason: "not_found" };
   }
 
-  const activated = await UserModel.activatePremiumPlan(request.user_id, 30);
+  const planCode = normalizePlanCode(request.plan_name || "free");
+  if (!isPaidPlan(planCode)) {
+    return { ok: false, reason: "invalid_plan" };
+  }
+
+  const activated = await UserModel.activatePlan(request.user_id, planCode, {
+    durationDays: getPlanDurationDays(),
+  });
   if (!activated) {
     return { ok: false, reason: "user_not_updated" };
   }
@@ -1714,7 +1941,12 @@ async function approvePaymentRequest(id, reviewMeta = {}) {
     return { ok: false, reason: "review_not_updated" };
   }
 
-  return { ok: true, requestId: id };
+  return {
+    ok: true,
+    requestId: id,
+    planCode,
+    planLabel: getPlanLabel(planCode),
+  };
 }
 
 async function rejectPaymentRequest(id, reviewMeta = {}) {
@@ -1722,11 +1954,7 @@ async function rejectPaymentRequest(id, reviewMeta = {}) {
   if (!request || request.status !== "pending") {
     return { ok: false, reason: "not_found" };
   }
-
-  const updatedUser = await UserModel.downgradeToFree(request.user_id);
-  if (!updatedUser) {
-    return { ok: false, reason: "user_not_updated" };
-  }
+  const planCode = normalizePlanCode(request.plan_name || "free");
 
   const reviewed = await PaymentRequestModel.updateReviewStatus(
     id,
@@ -1738,7 +1966,12 @@ async function rejectPaymentRequest(id, reviewMeta = {}) {
     return { ok: false, reason: "review_not_updated" };
   }
 
-  return { ok: true, requestId: id };
+  return {
+    ok: true,
+    requestId: id,
+    planCode,
+    planLabel: getPlanLabel(planCode),
+  };
 }
 
 async function getKnowledgeAdminData() {

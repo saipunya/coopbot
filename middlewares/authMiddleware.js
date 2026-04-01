@@ -1,8 +1,13 @@
 const LAW_CHATBOT_GUEST_QUESTION_LIMIT = 2;
 const LAW_CHATBOT_GUEST_COUNT_KEY = "lawChatbotGuestQuestionCount";
-const LAW_CHATBOT_FREE_MONTHLY_QUESTION_LIMIT = 20;
 const UserModel = require("../models/userModel");
 const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
+const {
+  getPlanLabel,
+  getPlanConfig,
+  isPaidPlan,
+  normalizePlanCode,
+} = require("../services/planService");
 
 function sanitizeReturnPath(value, fallbackPath = "/user") {
   const path = String(value || "").trim();
@@ -29,6 +34,8 @@ function mapPersistedUserToSessionUser(sessionUser = {}, persistedUser = {}) {
     avatarUrl: persistedUser.avatar_url || sessionUser.avatarUrl || sessionUser.picture || "",
     googleId: persistedUser.google_id || sessionUser.googleId || "",
     plan: persistedUser.plan || sessionUser.plan || "free",
+    planStartedAt: persistedUser.plan_started_at || sessionUser.planStartedAt || null,
+    planExpiresAt: persistedUser.plan_expires_at || sessionUser.planExpiresAt || null,
     status: persistedUser.status || sessionUser.status || "active",
     premiumExpiresAt: persistedUser.premium_expires_at || sessionUser.premiumExpiresAt || null,
     authProvider: "google",
@@ -134,9 +141,11 @@ async function enforceLawChatbotMonthlyUsageLimit(req, res, next) {
 
   const sessionUser = req.session?.user || null;
   const userId = Number(sessionUser?.userId || sessionUser?.id || 0);
-  const plan = String(sessionUser?.plan || "free").trim().toLowerCase();
+  const planCode = normalizePlanCode(sessionUser?.plan || "free");
+  const planConfig = getPlanConfig(planCode);
+  const questionLimit = Number(planConfig.monthlyLimit);
 
-  if (!userId || plan !== "free") {
+  if (!userId || !Number.isFinite(questionLimit) || questionLimit <= 0) {
     return next();
   }
 
@@ -145,17 +154,22 @@ async function enforceLawChatbotMonthlyUsageLimit(req, res, next) {
     const usage = await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth);
     const questionCount = Number(usage?.question_count || 0);
 
-    if (questionCount >= LAW_CHATBOT_FREE_MONTHLY_QUESTION_LIMIT) {
+    if (questionCount >= questionLimit) {
+      const limitMessage =
+        planCode === "premium"
+          ? `คุณใช้สิทธิ์ถามคำถามครบ ${questionLimit} ครั้งของแพ็กเกจ ${getPlanLabel(planCode)} สำหรับเดือนนี้แล้ว กรุณารอรอบเดือนถัดไปเพื่อใช้งานต่อ`
+          : isPaidPlan(planCode)
+            ? `คุณใช้สิทธิ์ถามคำถามครบ ${questionLimit} ครั้งของแพ็กเกจ ${getPlanLabel(planCode)} สำหรับเดือนนี้แล้ว กรุณาอัปเกรดแพลนหรือรอรอบเดือนถัดไปเพื่อใช้งานต่อ`
+            : `คุณใช้สิทธิ์ถามคำถามครบ ${questionLimit} ครั้งของแพ็กเกจ ${getPlanLabel(planCode)} สำหรับเดือนนี้แล้ว กรุณาอัปเกรดแพลนหรือรอรอบเดือนถัดไปเพื่อใช้งานต่อ`;
       return res.json({
         hasContext: true,
-        answer:
-          "คุณใช้สิทธิ์ถามคำถามครบ 20 ครั้งของเดือนนี้แล้ว กรุณาอัปเกรดแพลนหรือรอรอบเดือนถัดไปเพื่อใช้งานต่อ",
+        answer: limitMessage,
         highlightTerms: [],
         usedFollowUpContext: false,
         usedInternetFallback: false,
         monthlyUsageLimitReached: true,
         questionCount,
-        questionLimit: LAW_CHATBOT_FREE_MONTHLY_QUESTION_LIMIT,
+        questionLimit,
         usageMonth,
       });
     }

@@ -47,7 +47,7 @@ Steps:
 SQL:
 
 ```sql
-SELECT id, google_id, email, name, plan, status, premium_expires_at
+SELECT id, google_id, email, name, plan, status, plan_started_at, plan_expires_at, premium_expires_at
 FROM users
 WHERE email = 'user@example.com';
 ```
@@ -57,6 +57,8 @@ Expected:
 - A row exists for the Google user.
 - `plan = 'free'`
 - `status = 'active'`
+- `plan_started_at` is populated
+- `plan_expires_at` is `NULL` for a new free user
 - `premium_expires_at` is `NULL` for a new free user.
 
 ## 3. Free Monthly Limit Is Enforced
@@ -70,9 +72,9 @@ Steps:
 
 ```sql
 INSERT INTO user_monthly_usage (user_id, usage_month, question_count, last_used_at)
-VALUES (USER_ID_HERE, DATE_FORMAT(CURRENT_DATE(), '%Y-%m'), 19, CURRENT_TIMESTAMP)
+VALUES (USER_ID_HERE, DATE_FORMAT(CURRENT_DATE(), '%Y-%m'), 49, CURRENT_TIMESTAMP)
 ON DUPLICATE KEY UPDATE
-  question_count = 19,
+  question_count = 49,
   last_used_at = CURRENT_TIMESTAMP;
 ```
 
@@ -82,10 +84,10 @@ ON DUPLICATE KEY UPDATE
 
 Expected:
 
-- The 20th request succeeds.
-- The 21st request is blocked with a friendly monthly limit message.
+- The 50th request succeeds.
+- The 51st request is blocked with a friendly monthly limit message.
 - The message indicates the free monthly quota has been reached.
-- Admin users and premium users are not blocked by this free limit.
+- Admin users are not blocked by customer-plan monthly usage limits.
 
 ## 4. Payment Request Creation Works
 
@@ -97,7 +99,6 @@ Steps:
 2. Open `/law-chatbot/payment-request`.
 3. Submit a valid form with:
    - plan
-   - amount
    - optional note
 4. Repeat once with an image slip upload.
 
@@ -106,6 +107,7 @@ Expected:
 - The request is accepted.
 - A success message is shown.
 - A row is inserted into `payment_requests`.
+- `amount` is derived by the backend from the selected plan, not user-entered.
 - `status = 'pending'`
 - `slip_image` is populated only when a file is uploaded.
 
@@ -138,7 +140,7 @@ Expected:
 - User still sees success.
 - Notification failure is logged only as a non-blocking side effect.
 
-## 6. Admin Approve Activates Premium for 30 Days
+## 6. Admin Approve Activates the Requested Plan for 30 Days
 
 Goal: verify admin approval updates both payment request review fields and the user plan.
 
@@ -155,13 +157,15 @@ Expected:
 - Payment request `status` becomes `approved`.
 - `reviewed_at` is set.
 - `reviewed_by` is set.
-- User `plan` becomes `premium`.
-- `premium_expires_at` is set to about 30 days ahead.
+- User `plan` becomes the requested paid plan.
+- `plan_started_at` is populated.
+- `plan_expires_at` is set to about 30 days ahead.
+- `premium_expires_at` mirrors `plan_expires_at` only when the approved plan is `premium`.
 
 SQL:
 
 ```sql
-SELECT id, plan, premium_expires_at
+SELECT id, plan, plan_started_at, plan_expires_at, premium_expires_at
 FROM users
 WHERE id = USER_ID_HERE;
 
@@ -170,13 +174,13 @@ FROM payment_requests
 WHERE id = PAYMENT_REQUEST_ID_HERE;
 ```
 
-## 7. Admin Reject Keeps User on Free
+## 7. Admin Reject Keeps Current User Plan Unchanged
 
-Goal: verify admin rejection does not activate premium.
+Goal: verify admin rejection does not change the user's active plan.
 
 Steps:
 
-1. Create another pending payment request for a free user.
+1. Create another pending payment request for a user with any current plan.
 2. Sign in as admin.
 3. Open the request detail page.
 4. Click reject.
@@ -186,8 +190,8 @@ Expected:
 - Payment request `status` becomes `rejected`.
 - `reviewed_at` is set.
 - `reviewed_by` is set.
-- User remains on `plan = 'free'`.
-- `premium_expires_at` remains `NULL`.
+- User plan remains unchanged from before rejection.
+- Existing `plan_expires_at` remains unchanged.
 
 ## Quick Smoke SQL
 

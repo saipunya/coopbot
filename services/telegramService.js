@@ -1,4 +1,5 @@
 const runtimeFlags = require("../config/runtimeFlags");
+const { getPlanLabel, normalizePlanCode } = require("./planService");
 
 function getTelegramConfig() {
   return {
@@ -68,13 +69,15 @@ async function sendTelegramMessage(text) {
 }
 
 function buildTelegramPaymentRequestMessage(paymentRequest = {}, user = {}) {
+  const planCode = normalizePlanCode(paymentRequest.planName || paymentRequest.plan_name || "");
+  const planLabel = getPlanLabel(planCode);
   const lines = [
     "New payment request",
     `Request ID: ${paymentRequest.id || "-"}`,
     `User ID: ${user.userId || user.id || paymentRequest.userId || "-"}`,
     `Name: ${user.name || user.username || "-"}`,
     `Email: ${user.email || "-"}`,
-    `Plan: ${paymentRequest.planName || "-"}`,
+    `Plan: ${planLabel} (${planCode || "-"})`,
     `Amount: ${paymentRequest.amount || "-"}`,
     `Slip: ${paymentRequest.slipImage || "-"}`,
     `Note: ${paymentRequest.note || "-"}`,

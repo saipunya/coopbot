@@ -38,13 +38,13 @@
         <div class="meta">
           <div><strong>User:</strong> <%= data.request.user_name || "-" %></div>
           <div><strong>Email:</strong> <%= data.request.user_email || "-" %></div>
-          <div><strong>Current plan:</strong> <%= data.request.user_plan || "free" %></div>
-          <div><strong>Premium expires at:</strong> <%= data.request.premium_expires_at || "-" %></div>
-          <div><strong>Requested plan:</strong> <%= data.request.plan_name %></div>
-          <div><strong>Amount:</strong> <%= data.request.amount %> THB</div>
+          <div><strong>Current plan:</strong> <%= data.request.userPlanLabel || data.request.user_plan || "Free" %></div>
+          <div><strong>Current plan expires at:</strong> <%= data.request.userPlanExpiresAt ? new Date(data.request.userPlanExpiresAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
+          <div><strong>Requested plan:</strong> <%= data.request.planLabel || data.request.plan_name %></div>
+          <div><strong>Amount:</strong> <%= Number(data.request.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB</div>
           <div><strong>Status:</strong> <%= data.request.status %></div>
-          <div><strong>Created:</strong> <%= data.request.created_at %></div>
-          <div><strong>Reviewed at:</strong> <%= data.request.reviewed_at || "-" %></div>
+          <div><strong>Created:</strong> <%= data.request.created_at ? new Date(data.request.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
+          <div><strong>Reviewed at:</strong> <%= data.request.reviewed_at ? new Date(data.request.reviewed_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
           <div><strong>Reviewed by:</strong> <%= data.request.reviewed_by || "-" %></div>
           <div><strong>Note:</strong> <%= data.request.note || "-" %></div>
           <% if (data.request.slip_image) { %>
@@ -54,11 +54,11 @@
 
         <% if (data.request.status === "pending") { %>
           <div class="actions">
-            <form action="/admin/payment-requests/approve" method="post" onsubmit="return confirm('Approve this payment request and activate premium for 30 days?');">
+            <form action="/admin/payment-requests/approve" method="post" onsubmit="return confirm('Approve this payment request and activate the requested plan for 30 days?');">
               <input type="hidden" name="id" value="<%= data.request.id %>" />
               <button class="approve" type="submit">Approve</button>
             </form>
-            <form action="/admin/payment-requests/reject" method="post" onsubmit="return confirm('Reject this payment request and keep user on free plan?');">
+            <form action="/admin/payment-requests/reject" method="post" onsubmit="return confirm('Reject this payment request and keep the user current plan unchanged?');">
               <input type="hidden" name="id" value="<%= data.request.id %>" />
               <button class="reject" type="submit">Reject</button>
             </form>

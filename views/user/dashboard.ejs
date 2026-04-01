@@ -192,11 +192,12 @@
 
 <%
   const profile = data.user || {};
+  const planContext = data.planContext || {};
   const usage = data.usage || {};
-  const plan = String(profile.plan || "free").toLowerCase();
-  const planLabel = plan === "premium" ? "Premium" : "Free";
-  const premiumExpiresAt = profile.premiumExpiresAt
-    ? new Date(profile.premiumExpiresAt).toLocaleString("th-TH", {
+  const plan = String(profile.plan || planContext.code || "free").toLowerCase();
+  const planLabel = planContext.label || String(plan || "free").charAt(0).toUpperCase() + String(plan || "free").slice(1);
+  const planExpiresAt = (profile.planExpiresAt || profile.premiumExpiresAt)
+    ? new Date(profile.planExpiresAt || profile.premiumExpiresAt).toLocaleString("th-TH", {
         dateStyle: "medium",
         timeStyle: "short",
       })
@@ -231,11 +232,9 @@
       <p><strong>สถานะ:</strong> <%= profile.status || "active" %></p>
       <div class="chip-row">
         <span class="chip"><%= planLabel %> Plan</span>
-        <% if (plan === "premium") { %>
-          <span class="chip ok">ใช้งานแบบไม่จำกัดรายเดือน</span>
-        <% } else { %>
-          <span class="chip warn">โควต้าฟรีรายเดือน <%= usage.questionLimit || 20 %> ครั้ง</span>
-        <% } %>
+        <span class="chip <%= usage.isUnlimited ? 'ok' : 'warn' %>">
+          <%= usage.isUnlimited ? 'ใช้งานแบบไม่จำกัดรายเดือน' : `โควต้ารายเดือน ${usage.questionLimit || 0} ครั้ง` %>
+        </span>
       </div>
     </div>
   </article>
@@ -260,10 +259,10 @@
     <h2>แพ็กเกจปัจจุบัน</h2>
     <p class="stat-value"><%= planLabel %></p>
     <p class="stat-note">
-      <% if (plan === "premium" && premiumExpiresAt) { %>
-        Premium ใช้งานได้ถึง <strong><%= premiumExpiresAt %></strong>
-      <% } else if (plan === "premium") { %>
-        บัญชีนี้เปิดใช้งาน Premium อยู่ในขณะนี้
+      <% if (plan !== "free" && planExpiresAt) { %>
+        แพ็กเกจนี้ใช้งานได้ถึง <strong><%= planExpiresAt %></strong>
+      <% } else if (plan !== "free") { %>
+        บัญชีนี้เปิดใช้งานแพ็กเกจ <strong><%= planLabel %></strong> อยู่ในขณะนี้
       <% } else { %>
         บัญชีนี้ใช้งานในแพ็กเกจ Free
       <% } %>
@@ -277,7 +276,7 @@
       <% if (usage.isUnlimited) { %>
         แพ็กเกจปัจจุบันไม่จำกัดจำนวนคำถามรายเดือน
       <% } else { %>
-        ใช้ไป <strong><%= usage.questionCount || 0 %></strong> จาก <strong><%= usage.questionLimit || 20 %></strong> ครั้ง ของเดือน <strong><%= usage.usageMonth || "-" %></strong>
+        ใช้ไป <strong><%= usage.questionCount || 0 %></strong> จาก <strong><%= usage.questionLimit || 0 %></strong> ครั้ง ของเดือน <strong><%= usage.usageMonth || "-" %></strong>
       <% } %>
     </p>
   </article>
@@ -289,7 +288,7 @@
       <% if (usage.isUnlimited) { %>
         ใช้งานถามตอบต่อได้ทันทีโดยไม่ติดโควต้ารายเดือน
       <% } else { %>
-        หากต้องการถามได้มากขึ้น สามารถส่งคำขออัปเกรดเป็น Premium ได้
+        หากต้องการถามได้มากขึ้น สามารถส่งคำขออัปเกรดเป็นแพ็กเกจที่สูงขึ้นได้
       <% } %>
     </p>
   </article>
@@ -315,13 +314,13 @@
     <% (data.recentRequests || []).forEach((item) => { %>
       <li class="request-item">
         <div class="request-head">
-          <strong><%= item.plan_name %></strong>
+          <strong><%= item.planLabel || item.plan_name %></strong>
           <span class="chip <%= item.status === 'approved' ? 'ok' : item.status === 'rejected' ? 'warn' : '' %>">
             <%= item.status %>
           </span>
         </div>
         <div class="request-meta">
-          <span>จำนวนเงิน <strong><%= Number(item.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></strong> บาท</span>
+          <span>จำนวนเงิน <strong><%= Number(item.amount || item.planPriceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></strong> บาท</span>
           <span>ส่งเมื่อ <strong><%= new Date(item.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) %></strong></span>
         </div>
         <% if (item.note) { %>

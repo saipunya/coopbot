@@ -43,6 +43,8 @@ async function ensureSchema() {
       name varchar(255) DEFAULT NULL,
       avatar_url varchar(500) DEFAULT NULL,
       plan varchar(50) NOT NULL DEFAULT 'free',
+      plan_started_at timestamp NULL DEFAULT current_timestamp(),
+      plan_expires_at timestamp NULL DEFAULT NULL,
       premium_expires_at timestamp NULL DEFAULT NULL,
       status varchar(50) NOT NULL DEFAULT 'active',
       created_at timestamp NULL DEFAULT current_timestamp(),
@@ -60,6 +62,8 @@ async function ensureSchema() {
       usage_month char(7) NOT NULL,
       question_count int(11) NOT NULL DEFAULT 0,
       last_used_at timestamp NULL DEFAULT current_timestamp(),
+      created_at timestamp NULL DEFAULT current_timestamp(),
+      updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
       PRIMARY KEY (id),
       UNIQUE KEY uniq_user_monthly_usage_user_month (user_id, usage_month),
       KEY idx_user_monthly_usage_user_id (user_id)
@@ -223,6 +227,14 @@ async function ensureSchema() {
   } catch (_) {}
 
   try {
+    await pool.query("ALTER TABLE users ADD COLUMN plan_started_at timestamp NULL DEFAULT current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE users ADD COLUMN plan_expires_at timestamp NULL DEFAULT NULL");
+  } catch (_) {}
+
+  try {
     await pool.query("ALTER TABLE users ADD COLUMN premium_expires_at timestamp NULL DEFAULT NULL");
   } catch (_) {}
 
@@ -248,6 +260,14 @@ async function ensureSchema() {
 
   try {
     await pool.query("ALTER TABLE user_monthly_usage ADD COLUMN last_used_at timestamp NULL DEFAULT current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_monthly_usage ADD COLUMN created_at timestamp NULL DEFAULT current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_monthly_usage ADD COLUMN updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()");
   } catch (_) {}
 
   try {
@@ -300,6 +320,29 @@ async function ensureSchema() {
 
   try {
     await pool.query("ALTER TABLE payment_requests ADD KEY idx_payment_requests_status (status)");
+  } catch (_) {}
+
+  try {
+    await pool.query(`
+      UPDATE users
+      SET plan_started_at = COALESCE(plan_started_at, created_at, CURRENT_TIMESTAMP),
+          plan_expires_at = CASE
+            WHEN plan_expires_at IS NOT NULL THEN plan_expires_at
+            WHEN premium_expires_at IS NOT NULL THEN premium_expires_at
+            ELSE NULL
+          END
+      WHERE plan_started_at IS NULL
+         OR (plan_expires_at IS NULL AND premium_expires_at IS NOT NULL)
+    `);
+  } catch (_) {}
+
+  try {
+    await pool.query(`
+      UPDATE user_monthly_usage
+      SET created_at = COALESCE(created_at, last_used_at, CURRENT_TIMESTAMP),
+          updated_at = COALESCE(updated_at, last_used_at, CURRENT_TIMESTAMP)
+      WHERE created_at IS NULL OR updated_at IS NULL
+    `);
   } catch (_) {}
 }
 

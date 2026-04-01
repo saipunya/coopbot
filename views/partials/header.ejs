@@ -1,3 +1,7 @@
+<%
+  const hasGoogleUser = typeof isGoogleUser !== "undefined" ? Boolean(isGoogleUser) : false;
+  const hasAdminUser = typeof currentUser !== "undefined" ? Boolean(currentUser) : false;
+%>
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -142,11 +146,11 @@
         <a class="brand" href="/law-chatbot">Coopbot</a>
         <nav class="nav">
           <a class="<%= page === 'index' ? 'active' : '' %>" href="/law-chatbot">Dashboard</a>
-          <% if (isGoogleUser) { %>
+          <% if (hasGoogleUser) { %>
             <a class="<%= page === 'user' ? 'active' : '' %>" href="/user">Account</a>
             <a class="<%= page === 'payment-request' ? 'active' : '' %>" href="/law-chatbot/payment-request">Payment</a>
           <% } %>
-          <% if (currentUser) { %>
+          <% if (hasAdminUser) { %>
             <a class="<%= page === 'upload' ? 'active' : '' %>" href="/law-chatbot/upload">Upload</a>
             <a class="<%= page === 'feedback' ? 'active' : '' %>" href="/law-chatbot/feedback">Feedback</a>
           <% } %>

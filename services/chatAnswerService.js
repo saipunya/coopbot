@@ -13,6 +13,15 @@ const SOURCE_LABELS = {
   admin_knowledge: "ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม/แก้ไข",
 };
 const STRUCTURED_LAW_SOURCES = new Set(["tbl_laws", "tbl_glaws"]);
+const DATABASE_ONLY_SOURCE_ORDER = [
+  "admin_knowledge",
+  "tbl_laws",
+  "tbl_glaws",
+  "pdf_chunks",
+  "tbl_vinichai",
+  "documents",
+  "knowledge_base",
+];
 const GARBLED_TEXT_PATTERN = /[�\uF700-\uF8FF]|[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/;
 
 function getGeminiClient() {
@@ -358,28 +367,69 @@ function getSourceDisplayPriority(sourceName, questionIntent = "general") {
 
 function orderSourcesForDatabaseOnly(sources, options = {}) {
   const sourceLimit = Math.max(1, Number(options.sourceLimit || 8));
-  const ordered = dedupeSources(sources, sourceLimit * 2).sort((left, right) => {
-    const priorityDiff =
-      getSourceDisplayPriority(right.source, options.questionIntent) -
-      getSourceDisplayPriority(left.source, options.questionIntent);
-    if (priorityDiff !== 0) {
-      return priorityDiff;
-    }
+  const quotaBySource = {
+    admin_knowledge: 3,
+    tbl_laws: options.questionIntent === "law_section" ? 4 : 3,
+    tbl_glaws: options.questionIntent === "law_section" ? 4 : 3,
+    pdf_chunks: options.explainMode ? 4 : 3,
+    tbl_vinichai: 2,
+    documents: 2,
+    knowledge_base: 1,
+  };
+  const deduped = dedupeSources(sources, sourceLimit * 5);
+  const grouped = new Map();
 
-    return Number(right.score || 0) - Number(left.score || 0);
+  deduped.forEach((source) => {
+    const sourceName = String(source?.source || "").trim().toLowerCase();
+    if (!grouped.has(sourceName)) {
+      grouped.set(sourceName, []);
+    }
+    grouped.get(sourceName).push(source);
   });
 
-  if (options.questionIntent === "law_section") {
-    const structured = ordered.filter((source) =>
-      STRUCTURED_LAW_SOURCES.has(String(source?.source || "").trim().toLowerCase()),
-    );
-    const others = ordered.filter(
-      (source) => !STRUCTURED_LAW_SOURCES.has(String(source?.source || "").trim().toLowerCase()),
-    );
-    return [...structured, ...others].slice(0, sourceLimit);
-  }
+  grouped.forEach((items, key) => {
+    items.sort((left, right) => {
+      const scoreDiff = Number(right.score || 0) - Number(left.score || 0);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
 
-  return ordered.slice(0, sourceLimit);
+      return scoreLineByQuery(
+        String(right.content || right.chunk_text || right.reference || right.title || ""),
+        options.originalMessage || "",
+      ) - scoreLineByQuery(
+        String(left.content || left.chunk_text || left.reference || left.title || ""),
+        options.originalMessage || "",
+      );
+    });
+    grouped.set(key, items);
+  });
+
+  const ordered = [];
+  const pushSourceItems = (sourceName, limit) => {
+    const items = grouped.get(sourceName) || [];
+    items.slice(0, Math.max(0, limit)).forEach((item) => ordered.push(item));
+    grouped.delete(sourceName);
+  };
+
+  DATABASE_ONLY_SOURCE_ORDER.forEach((sourceName) => {
+    pushSourceItems(sourceName, quotaBySource[sourceName] || 0);
+  });
+
+  const remainder = Array.from(grouped.entries())
+    .flatMap(([, items]) => items)
+    .sort((left, right) => {
+      const priorityDiff =
+        getSourceDisplayPriority(right.source, options.questionIntent) -
+        getSourceDisplayPriority(left.source, options.questionIntent);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+
+      return Number(right.score || 0) - Number(left.score || 0);
+    });
+
+  return [...ordered, ...remainder].slice(0, sourceLimit);
 }
 
 function scoreSourceSegment(segment, message, source, options = {}) {
@@ -482,7 +532,9 @@ function formatDatabaseOnlySourceBlock(source, message, options = {}) {
 function buildDatabaseOnlyAnswer(sources, options = {}) {
   const orderedSources = orderSourcesForDatabaseOnly(sources, {
     questionIntent: options.questionIntent,
-    sourceLimit: options.questionIntent === "law_section" ? 6 : 8,
+    explainMode: options.explainMode,
+    originalMessage: options.originalMessage || "",
+    sourceLimit: options.questionIntent === "law_section" ? 12 : options.explainMode ? 14 : 12,
   });
   const displayedSources = [];
   const sourceBlocks = orderedSources
@@ -760,7 +812,7 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
     .join("\n\n");
 }
 
-function filterHighQualitySources(sources, topScore) {
+function filterHighQualitySources(sources, topScore, limit = 4) {
   // Filter out sources with garbled OCR text or very low scores
   // Use stricter threshold: 70% of top score to focus on most relevant sources
   const minScore = Math.max(topScore * 0.7, 80);
@@ -780,8 +832,8 @@ function filterHighQualitySources(sources, topScore) {
     return true;
   });
   
-  // Limit to top 4 high-quality sources to keep Gemini focused
-  return filtered.slice(0, 4);
+  // Limit effective sources by prompt profile to keep AI focused and cost-controlled.
+  return filtered.slice(0, Math.max(1, Number(limit || 4)));
 }
 
 async function generateChatSummary(message, sources, options = {}) {
@@ -790,12 +842,21 @@ async function generateChatSummary(message, sources, options = {}) {
   const decisionMode = wantsDecisionAnswer(message);
   const openAiConfig = getOpenAiConfig();
   const aiEnabled = await isAiEnabled();
-  const databaseOnlyMode = !aiEnabled || !openAiConfig;
+  const promptProfile = options.promptProfile || {
+    code: explainMode ? "detailed" : "brief",
+    instructionTone: "",
+    summaryRange: explainMode ? "5 ถึง 8 ข้อ" : "4 ถึง 6 ข้อ",
+    detailRange: explainMode ? "4 ถึง 8 ข้อ" : "3 ถึง 5 ข้อ",
+    aiSourceLimit: explainMode ? 5 : 4,
+    compareSources: false,
+  };
+  const aiSourceLimit = Math.max(1, Number(promptProfile.aiSourceLimit || (explainMode ? 5 : 4)));
+  const databaseOnlyMode = Boolean(options.databaseOnlyMode) || !aiEnabled || !openAiConfig;
 
   // Filter out low-quality sources before sending to Gemini
   const topScore = sources.length > 0 ? Math.max(...sources.map((s) => s.score || 0)) : 0;
-  const filteredSources = filterHighQualitySources(sources, topScore);
-  const effectiveSources = filteredSources.length > 0 ? filteredSources : sources.slice(0, 3);
+  const filteredSources = filterHighQualitySources(sources, topScore, aiSourceLimit);
+  const effectiveSources = filteredSources.length > 0 ? filteredSources : sources.slice(0, aiSourceLimit);
 
   if (options.forceFallback || databaseOnlyMode || effectiveSources.length === 0) {
     return buildFallbackSummary(sources, explainMode, {
@@ -814,12 +875,24 @@ async function generateChatSummary(message, sources, options = {}) {
     explainMode && options.conversationalFollowUp
       ? "คำถามนี้เป็นการขออธิบายเพิ่มเติมจากเรื่องก่อนหน้า ให้ดึงข้อมูลที่เกี่ยวข้องกับเรื่องเดิมมาอธิบายให้ครบที่สุดก่อน หากข้อมูลมากให้สรุปอย่างกระชับแต่ต้องคงข้อเท็จจริง เงื่อนไข ขั้นตอน ข้อยกเว้น ตัวเลข และข้อความสำคัญที่จำเป็นไว้"
       : "";
+  const planToneInstruction = promptProfile.instructionTone
+    ? `${promptProfile.instructionTone} `
+    : "";
+  const compareInstruction = promptProfile.compareSources
+    ? "หากมีข้อมูลจากหลายแหล่ง ให้เปรียบเทียบประเด็นที่สอดคล้องหรือแตกต่างกันอย่างกระชับ โดยไม่แต่งข้อมูลนอกแหล่งอ้างอิง "
+    : "";
+  const depthInstruction =
+    promptProfile.code === "brief"
+      ? "ให้ตัดรายละเอียดรองที่ไม่จำเป็นออก และเน้นเฉพาะข้อสรุปที่ผู้ใช้ต้องรู้ก่อน "
+      : promptProfile.code === "deep"
+        ? "ให้คงรายละเอียดสำคัญ เงื่อนไข ข้อยกเว้น และลำดับเหตุผลมากกว่าปกติ "
+        : "ให้คงรายละเอียดที่จำเป็นต่อการตัดสินใจหรือความเข้าใจประเด็น ";
   const decisionInstruction = decisionMode
     ? "หากคำถามมีลักษณะถามว่า ต้องหรือไม่ ได้หรือไม่ หรือควรหรือไม่ ให้ตอบข้อแรกอย่างชัดเจนว่า ต้อง ไม่ต้อง ได้ ไม่ได้ ควร หรือไม่ควร ตามข้อมูลที่ปรากฏก่อน แล้วจึงอธิบายเหตุผลหรือเงื่อนไขที่เกี่ยวข้อง ห้ามตอบอ้อมหรือสรุปเฉพาะชื่อมาตราโดยไม่ตอบผลลัพธ์"
     : "";
   const instruction = explainMode
-    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง หากข้อมูลมีจำนวนมากเกินไปให้สรุปแบบยังคงประเด็นสำคัญ เงื่อนไข ขั้นตอน ข้อยกเว้น และข้อมูลอ้างอิงที่จำเป็นให้ครบถ้วน ${continuationInstruction} ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 5 ถึง 8 ข้อ และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 4 ถึง 8 ข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
-    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ค่อนข้างกระชับ แต่มีรายละเอียดเพียงพอและตรงประเด็น พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ 4 ถึง 6 ข้อ ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
+    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${continuationInstruction} ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "5 ถึง 8 ข้อ"} และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.detailRange || "4 ถึง 8 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
+    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ตรงประเด็น ${planToneInstruction}${depthInstruction}${compareInstruction}พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "4 ถึง 6 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
 
   try {
     const conversationNote = options.conversationalFollowUp

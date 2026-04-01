@@ -62,7 +62,8 @@ class PaymentRequestModel {
     const [rows] = await pool.query(
       `SELECT pr.id, pr.user_id, pr.plan_name, pr.amount, pr.slip_image, pr.note, pr.status,
               pr.reviewed_at, pr.reviewed_by, pr.created_at, pr.updated_at,
-              u.email AS user_email, u.name AS user_name, u.plan AS user_plan, u.premium_expires_at
+              u.email AS user_email, u.name AS user_name, u.plan AS user_plan,
+              u.plan_started_at, u.plan_expires_at, u.premium_expires_at
        FROM payment_requests pr
        LEFT JOIN users u ON u.id = pr.user_id
        ORDER BY pr.id DESC
@@ -82,7 +83,8 @@ class PaymentRequestModel {
     const [rows] = await pool.query(
       `SELECT pr.id, pr.user_id, pr.plan_name, pr.amount, pr.slip_image, pr.note, pr.status,
               pr.reviewed_at, pr.reviewed_by, pr.created_at, pr.updated_at,
-              u.email AS user_email, u.name AS user_name, u.plan AS user_plan, u.premium_expires_at
+              u.email AS user_email, u.name AS user_name, u.plan AS user_plan,
+              u.plan_started_at, u.plan_expires_at, u.premium_expires_at
        FROM payment_requests pr
        LEFT JOIN users u ON u.id = pr.user_id
        WHERE pr.id = ?

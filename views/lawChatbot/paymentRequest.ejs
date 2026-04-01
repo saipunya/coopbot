@@ -4,6 +4,13 @@
   <h1 style="margin-top: 0;">Payment Request</h1>
   <p>Submit your payment request for plan upgrade. You can optionally attach a payment slip image for faster review.</p>
 
+  <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #eef5fb; border: 1px solid #cdddea; color: #1f2a37;">
+    <strong>Current plan:</strong> <%= data.currentPlanContext ? data.currentPlanContext.label : "Free" %>
+    <% if (data.currentPlanContext && Number.isFinite(data.currentPlanContext.monthlyLimit)) { %>
+      <span style="color:#5d6a79;"> | Monthly limit <%= data.currentPlanContext.monthlyLimit %> questions</span>
+    <% } %>
+  </div>
+
   <% if (errorMessage) { %>
     <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #fce9e7; border: 1px solid #f1b8b1; color: #9b2c22; font-weight: 700;">
       <%= errorMessage %>
@@ -21,12 +28,11 @@
     <select id="planName" name="planName" required>
       <option value="">Select a plan</option>
       <% data.plans.forEach((plan) => { %>
-        <option value="<%= plan.value %>"><%= plan.label %></option>
+        <option value="<%= plan.value %>">
+          <%= plan.label %> - <%= plan.priceBaht %> THB / 30 days
+        </option>
       <% }) %>
     </select>
-
-    <label for="amount">Amount</label>
-    <input id="amount" name="amount" type="number" min="1" step="0.01" placeholder="Enter payment amount" required />
 
     <label for="slipImage">Slip image (optional)</label>
     <input id="slipImage" name="slipImage" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
@@ -46,7 +52,7 @@
     <% } %>
     <% data.recentRequests.forEach((item) => { %>
       <li style="margin-bottom: 0.9rem;">
-        <strong><%= item.plan_name %></strong> - <%= item.amount %> THB - <%= item.status %>
+        <strong><%= item.planLabel || item.plan_name %></strong> - <%= Number(item.amount || item.planPriceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB - <%= item.status %>
         <% if (item.note) { %>
           <div><%= item.note %></div>
         <% } %>

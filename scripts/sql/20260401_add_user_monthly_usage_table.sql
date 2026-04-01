@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS user_monthly_usage (
   usage_month char(7) NOT NULL,
   question_count int(11) NOT NULL DEFAULT 0,
   last_used_at timestamp NULL DEFAULT current_timestamp(),
+  created_at timestamp NULL DEFAULT current_timestamp(),
+  updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (id),
   UNIQUE KEY uniq_user_monthly_usage_user_month (user_id, usage_month),
   KEY idx_user_monthly_usage_user_id (user_id)

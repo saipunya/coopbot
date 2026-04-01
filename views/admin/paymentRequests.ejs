@@ -48,9 +48,9 @@
           <% } %>
           <% data.requests.forEach((item) => { %>
             <li>
-              <strong><a href="/admin/payment-requests/<%= item.id %>">#<%= item.id %> - <%= item.plan_name %></a></strong>
+              <strong><a href="/admin/payment-requests/<%= item.id %>">#<%= item.id %> - <%= item.planLabel || item.plan_name %></a></strong>
               <div class="meta">
-                User: <%= item.user_name || "-" %> | Email: <%= item.user_email || "-" %> | Amount: <%= item.amount %> THB | Status: <%= item.status %>
+                User: <%= item.user_name || "-" %> | Email: <%= item.user_email || "-" %> | Current plan: <%= item.userPlanLabel || item.user_plan || "Free" %> | Amount: <%= Number(item.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB | Status: <%= item.status %>
               </div>
             </li>
           <% }) %>
