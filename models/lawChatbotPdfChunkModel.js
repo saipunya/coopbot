@@ -1,5 +1,6 @@
 const { getDbPool } = require("../config/db");
 const {
+  hasExclusiveMeaningMismatch,
   makeBigrams,
   normalizeForSearch,
   segmentWords,
@@ -118,6 +119,10 @@ function scoreChunkMatch(query, row) {
 
   const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
   score += coverage * 20;
+
+  if (hasExclusiveMeaningMismatch(query, `${row.keyword || ""} ${row.chunk_text || ""}`)) {
+    score -= 120;
+  }
 
   if (rawKeyword.trim()) {
     score += 12;

@@ -1,5 +1,6 @@
 const { getDbPool } = require("../config/db");
 const {
+  hasExclusiveMeaningMismatch,
   makeBigrams,
   normalizeForSearch,
   segmentWords,
@@ -50,6 +51,15 @@ function scoreKnowledgeMatch(query, row) {
     score += 8;
   }
 
+  if (
+    hasExclusiveMeaningMismatch(
+      query,
+      `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`,
+    )
+  ) {
+    score -= 120;
+  }
+
   return score;
 }
 
@@ -87,6 +97,15 @@ function getMeaningfulTokens(text) {
 }
 
 function hasKnowledgeRelevance(query, row) {
+  if (
+    hasExclusiveMeaningMismatch(
+      query,
+      `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`,
+    )
+  ) {
+    return false;
+  }
+
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const rowText = normalizeForSearch(
     `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`,

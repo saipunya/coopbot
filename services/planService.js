@@ -37,38 +37,54 @@ function getPlanPriceBaht(planCode = DEFAULT_PLAN_CODE) {
   return Number(getPlanConfig(planCode).priceBaht || 0);
 }
 
-function shouldPreferDatabaseOnlyForEconomy(planCode = DEFAULT_PLAN_CODE, context = {}) {
+function shouldUseAIForPlan(planCode = DEFAULT_PLAN_CODE, context = {}) {
   const config = getPlanConfig(planCode);
   const economyMode = config.economyMode || {};
-  if (!config.useAI || economyMode.enabled !== true) {
-    return false;
-  }
-
-  const questionIntent = String(context.questionIntent || "")
-    .trim()
-    .toLowerCase();
-  if (!questionIntent) {
-    return false;
-  }
-
-  const dbOnlyIntents = Array.isArray(economyMode.dbOnlyIntents) ? economyMode.dbOnlyIntents : [];
-  if (!dbOnlyIntents.includes(questionIntent)) {
-    return false;
-  }
-
-  if (economyMode.requireHighConfidenceDb && context.hasHighConfidenceDb !== true) {
-    return false;
-  }
-
-  if (economyMode.skipCurrentOrExternal !== false && context.isCurrentOrExternalQuestion === true) {
+  if (!config.useAI) {
     return false;
   }
 
   if (context.forceAI === true) {
+    return true;
+  }
+
+  if (economyMode.enabled !== true) {
+    return true;
+  }
+
+  if (economyMode.alwaysUseAI === true) {
+    return true;
+  }
+
+  if (economyMode.skipCurrentOrExternal !== false && context.isCurrentOrExternalQuestion === true) {
+    return true;
+  }
+
+  const dbConfidence = Number(context.dbConfidence || 0);
+  const needsExplain = context.needsExplain === true;
+  const simpleQuestion = context.simpleQuestion === true;
+  const fewResults = context.fewResults === true;
+  const strongDbThreshold = Number(economyMode.strongDbThreshold || 18);
+  const simpleQuestionThreshold = Number(economyMode.simpleQuestionThreshold || 12);
+  const defaultAiThreshold = Number(economyMode.defaultAiThreshold || 12);
+
+  if (dbConfidence >= strongDbThreshold && !needsExplain) {
     return false;
   }
 
-  return true;
+  if (simpleQuestion && dbConfidence >= simpleQuestionThreshold) {
+    return false;
+  }
+
+  if (fewResults) {
+    return true;
+  }
+
+  if (needsExplain) {
+    return true;
+  }
+
+  return dbConfidence < defaultAiThreshold;
 }
 
 function isPlanAllowedToUseAI(planCode = DEFAULT_PLAN_CODE) {
@@ -187,5 +203,5 @@ module.exports = {
   listPurchasablePlans,
   normalizePlanCode,
   resolveUserPlanContext,
-  shouldPreferDatabaseOnlyForEconomy,
+  shouldUseAIForPlan,
 };

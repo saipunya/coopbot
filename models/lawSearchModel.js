@@ -1,5 +1,6 @@
 const { getDbPool } = require("../config/db");
 const {
+  hasExclusiveMeaningMismatch,
   makeBigrams,
   normalizeForSearch,
   segmentWords,
@@ -100,6 +101,10 @@ function scoreResult(query, text, primaryLabel) {
 
   const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
   score += coverage * 25;
+
+  if (hasExclusiveMeaningMismatch(query, `${text} ${primaryLabel || ""}`)) {
+    score -= 120;
+  }
 
   return score;
 }

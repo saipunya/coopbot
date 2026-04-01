@@ -1,5 +1,5 @@
 const conversations = [];
-const { segmentWords } = require("../services/thaiTextUtils");
+const { hasExclusiveMeaningMismatch, segmentWords } = require("../services/thaiTextUtils");
 
 const knowledgeBase = [
   {
@@ -75,7 +75,13 @@ class LawChatbotModel {
       .filter((item) => (target === "all" ? true : item.target === target))
       .map((item) => {
         const haystack = segmentWords(`${item.title} ${item.lawNumber} ${item.content}`);
-        const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+        const baseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+        const score = hasExclusiveMeaningMismatch(
+          message,
+          `${item.title || ""} ${item.lawNumber || ""} ${item.content || ""}`,
+        )
+          ? baseScore - 20
+          : baseScore;
         return { ...item, score };
       })
       .filter((item) => item.score > 0)

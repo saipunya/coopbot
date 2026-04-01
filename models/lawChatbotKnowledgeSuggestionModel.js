@@ -1,6 +1,31 @@
 const { getDbPool } = require("../config/db");
+const {
+  hasExclusiveMeaningMismatch,
+  makeBigrams,
+  normalizeForSearch,
+  segmentWords,
+  uniqueTokens,
+} = require("../services/thaiTextUtils");
 
 const memorySuggestions = [];
+
+const GENERIC_THAI_TOKENS = new Set([
+  "การ",
+  "เรื่อง",
+  "เกี่ยวกับ",
+  "ของ",
+  "ใน",
+  "ที่",
+  "และ",
+  "หรือ",
+  "ตาม",
+  "เพื่อ",
+  "จาก",
+  "โดย",
+  "ให้",
+  "ได้",
+  "ไม่",
+]);
 
 function normalizeEntry(entry = {}) {
   return {
@@ -33,6 +58,97 @@ function mapRow(row) {
     createdAt: row.created_at || row.createdAt || "",
     reviewedAt: row.reviewed_at || row.reviewedAt || "",
   };
+}
+
+function getMeaningfulTokens(text) {
+  return uniqueTokens(segmentWords(text)).filter((token) => {
+    const trimmed = String(token || "").trim();
+    if (!trimmed) {
+      return false;
+    }
+
+    if (GENERIC_THAI_TOKENS.has(trimmed)) {
+      return false;
+    }
+
+    return trimmed.length >= 2;
+  });
+}
+
+function scoreSuggestionMatch(query, row) {
+  const normalizedQuery = normalizeForSearch(query).toLowerCase();
+  const rowText = normalizeForSearch(
+    `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
+  ).toLowerCase();
+  const queryTokens = uniqueTokens(segmentWords(query));
+  const rowTokens = uniqueTokens(segmentWords(rowText));
+  const rowTokenSet = new Set(rowTokens);
+  const queryBigrams = makeBigrams(queryTokens);
+
+  let score = 0;
+
+  if (normalizedQuery && rowText.includes(normalizedQuery)) {
+    score += 26;
+  }
+
+  const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
+  score += tokenHits * 8;
+
+  for (const bigram of queryBigrams) {
+    if (rowText.includes(bigram)) {
+      score += 10;
+    }
+  }
+
+  const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
+  score += coverage * 18;
+
+  if (String(row.title || "").trim()) {
+    score += 6;
+  }
+
+  if (
+    hasExclusiveMeaningMismatch(
+      query,
+      `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
+    )
+  ) {
+    score -= 120;
+  }
+
+  return score;
+}
+
+function hasSuggestionRelevance(query, row) {
+  if (
+    hasExclusiveMeaningMismatch(
+      query,
+      `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
+    )
+  ) {
+    return false;
+  }
+
+  const normalizedQuery = normalizeForSearch(query).toLowerCase();
+  const rowText = normalizeForSearch(
+    `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
+  ).toLowerCase();
+  const queryTokens = getMeaningfulTokens(query);
+  const rowTokenSet = new Set(getMeaningfulTokens(rowText));
+  const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
+  const hasExactPhrase = normalizedQuery && rowText.includes(normalizedQuery);
+  const queryBigrams = makeBigrams(queryTokens);
+  const hasBigramMatch = queryBigrams.some((bigram) => rowText.includes(bigram));
+
+  if (queryTokens.length === 0) {
+    return false;
+  }
+
+  if (queryTokens.length > 1 && !(hasExactPhrase || hasBigramMatch)) {
+    return tokenHits >= queryTokens.length;
+  }
+
+  return tokenHits >= 1;
 }
 
 let tableReadyPromise = null;
@@ -169,6 +285,102 @@ class LawChatbotKnowledgeSuggestionModel {
     );
 
     return rows[0] ? mapRow(rows[0]) : null;
+  }
+
+  static async searchApproved(message, target = "all", limit = 5) {
+    const terms = uniqueTokens(segmentWords(message)).slice(0, 8);
+    if (terms.length === 0) {
+      return [];
+    }
+
+    const pool = getDbPool();
+    if (!pool) {
+      return memorySuggestions
+        .filter((item) => item.status === "approved")
+        .map((row) => {
+          const isRelevant = hasSuggestionRelevance(message, row);
+          if (!isRelevant) {
+            return null;
+          }
+
+          const haystack = normalizeForSearch(
+            `${row.title || ""} ${row.content || ""} ${row.reviewNote || ""}`,
+          ).toLowerCase();
+          const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+          const score =
+            scoreSuggestionMatch(message, {
+              title: row.title,
+              content: row.content,
+              reviewNote: row.reviewNote,
+            }) + coarseScore;
+
+          return {
+            id: row.id,
+            target: row.target,
+            title: row.title,
+            content: row.content,
+            source: "knowledge_suggestion",
+            reference: row.title || "ข้อเสนอจากผู้ใช้งานที่ได้รับอนุมัติ",
+            comment: row.reviewNote || "",
+            score,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt || row.reviewedAt || "",
+          };
+        })
+        .filter(Boolean)
+        .filter((row) => (target === "all" ? true : row.target === target) && row.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+    }
+
+    await ensureTable();
+    const whereClause = terms
+      .map(() => "(LOWER(title) LIKE ? OR LOWER(content) LIKE ? OR LOWER(review_note) LIKE ?)")
+      .join(" OR ");
+    const params = terms.flatMap((term) => {
+      const like = `%${term}%`;
+      return [like, like, like];
+    });
+
+    const sql =
+      target === "all"
+        ? `SELECT id, target, title, content, review_note, created_at, updated_at
+           FROM chatbot_knowledge_suggestions
+           WHERE status = 'approved' AND (${whereClause})
+           ORDER BY id DESC
+           LIMIT 50`
+        : `SELECT id, target, title, content, review_note, created_at, updated_at
+           FROM chatbot_knowledge_suggestions
+           WHERE status = 'approved' AND target = ? AND (${whereClause})
+           ORDER BY id DESC
+           LIMIT 50`;
+    const sqlParams = target === "all" ? params : [target, ...params];
+
+    const [rows] = await pool.query(sql, sqlParams);
+
+    return rows
+      .map((row) => {
+        if (!hasSuggestionRelevance(message, row)) {
+          return null;
+        }
+
+        return {
+          id: row.id,
+          target: row.target === "group" ? "group" : "coop",
+          title: row.title || "",
+          content: row.content || "",
+          source: "knowledge_suggestion",
+          reference: row.title || "ข้อเสนอจากผู้ใช้งานที่ได้รับอนุมัติ",
+          comment: row.review_note || "",
+          score: scoreSuggestionMatch(message, row),
+          createdAt: row.created_at || "",
+          updatedAt: row.updated_at || "",
+        };
+      })
+      .filter(Boolean)
+      .filter((row) => row.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
   }
 
   static async updateStatus(id, status, reviewMeta = {}) {
