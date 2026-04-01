@@ -79,6 +79,7 @@ function buildSourceContext(sources) {
 
 function formatReferenceLine(source) {
   const tableName = SOURCE_LABELS[source.source] || source.source || "เอกสารที่อัปโหลด";
+  const shouldHideSourceLabel = String(source?.source || "").trim().toLowerCase() === "admin_knowledge";
   const primaryReference = cleanLine(source.reference || source.title || "ไม่ระบุอ้างอิง");
   const parts = [primaryReference];
   const documentNumber = cleanLine(source.documentNumber || "");
@@ -89,6 +90,9 @@ function formatReferenceLine(source) {
   }
   if (documentDateText) {
     parts.push(`ลงวันที่ ${documentDateText}`);
+  }
+  if (shouldHideSourceLabel) {
+    return `- ${parts.filter(Boolean).join(" | ")}`;
   }
   return `- ${tableName}: ${parts.filter(Boolean).join(" | ")}`;
 }
@@ -299,6 +303,47 @@ function buildSectionLines(lines, limit = 5) {
   return uniqueCleanLines(lines, limit)
     .map((line) => line.replace(/[.;]+$/g, "").trim())
     .filter(Boolean);
+}
+
+function shouldDisplayContentHeading(heading, options = {}) {
+  const text = cleanLine(heading);
+  if (!text) {
+    return false;
+  }
+
+  if (options.questionIntent === "law_section") {
+    return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+/i.test(text);
+  }
+
+  return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+/i.test(text);
+}
+
+function buildSourceContentFallbackLines(sources, limit = 5, options = {}) {
+  const lines = [];
+
+  for (const source of dedupeSources(sources, Math.max(limit * 2, 8))) {
+    const extractedSegments = extractRelevantSegmentsFromSource(
+      source,
+      options.originalMessage || options.message || "",
+      {
+        explainMode: options.explainMode,
+        questionIntent: options.questionIntent,
+        preserveMoreContent: options.preserveMoreContent === true,
+      },
+    );
+
+    if (extractedSegments.length > 0) {
+      lines.push(...extractedSegments);
+      continue;
+    }
+
+    const fallbackText = cleanLine(String(source.content || source.chunk_text || "").slice(0, options.explainMode ? 320 : 220));
+    if (fallbackText && !isNoisyLine(fallbackText)) {
+      lines.push(fallbackText);
+    }
+  }
+
+  return uniqueCleanLines(lines, limit);
 }
 
 function buildParagraphSummary(summaryLines, detailLines, explainMode, options = {}) {
@@ -750,28 +795,19 @@ function formatDatabaseOnlySourceBlock(source, message, options = {}) {
   const reference = cleanLine(source.reference || source.title || source.keyword || label);
   const title = cleanLine(source.title || "");
   const heading = reference && title && title !== reference ? `${reference} | ${title}` : reference || title || label;
-  const metaParts = [];
-
-  if (source.documentNumber && source.documentNumber !== reference) {
-    metaParts.push(`เลขที่ ${source.documentNumber}`);
-  }
-  if (source.documentDateText) {
-    metaParts.push(`ลงวันที่ ${source.documentDateText}`);
-  }
-  if (source.documentSource) {
-    metaParts.push(source.documentSource);
-  }
 
   const segments = extractRelevantSegmentsFromSource(source, message, options);
   if (segments.length === 0) {
     return "";
   }
 
-  return [
-    `[${label}] ${heading}`,
-    ...(metaParts.length ? [metaParts.join(" | ")] : []),
-    ...segments.map((segment) => `- ${segment}`),
-  ].join("\n");
+  const displayLines = [];
+  if (shouldDisplayContentHeading(heading, options)) {
+    displayLines.push(heading);
+  }
+  displayLines.push(...segments);
+
+  return displayLines.join("\n");
 }
 
 function buildDatabaseOnlyAnswer(sources, options = {}) {
@@ -814,7 +850,6 @@ function extractNumericEvidence(sources, limit = 5) {
   const scored = [];
 
   for (const source of dedupeSources(sources, 10)) {
-    const sourceLabel = cleanLine(source.reference || source.title || source.keyword || "");
     const segments = splitContentSegments(
       [source.content, source.chunk_text, source.comment].filter(Boolean).join("\n"),
     );
@@ -829,11 +864,11 @@ function extractNumericEvidence(sources, limit = 5) {
       if (/(อัตรา|จำนวนเงิน|ค่าบำรุง|ชำระ|จ่าย|เรียกเก็บ)/.test(segment)) score += 7;
       if (/\d[\d,]*(?:\.\d+)?\s*(บาท|ร้อยละ|เปอร์เซ็นต์|%)/.test(segment)) score += 12;
       if (source.source === "pdf_chunks") score += 4;
-      if (sourceLabel && segment.length < 240) score += 2;
+      if ((source.reference || source.title || source.keyword) && segment.length < 240) score += 2;
 
       scored.push({
         score,
-        text: sourceLabel ? `${sourceLabel}: ${segment}` : segment,
+        text: segment,
       });
     }
   }
@@ -850,7 +885,6 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
   const requireFocus = options.requireFocus === true;
 
   for (const source of dedupeSources(sources, 10)) {
-    const sourceLabel = cleanLine(source.reference || source.title || source.keyword || "");
     const joined = [source.content, source.chunk_text, source.comment].filter(Boolean).join("\n");
     const segments = splitContentSegments(joined);
 
@@ -865,7 +899,7 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
       if (/ต้อง|ไม่ต้อง|ให้.*ชำระ|ให้.*จ่าย|มีหน้าที่|ต้องชำระ|ต้องจ่าย|จำเป็นต้อง/.test(segment)) score += 8;
       if (/ค่าบำรุง|สันนิบาต/.test(segment)) score += 7;
       if (/บาท|ร้อยละ|เปอร์เซ็นต์|%/.test(segment)) score += 5;
-      if (sourceLabel) score += 2;
+      if (source.reference || source.title || source.keyword) score += 2;
       score += queryScore;
 
       if (requireFocus && source.source !== "admin_knowledge") {
@@ -876,7 +910,7 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
 
       scored.push({
         score,
-        text: sourceLabel ? `${sourceLabel}: ${segment}` : segment,
+        text: segment,
       });
     }
   }
@@ -953,16 +987,17 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
     });
     const fallbackSummary = summary.length
       ? summary
-      : uniqueCleanLines(
-          sources.map((source) => source.reference || source.title || source.keyword),
-          Math.max(4, minimumSummaryLimit),
-        );
+      : buildSourceContentFallbackLines(sources, Math.max(4, minimumSummaryLimit), {
+          ...options,
+          explainMode,
+        });
     const fallbackDetail = detail.length
       ? detail
-      : uniqueCleanLines(
-          sources.map((source) => String(source.content || source.chunk_text || "").slice(0, 220)),
-          3,
-        );
+      : buildSourceContentFallbackLines(sources, 3, {
+          ...options,
+          explainMode: true,
+          preserveMoreContent: true,
+        });
     const completedSummary = ensureStructuredLawSummaryCompleteness(fallbackSummary, sources, {
       ...options,
       summaryLimit: minimumSummaryLimit,
@@ -1065,10 +1100,9 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
       ...substantiveSegments,
       ...numericEvidence,
       ...amountHighlights,
-      ...topSources.map((source) => {
-        const label = source.reference || source.title || source.keyword || "ข้อมูลที่เกี่ยวข้อง";
-        const content = String(source.content || source.chunk_text || "").slice(0, explainMode ? 420 : 180);
-        return `${label}: ${content}`;
+      ...buildSourceContentFallbackLines(topSources, explainMode ? 8 : 5, {
+        ...options,
+        explainMode,
       }),
     ],
     explainMode ? 8 : 5,

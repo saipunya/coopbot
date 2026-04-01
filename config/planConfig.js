@@ -24,7 +24,7 @@ const PLAN_DEFINITIONS = {
     detailLevel: "template",
     sourceLimit: 10,
     allowDeepAnalysis: false,
-    aiSourceLimit: 1,
+    aiSourceLimit: 0,
     isPurchasable: false,
   },
   standard: {

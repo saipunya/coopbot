@@ -7,6 +7,19 @@ const {
 } = require("../services/adminGoogleAuthService");
 const runtimeSettingsService = require("../services/runtimeSettingsService");
 
+function sanitizePaymentRequestReturnPath(value, fallbackPath = "/admin/payment-requests") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!path.startsWith("/admin/payment-requests")) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
 function renderLogin(req, res) {
   res.render("admin/login", {
     title: "Admin Login",
@@ -183,6 +196,35 @@ async function renderPaymentRequestDetail(req, res) {
   });
 }
 
+async function updatePaymentRequestPlan(req, res) {
+  const id = Number(req.body.id || 0);
+  const planCode = String(req.body.planCode || req.body.planName || "").trim();
+  const returnTo = sanitizePaymentRequestReturnPath(
+    req.body.returnTo,
+    id ? `/admin/payment-requests/${id}` : "/admin/payment-requests",
+  );
+
+  if (!id) {
+    return res.redirect(
+      `${returnTo}?error=` + encodeURIComponent("ไม่พบคำขอชำระเงินที่ต้องการแก้ไขแพ็กเกจ")
+    );
+  }
+
+  const result = await lawChatbotService.updatePaymentRequestPlan(id, planCode);
+  if (!result.ok) {
+    return res.redirect(
+      `${returnTo}?error=` + encodeURIComponent("ไม่สามารถอัปเดตแพ็กเกจของคำขอชำระเงินนี้ได้")
+    );
+  }
+
+  return res.redirect(
+    `${returnTo}?success=` +
+      encodeURIComponent(
+        `อัปเดตแพ็กเกจเป็น ${result.planLabel || "ที่เลือก"} แล้ว ยอดชำระถูกปรับอัตโนมัติเป็น ${Number(result.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท`
+      )
+  );
+}
+
 async function submitKnowledge(req, res) {
   const title = String(req.body.title || "").trim();
   const content = String(req.body.content || "").trim();
@@ -355,6 +397,7 @@ module.exports = {
   renderDashboard,
   renderPaymentRequests,
   renderPaymentRequestDetail,
+  updatePaymentRequestPlan,
   submitKnowledge,
   deleteKnowledge,
   approveKnowledgeSuggestion,

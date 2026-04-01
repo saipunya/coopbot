@@ -121,6 +121,32 @@ class PaymentRequestModel {
 
     return result.affectedRows > 0;
   }
+
+  static async updateRequestedPlan(id, planName, amount) {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for payment requests.");
+    }
+
+    const normalizedId = Number(id || 0);
+    const normalizedPlanName = String(planName || "").trim();
+    const normalizedAmount = Number(amount || 0);
+
+    if (!normalizedId || !normalizedPlanName || !Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+      return false;
+    }
+
+    const [result] = await pool.query(
+      `UPDATE payment_requests
+       SET plan_name = ?,
+           amount = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'pending'`,
+      [normalizedPlanName, normalizedAmount, normalizedId]
+    );
+
+    return result.affectedRows > 0;
+  }
 }
 
 module.exports = PaymentRequestModel;

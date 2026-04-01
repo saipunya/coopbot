@@ -19,6 +19,19 @@
       .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.8rem; }
       .soft-list li { padding:1rem; border:1px solid #d8e2ea; border-radius:16px; background: rgba(255,255,255,0.82); }
       .meta { color:#5d6a79; font-size:0.92rem; margin-top:0.4rem; }
+      .request-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+      .request-actions { display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap; margin-top:0.9rem; }
+      .request-actions select { min-width: 180px; border:1px solid #c8d6e2; border-radius:12px; padding:0.7rem 0.85rem; font:inherit; background:#fff; color:#1f2a37; }
+      .request-actions button { border:none; border-radius:12px; padding:0.72rem 0.95rem; background:#0f5f8f; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+      .request-actions button:hover { opacity:0.92; }
+      .status-chip { display:inline-flex; align-items:center; gap:0.35rem; border-radius:999px; padding:0.32rem 0.75rem; font-size:0.84rem; font-weight:700; }
+      .status-chip.pending { background:#fff6dd; color:#946200; }
+      .status-chip.approved { background:#e8f7ee; color:#1f6a3a; }
+      .status-chip.rejected { background:#fce9e7; color:#9b2c22; }
+      @media (max-width: 720px) {
+        .request-actions { flex-direction:column; align-items:stretch; }
+        .request-actions button, .request-actions select { width:100%; }
+      }
     </style>
   </head>
   <body>
@@ -48,10 +61,27 @@
           <% } %>
           <% data.requests.forEach((item) => { %>
             <li>
-              <strong><a href="/admin/payment-requests/<%= item.id %>">#<%= item.id %> - <%= item.planLabel || item.plan_name %></a></strong>
+              <div class="request-head">
+                <strong><a href="/admin/payment-requests/<%= item.id %>">#<%= item.id %> - <%= item.planLabel || item.plan_name %></a></strong>
+                <span class="status-chip <%= item.status %>"><%= item.status %></span>
+              </div>
               <div class="meta">
                 User: <%= item.user_name || "-" %> | Email: <%= item.user_email || "-" %> | Current plan: <%= item.userPlanLabel || item.user_plan || "Free" %> | Amount: <%= Number(item.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB | Status: <%= item.status %>
               </div>
+              <% if (item.status === "pending") { %>
+                <form class="request-actions" action="/admin/payment-requests/update-plan" method="post">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <input type="hidden" name="returnTo" value="/admin/payment-requests" />
+                  <select name="planCode" aria-label="เลือกแพ็กเกจใหม่สำหรับคำขอนี้">
+                    <% data.plans.forEach((plan) => { %>
+                      <option value="<%= plan.code %>" <%= plan.code === item.planCode ? "selected" : "" %>>
+                        <%= plan.label %> - <%= Number(plan.priceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB
+                      </option>
+                    <% }) %>
+                  </select>
+                  <button type="submit">อัปเดตแพ็กเกจ</button>
+                </form>
+              <% } %>
             </li>
           <% }) %>
         </ul>

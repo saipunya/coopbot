@@ -1899,6 +1899,7 @@ async function getAdminPaymentRequestsData() {
   const requests = (await PaymentRequestModel.listAll(100)).map((item) => enrichPaymentRequestRecord(item));
 
   return {
+    plans: listPurchasablePlans(),
     totalCount: requests.length,
     pendingCount: requests.filter((item) => item.status === "pending").length,
     approvedCount: requests.filter((item) => item.status === "approved").length,
@@ -1913,7 +1914,50 @@ async function getAdminPaymentRequestDetail(id) {
     return null;
   }
 
-  return { request: enrichPaymentRequestRecord(request) };
+  return {
+    request: enrichPaymentRequestRecord(request),
+    plans: listPurchasablePlans(),
+  };
+}
+
+async function updatePaymentRequestPlan(id, nextPlanCode) {
+  const request = await PaymentRequestModel.findById(id);
+  if (!request || request.status !== "pending") {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const currentPlanCode = normalizePlanCode(request.plan_name || "free");
+  const planCode = normalizePlanCode(nextPlanCode || currentPlanCode);
+  if (!isPaidPlan(planCode)) {
+    return { ok: false, reason: "invalid_plan" };
+  }
+
+  const amount = getPlanPriceBaht(planCode);
+  if (currentPlanCode === planCode && Number(request.amount || 0) === amount) {
+    return {
+      ok: true,
+      requestId: Number(request.id || id || 0),
+      planCode,
+      planLabel: getPlanLabel(planCode),
+      amount,
+      unchanged: true,
+    };
+  }
+
+  const updated = await PaymentRequestModel.updateRequestedPlan(id, planCode, amount);
+  if (!updated) {
+    return { ok: false, reason: "not_updated" };
+  }
+
+  return {
+    ok: true,
+    requestId: Number(request.id || id || 0),
+    planCode,
+    planLabel: getPlanLabel(planCode),
+    amount,
+    previousPlanCode: currentPlanCode,
+    previousPlanLabel: getPlanLabel(currentPlanCode),
+  };
 }
 
 async function approvePaymentRequest(id, reviewMeta = {}) {
@@ -2114,6 +2158,7 @@ module.exports = {
   getPaymentRequestPageData,
   getAdminPaymentRequestsData,
   getAdminPaymentRequestDetail,
+  updatePaymentRequestPlan,
   getKnowledgeAdminData,
   submitKnowledgeSuggestion,
   approveKnowledgeSuggestion,

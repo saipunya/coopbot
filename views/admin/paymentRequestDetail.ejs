@@ -16,9 +16,17 @@
       .alert.error { background:#fce9e7; color:#9b2c22; border:1px solid #f1b8b1; }
       .meta { display:grid; gap:0.7rem; color:#5d6a79; }
       .actions { display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:1rem; }
+      .plan-editor { margin-top:1.25rem; padding:1rem; border:1px solid #d8e2ea; border-radius:16px; background:rgba(245,249,252,0.85); }
+      .plan-editor form { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; }
+      .plan-editor select { min-width:220px; border:1px solid #c8d6e2; border-radius:12px; padding:0.8rem 0.9rem; font:inherit; background:#fff; color:#1f2a37; }
       button { border:none; border-radius:12px; padding:0.8rem 1rem; font-weight:700; cursor:pointer; color:#fff; }
+      .secondary { background: linear-gradient(145deg, #0f5f8f, #0d496d); }
       .approve { background: linear-gradient(145deg, #1d7a52, #16613f); }
       .reject { background: linear-gradient(145deg, #b63d2f, #922f24); }
+      @media (max-width: 720px) {
+        .plan-editor form { flex-direction:column; align-items:stretch; }
+        .plan-editor select, .plan-editor button, .actions form, .actions button { width:100%; }
+      }
     </style>
   </head>
   <body>
@@ -53,6 +61,22 @@
         </div>
 
         <% if (data.request.status === "pending") { %>
+          <div class="plan-editor">
+            <strong style="display:block; margin-bottom:0.55rem; color:#0f4667;">ปรับแพ็กเกจของคำขอนี้ก่อนอนุมัติ</strong>
+            <form action="/admin/payment-requests/update-plan" method="post">
+              <input type="hidden" name="id" value="<%= data.request.id %>" />
+              <input type="hidden" name="returnTo" value="/admin/payment-requests/<%= data.request.id %>" />
+              <select name="planCode" aria-label="เลือกแพ็กเกจใหม่">
+                <% data.plans.forEach((plan) => { %>
+                  <option value="<%= plan.code %>" <%= plan.code === data.request.planCode ? "selected" : "" %>>
+                    <%= plan.label %> - <%= Number(plan.priceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB
+                  </option>
+                <% }) %>
+              </select>
+              <button class="secondary" type="submit">อัปเดตแพ็กเกจ</button>
+            </form>
+          </div>
+
           <div class="actions">
             <form action="/admin/payment-requests/approve" method="post" onsubmit="return confirm('Approve this payment request and activate the requested plan for 30 days?');">
               <input type="hidden" name="id" value="<%= data.request.id %>" />

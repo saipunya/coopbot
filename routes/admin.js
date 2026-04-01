@@ -23,6 +23,7 @@ router.get("/auth/google/callback", redirectLegacyGoogleAuthPath("/auth/google/c
 router.get("/", requireAdminAuth, adminController.renderDashboard);
 router.get("/payment-requests", requireAdminAuth, adminController.renderPaymentRequests);
 router.get("/payment-requests/:id", requireAdminAuth, adminController.renderPaymentRequestDetail);
+router.post("/payment-requests/update-plan", requireAdminAuth, adminController.updatePaymentRequestPlan);
 router.post("/payment-requests/approve", requireAdminAuth, adminController.approvePaymentRequest);
 router.post("/payment-requests/reject", requireAdminAuth, adminController.rejectPaymentRequest);
 router.post("/settings/ai", requireAdminAuth, adminController.updateAiSetting);

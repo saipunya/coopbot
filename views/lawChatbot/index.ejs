@@ -1600,6 +1600,8 @@
       const CHAT_CACHE_KEY = 'lawbot-chat-cache-v2';
       const CHAT_CACHE_LIMIT = 20;
       const HEADER_COLLAPSE_KEY = 'lawbot-header-collapsed-v1';
+      const POST_LOGIN_PENDING_CHAT_KEY = 'lawbot-post-login-pending-chat-v1';
+      const POST_LOGIN_PENDING_CHAT_MAX_AGE_MS = 30 * 60 * 1000;
       const LEGACY_CHAT_CACHE_KEYS = ['lawbot-chat-cache-v1'];
       const isAdminUser = <%- JSON.stringify(Boolean(currentUser)) %>;
       const isGoogleSignedIn = <%- JSON.stringify(Boolean(isGoogleUser)) %>;
@@ -2518,6 +2520,93 @@
         return /ใช้สิทธิ์ถามคำถามในโหมด Guest ครบ 2 ครั้งแล้ว/i.test(String(text || ''));
       }
 
+      function normalizeChatTarget(value) {
+        return value === 'group' ? 'group' : value === 'coop' ? 'coop' : 'all';
+      }
+
+      function getPendingChatStorage() {
+        try {
+          if (window.sessionStorage) return window.sessionStorage;
+        } catch (_) {}
+
+        try {
+          if (window.localStorage) return window.localStorage;
+        } catch (_) {}
+
+        return null;
+      }
+
+      function clearPendingPostLoginChat() {
+        const storage = getPendingChatStorage();
+        if (!storage) return;
+
+        try {
+          storage.removeItem(POST_LOGIN_PENDING_CHAT_KEY);
+        } catch (_) {}
+      }
+
+      function savePendingPostLoginChat(message, target) {
+        const storage = getPendingChatStorage();
+        const trimmedMessage = String(message || '').trim();
+        if (!storage || !trimmedMessage) return;
+
+        try {
+          storage.setItem(POST_LOGIN_PENDING_CHAT_KEY, JSON.stringify({
+            message: trimmedMessage,
+            target: normalizeChatTarget(target),
+            createdAt: Date.now()
+          }));
+        } catch (_) {}
+      }
+
+      function consumePendingPostLoginChat() {
+        if (!isSignedInUser) return null;
+
+        const storage = getPendingChatStorage();
+        if (!storage) return null;
+
+        try {
+          const raw = storage.getItem(POST_LOGIN_PENDING_CHAT_KEY);
+          if (!raw) return null;
+
+          storage.removeItem(POST_LOGIN_PENDING_CHAT_KEY);
+          const parsed = JSON.parse(raw);
+          const message = String(parsed && parsed.message ? parsed.message : '').trim();
+          const createdAt = Number(parsed && parsed.createdAt ? parsed.createdAt : 0);
+          if (!message) return null;
+          if (createdAt && Date.now() - createdAt > POST_LOGIN_PENDING_CHAT_MAX_AGE_MS) {
+            return null;
+          }
+
+          return {
+            message,
+            target: normalizeChatTarget(parsed && parsed.target ? parsed.target : 'all')
+          };
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function removeGuestLimitHistoryPairs(items) {
+        const sanitized = [];
+
+        (Array.isArray(items) ? items : []).forEach((item) => {
+          if (!item || (item.role !== 'user' && item.role !== 'bot')) return;
+
+          if (item.role === 'bot' && isGuestLimitMessage(item.text)) {
+            const previousItem = sanitized[sanitized.length - 1];
+            if (previousItem && previousItem.role === 'user') {
+              sanitized.pop();
+            }
+            return;
+          }
+
+          sanitized.push(item);
+        });
+
+        return sanitized;
+      }
+
       function saveRecentChats() {
         const items = Array.from(chatMessages.querySelectorAll('.bubble'))
           .filter((node) => !node.classList.contains('bubble-loading'))
@@ -2534,16 +2623,23 @@
         localStorage.setItem(CHAT_CACHE_KEY, JSON.stringify(items));
       }
 
-      function restoreRecentChats() {
+      function restoreRecentChats(options = {}) {
         try {
           LEGACY_CHAT_CACHE_KEYS.forEach((key) => localStorage.removeItem(key));
           const raw = localStorage.getItem(CHAT_CACHE_KEY);
           if (!raw) return;
           const parsed = JSON.parse(raw);
           if (!Array.isArray(parsed)) return;
-          parsed.forEach((item) => {
+          const restoredItems = isSignedInUser
+            ? removeGuestLimitHistoryPairs(parsed)
+            : parsed;
+
+          if (isSignedInUser && restoredItems.length !== parsed.length) {
+            localStorage.setItem(CHAT_CACHE_KEY, JSON.stringify(restoredItems.slice(-CHAT_CACHE_LIMIT)));
+          }
+
+          restoredItems.forEach((item) => {
             if (!item || (item.role !== 'user' && item.role !== 'bot')) return;
-            if (isSignedInUser && item.role === 'bot' && isGuestLimitMessage(item.text)) return;
 
             if (typeof item.renderedHtml === 'string' && item.renderedHtml) {
               const restoredHtml = isSignedInUser && item.role === 'bot'
@@ -2597,6 +2693,12 @@
           const dbHighlightTerms = data && Array.isArray(data.highlightTerms) && data.highlightTerms.length
             ? data.highlightTerms
             : buildHighlightTerms(trimmed);
+
+          if (data && data.guestLimitReached) {
+            savePendingPostLoginChat(trimmed, selectedTarget);
+          } else {
+            clearPendingPostLoginChat();
+          }
 
           if (answerText) {
             const botRow = addBubble(answerText, 'bot', false, dbHighlightTerms, {
@@ -2974,6 +3076,7 @@
         await resetConversationContext();
         chatMessages.innerHTML = '';
         localStorage.removeItem(CHAT_CACHE_KEY);
+        clearPendingPostLoginChat();
         addBubble('ล้างประวัติแล้ว', 'bot', false, [], null, true, {
           renderedHtml: 'ล้างประวัติแล้ว'
         });
@@ -3017,10 +3120,17 @@
         setVoiceStatus('กดปุ่มไมค์เพื่อเริ่มค้นหาด้วยเสียง');
         initVoiceRecognition();
       }
+      const pendingPostLoginChat = consumePendingPostLoginChat();
       restoreRecentChats();
       if (!chatMessages.querySelector('.bubble')) addBubble('ตั้งคำถามด้วยข้อความกระชับ bot จะตอบข้อมูลได้ดีขึ้น', 'bot', false, [], null, true, {
         renderedHtml: 'ตั้งคำถามด้วยข้อความกระชับ bot จะตอบข้อมูลได้ดีขึ้น'
       });
+      if (pendingPostLoginChat && pendingPostLoginChat.message) {
+        selectedTarget = pendingPostLoginChat.target;
+        window.setTimeout(() => {
+          submitMessage(pendingPostLoginChat.message);
+        }, 180);
+      }
 
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
