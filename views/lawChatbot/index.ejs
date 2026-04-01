@@ -1602,6 +1602,8 @@
       const HEADER_COLLAPSE_KEY = 'lawbot-header-collapsed-v1';
       const LEGACY_CHAT_CACHE_KEYS = ['lawbot-chat-cache-v1'];
       const isAdminUser = <%- JSON.stringify(Boolean(currentUser)) %>;
+      const isGoogleSignedIn = <%- JSON.stringify(Boolean(isGoogleUser)) %>;
+      const isSignedInUser = isAdminUser || isGoogleSignedIn;
 
       const chatMessages = document.getElementById('chatMessages');
       const chatForm = document.getElementById('chatForm');
@@ -2061,7 +2063,7 @@
       }
 
       function buildInlineActionHtml(options = {}) {
-        if (!options || !options.guestLimitReached || !options.signInPath) {
+        if (isSignedInUser || !options || !options.guestLimitReached || !options.signInPath) {
           return '';
         }
 
@@ -2498,6 +2500,14 @@
         return row;
       }
 
+      function stripGuestLoginCtaHtml(html) {
+        return String(html || '').replace(/<div class="bot-inline-actions">[\s\S]*?<\/div>/gi, '').trim();
+      }
+
+      function isGuestLimitMessage(text) {
+        return /ใช้สิทธิ์ถามคำถามในโหมด Guest ครบ 2 ครั้งแล้ว/i.test(String(text || ''));
+      }
+
       function saveRecentChats() {
         const items = Array.from(chatMessages.querySelectorAll('.bubble'))
           .filter((node) => !node.classList.contains('bubble-loading'))
@@ -2523,9 +2533,14 @@
           if (!Array.isArray(parsed)) return;
           parsed.forEach((item) => {
             if (!item || (item.role !== 'user' && item.role !== 'bot')) return;
+            if (isSignedInUser && item.role === 'bot' && isGuestLimitMessage(item.text)) return;
 
             if (typeof item.renderedHtml === 'string' && item.renderedHtml) {
-              addBubble(item.text || '', item.role, false, [], null, true, { renderedHtml: item.renderedHtml });
+              const restoredHtml = isSignedInUser && item.role === 'bot'
+                ? stripGuestLoginCtaHtml(item.renderedHtml)
+                : item.renderedHtml;
+              if (!restoredHtml) return;
+              addBubble(item.text || '', item.role, false, [], null, true, { renderedHtml: restoredHtml });
               return;
             }
 

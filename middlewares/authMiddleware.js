@@ -75,6 +75,10 @@ async function attachCurrentUser(req, res, next) {
         console.error("Failed to hydrate signed-in Google user:", error.message || error);
       }
     }
+
+    if (req.session && Object.prototype.hasOwnProperty.call(req.session, LAW_CHATBOT_GUEST_COUNT_KEY)) {
+      delete req.session[LAW_CHATBOT_GUEST_COUNT_KEY];
+    }
   }
 
   req.user = adminUser;
@@ -86,7 +90,10 @@ async function attachCurrentUser(req, res, next) {
 }
 
 function enforceLawChatbotGuestLimit(req, res, next) {
-  if (req.session?.adminUser) {
+  if (req.session?.adminUser || req.session?.user) {
+    if (req.session && Object.prototype.hasOwnProperty.call(req.session, LAW_CHATBOT_GUEST_COUNT_KEY)) {
+      delete req.session[LAW_CHATBOT_GUEST_COUNT_KEY];
+    }
     return next();
   }
 
