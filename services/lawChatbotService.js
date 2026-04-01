@@ -516,6 +516,23 @@ async function searchDatabaseSources(message, target, options = {}) {
   const intent = classifyQuestionIntent(message);
   const routingPlan = getSourceRoutingPlan(intent);
   const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
+  const prioritizeStructuredLawSearch = /(มาตรา|ข้อ|วรรค|อนุมาตรา)/.test(
+    normalizeForSearch(message).toLowerCase(),
+  );
+
+  if (prioritizeStructuredLawSearch) {
+    const structuredMatchesFirst = prioritizeMatches(
+      await LawSearchModel.searchStructuredLaws(message, target, 8),
+      {
+        retrievalPriority: routingPlan.priorities.structured_laws || 5,
+      },
+    );
+
+    if (structuredMatchesFirst.length > 0) {
+      return structuredMatchesFirst;
+    }
+  }
+
   const [
     rawKnowledgeMatches,
     rawDocumentMatches,
@@ -1279,11 +1296,14 @@ async function replyToChat(payload, session) {
         : "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนในฐานข้อมูลและเอกสารภายในระบบ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
     const remainingBudgetBeforeAnswerMs = getRemainingBudgetMs(startedAt, CHAT_REPLY_BUDGET_MS);
-    answer = await generateChatSummary(message, wantsExplanation(message) ? sources : sources.slice(0, 5), {
+    const answerSources =
+      !aiEnabled || wantsExplanation(message) ? sources : sources.slice(0, 5);
+    answer = await generateChatSummary(message, answerSources, {
       conversationalFollowUp: resolvedContext.usedContext,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
       forceFallback: remainingBudgetBeforeAnswerMs < MIN_AI_SUMMARY_BUDGET_MS,
       aiTimeoutMs: Math.max(1000, remainingBudgetBeforeAnswerMs - 500),
+      questionIntent: evidence.questionIntent,
     });
   }
   const afterAnswerGenerationAt = nowMs();
@@ -1392,6 +1412,7 @@ async function summarizeChat(payload, session) {
     summary: await generateChatSummary(message, sources, {
       conversationalFollowUp: resolvedContext.usedContext,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
+      questionIntent: evidence.questionIntent,
     }),
   };
 }

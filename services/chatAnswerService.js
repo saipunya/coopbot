@@ -12,6 +12,8 @@ const SOURCE_LABELS = {
   knowledge_base: "ฐานความรู้ภายในระบบ",
   admin_knowledge: "ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม/แก้ไข",
 };
+const STRUCTURED_LAW_SOURCES = new Set(["tbl_laws", "tbl_glaws"]);
+const GARBLED_TEXT_PATTERN = /[�\uF700-\uF8FF]|[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/;
 
 function getGeminiClient() {
   return getOpenAiClient();
@@ -107,8 +109,8 @@ function dedupeSources(sources, limit = sources.length) {
   return results;
 }
 
-function buildReferenceSection(sources) {
-  const topSources = dedupeSources(sources, 5);
+function buildReferenceSection(sources, limit = 5) {
+  const topSources = dedupeSources(sources, limit);
   return ["แหล่งอ้างอิง:", ...topSources.map(formatReferenceLine)].join("\n");
 }
 
@@ -132,7 +134,7 @@ function isNoisyLine(text) {
     return true;
   }
 
-  if (/[�\uF700-\uF8FF]/.test(line)) {
+  if (GARBLED_TEXT_PATTERN.test(line)) {
     return true;
   }
 
@@ -326,6 +328,190 @@ function splitContentSegments(text) {
     .filter(Boolean);
 }
 
+function extractQueryLawNumber(message) {
+  const match = String(message || "").match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*(\d{1,4})/);
+  return match ? match[1] : "";
+}
+
+function getSourceDisplayPriority(sourceName, questionIntent = "general") {
+  const normalized = String(sourceName || "").trim().toLowerCase();
+
+  if (questionIntent === "law_section") {
+    if (STRUCTURED_LAW_SOURCES.has(normalized)) return 100;
+    if (normalized === "admin_knowledge") return 70;
+    if (normalized === "tbl_vinichai") return 60;
+    if (normalized === "documents") return 40;
+    if (normalized === "pdf_chunks") return 30;
+    if (normalized === "knowledge_base") return 20;
+    return 0;
+  }
+
+  if (normalized === "admin_knowledge") return 90;
+  if (STRUCTURED_LAW_SOURCES.has(normalized)) return 80;
+  if (normalized === "tbl_vinichai") return 70;
+  if (normalized === "documents") return 60;
+  if (normalized === "pdf_chunks") return 50;
+  if (normalized === "knowledge_base") return 40;
+  if (normalized === "internet_search") return 10;
+  return 0;
+}
+
+function orderSourcesForDatabaseOnly(sources, options = {}) {
+  const sourceLimit = Math.max(1, Number(options.sourceLimit || 8));
+  const ordered = dedupeSources(sources, sourceLimit * 2).sort((left, right) => {
+    const priorityDiff =
+      getSourceDisplayPriority(right.source, options.questionIntent) -
+      getSourceDisplayPriority(left.source, options.questionIntent);
+    if (priorityDiff !== 0) {
+      return priorityDiff;
+    }
+
+    return Number(right.score || 0) - Number(left.score || 0);
+  });
+
+  if (options.questionIntent === "law_section") {
+    const structured = ordered.filter((source) =>
+      STRUCTURED_LAW_SOURCES.has(String(source?.source || "").trim().toLowerCase()),
+    );
+    const others = ordered.filter(
+      (source) => !STRUCTURED_LAW_SOURCES.has(String(source?.source || "").trim().toLowerCase()),
+    );
+    return [...structured, ...others].slice(0, sourceLimit);
+  }
+
+  return ordered.slice(0, sourceLimit);
+}
+
+function scoreSourceSegment(segment, message, source, options = {}) {
+  let score = scoreLineByQuery(segment, message);
+
+  if (hasCoreLegalSignal(segment)) score += 6;
+  if (/(มาตรา|ข้อ|วรรค|อนุมาตรา)/.test(segment)) score += 5;
+  if (STRUCTURED_LAW_SOURCES.has(String(source?.source || "").trim().toLowerCase())) score += 4;
+  if (String(source?.source || "").trim().toLowerCase() === "admin_knowledge") score += 3;
+
+  const queryLawNumber = extractQueryLawNumber(message);
+  if (queryLawNumber && segment.includes(queryLawNumber)) {
+    score += 8;
+  }
+
+  if (options.questionIntent === "law_section") {
+    if (STRUCTURED_LAW_SOURCES.has(String(source?.source || "").trim().toLowerCase())) {
+      score += 12;
+    }
+    if (score < 2 && !/(มาตรา|ข้อ|วรรค|อนุมาตรา)/.test(segment)) {
+      score -= 12;
+    }
+  }
+
+  if (segment.length > 420) {
+    score -= 2;
+  }
+
+  return score;
+}
+
+function extractRelevantSegmentsFromSource(source, message, options = {}) {
+  const rawText = [source.content, source.chunk_text, source.comment].filter(Boolean).join("\n");
+  const segments = splitContentSegments(rawText);
+  const scoredSegments = segments
+    .map((segment) => ({
+      text: segment,
+      score: scoreSourceSegment(segment, message, source, options),
+    }))
+    .filter((item) => !isNoisyLine(item.text))
+    .filter((item) => item.text.length >= 12)
+    .filter((item) => {
+      if (options.questionIntent === "law_section") {
+        return item.score >= 4 || /(มาตรา|ข้อ|วรรค|อนุมาตรา)/.test(item.text);
+      }
+      return item.score >= 2 || hasCoreLegalSignal(item.text);
+    })
+    .sort((left, right) => right.score - left.score)
+    .map((item) => item.text);
+
+  const segmentLimit =
+    options.questionIntent === "law_section"
+      ? 6
+      : options.explainMode
+        ? 5
+        : 4;
+  const uniqueSegments = uniqueCleanLines(scoredSegments, segmentLimit);
+
+  if (uniqueSegments.length > 0) {
+    return uniqueSegments;
+  }
+
+  const fallbackText = cleanLine(String(rawText || "").slice(0, options.explainMode ? 420 : 280));
+  if (fallbackText && !isNoisyLine(fallbackText)) {
+    return [fallbackText];
+  }
+
+  return [];
+}
+
+function formatDatabaseOnlySourceBlock(source, message, options = {}) {
+  const label = SOURCE_LABELS[source.source] || source.source || "ฐานข้อมูลภายในระบบ";
+  const reference = cleanLine(source.reference || source.title || source.keyword || label);
+  const title = cleanLine(source.title || "");
+  const heading = reference && title && title !== reference ? `${reference} | ${title}` : reference || title || label;
+  const metaParts = [];
+
+  if (source.documentNumber && source.documentNumber !== reference) {
+    metaParts.push(`เลขที่ ${source.documentNumber}`);
+  }
+  if (source.documentDateText) {
+    metaParts.push(`ลงวันที่ ${source.documentDateText}`);
+  }
+  if (source.documentSource) {
+    metaParts.push(source.documentSource);
+  }
+
+  const segments = extractRelevantSegmentsFromSource(source, message, options);
+  if (segments.length === 0) {
+    return "";
+  }
+
+  return [
+    `[${label}] ${heading}`,
+    ...(metaParts.length ? [metaParts.join(" | ")] : []),
+    ...segments.map((segment) => `- ${segment}`),
+  ].join("\n");
+}
+
+function buildDatabaseOnlyAnswer(sources, options = {}) {
+  const orderedSources = orderSourcesForDatabaseOnly(sources, {
+    questionIntent: options.questionIntent,
+    sourceLimit: options.questionIntent === "law_section" ? 6 : 8,
+  });
+  const displayedSources = [];
+  const sourceBlocks = orderedSources
+    .map((source) => {
+      const block = formatDatabaseOnlySourceBlock(source, options.originalMessage || "", {
+        explainMode: options.explainMode,
+        questionIntent: options.questionIntent,
+      });
+      if (block) {
+        displayedSources.push(source);
+      }
+      return block;
+    })
+    .filter(Boolean);
+
+  if (sourceBlocks.length === 0) {
+    return "ไม่ปรากฏข้อมูลที่เกี่ยวข้องอย่างชัดเจนในฐานข้อมูล กรุณาระบุคำค้นหรือประเด็นที่ต้องการสอบถามเพิ่มเติม";
+  }
+
+  const intro =
+    options.questionIntent === "law_section"
+      ? "ข้อมูลที่พบจากฐานข้อมูลกฎหมาย (แสดงเฉพาะรายการที่ผ่านการกรองและใช้ตอบ):"
+      : "ข้อมูลที่พบจากฐานข้อมูล (แสดงเฉพาะรายการที่ผ่านการกรองและใช้ตอบ):";
+
+  return [intro, ...sourceBlocks, buildReferenceSection(displayedSources, displayedSources.length)]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function extractNumericEvidence(sources, limit = 5) {
   const scored = [];
 
@@ -517,6 +703,13 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
 }
 
 function buildFallbackSummary(sources, explainMode, options = {}) {
+  if (options.databaseOnlyMode) {
+    return buildDatabaseOnlyAnswer(sources, {
+      ...options,
+      explainMode,
+    });
+  }
+
   const topSources = dedupeSources(sources, 5);
   const amountHighlights = options.amountMode ? extractAmountHighlights(topSources, explainMode ? 5 : 3) : [];
   const numericEvidence = options.amountMode ? extractNumericEvidence(topSources, explainMode ? 5 : 3) : [];
@@ -597,17 +790,19 @@ async function generateChatSummary(message, sources, options = {}) {
   const decisionMode = wantsDecisionAnswer(message);
   const openAiConfig = getOpenAiConfig();
   const aiEnabled = await isAiEnabled();
+  const databaseOnlyMode = !aiEnabled || !openAiConfig;
 
   // Filter out low-quality sources before sending to Gemini
   const topScore = sources.length > 0 ? Math.max(...sources.map((s) => s.score || 0)) : 0;
   const filteredSources = filterHighQualitySources(sources, topScore);
   const effectiveSources = filteredSources.length > 0 ? filteredSources : sources.slice(0, 3);
 
-  if (options.forceFallback || !aiEnabled || !openAiConfig || effectiveSources.length === 0) {
+  if (options.forceFallback || databaseOnlyMode || effectiveSources.length === 0) {
     return buildFallbackSummary(sources, explainMode, {
       ...options,
       amountMode,
       decisionMode,
+      databaseOnlyMode,
       originalMessage: message,
     });
   }

@@ -10,7 +10,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="กฎหมายสหกรณ์" />
   <link rel="manifest" href="<%= manifestPath || '/manifest-law-chatbot.json' %>" />
-  <link rel="apple-touch-icon" href="/icon/calendar-icon-192.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon/robot-icon-192.png" />
+  <link rel="apple-touch-icon" href="/icon/robot-icon-180.png" />
   <title><%= title || 'แชตบอทกฎหมายสหกรณ์' %></title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
@@ -642,6 +643,37 @@
       font-size: 0.7rem;
     }
 
+    .bot-inline-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      margin-top: 0.15rem;
+    }
+
+    .bot-login-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.55rem 0.92rem;
+      border-radius: 999px;
+      text-decoration: none;
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(135deg, #1f7a46, #155e36);
+      box-shadow: 0 8px 18px rgba(21, 94, 54, 0.18);
+      transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+    }
+
+    .bot-login-cta:hover,
+    .bot-login-cta:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px rgba(21, 94, 54, 0.24);
+      color: #fff;
+      opacity: 0.98;
+      outline: none;
+    }
+
     .reference-modal-list {
       margin: 0;
       padding-left: 1.1rem;
@@ -920,6 +952,89 @@
       backdrop-filter: blur(14px);
     }
 
+    .composer-suggestions {
+      position: absolute;
+      left: 0.88rem;
+      right: 0.88rem;
+      bottom: calc(100% + 0.6rem);
+      z-index: 7;
+      display: flex;
+      justify-content: flex-start;
+      pointer-events: none;
+    }
+
+    .composer-suggestions[hidden] {
+      display: none;
+    }
+
+    .composer-suggestions-card {
+      width: min(100%, 420px);
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      padding: 0.78rem;
+      border-radius: 1rem;
+      border: 1px solid rgba(21, 84, 122, 0.14);
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: 0 16px 28px rgba(34, 63, 87, 0.14);
+      backdrop-filter: blur(16px);
+      pointer-events: auto;
+      animation: bubbleFadeIn 180ms ease-out both;
+    }
+
+    .composer-suggestions-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.42rem;
+      width: fit-content;
+      padding: 0.26rem 0.68rem;
+      border-radius: 999px;
+      background: rgba(47, 127, 184, 0.1);
+      color: #15547a;
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+
+    .composer-suggestions-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.48rem;
+    }
+
+    .composer-suggestion-btn {
+      width: 100%;
+      border: 1px solid rgba(21, 84, 122, 0.14);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(241, 246, 251, 0.92));
+      color: #163247;
+      border-radius: 0.88rem;
+      padding: 0.72rem 0.84rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.58rem;
+      text-align: left;
+      line-height: 1.5;
+      font-size: 0.92rem;
+      font-weight: 600;
+      box-shadow: 0 8px 16px rgba(34, 63, 87, 0.06);
+      transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background 140ms ease;
+    }
+
+    .composer-suggestion-btn i {
+      color: #2f7fb8;
+      font-size: 0.92rem;
+      margin-top: 0.1rem;
+      flex: 0 0 auto;
+    }
+
+    .composer-suggestion-btn:hover,
+    .composer-suggestion-btn:focus-visible {
+      transform: translateY(-1px);
+      border-color: rgba(21, 84, 122, 0.24);
+      background: rgba(255, 255, 255, 1);
+      box-shadow: 0 12px 22px rgba(34, 63, 87, 0.12);
+      outline: none;
+    }
+
     #chatInput {
       border-radius: 0.75rem 0 0 0.75rem;
       border-color: #c8d9e7;
@@ -1162,6 +1277,21 @@
       .chat-input-wrap {
         padding: 0.55rem;
       }
+      .composer-suggestions {
+        left: 0.55rem;
+        right: 0.55rem;
+        bottom: calc(100% + 0.45rem);
+      }
+      .composer-suggestions-card {
+        width: 100%;
+        border-radius: 0.88rem;
+        padding: 0.68rem;
+      }
+      .composer-suggestion-btn {
+        border-radius: 0.78rem;
+        padding: 0.68rem 0.76rem;
+        font-size: 0.88rem;
+      }
       .composer-hint {
         display: none;
       }
@@ -1214,10 +1344,9 @@
 
     <div class="page-header">
       <div class="page-brand">
-        <div class="brand-icon"><i class="bi bi-robot"></i></div>
         <div class="brand-title">
           <div class="brand-heading">
-            <h6><strong>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร</strong> (ver 1.0)</h6>
+            <h6><strong>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร</strong> (v.1)</h6>
             <span id="onlineBadge" class="status-chip"><i class="bi bi-wifi"></i>ออนไลน์</span>
           </div>
           <p>ค้นหากฎหมายสหกรณ์แบบ PWA สำหรับมือถือและเดสก์ท็อป</p>
@@ -1435,6 +1564,15 @@
       <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
 
       <form id="chatForm" class="chat-input-wrap" autocomplete="off">
+        <div id="composerSuggestions" class="composer-suggestions" hidden aria-label="คำถามแนะนำ">
+          <div class="composer-suggestions-card">
+            <div class="composer-suggestions-label">
+              <i class="bi bi-stars"></i>
+              <span>คำถามที่ถามบ่อย</span>
+            </div>
+            <div id="composerSuggestionsList" class="composer-suggestions-list"></div>
+          </div>
+        </div>
         <div class="input-group">
           <input id="chatInput" type="text" class="form-control" placeholder="พิมพ์คำถามของคุณที่นี่" maxlength="500" required />
           <button id="voiceBtn" type="button" class="btn btn-outline-secondary" title="ค้นหาด้วยเสียง" aria-label="ค้นหาด้วยเสียง">
@@ -1468,6 +1606,8 @@
       const chatMessages = document.getElementById('chatMessages');
       const chatForm = document.getElementById('chatForm');
       const chatInput = document.getElementById('chatInput');
+      const composerSuggestions = document.getElementById('composerSuggestions');
+      const composerSuggestionsList = document.getElementById('composerSuggestionsList');
       const voiceBtn = document.getElementById('voiceBtn');
       const voiceStatus = document.getElementById('voiceStatus');
       const sendBtn = document.getElementById('sendBtn');
@@ -1523,6 +1663,21 @@
       let pendingKnowledgeSuggestionResolve = null;
       let suggestionRecognition = null;
       let isSuggestionListening = false;
+      const FREQUENT_CHAT_SUGGESTIONS = [
+        'มาตรา 12 ของ พ.ร.บ.สหกรณ์ คืออะไร',
+        'สมาชิกสหกรณ์ลาออกต้องทำอย่างไร',
+        'สหกรณ์ประชุมใหญ่สามัญปีละกี่ครั้ง',
+        'คณะกรรมการดำเนินการมีอำนาจหน้าที่อะไรบ้าง',
+        'การรับสมาชิกใหม่ต้องมีคุณสมบัติอย่างไร',
+        'สหกรณ์กู้ยืมเงินจากที่ใดได้บ้าง',
+        'กลุ่มเกษตรกรจดทะเบียนต้องใช้เอกสารอะไร',
+        'ค่าบำรุงสันนิบาตสหกรณ์คำนวณอย่างไร',
+        'นายทะเบียนสหกรณ์มีอำนาจสั่งการเรื่องใดได้บ้าง',
+        'เงินปันผลและเงินเฉลี่ยคืนต่างกันอย่างไร',
+        'สมาชิกขาดจากสมาชิกภาพในกรณีใดบ้าง',
+        'การแก้ไขข้อบังคับสหกรณ์ต้องทำอย่างไร'
+      ];
+      let lastComposerSuggestionSignature = '';
 
       function setOnlineState() {
         const online = navigator.onLine;
@@ -1534,6 +1689,59 @@
 
       function autoScroll() {
         chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      function sampleComposerSuggestions(count = 3) {
+        const items = [...FREQUENT_CHAT_SUGGESTIONS];
+        if (items.length <= count) {
+          return items;
+        }
+
+        let selected = [];
+        let signature = '';
+        let attempts = 0;
+
+        while (attempts < 5) {
+          const pool = [...items];
+          for (let i = pool.length - 1; i > 0; i -= 1) {
+            const randomIndex = Math.floor(Math.random() * (i + 1));
+            [pool[i], pool[randomIndex]] = [pool[randomIndex], pool[i]];
+          }
+
+          selected = pool.slice(0, count);
+          signature = selected.join('||');
+          if (signature !== lastComposerSuggestionSignature) {
+            break;
+          }
+          attempts += 1;
+        }
+
+        lastComposerSuggestionSignature = signature;
+        return selected;
+      }
+
+      function hideComposerSuggestions() {
+        if (!composerSuggestions) return;
+        composerSuggestions.hidden = true;
+      }
+
+      function showComposerSuggestions() {
+        if (!composerSuggestions || !composerSuggestionsList || isSubmitting) return;
+        if (String(chatInput.value || '').trim()) {
+          hideComposerSuggestions();
+          return;
+        }
+
+        const suggestions = sampleComposerSuggestions(3);
+        composerSuggestionsList.innerHTML = suggestions
+          .map((question) => `
+            <button type="button" class="composer-suggestion-btn" data-composer-question="${escapeHtml(question)}">
+              <i class="bi bi-chat-left-text"></i>
+              <span>${escapeHtml(question)}</span>
+            </button>
+          `)
+          .join('');
+        composerSuggestions.hidden = false;
       }
 
       function focusFirstAnswer(row) {
@@ -1852,11 +2060,27 @@
         } catch (_) {}
       }
 
-      function formatBotMessageHtml(text, terms) {
+      function buildInlineActionHtml(options = {}) {
+        if (!options || !options.guestLimitReached || !options.signInPath) {
+          return '';
+        }
+
+        return `
+          <div class="bot-inline-actions">
+            <a href="${escapeHtml(options.signInPath)}" class="bot-login-cta" title="เข้าสู่ระบบด้วย Google เพื่อใช้งานต่อ">
+              <i class="bi bi-google"></i>
+              <span>เข้าสู่ระบบด้วย Google เพื่อใช้งานต่อ</span>
+            </a>
+          </div>
+        `;
+      }
+
+      function formatBotMessageHtml(text, terms, options = {}) {
         const raw = String(text || '').trim();
+        const inlineActionHtml = buildInlineActionHtml(options);
         if (!raw.includes('แหล่งอ้างอิง:')) {
           const highlighted = applyHighlightHtml(raw, terms);
-          return decorateBotFallbackHtml(highlighted);
+          return `${decorateBotFallbackHtml(highlighted)}${inlineActionHtml}`;
         }
 
         const [mainText, referenceText] = raw.split(/\n\s*\nแหล่งอ้างอิง:\s*\n/i);
@@ -1869,7 +2093,7 @@
         ].filter(Boolean).join('');
         const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
 
-        return `<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}</div>`;
+        return `<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}${inlineActionHtml}</div>`;
       }
 
       const AI_SECTION_ICONS = {
@@ -2200,7 +2424,7 @@
           if (restoreOptions && typeof restoreOptions.renderedHtml === 'string' && restoreOptions.renderedHtml) {
             message.innerHTML = restoreOptions.renderedHtml;
           } else {
-            message.innerHTML = formatBotMessageHtml(text, highlightTerms);
+            message.innerHTML = formatBotMessageHtml(text, highlightTerms, feedbackContext || {});
           }
         } else if (restoreOptions && typeof restoreOptions.renderedHtml === 'string' && restoreOptions.renderedHtml) {
           message.innerHTML = restoreOptions.renderedHtml;
@@ -2234,7 +2458,9 @@
           !isLoading &&
           feedbackContext &&
           feedbackContext.question &&
-          feedbackContext.variant === 'ai'
+          feedbackContext.variant === 'ai' &&
+          !feedbackContext.guestLimitReached &&
+          !feedbackContext.monthlyUsageLimitReached
         ) {
           attachFeedbackActions(content, {
             question: feedbackContext.question,
@@ -2318,6 +2544,7 @@
       async function submitMessage(message, options = {}) {
         const trimmed = String(message || '').trim();
         if (!trimmed) return;
+        hideComposerSuggestions();
 
         if (recognition && isListening) {
           shouldSubmitVoiceOnEnd = false;
@@ -2352,7 +2579,10 @@
               target: selectedTarget,
               variant: 'ai',
               debug: data && data.debug ? data.debug : null,
-              usedFollowUpContext: Boolean(data && data.usedFollowUpContext)
+              usedFollowUpContext: Boolean(data && data.usedFollowUpContext),
+              guestLimitReached: Boolean(data && data.guestLimitReached),
+              monthlyUsageLimitReached: Boolean(data && data.monthlyUsageLimitReached),
+              signInPath: data && typeof data.signInPath === 'string' ? data.signInPath : ''
             });
             focusFirstAnswer(botRow);
           }
@@ -2647,6 +2877,7 @@
       }
 
       voiceBtn.addEventListener('click', () => {
+        hideComposerSuggestions();
         if (!SpeechRecognition) {
           setVoiceStatus('เบราว์เซอร์นี้ไม่รองรับการค้นหาด้วยเสียง', true);
           return;
@@ -2670,9 +2901,51 @@
         }
       });
 
+      if (chatInput) {
+        chatInput.addEventListener('click', () => {
+          if (!String(chatInput.value || '').trim()) {
+            showComposerSuggestions();
+          }
+        });
+
+        chatInput.addEventListener('input', () => {
+          if (String(chatInput.value || '').trim()) {
+            hideComposerSuggestions();
+          }
+        });
+
+        chatInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            hideComposerSuggestions();
+          }
+        });
+      }
+
+      if (composerSuggestionsList) {
+        composerSuggestionsList.addEventListener('click', (event) => {
+          const suggestionButton = event.target.closest('[data-composer-question]');
+          if (!suggestionButton) return;
+
+          const question = String(suggestionButton.dataset.composerQuestion || '').trim();
+          if (!question || isSubmitting) return;
+
+          hideComposerSuggestions();
+          chatInput.value = '';
+          submitMessage(question);
+        });
+      }
+
+      document.addEventListener('click', (event) => {
+        if (!chatForm || chatForm.contains(event.target)) {
+          return;
+        }
+        hideComposerSuggestions();
+      });
+
       quickButtons.forEach((button) => button.addEventListener('click', () => submitMessage(button.dataset.question || '')));
 
       clearChatBtn.addEventListener('click', async () => {
+        hideComposerSuggestions();
         await resetConversationContext();
         chatMessages.innerHTML = '';
         localStorage.removeItem(CHAT_CACHE_KEY);
