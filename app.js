@@ -37,6 +37,8 @@ app.use(attachCurrentUser);
 
 app.get("/", (req, res) => {
   res.redirect("/law-chatbot");
+  console.log("GOOGLE_REDIRECT_URI =", process.env.GOOGLE_REDIRECT_URI);
+console.log("GOOGLE_CLIENT_ID =", process.env.GOOGLE_CLIENT_ID);
 });
 
 app.get("/auth/google", redirectIfAuthenticated, adminController.redirectToGoogleLogin);
