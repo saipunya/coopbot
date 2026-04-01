@@ -25,6 +25,7 @@ router.get("/payment-requests", requireAdminAuth, adminController.renderPaymentR
 router.get("/payment-requests/:id", requireAdminAuth, adminController.renderPaymentRequestDetail);
 router.post("/payment-requests/approve", requireAdminAuth, adminController.approvePaymentRequest);
 router.post("/payment-requests/reject", requireAdminAuth, adminController.rejectPaymentRequest);
+router.post("/settings/ai", requireAdminAuth, adminController.updateAiSetting);
 router.post("/knowledge", requireAdminAuth, adminController.submitKnowledge);
 router.post("/knowledge/delete", requireAdminAuth, adminController.deleteKnowledge);
 router.post("/knowledge-suggestions/approve", requireAdminAuth, adminController.approveKnowledgeSuggestion);

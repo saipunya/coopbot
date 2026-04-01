@@ -2,6 +2,7 @@ const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
 const OPENAI_EMBEDDING_TIMEOUT_MS = Number(process.env.OPENAI_EMBEDDING_TIMEOUT_MS || 4000);
+const { isAiEnabled } = require("./runtimeSettingsService");
 
 function getOpenAiEmbeddingConfig() {
   const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
@@ -24,6 +25,10 @@ function getOpenAiEmbeddingConfig() {
  * @returns {Promise<Float32Array|null>} - Embedding vector or null on error
  */
 async function createEmbedding(text) {
+  if (!(await isAiEnabled())) {
+    return null;
+  }
+
   const config = getOpenAiEmbeddingConfig();
   if (!config) {
     return null;

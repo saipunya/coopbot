@@ -1,6 +1,7 @@
 const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 20000);
+const { isAiEnabled } = require("./runtimeSettingsService");
 
 function getOpenAiConfig() {
   const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
@@ -15,6 +16,10 @@ function getOpenAiConfig() {
 }
 
 async function generateOpenAiCompletion(options = {}) {
+  if (!(await isAiEnabled())) {
+    return "";
+  }
+
   const config = getOpenAiConfig();
   if (!config) {
     return "";

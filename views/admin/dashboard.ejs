@@ -255,6 +255,45 @@
         margin-top: -0.15rem;
         margin-bottom: 1rem;
       }
+      .status-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.7rem;
+        align-items: center;
+        margin-bottom: 0.9rem;
+      }
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.48rem 0.82rem;
+        border-radius: 999px;
+        font-size: 0.84rem;
+        font-weight: 700;
+      }
+      .status-pill.enabled {
+        background: #e8f7ee;
+        color: #1f6a3a;
+      }
+      .status-pill.disabled {
+        background: #fff1dd;
+        color: #8c5c17;
+      }
+      .status-pill.override {
+        background: #fce9e7;
+        color: #9b2c22;
+      }
+      .system-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+      .subtle-text {
+        margin: 0;
+        font-size: 0.95rem;
+        line-height: 1.7;
+      }
       @media (max-width: 760px) {
         .topbar {
           flex-direction: column;
@@ -296,6 +335,44 @@
           <p class="metric-label">Total feedback</p>
           <p class="metric"><%= feedbackData.feedbackCount %></p>
         </article>
+      </section>
+
+      <section class="card">
+        <h2>AI Runtime Control</h2>
+        <p class="section-note">
+          เปิดหรือปิดการใช้งาน AI ได้จากหน้านี้ ค่าจะถูกเก็บไว้ในฐานข้อมูลของระบบ จึงใช้ได้ทั้ง dev และ production ของแต่ละ environment ที่รันโค้ดชุดนี้
+        </p>
+        <div class="status-row">
+          <span class="status-pill <%= aiSettings.effectiveEnabled ? 'enabled' : 'disabled' %>">
+            <%= aiSettings.effectiveEnabled ? 'AI เปิดใช้งานอยู่' : 'AI ถูกปิดอยู่' %>
+          </span>
+          <span class="status-pill <%= aiSettings.configuredEnabled ? 'enabled' : 'disabled' %>">
+            ตั้งค่าจาก Admin: <%= aiSettings.configuredEnabled ? 'เปิด' : 'ปิด' %>
+          </span>
+          <% if (aiSettings.envMockAi) { %>
+            <span class="status-pill override">Env override: USE_MOCK_AI=true</span>
+          <% } %>
+        </div>
+        <p class="subtle-text">
+          <% if (aiSettings.updatedAt) { %>
+            อัปเดตล่าสุดโดย <strong><%= aiSettings.updatedBy || "admin" %></strong> เมื่อ <strong><%= aiSettings.updatedAt %></strong>
+          <% } else { %>
+            ยังไม่เคยมีการเปลี่ยนสถานะจากหน้า Admin ระบบจะถือว่า AI เปิดใช้งานตามค่าเริ่มต้น
+          <% } %>
+        </p>
+        <% if (aiSettings.envMockAi) { %>
+          <p class="subtle-text" style="margin-top: 0.55rem;">
+            ขณะนี้ env ตั้งค่าให้ใช้ mock response อยู่ ดังนั้นแม้เปิด AI จาก Admin แล้ว สถานะใช้งานจริงจะยังไม่เรียก AI จนกว่าจะปิด <code>USE_MOCK_AI</code>
+          </p>
+        <% } %>
+        <div class="system-actions" style="margin-top: 1rem;">
+          <form action="/admin/settings/ai" method="post">
+            <input type="hidden" name="enabled" value="<%= aiSettings.configuredEnabled ? 'false' : 'true' %>" />
+            <button class="<%= aiSettings.configuredEnabled ? 'secondary-btn' : 'primary-btn' %>" type="submit">
+              <%= aiSettings.configuredEnabled ? 'ปิด AI ชั่วคราว' : 'เปิด AI กลับมาใช้งาน' %>
+            </button>
+          </form>
+        </div>
       </section>
 
       <section class="card">

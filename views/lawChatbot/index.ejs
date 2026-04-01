@@ -72,7 +72,7 @@
       z-index: 80;
       display: inline-flex;
       align-items: center;
-      gap: 0.45rem;
+      gap: 0.72rem;
     }
 
     .header-toggle-btn {
@@ -80,10 +80,13 @@
       box-shadow: 0 8px 18px rgba(34, 63, 87, 0.2);
       display: inline-flex;
       align-items: center;
-      gap: 0.35rem;
-      padding: 0.42rem 0.82rem;
-      font-size: 0.8rem;
-      min-height: 2.35rem;
+      justify-content: center;
+      gap: 0.42rem;
+      padding: 0.58rem 1.02rem;
+      font-size: 0.86rem;
+      min-height: 2.85rem;
+      min-width: 2.85rem;
+      touch-action: manipulation;
     }
 
     .header-toggle-btn span {
@@ -95,11 +98,14 @@
       box-shadow: 0 8px 18px rgba(139, 46, 46, 0.16);
       display: inline-flex;
       align-items: center;
-      gap: 0.35rem;
-      padding: 0.42rem 0.72rem;
-      font-size: 0.72rem;
-      min-height: 2.35rem;
+      justify-content: center;
+      gap: 0.42rem;
+      padding: 0.58rem 0.95rem;
+      font-size: 0.8rem;
+      min-height: 2.85rem;
+      min-width: 2.85rem;
       font-weight: 700;
+      touch-action: manipulation;
     }
 
     .clear-chat-btn span {
@@ -757,6 +763,47 @@
       --bs-btn-font-size: 0.76rem;
     }
 
+    .feedback-actions .feedback-icon-btn {
+      width: 2.3rem;
+      height: 2.3rem;
+      padding: 0;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 16px rgba(34, 63, 87, 0.08);
+      touch-action: manipulation;
+    }
+
+    .feedback-actions .feedback-icon-btn i {
+      font-size: 0.95rem;
+      margin: 0 !important;
+    }
+
+    .feedback-actions .feedback-like-btn {
+      --bs-btn-color: #146c43;
+      --bs-btn-border-color: #8fd0b2;
+      --bs-btn-bg: #e8f7ee;
+      --bs-btn-hover-color: #fff;
+      --bs-btn-hover-bg: #1d7a52;
+      --bs-btn-hover-border-color: #1d7a52;
+      --bs-btn-active-color: #fff;
+      --bs-btn-active-bg: #176443;
+      --bs-btn-active-border-color: #176443;
+    }
+
+    .feedback-actions .feedback-dislike-btn {
+      --bs-btn-color: #9a6700;
+      --bs-btn-border-color: #f0d18c;
+      --bs-btn-bg: #fff3cd;
+      --bs-btn-hover-color: #fff;
+      --bs-btn-hover-bg: #c88a05;
+      --bs-btn-hover-border-color: #c88a05;
+      --bs-btn-active-color: #fff;
+      --bs-btn-active-bg: #a86d00;
+      --bs-btn-active-border-color: #a86d00;
+    }
+
     .timing-debug {
       margin-top: 0.55rem;
       padding: 0.5rem 0.65rem;
@@ -959,16 +1006,18 @@
         top: auto;
         bottom: calc(env(safe-area-inset-bottom) + 6.2rem);
         right: 0.6rem;
-        gap: 0.5rem;
+        gap: 0.68rem;
         flex-direction: column;
         align-items: stretch;
       }
 
       .header-toggle-btn {
-        width: 2.5rem;
-        height: 2.5rem;
+        width: 3rem;
+        height: 3rem;
+        min-width: 3rem;
+        min-height: 3rem;
         padding: 0;
-        font-size: 0.98rem;
+        font-size: 1.06rem;
         justify-content: center;
         gap: 0;
       }
@@ -978,12 +1027,14 @@
       }
 
       .clear-chat-btn {
-        width: 2.5rem;
-        height: 2.5rem;
+        width: 3rem;
+        height: 3rem;
+        min-width: 3rem;
+        min-height: 3rem;
         padding: 0;
         justify-content: center;
         gap: 0;
-        font-size: 0.98rem;
+        font-size: 1.06rem;
       }
 
       .clear-chat-btn span {
@@ -1061,6 +1112,13 @@
         justify-content: flex-end;
         margin-left: 0;
         gap: 0.18rem;
+      }
+      .feedback-actions .feedback-icon-btn {
+        width: 2.55rem;
+        height: 2.55rem;
+      }
+      .feedback-actions .feedback-icon-btn i {
+        font-size: 1rem;
       }
       .page-actions .btn {
         width: 1.85rem;
@@ -2051,22 +2109,26 @@
         wrap.innerHTML = `
           <button
             type="button"
-            class="btn btn-outline-success btn-sm"
+            class="btn btn-sm feedback-icon-btn feedback-like-btn"
             data-feedback-action="1"
             data-helpful="1"
             data-question="${escapeHtml(question)}"
             data-answer-shown="${escapeHtml(answerShown)}"
             data-target="${escapeHtml(target || selectedTarget)}"
-          >มีประโยชน์</button>
+            title="มีประโยชน์"
+            aria-label="มีประโยชน์"
+          ><i class="bi bi-hand-thumbs-up-fill"></i><span class="visually-hidden">มีประโยชน์</span></button>
           <button
             type="button"
-            class="btn btn-outline-warning btn-sm"
+            class="btn btn-sm feedback-icon-btn feedback-dislike-btn"
             data-feedback-action="1"
             data-helpful="0"
             data-question="${escapeHtml(question)}"
             data-answer-shown="${escapeHtml(answerShown)}"
             data-target="${escapeHtml(target || selectedTarget)}"
-          >ควรปรับปรุง</button>
+            title="ควรปรับปรุง"
+            aria-label="ควรปรับปรุง"
+          ><i class="bi bi-hand-thumbs-down-fill"></i><span class="visually-hidden">ควรปรับปรุง</span></button>
           <button
             type="button"
             class="btn btn-outline-primary btn-sm btn-knowledge-suggestion"

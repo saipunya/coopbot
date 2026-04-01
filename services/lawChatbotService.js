@@ -9,6 +9,7 @@ const PaymentRequestModel = require("../models/paymentRequestModel");
 const UserModel = require("../models/userModel");
 const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
 const runtimeFlags = require("../config/runtimeFlags");
+const { isAiEnabled } = require("./runtimeSettingsService");
 const { buildQuestionCacheIdentity } = require("./lawChatbotAnswerCacheUtils");
 const { sendPaymentRequestNotification } = require("./telegramService");
 const { generateChatSummary, wantsExplanation } = require("./chatAnswerService");
@@ -1138,6 +1139,19 @@ async function replyToChat(payload, session) {
 
   const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target);
 
+  if (!(await isAiEnabled())) {
+    return {
+      hasContext: true,
+      answer:
+        "ผู้ดูแลระบบปิดการใช้งาน AI ชั่วคราว กรุณาลองใหม่อีกครั้งภายหลัง หรือเปิดใช้งานจากหน้า Admin ก่อนใช้งานต่อ",
+      highlightTerms: [],
+      usedFollowUpContext: false,
+      usedInternetFallback: false,
+      fromCache: false,
+      aiDisabled: true,
+    };
+  }
+
   if (runtimeFlags.useMockAI) {
     const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
 
@@ -1365,6 +1379,10 @@ async function summarizeChat(payload, session) {
   const message = String(payload.message || "").trim();
   if (!message) {
     return { summary: "" };
+  }
+
+  if (!(await isAiEnabled())) {
+    return { summary: "ขณะนี้ผู้ดูแลระบบปิดการใช้งาน AI ชั่วคราว" };
   }
 
   const target =

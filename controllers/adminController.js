@@ -5,6 +5,7 @@ const {
   getGoogleConfig,
   loginWithGoogleCallback,
 } = require("../services/adminGoogleAuthService");
+const runtimeSettingsService = require("../services/runtimeSettingsService");
 
 function renderLogin(req, res) {
   res.render("admin/login", {
@@ -106,10 +107,13 @@ async function handleGoogleCallback(req, res) {
 }
 
 async function renderDashboard(req, res) {
-  const uploadData = await lawChatbotService.getUploadPageData();
-  const feedbackData = await lawChatbotService.getFeedbackPageData();
-  const knowledgeData = await lawChatbotService.getKnowledgeAdminData();
-  const paymentRequestData = await lawChatbotService.getAdminPaymentRequestsData();
+  const [uploadData, feedbackData, knowledgeData, paymentRequestData, aiSettings] = await Promise.all([
+    lawChatbotService.getUploadPageData(),
+    lawChatbotService.getFeedbackPageData(),
+    lawChatbotService.getKnowledgeAdminData(),
+    lawChatbotService.getAdminPaymentRequestsData(),
+    runtimeSettingsService.getAiAdminState(),
+  ]);
 
   res.render("admin/dashboard", {
     title: "Admin Dashboard",
@@ -120,7 +124,33 @@ async function renderDashboard(req, res) {
     feedbackData,
     knowledgeData,
     paymentRequestData,
+    aiSettings,
   });
+}
+
+async function updateAiSetting(req, res) {
+  const rawEnabled = String(req.body.enabled || "").trim().toLowerCase();
+  if (!["true", "false"].includes(rawEnabled)) {
+    return res.redirect(
+      "/admin?error=" + encodeURIComponent("ไม่พบสถานะ AI ที่ต้องการบันทึก")
+    );
+  }
+
+  const enabled = rawEnabled === "true";
+  const updatedBy =
+    (req.session.adminUser && (req.session.adminUser.email || req.session.adminUser.username || req.session.adminUser.name)) ||
+    "admin";
+
+  await runtimeSettingsService.setAiEnabled(enabled, updatedBy);
+
+  return res.redirect(
+    "/admin?success=" +
+      encodeURIComponent(
+        enabled
+          ? "เปิดการใช้งาน AI สำหรับระบบเรียบร้อยแล้ว"
+          : "ปิดการใช้งาน AI สำหรับระบบเรียบร้อยแล้ว"
+      )
+  );
 }
 
 async function renderPaymentRequests(req, res) {
@@ -327,5 +357,6 @@ module.exports = {
   rejectKnowledgeSuggestion,
   approvePaymentRequest,
   rejectPaymentRequest,
+  updateAiSetting,
   logout,
 };

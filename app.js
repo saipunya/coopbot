@@ -11,6 +11,7 @@ const lawChatbotRoutes = require("./routes/lawChatbot");
 const userRoutes = require("./routes/user");
 const { attachCurrentUser, redirectIfAuthenticated } = require("./middlewares/authMiddleware");
 const { createSessionStore } = require("./services/mysqlSessionStore");
+const { refreshAiSetting } = require("./services/runtimeSettingsService");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -85,6 +86,7 @@ app.use((req, res) => {
 
 async function startServer() {
   await connectDb();
+  await refreshAiSetting({ force: true });
   // console.log("GOOGLE_REDIRECT_URI =", process.env.GOOGLE_REDIRECT_URI);
   // console.log("GOOGLE_CLIENT_ID =", process.env.GOOGLE_CLIENT_ID);
   console.log(
