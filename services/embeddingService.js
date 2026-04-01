@@ -1,20 +1,20 @@
-const { GoogleGenAI } = require("@google/genai");
-
-const EMBEDDING_MODEL = "gemini-embedding-001";
+const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
+const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
 
-let geminiClient = null;
-
-function getGeminiClient() {
-  if (!geminiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn("[EmbeddingService] GEMINI_API_KEY not set");
-      return null;
-    }
-    geminiClient = new GoogleGenAI({ apiKey });
+function getOpenAiEmbeddingConfig() {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey) {
+    console.warn("[EmbeddingService] OPENAI_API_KEY not set");
+    return null;
   }
-  return geminiClient;
+
+  return {
+    apiKey,
+    model:
+      String(process.env.OPENAI_EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL).trim() ||
+      DEFAULT_EMBEDDING_MODEL,
+  };
 }
 
 /**
@@ -23,24 +23,41 @@ function getGeminiClient() {
  * @returns {Promise<Float32Array|null>} - Embedding vector or null on error
  */
 async function createEmbedding(text) {
-  const client = getGeminiClient();
-  if (!client) {
+  const config = getOpenAiEmbeddingConfig();
+  if (!config) {
     return null;
   }
 
-  const cleanText = String(text || "").trim().slice(0, 8000); // Gemini limit
+  const cleanText = String(text || "").trim().slice(0, 8000);
   if (!cleanText) {
     return null;
   }
 
+  if (typeof fetch !== "function") {
+    throw new Error("fetch is not available in this runtime");
+  }
+
   try {
-    const response = await client.models.embedContent({
-      model: EMBEDDING_MODEL,
-      contents: cleanText,
+    const response = await fetch(OPENAI_EMBEDDINGS_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        input: cleanText,
+      }),
     });
 
-    const values = response?.embeddings?.[0]?.values;
-    if (!values || values.length === 0) {
+    if (!response.ok) {
+      throw new Error(`OpenAI embedding failed with status ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const values = payload?.data?.[0]?.embedding;
+
+    if (!Array.isArray(values) || values.length === 0) {
       console.warn("[EmbeddingService] Invalid embedding response");
       return null;
     }
@@ -60,28 +77,26 @@ async function createEmbedding(text) {
  */
 async function createEmbeddingsBatch(texts, delayMs = 100) {
   const results = [];
-  
+
   for (let i = 0; i < texts.length; i++) {
     const embedding = await createEmbedding(texts[i]);
     results.push(embedding);
-    
-    // Progress logging
+
     if ((i + 1) % 50 === 0) {
       console.log(`[EmbeddingService] Progress: ${i + 1}/${texts.length}`);
     }
-    
-    // Rate limiting delay
+
     if (delayMs > 0 && i < texts.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
-  
+
   return results;
 }
 
 /**
  * Convert Float32Array to Buffer for storage
- * @param {Float32Array} embedding 
+ * @param {Float32Array} embedding
  * @returns {Buffer}
  */
 function embeddingToBuffer(embedding) {
@@ -91,24 +106,23 @@ function embeddingToBuffer(embedding) {
 
 /**
  * Convert Buffer back to Float32Array
- * @param {Buffer} buffer 
+ * @param {Buffer} buffer
  * @returns {Float32Array}
  */
 function bufferToEmbedding(buffer) {
   if (!buffer) return null;
-  // Copy buffer to ensure proper alignment for Float32Array
   const alignedBuffer = Buffer.from(buffer);
   const arrayBuffer = alignedBuffer.buffer.slice(
     alignedBuffer.byteOffset,
-    alignedBuffer.byteOffset + alignedBuffer.length
+    alignedBuffer.byteOffset + alignedBuffer.length,
   );
   return new Float32Array(arrayBuffer);
 }
 
 /**
  * Calculate cosine similarity between two embeddings
- * @param {Float32Array} a 
- * @param {Float32Array} b 
+ * @param {Float32Array} a
+ * @param {Float32Array} b
  * @returns {number} - Similarity score between -1 and 1
  */
 function cosineSimilarity(a, b) {
@@ -147,8 +161,8 @@ function findTopKSimilar(queryEmbedding, candidates, topK = 10) {
   }
 
   const scored = candidates
-    .filter(c => c.embedding)
-    .map(c => ({
+    .filter((c) => c.embedding)
+    .map((c) => ({
       id: c.id,
       similarity: cosineSimilarity(queryEmbedding, c.embedding),
     }))
@@ -158,6 +172,7 @@ function findTopKSimilar(queryEmbedding, candidates, topK = 10) {
 }
 
 module.exports = {
+  DEFAULT_EMBEDDING_MODEL,
   EMBEDDING_DIMENSIONS,
   createEmbedding,
   createEmbeddingsBatch,

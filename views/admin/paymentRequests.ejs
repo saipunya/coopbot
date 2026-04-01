@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet" />
+    <style>
+      body { margin: 0; font-family: 'Sarabun', Arial, sans-serif; background: linear-gradient(160deg, #e6eef6, #f5f9fc); color: #1f2a37; }
+      .shell { width: min(1080px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; }
+      .card { background: rgba(255,255,255,0.9); border: 1px solid #d8e2ea; border-radius: 20px; box-shadow: 0 18px 45px rgba(18,52,77,0.16); padding: 1.25rem; margin-bottom: 1rem; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+      .topbar a { color: #0f4667; text-decoration:none; font-weight:700; }
+      .alert { padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; }
+      .alert.success { background:#e8f7ee; color:#1f6a3a; border:1px solid #b8e3c8; }
+      .alert.error { background:#fce9e7; color:#9b2c22; border:1px solid #f1b8b1; }
+      .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; }
+      .metric { font-size: 1.8rem; font-weight: 700; color: #0f4667; margin: 0.3rem 0 0; }
+      .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.8rem; }
+      .soft-list li { padding:1rem; border:1px solid #d8e2ea; border-radius:16px; background: rgba(255,255,255,0.82); }
+      .meta { color:#5d6a79; font-size:0.92rem; margin-top:0.4rem; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
+      <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
+
+      <section class="card topbar">
+        <div>
+          <h1 style="margin:0; color:#0f4667;">Payment Requests</h1>
+          <p style="margin:0.35rem 0 0; color:#5d6a79;">Review pending and completed payment requests.</p>
+        </div>
+        <a href="/admin">Back to dashboard</a>
+      </section>
+
+      <section class="grid">
+        <article class="card"><div>Total</div><div class="metric"><%= data.totalCount %></div></article>
+        <article class="card"><div>Pending</div><div class="metric"><%= data.pendingCount %></div></article>
+        <article class="card"><div>Approved</div><div class="metric"><%= data.approvedCount %></div></article>
+        <article class="card"><div>Rejected</div><div class="metric"><%= data.rejectedCount %></div></article>
+      </section>
+
+      <section class="card">
+        <ul class="soft-list">
+          <% if (!data.requests.length) { %>
+            <li>No payment requests found.</li>
+          <% } %>
+          <% data.requests.forEach((item) => { %>
+            <li>
+              <strong><a href="/admin/payment-requests/<%= item.id %>">#<%= item.id %> - <%= item.plan_name %></a></strong>
+              <div class="meta">
+                User: <%= item.user_name || "-" %> | Email: <%= item.user_email || "-" %> | Amount: <%= item.amount %> THB | Status: <%= item.status %>
+              </div>
+            </li>
+          <% }) %>
+        </ul>
+      </section>
+    </div>
+  </body>
+ </html>

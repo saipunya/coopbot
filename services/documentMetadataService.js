@@ -1,18 +1,7 @@
-const { GoogleGenAI } = require("@google/genai");
-
-let client = null;
+const { getOpenAiClient } = require("./openAiService");
 
 function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    return null;
-  }
-
-  if (!client) {
-    client = new GoogleGenAI({ apiKey });
-  }
-
-  return client;
+  return getOpenAiClient();
 }
 
 function normalizeText(text) {
@@ -95,7 +84,7 @@ async function extractDocumentMetadata(text, file) {
 
   try {
     const response = await gemini.models.generateContent({
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       contents: String(text || "").slice(0, 12000),
       config: {
         responseMimeType: "application/json",

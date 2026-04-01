@@ -61,6 +61,7 @@ async function handleGoogleCallback(req, res) {
 
   try {
     const result = await loginWithGoogleCallback(req);
+    req.session.user = result.user;
     req.session.adminUser = result.user;
     return res.redirect("/admin");
   } catch (error) {
@@ -75,6 +76,7 @@ async function renderDashboard(req, res) {
   const uploadData = await lawChatbotService.getUploadPageData();
   const feedbackData = await lawChatbotService.getFeedbackPageData();
   const knowledgeData = await lawChatbotService.getKnowledgeAdminData();
+  const paymentRequestData = await lawChatbotService.getAdminPaymentRequestsData();
 
   res.render("admin/dashboard", {
     title: "Admin Dashboard",
@@ -84,6 +86,37 @@ async function renderDashboard(req, res) {
     uploadData,
     feedbackData,
     knowledgeData,
+    paymentRequestData,
+  });
+}
+
+async function renderPaymentRequests(req, res) {
+  const data = await lawChatbotService.getAdminPaymentRequestsData();
+
+  res.render("admin/paymentRequests", {
+    title: "Payment Requests",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data,
+  });
+}
+
+async function renderPaymentRequestDetail(req, res) {
+  const data = await lawChatbotService.getAdminPaymentRequestDetail(req.params.id);
+  if (!data) {
+    return res.redirect(
+      "/admin/payment-requests?error=" +
+        encodeURIComponent("ไม่พบคำขอชำระเงินที่ต้องการ")
+    );
+  }
+
+  res.render("admin/paymentRequestDetail", {
+    title: "Payment Request Detail",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data,
   });
 }
 
@@ -185,6 +218,62 @@ async function rejectKnowledgeSuggestion(req, res) {
   );
 }
 
+async function approvePaymentRequest(req, res) {
+  const id = Number(req.body.id || 0);
+  if (!id) {
+    return res.redirect(
+      "/admin/payment-requests?error=" +
+        encodeURIComponent("ไม่พบคำขอชำระเงินที่ต้องการอนุมัติ")
+    );
+  }
+
+  const result = await lawChatbotService.approvePaymentRequest(id, {
+    reviewedBy:
+      (req.session.adminUser && (req.session.adminUser.email || req.session.adminUser.username || req.session.adminUser.name)) ||
+      "admin",
+  });
+
+  if (!result.ok) {
+    return res.redirect(
+      "/admin/payment-requests?error=" +
+        encodeURIComponent("ไม่สามารถอนุมัติคำขอชำระเงินนี้ได้")
+    );
+  }
+
+  return res.redirect(
+    `/admin/payment-requests/${id}?success=` +
+      encodeURIComponent("อนุมัติคำขอชำระเงินและเปิดใช้งาน Premium 30 วันเรียบร้อยแล้ว")
+  );
+}
+
+async function rejectPaymentRequest(req, res) {
+  const id = Number(req.body.id || 0);
+  if (!id) {
+    return res.redirect(
+      "/admin/payment-requests?error=" +
+        encodeURIComponent("ไม่พบคำขอชำระเงินที่ต้องการปฏิเสธ")
+    );
+  }
+
+  const result = await lawChatbotService.rejectPaymentRequest(id, {
+    reviewedBy:
+      (req.session.adminUser && (req.session.adminUser.email || req.session.adminUser.username || req.session.adminUser.name)) ||
+      "admin",
+  });
+
+  if (!result.ok) {
+    return res.redirect(
+      "/admin/payment-requests?error=" +
+        encodeURIComponent("ไม่สามารถปฏิเสธคำขอชำระเงินนี้ได้")
+    );
+  }
+
+  return res.redirect(
+    `/admin/payment-requests/${id}?success=` +
+      encodeURIComponent("ปฏิเสธคำขอชำระเงินเรียบร้อยแล้ว ผู้ใช้คงอยู่ในแผน Free")
+  );
+}
+
 function logout(req, res) {
   req.session.destroy(() => {
     res.redirect("/admin/login?success=" + encodeURIComponent("ออกจากระบบเรียบร้อยแล้ว"));
@@ -197,9 +286,13 @@ module.exports = {
   redirectToGoogleLogin,
   handleGoogleCallback,
   renderDashboard,
+  renderPaymentRequests,
+  renderPaymentRequestDetail,
   submitKnowledge,
   deleteKnowledge,
   approveKnowledgeSuggestion,
   rejectKnowledgeSuggestion,
+  approvePaymentRequest,
+  rejectPaymentRequest,
   logout,
 };

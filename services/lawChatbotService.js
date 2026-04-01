@@ -4,6 +4,12 @@ const LawChatbotKnowledgeSuggestionModel = require("../models/lawChatbotKnowledg
 const LawSearchModel = require("../models/lawSearchModel");
 const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
+const LawChatbotAnswerCacheModel = require("../models/lawChatbotAnswerCacheModel");
+const PaymentRequestModel = require("../models/paymentRequestModel");
+const UserModel = require("../models/userModel");
+const runtimeFlags = require("../config/runtimeFlags");
+const { buildQuestionCacheIdentity } = require("./lawChatbotAnswerCacheUtils");
+const { sendPaymentRequestNotification } = require("./telegramService");
 const { generateChatSummary, wantsExplanation } = require("./chatAnswerService");
 const { chunkText, extractTextFromFile } = require("./documentTextExtractor");
 const {
@@ -72,6 +78,34 @@ function setCachedAnswer(cacheKey, value) {
 
 function clearAnswerCache() {
   answerCache.clear();
+}
+
+function shouldPersistDbAnswerCache(answer, options = {}) {
+  const text = String(answer || "").trim();
+  if (!text || options.debugMode) {
+    return false;
+  }
+
+  return !/(เข้าสู่ระบบด้วย google|guest ครบ 2 ครั้ง|ครบ 20 ครั้ง|อัปเกรดแพลน|mock ai|โหมดทดสอบ)/i.test(text);
+}
+
+function buildDbCachedChatResult(cacheEntry, message) {
+  const metadata = cacheEntry?.metadata || {};
+  const highlightTerms = Array.isArray(metadata.highlightTerms)
+    ? metadata.highlightTerms
+    : String(message || "")
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 8);
+
+  return {
+    hasContext: metadata.hasContext !== false,
+    answer: String(cacheEntry?.answer_text || "").trim(),
+    highlightTerms,
+    usedFollowUpContext: false,
+    usedInternetFallback: Boolean(metadata.usedInternetFallback),
+    fromCache: true,
+  };
 }
 
 function cleanupSuggestionThrottle() {
@@ -647,6 +681,38 @@ function scoreMatchSet(matches) {
   return top + second * 0.35;
 }
 
+function isClearlyCurrentOrExternalQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return /(วันนี้|ตอนนี้|ล่าสุด|ปัจจุบัน|ข่าว|new|update|ประกาศใหม่|เว็บไซต์|ลิงก์|link|ออนไลน์|internet|web|google|facebook|line|โทร|เบอร์|ที่อยู่|map|แผนที่|ภายนอก|external)/.test(
+    text,
+  );
+}
+
+function isLowConfidenceDatabaseResult(matches, questionIntent = "general") {
+  const ranked = sortByScore(matches);
+  if (!ranked.length) {
+    return true;
+  }
+
+  const topScore = Number(ranked[0]?.score || 0);
+  const secondScore = Number(ranked[1]?.score || 0);
+  const aggregateScore = scoreMatchSet(ranked);
+
+  if (questionIntent === "law_section") {
+    return topScore < 90;
+  }
+
+  if (questionIntent === "short_answer") {
+    return topScore < 80 && aggregateScore < 110;
+  }
+
+  return topScore < 85 || (ranked.length < 2 && topScore < 105) || aggregateScore < 120 || secondScore < 35;
+}
+
 async function resolveSearchPlan(message, target, session) {
   const baseMessage = String(message || "").trim();
   const contextualCandidate = resolveMessageWithContext(baseMessage, target, session);
@@ -695,6 +761,172 @@ function sortByScore(matches) {
     .sort((a, b) => (b.score || 0) - (a.score || 0));
 }
 
+function normalizeSourceIdentityText(value) {
+  return normalizeForSearch(String(value || ""))
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildDedupReferenceKey(item) {
+  return normalizeSourceIdentityText(item.reference || item.title || item.keyword || "");
+}
+
+function buildDedupContentKey(item) {
+  return normalizeSourceIdentityText(item.content || item.chunk_text || item.snippet || "");
+}
+
+function areNearDuplicateSources(left, right) {
+  const leftSource = normalizeSourceIdentityText(left?.source || "");
+  const rightSource = normalizeSourceIdentityText(right?.source || "");
+  if (!leftSource || !rightSource || leftSource !== rightSource) {
+    return false;
+  }
+
+  const leftReference = buildDedupReferenceKey(left);
+  const rightReference = buildDedupReferenceKey(right);
+  if (!leftReference || !rightReference || leftReference !== rightReference) {
+    return false;
+  }
+
+  const leftContent = buildDedupContentKey(left);
+  const rightContent = buildDedupContentKey(right);
+  if (!leftContent || !rightContent) {
+    return false;
+  }
+
+  if (leftContent === rightContent) {
+    return true;
+  }
+
+  const shorterLength = Math.min(leftContent.length, rightContent.length);
+  if (shorterLength < 80) {
+    return false;
+  }
+
+  if (leftContent.startsWith(rightContent) || rightContent.startsWith(leftContent)) {
+    const longerLength = Math.max(leftContent.length, rightContent.length);
+    return shorterLength / longerLength >= 0.92;
+  }
+
+  return false;
+}
+
+function dedupeSourcesConservatively(matches) {
+  const ranked = sortByScore(matches);
+  const deduped = [];
+
+  ranked.forEach((item) => {
+    if (!item) {
+      return;
+    }
+
+    const duplicateIndex = deduped.findIndex((existing) => areNearDuplicateSources(existing, item));
+    if (duplicateIndex === -1) {
+      deduped.push(item);
+      return;
+    }
+
+    if (Number(item.score || 0) > Number(deduped[duplicateIndex].score || 0)) {
+      deduped[duplicateIndex] = item;
+    }
+  });
+
+  return deduped;
+}
+
+function getFinalSourceCompactionPlan(intent = "general") {
+  switch (intent) {
+    case "law_section":
+      return {
+        totalLimit: 4,
+        quotas: {
+          structured_laws: 3,
+          admin_knowledge: 1,
+          document_like: 1,
+          internet: 1,
+        },
+      };
+    case "short_answer":
+      return {
+        totalLimit: 4,
+        quotas: {
+          structured_laws: 2,
+          admin_knowledge: 1,
+          document_like: 1,
+          internet: 1,
+        },
+      };
+    case "document":
+      return {
+        totalLimit: 5,
+        quotas: {
+          structured_laws: 2,
+          admin_knowledge: 1,
+          document_like: 2,
+          internet: 1,
+        },
+      };
+    case "explain":
+      return {
+        totalLimit: 6,
+        quotas: {
+          structured_laws: 3,
+          admin_knowledge: 1,
+          document_like: 2,
+          internet: 1,
+        },
+      };
+    default:
+      return {
+        totalLimit: 5,
+        quotas: {
+          structured_laws: 2,
+          admin_knowledge: 1,
+          document_like: 2,
+          internet: 1,
+        },
+      };
+  }
+}
+
+function compactSourcesForSummarization(groups, intent = "general") {
+  const plan = getFinalSourceCompactionPlan(intent);
+  const compacted = [];
+  const pushUnique = (items, limit) => {
+    dedupeSourcesConservatively(items)
+      .slice(0, limit)
+      .forEach((item) => {
+        if (compacted.find((existing) => areNearDuplicateSources(existing, item))) {
+          return;
+        }
+        compacted.push(item);
+      });
+  };
+
+  pushUnique(groups.structured_laws, plan.quotas.structured_laws || 0);
+  pushUnique(groups.admin_knowledge, plan.quotas.admin_knowledge || 0);
+  pushUnique([...(groups.documents || []), ...(groups.pdf_chunks || [])], plan.quotas.document_like || 0);
+  pushUnique(groups.internet, plan.quotas.internet || 0);
+
+  if (compacted.length < plan.totalLimit) {
+    const fallbackPool = [
+      ...(groups.vinichai || []),
+      ...(groups.knowledge_base || []),
+      ...(groups.structured_laws || []),
+      ...(groups.admin_knowledge || []),
+      ...(groups.documents || []),
+      ...(groups.pdf_chunks || []),
+      ...(groups.internet || []),
+    ];
+
+    pushUnique(fallbackPool, plan.totalLimit - compacted.length);
+  }
+
+  return sortByScore(compacted).slice(0, plan.totalLimit);
+}
+
 function selectTieredSources(groups, intent = "general") {
   const routingPlan = getSourceRoutingPlan(intent);
 
@@ -716,19 +948,30 @@ function selectTieredSources(groups, intent = "general") {
   const usedTiers = [];
 
   plan.forEach(({ key, limit }) => {
-    const ranked = sortByScore(groups[key]).slice(0, limit);
+    const ranked = dedupeSourcesConservatively(groups[key]).slice(0, limit);
     if (ranked.length > 0) {
       usedTiers.push(key);
       selected.push(...ranked);
     }
   });
 
-  // Sort all selected sources by score descending so highest-scoring sources appear first
-  const sortedSelected = sortByScore(selected);
+  const compactedSelected = compactSourcesForSummarization(
+    {
+      ...groups,
+      structured_laws: selected.filter((item) => item && (item.source === "tbl_laws" || item.source === "tbl_glaws")),
+      admin_knowledge: selected.filter((item) => item && item.source === "admin_knowledge"),
+      vinichai: selected.filter((item) => item && item.source === "tbl_vinichai"),
+      documents: selected.filter((item) => item && item.source === "documents"),
+      pdf_chunks: selected.filter((item) => item && item.source === "pdf_chunks"),
+      knowledge_base: selected.filter((item) => item && item.source === "knowledge_base"),
+      internet: selected.filter((item) => item && item.source === "internet_search"),
+    },
+    intent,
+  );
 
   return {
     selectedSourceTier: usedTiers.join(" > ") || "none",
-    selectedSources: sortedSelected,
+    selectedSources: compactedSelected,
   };
 }
 
@@ -737,15 +980,20 @@ async function collectAnswerSources(message, target, session) {
   const questionIntent = classifyQuestionIntent(message);
   const effectiveMessage = String(message || "").trim();
 
-  // Search DB and Internet in parallel for faster response
-  const [searchPlan, internetMatches] = await Promise.all([
-    resolveSearchPlan(message, target, session),
-    searchInternetSources(effectiveMessage, target),
-  ]);
-  const afterSearchAt = nowMs();
+  const searchPlan = await resolveSearchPlan(message, target, session);
+  const afterDbSearchAt = nowMs();
 
   const resolvedEffectiveMessage = searchPlan.effectiveMessage || effectiveMessage;
   const databaseMatches = Array.isArray(searchPlan.matches) ? searchPlan.matches : [];
+  const shouldSearchInternet =
+    isClearlyCurrentOrExternalQuestion(resolvedEffectiveMessage) ||
+    isLowConfidenceDatabaseResult(databaseMatches, questionIntent);
+  let internetMatches = [];
+
+  if (shouldSearchInternet) {
+    internetMatches = await searchInternetSources(resolvedEffectiveMessage, target);
+  }
+  const afterInternetSearchAt = nowMs();
 
   const grouped = {
     structured_laws: databaseMatches.filter(
@@ -760,6 +1008,7 @@ async function collectAnswerSources(message, target, session) {
   };
 
   const { selectedSourceTier, selectedSources } = selectTieredSources(grouped, questionIntent);
+  const afterSourceSelectionAt = nowMs();
 
   return {
     ...searchPlan,
@@ -769,10 +1018,12 @@ async function collectAnswerSources(message, target, session) {
     internetMatches,
     sources: selectedSources,
     selectedSourceTier,
-    usedInternetSearch: internetMatches.length > 0,
+    usedInternetSearch: shouldSearchInternet,
     timing: {
-      parallelSearchMs: Math.round(afterSearchAt - startedAt),
-      totalSourceCollectionMs: Math.round(afterSearchAt - startedAt),
+      dbSearchMs: Math.round(afterDbSearchAt - startedAt),
+      internetSearchMs: Math.round(afterInternetSearchAt - afterDbSearchAt),
+      sourceSelectionMs: Math.round(afterSourceSelectionAt - afterInternetSearchAt),
+      totalSourceCollectionMs: Math.round(afterSourceSelectionAt - startedAt),
     },
   };
 }
@@ -807,8 +1058,23 @@ async function replyToChat(payload, session) {
     };
   }
 
+  const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target);
+
+  if (runtimeFlags.useMockAI) {
+    const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
+
+    return {
+      hasContext: true,
+      answer: `Mock AI\n\nคำถาม: "${message}"\n\nสรุปจำลอง: ระบบกำลังอยู่ในโหมดทดสอบและยังไม่ได้เรียก AI จริง`,
+      highlightTerms,
+      usedFollowUpContext: false,
+      usedInternetFallback: false,
+      fromCache: false,
+    };
+  }
+
   const cacheKey = buildAnswerCacheKey(message, target);
-  const canUseCache = shouldUseAnswerCache(message);
+  const canUseCache = shouldUseAnswerCache(message) && !debugMode;
   const cachedAnswer = canUseCache ? getCachedAnswer(cacheKey) : null;
   if (cachedAnswer) {
     storeConversationContext(
@@ -841,6 +1107,7 @@ async function replyToChat(payload, session) {
       highlightTerms: cachedAnswer.highlightTerms,
       usedFollowUpContext: false,
       usedInternetFallback: cachedAnswer.usedInternetFallback,
+      fromCache: true,
     };
 
     if (debugMode) {
@@ -861,6 +1128,49 @@ async function replyToChat(payload, session) {
     }
 
     return cachedResult;
+  }
+
+  if (canUseCache && questionHash) {
+    try {
+      const dbCachedAnswer = await LawChatbotAnswerCacheModel.findByQuestionHash(questionHash);
+      if (dbCachedAnswer?.answer_text) {
+        await LawChatbotAnswerCacheModel.incrementHitCount(dbCachedAnswer.id);
+
+        const cachedResult = buildDbCachedChatResult(dbCachedAnswer, message);
+
+        storeConversationContext(
+          session,
+          target,
+          message,
+          dbCachedAnswer.normalized_question || message,
+          [],
+          { usedContext: false, topicHints: [] },
+        );
+
+        LawChatbotModel.create({
+          message,
+          effectiveMessage: dbCachedAnswer.normalized_question || message,
+          target,
+          answer: cachedResult.answer,
+          matchedSources: [],
+        });
+
+        setCachedAnswer(cacheKey, {
+          hasContext: cachedResult.hasContext,
+          answer: cachedResult.answer,
+          highlightTerms: cachedResult.highlightTerms,
+          usedInternetFallback: cachedResult.usedInternetFallback,
+          selectedSourceTier: dbCachedAnswer?.metadata?.selectedSourceTier || "db_cache",
+          effectiveMessage: dbCachedAnswer.normalized_question || message,
+          resolvedContext: { usedContext: false, topicHints: [] },
+          sources: [],
+        });
+
+        return cachedResult;
+      }
+    } catch (error) {
+      console.error("[replyToChat] Answer cache lookup failed:", error.message || error);
+    }
   }
 
   const evidence = await collectAnswerSources(message, target, session);
@@ -906,6 +1216,7 @@ async function replyToChat(payload, session) {
     highlightTerms,
     usedFollowUpContext: resolvedContext.usedContext,
     usedInternetFallback: evidence.usedInternetFallback,
+    fromCache: false,
   };
 
   if (canUseCache && !resolvedContext.usedContext) {
@@ -919,6 +1230,28 @@ async function replyToChat(payload, session) {
       resolvedContext,
       sources,
     });
+  }
+
+  if (canUseCache && !resolvedContext.usedContext && questionHash && shouldPersistDbAnswerCache(answer, { debugMode })) {
+    try {
+      await LawChatbotAnswerCacheModel.upsert({
+        questionHash,
+        normalizedQuestion: normalizedQuestion || effectiveMessage || message,
+        originalQuestion: message,
+        target,
+        answerText: answer,
+        metadata: {
+          hasContext: sources.length > 0,
+          highlightTerms,
+          usedInternetFallback: evidence.usedInternetFallback,
+          selectedSourceTier: evidence.selectedSourceTier || "none",
+          effectiveMessage,
+          sourceCount: sources.length,
+        },
+      });
+    } catch (error) {
+      console.error("[replyToChat] Answer cache write failed:", error.message || error);
+    }
   }
 
   if (debugMode) {
@@ -1121,6 +1454,123 @@ async function getFeedbackPageData() {
   };
 }
 
+async function getPaymentRequestPageData(user) {
+  const signedInUser = user || {};
+  const userId = Number(signedInUser.userId || signedInUser.id || 0);
+
+  return {
+    appName: "Coopbot Law Chatbot",
+    plans: [
+      { value: "premium-monthly", label: "Premium Monthly" },
+      { value: "premium-yearly", label: "Premium Yearly" },
+    ],
+    user: signedInUser,
+    recentRequests: userId ? await PaymentRequestModel.listByUserId(userId, 10) : [],
+  };
+}
+
+async function submitPaymentRequest(payload, file, user) {
+  const signedInUser = user || {};
+  const userId = Number(signedInUser.userId || signedInUser.id || 0);
+  const planName = String(payload.planName || "").trim();
+  const amount = Number(payload.amount || 0);
+  const note = String(payload.note || "").trim();
+
+  if (!userId) {
+    throw new Error("Please sign in before submitting a payment request.");
+  }
+
+  if (!planName || !Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Please provide a valid plan and amount.");
+  }
+
+  const paymentRequest = await PaymentRequestModel.create({
+    userId,
+    planName,
+    amount,
+    slipImage: file ? `/uploads/paymentRequests/${file.filename}` : "",
+    note,
+    status: "pending",
+  });
+
+  try {
+    await sendPaymentRequestNotification(paymentRequest, signedInUser);
+  } catch (error) {
+    console.error("[submitPaymentRequest] Telegram notification failed:", error.message || error);
+  }
+
+  return paymentRequest;
+}
+
+async function getAdminPaymentRequestsData() {
+  const requests = await PaymentRequestModel.listAll(100);
+
+  return {
+    totalCount: requests.length,
+    pendingCount: requests.filter((item) => item.status === "pending").length,
+    approvedCount: requests.filter((item) => item.status === "approved").length,
+    rejectedCount: requests.filter((item) => item.status === "rejected").length,
+    requests,
+  };
+}
+
+async function getAdminPaymentRequestDetail(id) {
+  const request = await PaymentRequestModel.findById(id);
+  if (!request) {
+    return null;
+  }
+
+  return { request };
+}
+
+async function approvePaymentRequest(id, reviewMeta = {}) {
+  const request = await PaymentRequestModel.findById(id);
+  if (!request || request.status !== "pending") {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const activated = await UserModel.activatePremiumPlan(request.user_id, 30);
+  if (!activated) {
+    return { ok: false, reason: "user_not_updated" };
+  }
+
+  const reviewed = await PaymentRequestModel.updateReviewStatus(
+    id,
+    "approved",
+    reviewMeta.reviewedBy || "",
+  );
+
+  if (!reviewed) {
+    return { ok: false, reason: "review_not_updated" };
+  }
+
+  return { ok: true, requestId: id };
+}
+
+async function rejectPaymentRequest(id, reviewMeta = {}) {
+  const request = await PaymentRequestModel.findById(id);
+  if (!request || request.status !== "pending") {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const updatedUser = await UserModel.downgradeToFree(request.user_id);
+  if (!updatedUser) {
+    return { ok: false, reason: "user_not_updated" };
+  }
+
+  const reviewed = await PaymentRequestModel.updateReviewStatus(
+    id,
+    "rejected",
+    reviewMeta.reviewedBy || "",
+  );
+
+  if (!reviewed) {
+    return { ok: false, reason: "review_not_updated" };
+  }
+
+  return { ok: true, requestId: id };
+}
+
 async function getKnowledgeAdminData() {
   const [knowledgeCount, recentKnowledge, pendingSuggestionCount, pendingSuggestions] = await Promise.all([
     LawChatbotKnowledgeModel.count(),
@@ -1254,6 +1704,9 @@ module.exports = {
   getUploadPageData,
   recordUpload,
   getFeedbackPageData,
+  getPaymentRequestPageData,
+  getAdminPaymentRequestsData,
+  getAdminPaymentRequestDetail,
   getKnowledgeAdminData,
   submitKnowledgeSuggestion,
   approveKnowledgeSuggestion,
@@ -1261,4 +1714,7 @@ module.exports = {
   saveKnowledgeEntry,
   deleteKnowledgeEntry,
   saveFeedback,
+  submitPaymentRequest,
+  approvePaymentRequest,
+  rejectPaymentRequest,
 };

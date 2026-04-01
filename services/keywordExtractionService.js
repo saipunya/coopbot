@@ -1,4 +1,4 @@
-const { GoogleGenAI } = require("@google/genai");
+const { getOpenAiClient } = require("./openAiService");
 const { segmentWords, uniqueTokens } = require("./thaiTextUtils");
 
 const fallbackStopWords = new Set([
@@ -29,20 +29,8 @@ const fallbackStopWords = new Set([
   "โหลด",
 ]);
 
-let client = null;
-
 function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-
-  if (!apiKey) {
-    return null;
-  }
-
-  if (!client) {
-    client = new GoogleGenAI({ apiKey });
-  }
-
-  return client;
+  return getOpenAiClient();
 }
 
 function extractFallbackKeywords(text) {
@@ -87,7 +75,7 @@ async function extractKeywords(text) {
 
   try {
     const response = await gemini.models.generateContent({
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       contents: safeText.slice(0, 5000),
       config: {
         responseMimeType: "application/json",
@@ -125,7 +113,7 @@ async function extractDocumentKeywords(text) {
 
   try {
     const response = await gemini.models.generateContent({
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       contents: safeText.slice(0, 12000),
       config: {
         responseMimeType: "application/json",

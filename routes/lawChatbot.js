@@ -4,9 +4,13 @@ const controller = require("../controllers/lawChatbotController");
 const lawChatbotService = require("../services/lawChatbotService");
 const {
   attachCurrentUser,
+  enforceLawChatbotGuestLimit,
+  enforceLawChatbotMonthlyUsageLimit,
   requireAdminAuth,
+  requireSignedInUser,
 } = require("../middlewares/authMiddleware");
 const upload = require("../middlewares/lawChatbotUpload");
+const paymentRequestUpload = require("../middlewares/paymentRequestUpload");
 
 const router = express.Router();
 
@@ -30,8 +34,28 @@ function handleUploadMiddleware(req, res, next) {
   });
 }
 
+function handlePaymentRequestUpload(req, res, next) {
+  paymentRequestUpload.single("slipImage")(req, res, (error) => {
+    if (!error) {
+      return next();
+    }
+
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res.redirect(
+        "/law-chatbot/payment-request?error=" +
+          encodeURIComponent("ไฟล์สลิปมีขนาดใหญ่เกินกำหนด อัปโหลดได้ไม่เกิน 10 MB")
+      );
+    }
+
+    return res.redirect(
+      "/law-chatbot/payment-request?error=" +
+        encodeURIComponent(error.message || "ไม่สามารถอัปโหลดสลิปได้")
+    );
+  });
+}
+
 router.get("/", attachCurrentUser, controller.renderIndex);
-router.post("/chat", attachCurrentUser, controller.chat);
+router.post("/chat", attachCurrentUser, enforceLawChatbotGuestLimit, enforceLawChatbotMonthlyUsageLimit, controller.chat);
 router.post("/chat-summary", attachCurrentUser, controller.chatSummary);
 router.post("/chat-feedback", attachCurrentUser, controller.chatFeedback);
 router.post("/admin-knowledge", requireAdminAuth, controller.saveKnowledgeFromChat);
@@ -41,6 +65,8 @@ router.get("/upload", requireAdminAuth, controller.renderUpload);
 router.post("/upload", requireAdminAuth, handleUploadMiddleware, controller.handleUpload);
 router.get("/feedback", requireAdminAuth, controller.renderFeedback);
 router.post("/feedback", requireAdminAuth, controller.submitFeedback);
+router.get("/payment-request", attachCurrentUser, requireSignedInUser, controller.renderPaymentRequest);
+router.post("/payment-request", attachCurrentUser, requireSignedInUser, handlePaymentRequestUpload, controller.submitPaymentRequest);
 
 // Debug endpoint for detailed AI decision data
 router.post('/debug-decision', async (req, res) => {

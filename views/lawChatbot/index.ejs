@@ -1451,7 +1451,7 @@
         let lines = [];
         try {
           lines = JSON.parse(decodeURIComponent(String(encodedLines || '')));
-        } catch (_) {
+        } catch (error) {
           lines = [];
         }
 
@@ -2014,11 +2014,15 @@
         addBubble('กำลังคิด...', 'bot', true);
 
         try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
           const response = await fetch('/law-chatbot/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: trimmed, target: selectedTarget, debug: Boolean(options.debug) })
+            body: JSON.stringify({ message: trimmed, target: selectedTarget, debug: Boolean(options.debug) }),
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
           const data = await response.json();
           chatMessages.lastElementChild.remove();
           const hasContext = Boolean(data && data.hasContext);
@@ -2039,8 +2043,11 @@
           }
 
           saveRecentChats();
-        } catch (_) {
+        } catch (error) {
           chatMessages.lastElementChild.remove();
+          const fallbackMessage = error && error.name === 'AbortError'
+            ? 'ระบบใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง'
+            : 'ขออภัยครับ ระบบไม่สามารถประมวลผลคำถามได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง';
           const botRow = addBubble('ขออภัยครับ! ไม่พบข้อมูลที่ชัดเจน ลองเปลี่ยนคำค้นหา', 'bot', false, [], {
             question: trimmed,
             target: selectedTarget,

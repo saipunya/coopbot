@@ -1,7 +1,5 @@
-const { GoogleGenAI } = require("@google/genai");
+const { getOpenAiConfig, generateOpenAiCompletion, getOpenAiClient } = require("./openAiService");
 const { normalizeForSearch, segmentWords, uniqueTokens } = require("./thaiTextUtils");
-
-let client = null;
 
 const SOURCE_LABELS = {
   tbl_laws: "พรบ.สหกรณ์ พ.ศ. 2542",
@@ -15,16 +13,7 @@ const SOURCE_LABELS = {
 };
 
 function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    return null;
-  }
-
-  if (!client) {
-    client = new GoogleGenAI({ apiKey });
-  }
-
-  return client;
+  return getOpenAiClient();
 }
 
 function wantsExplanation(message) {
@@ -605,14 +594,14 @@ async function generateChatSummary(message, sources, options = {}) {
   const explainMode = wantsExplanation(message);
   const amountMode = wantsAmountAnswer(message);
   const decisionMode = wantsDecisionAnswer(message);
-  const gemini = getGeminiClient();
+  const openAiConfig = getOpenAiConfig();
 
   // Filter out low-quality sources before sending to Gemini
   const topScore = sources.length > 0 ? Math.max(...sources.map((s) => s.score || 0)) : 0;
   const filteredSources = filterHighQualitySources(sources, topScore);
   const effectiveSources = filteredSources.length > 0 ? filteredSources : sources.slice(0, 3);
 
-  if (!gemini || effectiveSources.length === 0) {
+  if (!openAiConfig || effectiveSources.length === 0) {
     return buildFallbackSummary(sources, explainMode, {
       ...options,
       amountMode,
@@ -639,8 +628,8 @@ async function generateChatSummary(message, sources, options = {}) {
     const conversationNote = options.conversationalFollowUp
       ? `\nบริบทก่อนหน้า: คำถามนี้เป็นคำถามต่อเนื่องเกี่ยวกับหัวข้อ "${options.topicLabel || "เรื่องเดิม"}"`
       : "";
-    const response = await gemini.models.generateContent({
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+    const responseText = await generateOpenAiCompletion({
+      systemInstruction: instruction,
       contents: `คำถามผู้ใช้: ${message}${conversationNote}\n\nข้อมูลอ้างอิง:\n${buildSourceContext(effectiveSources)}`,
       config: {
         systemInstruction: instruction,
@@ -648,7 +637,7 @@ async function generateChatSummary(message, sources, options = {}) {
     });
 
     const normalized = normalizeModelSummary(
-      String(response.text || "").trim(),
+      String(responseText || "").trim(),
       explainMode,
       effectiveSources,
       {

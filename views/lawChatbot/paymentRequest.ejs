@@ -1,0 +1,61 @@
+<%- include("../partials/header", { title, page }) %>
+
+<section class="card">
+  <h1 style="margin-top: 0;">Payment Request</h1>
+  <p>Submit your payment request for plan upgrade. You can optionally attach a payment slip image for faster review.</p>
+
+  <% if (errorMessage) { %>
+    <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #fce9e7; border: 1px solid #f1b8b1; color: #9b2c22; font-weight: 700;">
+      <%= errorMessage %>
+    </div>
+  <% } %>
+
+  <% if (successMessage) { %>
+    <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #e8f7ee; border: 1px solid #b8e3c8; color: #1f6a3a; font-weight: 700;">
+      <%= successMessage %>
+    </div>
+  <% } %>
+
+  <form action="/law-chatbot/payment-request" method="post" enctype="multipart/form-data">
+    <label for="planName">Plan</label>
+    <select id="planName" name="planName" required>
+      <option value="">Select a plan</option>
+      <% data.plans.forEach((plan) => { %>
+        <option value="<%= plan.value %>"><%= plan.label %></option>
+      <% }) %>
+    </select>
+
+    <label for="amount">Amount</label>
+    <input id="amount" name="amount" type="number" min="1" step="0.01" placeholder="Enter payment amount" required />
+
+    <label for="slipImage">Slip image (optional)</label>
+    <input id="slipImage" name="slipImage" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+
+    <label for="note">Note</label>
+    <textarea id="note" name="note" rows="4" placeholder="Add payment note or reference (optional)"></textarea>
+
+    <button type="submit">Submit payment request</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 style="margin-top: 0;">Recent Requests</h2>
+  <ul>
+    <% if (!data.recentRequests.length) { %>
+      <li>No payment requests yet.</li>
+    <% } %>
+    <% data.recentRequests.forEach((item) => { %>
+      <li style="margin-bottom: 0.9rem;">
+        <strong><%= item.plan_name %></strong> - <%= item.amount %> THB - <%= item.status %>
+        <% if (item.note) { %>
+          <div><%= item.note %></div>
+        <% } %>
+        <% if (item.slip_image) { %>
+          <div><a href="<%= item.slip_image %>" target="_blank" rel="noopener">View slip</a></div>
+        <% } %>
+      </li>
+    <% }) %>
+  </ul>
+</section>
+
+<%- include("../partials/footer") %>

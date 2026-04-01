@@ -1,4 +1,6 @@
 const lawChatbotService = require("../services/lawChatbotService");
+const runtimeFlags = require("../config/runtimeFlags");
+const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
 
 async function renderIndex(req, res) {
   const data = await lawChatbotService.getDashboardData();
@@ -12,8 +14,29 @@ async function renderIndex(req, res) {
 }
 
 async function chat(req, res) {
-  const result = await lawChatbotService.replyToChat(req.body, req.session);
-  res.json(result);
+  try {
+    const result = await Promise.race([
+      lawChatbotService.replyToChat(req.body, req.session),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`chat request timed out after ${CHAT_REQUEST_TIMEOUT_MS}ms`)), CHAT_REQUEST_TIMEOUT_MS),
+      ),
+    ]);
+    res.json(result);
+  } catch (error) {
+    const errorMessage = String(error?.message || "").trim().toLowerCase();
+    const answer = errorMessage.includes("timed out")
+      ? "ระบบใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง"
+      : "ขออภัยครับ ระบบไม่สามารถประมวลผลคำถามได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง";
+
+    res.json({
+      hasContext: false,
+      answer,
+      highlightTerms: [],
+      usedFollowUpContext: false,
+      usedInternetFallback: false,
+      fromCache: false,
+    });
+  }
 }
 
 async function chatSummary(req, res) {
@@ -126,6 +149,41 @@ async function submitFeedback(req, res) {
   res.redirect("/law-chatbot/feedback");
 }
 
+async function renderPaymentRequest(req, res) {
+  const data = await lawChatbotService.getPaymentRequestPageData(req.signedInUser);
+
+  res.render("lawChatbot/paymentRequest", {
+    title: "Payment Request",
+    page: "payment-request",
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data,
+  });
+}
+
+async function submitPaymentRequest(req, res) {
+  try {
+    if (runtimeFlags.useMockPayment) {
+      return res.json({
+        success: true,
+        message: "Mock payment submitted",
+        paymentId: Math.floor(Math.random() * 100000),
+      });
+    }
+
+    await lawChatbotService.submitPaymentRequest(req.body, req.file, req.signedInUser);
+    return res.redirect(
+      "/law-chatbot/payment-request?success=" +
+        encodeURIComponent("ส่งคำขอชำระเงินเรียบร้อยแล้ว กรุณารอการตรวจสอบจากทีมงาน")
+    );
+  } catch (error) {
+    return res.redirect(
+      "/law-chatbot/payment-request?error=" +
+        encodeURIComponent(error.message || "ไม่สามารถส่งคำขอชำระเงินได้")
+    );
+  }
+}
+
 module.exports = {
   renderIndex,
   chat,
@@ -138,4 +196,6 @@ module.exports = {
   handleUpload,
   renderFeedback,
   submitFeedback,
+  renderPaymentRequest,
+  submitPaymentRequest,
 };

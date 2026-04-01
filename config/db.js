@@ -36,6 +36,74 @@ async function ensureSchema() {
   }
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id int(11) NOT NULL AUTO_INCREMENT,
+      google_id varchar(255) NOT NULL,
+      email varchar(255) NOT NULL,
+      name varchar(255) DEFAULT NULL,
+      avatar_url varchar(500) DEFAULT NULL,
+      plan varchar(50) NOT NULL DEFAULT 'free',
+      premium_expires_at timestamp NULL DEFAULT NULL,
+      status varchar(50) NOT NULL DEFAULT 'active',
+      created_at timestamp NULL DEFAULT current_timestamp(),
+      updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_users_google_id (google_id),
+      UNIQUE KEY uniq_users_email (email)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_monthly_usage (
+      id int(11) NOT NULL AUTO_INCREMENT,
+      user_id int(11) NOT NULL,
+      usage_month char(7) NOT NULL,
+      question_count int(11) NOT NULL DEFAULT 0,
+      last_used_at timestamp NULL DEFAULT current_timestamp(),
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_user_monthly_usage_user_month (user_id, usage_month),
+      KEY idx_user_monthly_usage_user_id (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_requests (
+      id int(11) NOT NULL AUTO_INCREMENT,
+      user_id int(11) NOT NULL,
+      plan_name varchar(100) NOT NULL,
+      amount decimal(10,2) NOT NULL,
+      slip_image varchar(500) DEFAULT NULL,
+      note text DEFAULT NULL,
+      status varchar(50) NOT NULL DEFAULT 'pending',
+      reviewed_at timestamp NULL DEFAULT NULL,
+      reviewed_by varchar(255) DEFAULT NULL,
+      created_at timestamp NULL DEFAULT current_timestamp(),
+      updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+      PRIMARY KEY (id),
+      KEY idx_payment_requests_user_id (user_id),
+      KEY idx_payment_requests_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS law_chatbot_answer_cache (
+      id int(11) NOT NULL AUTO_INCREMENT,
+      question_hash char(64) NOT NULL,
+      normalized_question text NOT NULL,
+      original_question text NOT NULL,
+      target varchar(20) NOT NULL DEFAULT 'all',
+      answer_text longtext NOT NULL,
+      metadata_json longtext DEFAULT NULL,
+      hit_count int(11) NOT NULL DEFAULT 0,
+      created_at timestamp NULL DEFAULT current_timestamp(),
+      updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_law_chatbot_answer_cache_question_hash (question_hash),
+      KEY idx_law_chatbot_answer_cache_target (target)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS documents (
       id int(11) NOT NULL AUTO_INCREMENT,
       title varchar(255) DEFAULT NULL,
@@ -83,6 +151,30 @@ async function ensureSchema() {
     `);
 
   try {
+    await pool.query("ALTER TABLE law_chatbot_answer_cache ADD COLUMN metadata_json longtext DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE law_chatbot_answer_cache ADD COLUMN hit_count int(11) NOT NULL DEFAULT 0");
+  } catch (_) {}
+
+  try {
+    await pool.query('ALTER TABLE law_chatbot_answer_cache ADD COLUMN created_at timestamp NULL DEFAULT current_timestamp()');
+  } catch (_) {}
+
+  try {
+    await pool.query('ALTER TABLE law_chatbot_answer_cache ADD COLUMN updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()');
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE law_chatbot_answer_cache ADD UNIQUE KEY uniq_law_chatbot_answer_cache_question_hash (question_hash)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE law_chatbot_answer_cache ADD KEY idx_law_chatbot_answer_cache_target (target)");
+  } catch (_) {}
+
+  try {
     await pool.query("ALTER TABLE pdf_chunks ADD COLUMN document_id int(11) DEFAULT NULL");
   } catch (_) {}
 
@@ -96,6 +188,94 @@ async function ensureSchema() {
 
   try {
     await pool.query("ALTER TABLE chatbot_knowledge ADD KEY idx_chatbot_knowledge_target (target)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE users ADD COLUMN avatar_url varchar(500) DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE users ADD COLUMN plan varchar(50) NOT NULL DEFAULT 'free'");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE users ADD COLUMN premium_expires_at timestamp NULL DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE users ADD COLUMN status varchar(50) NOT NULL DEFAULT 'active'");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE users ADD COLUMN created_at timestamp NULL DEFAULT current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE users ADD COLUMN updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE users ADD UNIQUE KEY uniq_users_google_id (google_id)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE users ADD UNIQUE KEY uniq_users_email (email)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_monthly_usage ADD COLUMN last_used_at timestamp NULL DEFAULT current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_monthly_usage CHANGE COLUMN `year_month` usage_month char(7) NOT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_monthly_usage ADD COLUMN usage_month char(7) NOT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_monthly_usage ADD UNIQUE KEY uniq_user_monthly_usage_user_month (user_id, usage_month)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_monthly_usage ADD KEY idx_user_monthly_usage_user_id (user_id)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE payment_requests ADD COLUMN slip_image varchar(500) DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE payment_requests ADD COLUMN note text DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE payment_requests ADD COLUMN status varchar(50) NOT NULL DEFAULT 'pending'");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE payment_requests ADD COLUMN reviewed_at timestamp NULL DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE payment_requests ADD COLUMN reviewed_by varchar(255) DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE payment_requests ADD COLUMN created_at timestamp NULL DEFAULT current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE payment_requests ADD COLUMN updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE payment_requests ADD KEY idx_payment_requests_user_id (user_id)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE payment_requests ADD KEY idx_payment_requests_status (status)");
   } catch (_) {}
 }
 

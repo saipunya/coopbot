@@ -5,7 +5,8 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "node --watch app.js"
+    "dev": "node --watch app.js",
+    "telegram:test": "node scripts/sendTelegramTest.js"
   },
   "repository": {
     "type": "git",

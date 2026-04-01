@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const UserModel = require("../models/userModel");
 
 const GOOGLE_OAUTH_BASE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -156,18 +157,30 @@ async function loginWithGoogleCallback(req) {
     throw new Error("บัญชี Google นี้ยังไม่ได้ยืนยันอีเมล");
   }
 
+  const persistedUser = await UserModel.upsertGoogleUser({
+    googleId: profile.sub,
+    email: profile.email,
+    name: profile.name || profile.email,
+    avatarUrl: profile.picture || "",
+    plan: "free",
+    status: "active",
+  });
+
   return {
     ok: true,
     user: {
-      id: profile.sub,
-      username: profile.email,
+      id: persistedUser?.id || profile.sub,
+      username: persistedUser?.email || profile.email,
       group: "google-admin",
-      name: profile.name || profile.email,
+      name: persistedUser?.name || profile.name || profile.email,
       position: "Google Account",
-      status: "active",
-      email: profile.email,
+      status: persistedUser?.status || "active",
+      email: persistedUser?.email || profile.email,
       authProvider: "google",
-      picture: profile.picture || "",
+      picture: persistedUser?.avatar_url || profile.picture || "",
+      googleId: persistedUser?.google_id || profile.sub,
+      plan: persistedUser?.plan || "free",
+      userId: persistedUser?.id || null,
     },
   };
 }
