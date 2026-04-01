@@ -23,6 +23,18 @@ const DATABASE_ONLY_SOURCE_ORDER = [
   "knowledge_base",
 ];
 const GARBLED_TEXT_PATTERN = /[�\uF700-\uF8FF]|[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/;
+const THAI_DIGIT_MAP = {
+  "๐": "0",
+  "๑": "1",
+  "๒": "2",
+  "๓": "3",
+  "๔": "4",
+  "๕": "5",
+  "๖": "6",
+  "๗": "7",
+  "๘": "8",
+  "๙": "9",
+};
 
 function getGeminiClient() {
   return getOpenAiClient();
@@ -231,7 +243,7 @@ function hasCoreLegalSignal(line) {
   );
 }
 
-function splitExplainSections(lines) {
+function splitExplainSections(lines, options = {}) {
   const summary = [];
   const detail = [];
   let current = "summary";
@@ -259,9 +271,12 @@ function splitExplainSections(lines) {
     }
   }
 
+  const summaryLimit = Math.max(1, Number(options.summaryLimit || 6));
+  const detailLimit = Math.max(1, Number(options.detailLimit || 6));
+
   return {
-    summary: uniqueCleanLines(summary, 6),
-    detail: uniqueCleanLines(detail, 6),
+    summary: uniqueCleanLines(summary, summaryLimit),
+    detail: uniqueCleanLines(detail, detailLimit),
   };
 }
 
@@ -286,9 +301,11 @@ function buildSectionLines(lines, limit = 5) {
     .filter(Boolean);
 }
 
-function buildParagraphSummary(summaryLines, detailLines, explainMode) {
-  const summaryItems = buildSectionLines(summaryLines, explainMode ? 6 : 6);
-  const detailItems = buildSectionLines(detailLines, explainMode ? 6 : 4);
+function buildParagraphSummary(summaryLines, detailLines, explainMode, options = {}) {
+  const summaryLimit = Math.max(1, Number(options.summaryLimit || 6));
+  const detailLimit = Math.max(1, Number(options.detailLimit || (explainMode ? 6 : 4)));
+  const summaryItems = buildSectionLines(summaryLines, summaryLimit);
+  const detailItems = buildSectionLines(detailLines, detailLimit);
   const blocks = [];
 
   if (summaryItems.length) {
@@ -350,6 +367,136 @@ function splitContentSegments(text) {
 function extractQueryLawNumber(message) {
   const match = String(message || "").match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*(\d{1,4})/);
   return match ? match[1] : "";
+}
+
+function normalizeThaiDigits(text) {
+  return String(text || "").replace(/[๐-๙]/g, (character) => THAI_DIGIT_MAP[character] || character);
+}
+
+function normalizeClauseNumber(value) {
+  const digits = normalizeThaiDigits(value).replace(/\D/g, "");
+  if (!digits) {
+    return "";
+  }
+
+  return String(Number(digits));
+}
+
+function extractClauseNumberFromLine(line) {
+  const cleaned = cleanLine(line);
+  const match = cleaned.match(/^(?:ข้อ\s*)?(?:\(?([0-9๐-๙]{1,3})\)|([0-9๐-๙]{1,3})[.)])\s*/);
+  return normalizeClauseNumber(match?.[1] || match?.[2] || "");
+}
+
+function extractNumberedClauses(text) {
+  const normalizedText = String(text || "")
+    .replace(/\r/g, "\n")
+    .replace(/([^\n])\s+(?=(?:ข้อ\s*)?(?:\(?[1-9๐-๙][0-9๐-๙]{0,2}\)|[1-9๐-๙][0-9๐-๙]{0,2}[.)]))/g, "$1\n");
+
+  if (!normalizedText.trim()) {
+    return [];
+  }
+
+  const clauses = [];
+  const seen = new Set();
+  const clausePattern =
+    /(?:^|\n)\s*(?:ข้อ\s*)?(?:\(?([0-9๐-๙]{1,3})\)|([0-9๐-๙]{1,3})[.)])\s*([\s\S]*?)(?=(?:\n\s*(?:ข้อ\s*)?(?:\(?[0-9๐-๙]{1,3}\)|[0-9๐-๙]{1,3}[.)])\s*)|$)/g;
+
+  let match = null;
+  while ((match = clausePattern.exec(normalizedText))) {
+    const number = normalizeClauseNumber(match[1] || match[2] || "");
+    const detail = cleanLine(match[3] || "");
+    const formattedLine = number && detail ? `${number}. ${detail}` : "";
+    const dedupeKey = `${number}::${detail.toLowerCase()}`;
+
+    if (!number || !detail || isNoisyLine(detail) || seen.has(dedupeKey)) {
+      continue;
+    }
+
+    seen.add(dedupeKey);
+    clauses.push({
+      number,
+      line: formattedLine,
+    });
+  }
+
+  return clauses;
+}
+
+function getPrimaryStructuredLawClauses(sources, options = {}) {
+  if (options.questionIntent !== "law_section") {
+    return [];
+  }
+
+  const queryLawNumber = extractQueryLawNumber(options.originalMessage || "");
+  const candidates = dedupeSources(sources, Array.isArray(sources) ? sources.length : 0)
+    .filter((source) => STRUCTURED_LAW_SOURCES.has(String(source?.source || "").trim().toLowerCase()))
+    .sort((left, right) => {
+      const leftMatchesQuery =
+        queryLawNumber &&
+        extractQueryLawNumber(`${left.reference || ""} ${left.title || ""}`) === queryLawNumber;
+      const rightMatchesQuery =
+        queryLawNumber &&
+        extractQueryLawNumber(`${right.reference || ""} ${right.title || ""}`) === queryLawNumber;
+
+      if (leftMatchesQuery !== rightMatchesQuery) {
+        return rightMatchesQuery ? 1 : -1;
+      }
+
+      const scoreDiff = Number(right?.score || 0) - Number(left?.score || 0);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      return getSourceStableOrderValue(left) - getSourceStableOrderValue(right);
+    });
+
+  for (const source of candidates) {
+    const clauses = extractNumberedClauses([source.content, source.comment].filter(Boolean).join("\n"));
+    if (clauses.length >= 2) {
+      return clauses.map((item) => item.line);
+    }
+  }
+
+  return [];
+}
+
+function ensureStructuredLawSummaryCompleteness(lines, sources, options = {}) {
+  const normalizedLines = Array.isArray(lines)
+    ? lines.map((line) => cleanLine(line)).filter(Boolean)
+    : [];
+  const sourceClauseLines = getPrimaryStructuredLawClauses(sources, options);
+  const baseSummaryLimit = Math.max(1, Number(options.summaryLimit || normalizedLines.length || 6));
+
+  if (sourceClauseLines.length === 0) {
+    return {
+      lines: normalizedLines,
+      summaryLimit: baseSummaryLimit,
+    };
+  }
+
+  const existingNumbers = new Set(normalizedLines.map((line) => extractClauseNumberFromLine(line)).filter(Boolean));
+  const missingClauses = sourceClauseLines.filter((line) => !existingNumbers.has(extractClauseNumberFromLine(line)));
+
+  if (missingClauses.length === 0) {
+    return {
+      lines: normalizedLines,
+      summaryLimit: Math.max(baseSummaryLimit, normalizedLines.length, sourceClauseLines.length + 1),
+    };
+  }
+
+  const mergedLines = [...normalizedLines];
+  const lastNumberedIndex = mergedLines.reduce((lastIndex, line, index) => {
+    return extractClauseNumberFromLine(line) ? index : lastIndex;
+  }, -1);
+  const insertAt = lastNumberedIndex >= 0 ? lastNumberedIndex + 1 : Math.min(1, mergedLines.length);
+
+  mergedLines.splice(insertAt, 0, ...missingClauses);
+
+  return {
+    lines: mergedLines,
+    summaryLimit: Math.max(baseSummaryLimit, mergedLines.length, sourceClauseLines.length + 1),
+  };
 }
 
 function getSourceDisplayPriority(sourceName, questionIntent = "general") {
@@ -793,14 +940,22 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+  const structuredLawClauseLines = getPrimaryStructuredLawClauses(sources, options);
+  const minimumSummaryLimit = Math.max(
+    explainMode ? 6 : 7,
+    structuredLawClauseLines.length ? structuredLawClauseLines.length + 2 : 0,
+  );
 
   if (explainMode) {
-    const { summary, detail } = splitExplainSections(lines);
+    const { summary, detail } = splitExplainSections(lines, {
+      summaryLimit: minimumSummaryLimit,
+      detailLimit: Math.max(6, Number(options.detailLimit || 6)),
+    });
     const fallbackSummary = summary.length
       ? summary
       : uniqueCleanLines(
           sources.map((source) => source.reference || source.title || source.keyword),
-          4,
+          Math.max(4, minimumSummaryLimit),
         );
     const fallbackDetail = detail.length
       ? detail
@@ -808,14 +963,20 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
           sources.map((source) => String(source.content || source.chunk_text || "").slice(0, 220)),
           3,
         );
+    const completedSummary = ensureStructuredLawSummaryCompleteness(fallbackSummary, sources, {
+      ...options,
+      summaryLimit: minimumSummaryLimit,
+    });
 
     return decorateConversationalAnswer(
-      buildParagraphSummary(fallbackSummary, fallbackDetail, true),
+      buildParagraphSummary(completedSummary.lines, fallbackDetail, true, {
+        summaryLimit: completedSummary.summaryLimit,
+      }),
       options,
     );
   }
 
-  const conciseLines = uniqueCleanLines(lines, 7);
+  const conciseLines = uniqueCleanLines(lines, minimumSummaryLimit);
 
   if (conciseLines.length === 0) {
     return "";
@@ -829,9 +990,18 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
     );
     const mergedLines = hasNumericLine
       ? conciseLines
-      : uniqueCleanLines([...numericEvidence, ...amountHighlights, ...conciseLines], 7);
+      : uniqueCleanLines([...numericEvidence, ...amountHighlights, ...conciseLines], minimumSummaryLimit);
+    const completedLines = ensureStructuredLawSummaryCompleteness(mergedLines, sources, {
+      ...options,
+      summaryLimit: minimumSummaryLimit,
+    });
 
-    return decorateConversationalAnswer(buildParagraphSummary(mergedLines, [], false), options);
+    return decorateConversationalAnswer(
+      buildParagraphSummary(completedLines.lines, [], false, {
+        summaryLimit: completedLines.summaryLimit,
+      }),
+      options,
+    );
   }
 
   if (options.decisionMode) {
@@ -845,12 +1015,31 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
     );
     const mergedLines = hasDecisionLine
       ? conciseLines
-      : uniqueCleanLines([decisionLead, ...decisionSupport, ...conciseLines], 7);
+      : uniqueCleanLines([decisionLead, ...decisionSupport, ...conciseLines], minimumSummaryLimit);
+    const completedLines = ensureStructuredLawSummaryCompleteness(mergedLines, sources, {
+      ...options,
+      summaryLimit: minimumSummaryLimit,
+    });
 
-    return decorateConversationalAnswer(buildParagraphSummary(mergedLines, [], false), options);
+    return decorateConversationalAnswer(
+      buildParagraphSummary(completedLines.lines, [], false, {
+        summaryLimit: completedLines.summaryLimit,
+      }),
+      options,
+    );
   }
 
-  return decorateConversationalAnswer(buildParagraphSummary(conciseLines, [], false), options);
+  const completedLines = ensureStructuredLawSummaryCompleteness(conciseLines, sources, {
+    ...options,
+    summaryLimit: minimumSummaryLimit,
+  });
+
+  return decorateConversationalAnswer(
+    buildParagraphSummary(completedLines.lines, [], false, {
+      summaryLimit: completedLines.summaryLimit,
+    }),
+    options,
+  );
 }
 
 function buildFallbackSummary(sources, explainMode, options = {}) {
@@ -989,9 +1178,13 @@ async function generateChatSummary(message, sources, options = {}) {
   const decisionInstruction = decisionMode
     ? "หากคำถามมีลักษณะถามว่า ต้องหรือไม่ ได้หรือไม่ หรือควรหรือไม่ ให้ตอบข้อแรกอย่างชัดเจนว่า ต้อง ไม่ต้อง ได้ ไม่ได้ ควร หรือไม่ควร ตามข้อมูลที่ปรากฏก่อน แล้วจึงอธิบายเหตุผลหรือเงื่อนไขที่เกี่ยวข้อง ห้ามตอบอ้อมหรือสรุปเฉพาะชื่อมาตราโดยไม่ตอบผลลัพธ์"
     : "";
+  const lawSectionInstruction =
+    options.questionIntent === "law_section"
+      ? "หากแหล่งอ้างอิงมีรายการลำดับข้อ เช่น 1. 2. 3. หรือ (1) (2) ให้ถ่ายทอดให้ครบทุกข้อ คงหมายเลขเดิมตามแหล่งอ้างอิง ห้ามตกหล่น ห้ามรวมหลายข้อเป็นข้อเดียว และห้ามสลับลำดับ "
+      : "";
   const instruction = explainMode
-    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${continuationInstruction} ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "5 ถึง 8 ข้อ"} และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.detailRange || "4 ถึง 8 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
-    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ตรงประเด็น ${planToneInstruction}${depthInstruction}${compareInstruction}พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "4 ถึง 6 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
+    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${continuationInstruction}ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "5 ถึง 8 ข้อ"} และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.detailRange || "4 ถึง 8 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
+    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ตรงประเด็น ${planToneInstruction}${depthInstruction}${compareInstruction}พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "4 ถึง 6 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
 
   try {
     const conversationNote = options.conversationalFollowUp
