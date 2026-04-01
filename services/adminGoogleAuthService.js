@@ -62,6 +62,7 @@ function createGoogleAuthUrl(req) {
 
   const url = new URL(GOOGLE_OAUTH_BASE_URL);
   const redirectUri = buildGoogleRedirectUri(req);
+  console.log("AUTH URL REDIRECT URI =", redirectUri);
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
@@ -71,6 +72,7 @@ function createGoogleAuthUrl(req) {
   url.searchParams.set("include_granted_scopes", "true");
   url.searchParams.set("prompt", "select_account");
   debugGoogleAuth("create-auth-url", {
+    sessionID: req.sessionID,
     host: req.get("host"),
     redirectUri,
     state,
@@ -144,6 +146,15 @@ async function loginWithGoogleCallback(req) {
   const code = String(req.query.code || "");
   const sessionState = req.session?.googleOAuthState || "";
 
+  debugGoogleAuth("callback-session-check", {
+    sessionID: req.sessionID,
+    queryState: state,
+    sessionState,
+    cookies: req.headers.cookie || "",
+    host: req.get("host"),
+    protocol: req.protocol,
+    forwardedProto: req.headers["x-forwarded-proto"] || "",
+  });
   debugGoogleAuth("callback-received", {
     host: req.get("host"),
     queryState: state,

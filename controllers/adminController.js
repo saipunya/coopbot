@@ -63,6 +63,19 @@ function redirectToGoogleLogin(req, res) {
   }
 }
 
+function saveSessionAndRedirect(req, res, targetPath, errorMessage, logLabel) {
+  req.session.save((error) => {
+    if (error) {
+      console.error(logLabel, error);
+      return res.redirect(
+        "/admin/login?error=" + encodeURIComponent(errorMessage)
+      );
+    }
+
+    return res.redirect(targetPath);
+  });
+}
+
 async function handleGoogleCallback(req, res) {
   if (req.query.error) {
     return res.redirect(
@@ -75,8 +88,15 @@ async function handleGoogleCallback(req, res) {
     const result = await loginWithGoogleCallback(req);
     req.session.user = result.user;
     req.session.adminUser = result.user;
-    return res.redirect("/admin");
+    return saveSessionAndRedirect(
+      req,
+      res,
+      "/admin",
+      "ไม่สามารถบันทึกสถานะการเข้าสู่ระบบด้วย Google ได้",
+      "Failed to save session after Google callback:"
+    );
   } catch (error) {
+    console.error("Google callback error:", error.message);
     return res.redirect(
       "/admin/login?error=" +
         encodeURIComponent(error.message || "ไม่สามารถเข้าสู่ระบบด้วย Google ได้")

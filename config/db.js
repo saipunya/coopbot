@@ -86,6 +86,19 @@ async function ensureSchema() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      sid varchar(255) NOT NULL,
+      sess longtext NOT NULL,
+      expires_at bigint(20) NOT NULL,
+      created_at timestamp NULL DEFAULT current_timestamp(),
+      updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+      PRIMARY KEY (sid),
+      KEY idx_sessions_expires_at (expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+
+    `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS law_chatbot_answer_cache (
       id int(11) NOT NULL AUTO_INCREMENT,
       question_hash char(64) NOT NULL,

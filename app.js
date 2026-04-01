@@ -9,9 +9,15 @@ const adminController = require("./controllers/adminController");
 const adminRoutes = require("./routes/admin");
 const lawChatbotRoutes = require("./routes/lawChatbot");
 const { attachCurrentUser, redirectIfAuthenticated } = require("./middlewares/authMiddleware");
+const { createSessionStore } = require("./services/mysqlSessionStore");
 
 const app = express();
 const port = process.env.PORT || 3000;
+const isProduction = process.env.NODE_ENV === "production";
+const sessionTtlMs = 1000 * 60 * 60 * 8;
+const sessionStore = createSessionStore({
+  defaultTtlMs: sessionTtlMs,
+});
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -25,11 +31,13 @@ app.use(
     secret: process.env.SESSION_SECRET || "change-this-session-secret",
     resave: false,
     saveUninitialized: false,
+    proxy: true,
+    store: sessionStore,
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      secure: "auto",
-      maxAge: 1000 * 60 * 60 * 8,
+      secure: isProduction ? true : "auto",
+      maxAge: sessionTtlMs,
     },
   })
 );
@@ -65,6 +73,7 @@ async function startServer() {
   await connectDb();
   console.log("GOOGLE_REDIRECT_URI =", process.env.GOOGLE_REDIRECT_URI);
   console.log("GOOGLE_CLIENT_ID =", process.env.GOOGLE_CLIENT_ID);
+  console.log("SESSION_STORE =", sessionStore.storeType || "memory");
   app.listen(port, () => {
     console.log(`coopbot is running at http://localhost:${port}`);
   });
