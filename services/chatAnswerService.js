@@ -547,6 +547,7 @@ function scoreSourceSegment(segment, message, source, options = {}) {
 function extractRelevantSegmentsFromSource(source, message, options = {}) {
   const rawText = [source.content, source.chunk_text, source.comment].filter(Boolean).join("\n");
   const segments = splitContentSegments(rawText);
+  const preserveMoreContent = options.preserveMoreContent === true;
   const scoredSegments = segments
     .map((segment, index) => ({
       index,
@@ -557,29 +558,39 @@ function extractRelevantSegmentsFromSource(source, message, options = {}) {
     .filter((item) => item.text.length >= 12)
     .filter((item) => {
       if (options.questionIntent === "law_section") {
-        return item.score >= 4 || /(มาตรา|ข้อ|วรรค|อนุมาตรา)/.test(item.text);
+        const minimumScore = preserveMoreContent ? 2 : 4;
+        return item.score >= minimumScore || /(มาตรา|ข้อ|วรรค|อนุมาตรา)/.test(item.text);
       }
-      return item.score >= 2 || hasCoreLegalSignal(item.text);
+      const minimumScore = preserveMoreContent ? 1 : 2;
+      return item.score >= minimumScore || hasCoreLegalSignal(item.text);
     })
     .sort((left, right) => right.score - left.score);
 
   const segmentLimit =
-    options.questionIntent === "law_section"
-      ? 6
-      : options.explainMode
-        ? 5
-        : 4;
-  const selectedSegments = scoredSegments
-    .slice(0, segmentLimit)
+    preserveMoreContent
+      ? options.questionIntent === "law_section"
+        ? 12
+        : options.explainMode
+          ? 10
+          : 8
+      : options.questionIntent === "law_section"
+        ? 6
+        : options.explainMode
+          ? 5
+          : 4;
+  const selectedSegments = (preserveMoreContent ? scoredSegments : scoredSegments.slice(0, segmentLimit))
     .sort((left, right) => left.index - right.index)
-    .map((item) => item.text);
+    .map((item) => item.text)
+    .slice(0, segmentLimit);
   const uniqueSegments = uniqueCleanLines(selectedSegments, segmentLimit);
 
   if (uniqueSegments.length > 0) {
     return uniqueSegments;
   }
 
-  const fallbackText = cleanLine(String(rawText || "").slice(0, options.explainMode ? 420 : 280));
+  const fallbackText = cleanLine(
+    String(rawText || "").slice(0, preserveMoreContent ? 720 : options.explainMode ? 420 : 280),
+  );
   if (fallbackText && !isNoisyLine(fallbackText)) {
     return [fallbackText];
   }
@@ -621,7 +632,12 @@ function buildDatabaseOnlyAnswer(sources, options = {}) {
     questionIntent: options.questionIntent,
     explainMode: options.explainMode,
     originalMessage: options.originalMessage || "",
-    sourceLimit: options.questionIntent === "law_section" ? 12 : options.explainMode ? 14 : 12,
+    sourceLimit:
+      Math.max(
+        Number(options.sourceLimit || 0),
+        Array.isArray(sources) ? sources.length : 0,
+        options.questionIntent === "law_section" ? 12 : options.explainMode ? 14 : 12,
+      ),
   });
   const displayedSources = [];
   const sourceBlocks = orderedSources
@@ -629,6 +645,7 @@ function buildDatabaseOnlyAnswer(sources, options = {}) {
       const block = formatDatabaseOnlySourceBlock(source, options.originalMessage || "", {
         explainMode: options.explainMode,
         questionIntent: options.questionIntent,
+        preserveMoreContent: true,
       });
       if (block) {
         displayedSources.push(source);

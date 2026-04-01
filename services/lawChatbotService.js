@@ -46,6 +46,7 @@ const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SE
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
 const WEB_SEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+const ANSWER_CACHE_SCOPE_VERSION = "v2";
 const answerCache = new Map();
 const suggestionThrottleMap = new Map();
 
@@ -104,7 +105,7 @@ function buildAnswerCacheScope(planContext = {}) {
     ? String(planContext.internetMode || "full").trim().toLowerCase()
     : "none";
 
-  return [planCode, promptProfileCode, internetMode].join("::");
+  return [ANSWER_CACHE_SCOPE_VERSION, planCode, promptProfileCode, internetMode].join("::");
 }
 
 function buildAnswerCacheKey(message, target, planContext = {}) {
@@ -1492,13 +1493,15 @@ async function replyToChat(payload, session) {
         : "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนในฐานข้อมูลและเอกสารภายในระบบ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
     const remainingBudgetBeforeAnswerMs = getRemainingBudgetMs(startedAt, CHAT_REPLY_BUDGET_MS);
-    const answerSourceLimit = !planContext.useAI || wantsExplanation(message)
+    const answerSourceLimit = wantsExplanation(message)
       ? Math.max(1, Number(planContext.sourceLimit || sources.length || 1))
       : Math.max(1, Number(planContext.promptProfile?.aiSourceLimit || 5));
     const answerSources =
-      !planContext.useAI || wantsExplanation(message)
-        ? sources.slice(0, answerSourceLimit)
-        : sources.slice(0, answerSourceLimit);
+      !planContext.useAI
+        ? sources
+        : wantsExplanation(message)
+          ? sources.slice(0, answerSourceLimit)
+          : sources.slice(0, answerSourceLimit);
     answer = await generateChatSummary(message, answerSources, {
       conversationalFollowUp: resolvedContext.usedContext,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
