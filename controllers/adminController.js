@@ -42,8 +42,20 @@ async function submitLogin(req, res) {
 function redirectToGoogleLogin(req, res) {
   try {
     const authUrl = createGoogleAuthUrl(req);
-    return res.redirect(authUrl);
+
+    req.session.save((err) => {
+      if (err) {
+        console.error("Failed to save session before Google redirect:", err);
+        return res.redirect(
+          "/admin/login?error=" +
+            encodeURIComponent("ไม่สามารถเริ่มต้นการเข้าสู่ระบบด้วย Google ได้")
+        );
+      }
+
+      return res.redirect(authUrl);
+    });
   } catch (error) {
+    console.error("Google login redirect error:", error);
     return res.redirect(
       "/admin/login?error=" +
         encodeURIComponent("Google Login ยังไม่ได้ตั้งค่าในระบบ")
