@@ -810,7 +810,108 @@ function formatDatabaseOnlySourceBlock(source, message, options = {}) {
   return displayLines.join("\n");
 }
 
+function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
+  const explainMode = Boolean(options.explainMode);
+  const shortDecisionMode = options.questionIntent === "short_answer" && options.decisionMode;
+  const summaryLimit =
+    shortDecisionMode
+      ? 2
+      : options.questionIntent === "short_answer"
+        ? 3
+      : options.questionIntent === "document"
+        ? 5
+        : explainMode
+          ? 6
+          : 5;
+  const detailLimit = explainMode ? 5 : 0;
+  const substantiveLimit =
+    shortDecisionMode
+      ? 1
+      : options.questionIntent === "short_answer"
+        ? 2
+        : explainMode
+          ? 6
+          : 4;
+  const fallbackLimit =
+    shortDecisionMode
+      ? 1
+      : options.questionIntent === "short_answer"
+        ? 2
+        : explainMode
+          ? 6
+          : 4;
+  const visibleSources = dedupeSources(
+    orderSourcesForDatabaseOnly(sources, {
+      questionIntent: options.questionIntent,
+      explainMode,
+      originalMessage: options.originalMessage || "",
+      sourceLimit: explainMode ? 8 : 6,
+    }),
+    explainMode ? 8 : 6,
+  );
+
+  const decisionLead = options.decisionMode ? inferDecisionLead(options.originalMessage || "", visibleSources) : "";
+  const substantiveSegments = extractSubstantiveSegments(visibleSources, substantiveLimit, {
+    message: options.originalMessage || "",
+    requireFocus: true,
+  });
+  const numericEvidence = options.amountMode ? extractNumericEvidence(visibleSources, explainMode ? 4 : 2) : [];
+  const fallbackLines = buildSourceContentFallbackLines(visibleSources, fallbackLimit, {
+    ...options,
+    explainMode,
+  });
+  const summaryLines = uniqueCleanLines(
+    [decisionLead, ...substantiveSegments, ...numericEvidence, ...fallbackLines],
+    summaryLimit,
+  );
+  const detailLines = explainMode
+    ? buildSourceContentFallbackLines(visibleSources, detailLimit, {
+        ...options,
+        explainMode: true,
+        preserveMoreContent: true,
+      })
+    : [];
+
+  if (summaryLines.length === 0) {
+    return "";
+  }
+
+  const referenceLimit =
+    shortDecisionMode
+      ? 2
+      : options.questionIntent === "short_answer"
+        ? 3
+        : explainMode
+          ? 5
+          : 4;
+  const referenceSources = [...visibleSources].sort((left, right) => {
+    const scoreDiff = Number(right?.score || 0) - Number(left?.score || 0);
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
+
+    return getSourceDisplayPriority(right?.source, options.questionIntent) - getSourceDisplayPriority(left?.source, options.questionIntent);
+  });
+
+  return [
+    buildParagraphSummary(summaryLines, detailLines, explainMode, {
+      summaryLimit,
+      detailLimit: Math.max(detailLimit, 1),
+    }),
+    buildReferenceSection(referenceSources, Math.min(referenceSources.length, referenceLimit)),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function buildDatabaseOnlyAnswer(sources, options = {}) {
+  if (options.questionIntent !== "law_section") {
+    const compactAnswer = buildCompactDatabaseOnlyAnswer(sources, options);
+    if (compactAnswer) {
+      return compactAnswer;
+    }
+  }
+
   const orderedSources = orderSourcesForDatabaseOnly(sources, {
     questionIntent: options.questionIntent,
     explainMode: options.explainMode,

@@ -1072,6 +1072,45 @@ function getDatabaseOnlySelectionPlan(intent = "general") {
           knowledge_base: 1,
         },
       };
+    case "short_answer":
+      return {
+        totalLimit: 6,
+        quotas: {
+          admin_knowledge: 2,
+          tbl_laws: 2,
+          tbl_glaws: 1,
+          pdf_chunks: 1,
+          tbl_vinichai: 1,
+          documents: 1,
+          knowledge_base: 1,
+        },
+      };
+    case "document":
+      return {
+        totalLimit: 8,
+        quotas: {
+          admin_knowledge: 2,
+          tbl_laws: 2,
+          tbl_glaws: 1,
+          pdf_chunks: 2,
+          tbl_vinichai: 1,
+          documents: 2,
+          knowledge_base: 1,
+        },
+      };
+    case "qa":
+      return {
+        totalLimit: 8,
+        quotas: {
+          admin_knowledge: 2,
+          tbl_laws: 2,
+          tbl_glaws: 1,
+          pdf_chunks: 1,
+          tbl_vinichai: 2,
+          documents: 1,
+          knowledge_base: 1,
+        },
+      };
     case "explain":
       return {
         totalLimit: 14,
