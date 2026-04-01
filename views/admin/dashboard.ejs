@@ -339,6 +339,13 @@
           <p class="metric-label">Total feedback</p>
           <p class="metric"><%= feedbackData.feedbackCount %></p>
         </article>
+        <article class="card metric-card">
+          <p class="metric-label">Pending payment requests</p>
+          <p class="metric"><%= paymentRequestData.pendingCount %></p>
+          <p style="margin: 0.45rem 0 0;">
+            <a href="/admin/payment-requests">เปิดหน้าตรวจคำขออัปเกรดแพ็กเกจ</a>
+          </p>
+        </article>
       </section>
 
       <section class="card">
@@ -404,6 +411,7 @@
           <li><a href="/law-chatbot">หน้าแชตสาธารณะ</a></li>
           <li><a href="/law-chatbot/upload">หน้าจัดการอัปโหลด</a></li>
           <li><a href="/law-chatbot/feedback">หน้าดู feedback</a></li>
+          <li><a href="/admin/payment-requests">ตรวจคำขออัปเกรดแพ็กเกจ <% if (paymentRequestData.pendingCount > 0) { %>(<%= paymentRequestData.pendingCount %> รออนุมัติ)<% } %></a></li>
           <li><a href="#knowledge-management">จัดการความรู้แชตบอท</a></li>
           <li><a href="#knowledge-suggestions">ตรวจข้อเสนอจากผู้ใช้งาน</a></li>
         </ul>
