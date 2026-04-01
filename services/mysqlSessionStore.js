@@ -35,6 +35,10 @@ class MySqlSessionStore extends session.Store {
     return getDbPool();
   }
 
+  getActiveStoreType() {
+    return this.getPool() ? "mysql" : "memory-fallback";
+  }
+
   maybeCleanupExpiredSessions(pool) {
     if (!pool) {
       return Promise.resolve();
@@ -152,6 +156,7 @@ function createSessionStore(options = {}) {
   if (!hasDbConfig()) {
     const memoryStore = new session.MemoryStore();
     memoryStore.storeType = "memory";
+    memoryStore.getActiveStoreType = () => "memory";
     return memoryStore;
   }
 

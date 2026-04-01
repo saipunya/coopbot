@@ -49,7 +49,7 @@ app.get("/", (req, res) => {
 });
 
 app.get("/auth/google", redirectIfAuthenticated, adminController.redirectToGoogleLogin);
-app.get("/auth/google/callback", redirectIfAuthenticated, adminController.handleGoogleCallback);
+app.get("/auth/google/callback", adminController.handleGoogleCallback);
 
 app.use("/admin", adminRoutes);
 app.use("/law-chatbot", lawChatbotRoutes);
@@ -73,7 +73,10 @@ async function startServer() {
   await connectDb();
   console.log("GOOGLE_REDIRECT_URI =", process.env.GOOGLE_REDIRECT_URI);
   console.log("GOOGLE_CLIENT_ID =", process.env.GOOGLE_CLIENT_ID);
-  console.log("SESSION_STORE =", sessionStore.storeType || "memory");
+  console.log(
+    "SESSION_STORE =",
+    sessionStore.getActiveStoreType ? sessionStore.getActiveStoreType() : sessionStore.storeType || "memory"
+  );
   app.listen(port, () => {
     console.log(`coopbot is running at http://localhost:${port}`);
   });
