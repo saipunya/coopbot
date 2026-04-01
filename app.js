@@ -48,6 +48,17 @@ app.get("/", (req, res) => {
 
 });
 
+app.get("/auth/test", (req, res) => {
+  res.send("AUTH TEST OK");
+});
+
+app.get("/google-callback-test", (req, res) => {
+  res.json({
+    ok: true,
+    query: req.query,
+  });
+});
+
 app.get("/auth/google", redirectIfAuthenticated, adminController.redirectToGoogleLogin);
 app.get("/auth/google/callback", adminController.handleGoogleCallback);
 
