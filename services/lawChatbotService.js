@@ -21,10 +21,17 @@ const { normalizeForSearch, segmentWords, uniqueTokens } = require("./thaiTextUt
 
 const CHAT_CONTEXT_KEY = "lawChatbotContext";
 const CONTEXT_HISTORY_LIMIT = 8;
+const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
+const CHAT_BUDGET_BUFFER_MS = Number(process.env.CHAT_BUDGET_BUFFER_MS || 3000);
+const CHAT_REPLY_BUDGET_MS = Math.max(2000, CHAT_REQUEST_TIMEOUT_MS - CHAT_BUDGET_BUFFER_MS);
 const ANSWER_CACHE_TTL_MS = Number(process.env.LAW_CHATBOT_ANSWER_CACHE_TTL_MS || 5 * 60 * 1000);
 const KEYWORD_CONCURRENCY = Number(process.env.KEYWORD_CONCURRENCY || 4);
 const WEB_SEARCH_LIMIT = Number(process.env.LAW_CHATBOT_WEB_SEARCH_LIMIT || 3);
 const WEB_SEARCH_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_WEB_SEARCH_TIMEOUT_MS || 8000);
+const HYBRID_SEARCH_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_HYBRID_SEARCH_TIMEOUT_MS || 4000);
+const MIN_CONTEXT_RESEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_CONTEXT_RESEARCH_MIN_BUDGET_MS || 7000);
+const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SEARCH_MIN_BUDGET_MS || 5000);
+const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
 const WEB_SEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
 const answerCache = new Map();
@@ -32,6 +39,44 @@ const suggestionThrottleMap = new Map();
 
 function nowMs() {
   return Number(process.hrtime.bigint()) / 1e6;
+}
+
+function getRemainingBudgetMs(startedAt, totalBudgetMs = CHAT_REPLY_BUDGET_MS) {
+  if (typeof startedAt !== "number" || !Number.isFinite(startedAt)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.max(0, Math.round(totalBudgetMs - (nowMs() - startedAt)));
+}
+
+async function withTimeout(task, timeoutMs, fallbackValue, label = "task") {
+  const normalizedTimeoutMs = Number(timeoutMs || 0);
+  if (!Number.isFinite(normalizedTimeoutMs) || normalizedTimeoutMs <= 0) {
+    return typeof task === "function" ? task() : task;
+  }
+
+  let timeoutId = null;
+  let timedOut = false;
+
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => (typeof task === "function" ? task() : task)),
+      new Promise((resolve) => {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          resolve(fallbackValue);
+        }, normalizedTimeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    if (timedOut && process.env.CHATBOT_DEBUG === "1") {
+      console.warn(`[law-chatbot] ${label} reached timeout budget ${normalizedTimeoutMs}ms`);
+    }
+  }
 }
 
 function isStandaloneLawLookup(message) {
@@ -160,13 +205,13 @@ function getUrlDomain(rawUrl) {
   }
 }
 
-async function fetchText(url) {
+async function fetchText(url, timeoutMs = WEB_SEARCH_TIMEOUT_MS) {
   if (typeof fetch !== "function") {
     throw new Error("fetch is not available in this runtime");
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), WEB_SEARCH_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -247,7 +292,7 @@ function extractWebSearchResults(html, limit = WEB_SEARCH_LIMIT) {
   return results;
 }
 
-async function searchInternetSources(message, target) {
+async function searchInternetSources(message, target, options = {}) {
   const query = String(message || "").trim();
   if (!query) {
     return [];
@@ -257,9 +302,10 @@ async function searchInternetSources(message, target) {
     target === "group" ? "กลุ่มเกษตรกร" : target === "coop" ? "สหกรณ์" : "สหกรณ์ กลุ่มเกษตรกร";
   const searchQuery = `${query} ${targetKeyword}`.trim();
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}&kl=th-th&ia=web`;
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || WEB_SEARCH_TIMEOUT_MS));
 
   try {
-    const html = await fetchText(searchUrl);
+    const html = await fetchText(searchUrl, timeoutMs);
     if (process.env.DEBUG_INTERNET_SEARCH === "true") {
       console.log("[searchInternetSources] HTML length:", html?.length || 0);
       console.log("[searchInternetSources] Has result__a:", html?.includes("result__a"));
@@ -464,9 +510,10 @@ function getSourceRoutingPlan(intent) {
   }
 }
 
-async function searchDatabaseSources(message, target) {
+async function searchDatabaseSources(message, target, options = {}) {
   const intent = classifyQuestionIntent(message);
   const routingPlan = getSourceRoutingPlan(intent);
+  const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
   const [
     rawKnowledgeMatches,
     rawDocumentMatches,
@@ -477,7 +524,7 @@ async function searchDatabaseSources(message, target) {
   ] = await Promise.all([
     LawChatbotKnowledgeModel.searchKnowledge(message, target, 5),
     LawChatbotPdfChunkModel.searchDocuments(message, 5),
-    LawChatbotPdfChunkModel.hybridSearch(message, 6),
+    withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(message, 6), hybridTimeoutMs, [], "hybrid-search"),
     Promise.resolve(LawChatbotModel.searchKnowledge(message, target)),
     LawSearchModel.searchStructuredLaws(message, target, 6),
     LawSearchModel.searchVinichai(message, 5),
@@ -713,11 +760,11 @@ function isLowConfidenceDatabaseResult(matches, questionIntent = "general") {
   return topScore < 85 || (ranked.length < 2 && topScore < 105) || aggregateScore < 120 || secondScore < 35;
 }
 
-async function resolveSearchPlan(message, target, session) {
+async function resolveSearchPlan(message, target, session, options = {}) {
   const baseMessage = String(message || "").trim();
   const contextualCandidate = resolveMessageWithContext(baseMessage, target, session);
 
-  const standaloneMatches = await searchDatabaseSources(baseMessage, target);
+  const standaloneMatches = await searchDatabaseSources(baseMessage, target, options);
   const standaloneScore = scoreMatchSet(standaloneMatches);
 
   if (!contextualCandidate.usedContext) {
@@ -728,7 +775,20 @@ async function resolveSearchPlan(message, target, session) {
     };
   }
 
-  const contextualMatches = await searchDatabaseSources(contextualCandidate.effectiveMessage, target);
+  const remainingBudgetMs = getRemainingBudgetMs(options.requestStartedAt, options.totalBudgetMs);
+  if (remainingBudgetMs < MIN_CONTEXT_RESEARCH_BUDGET_MS) {
+    return {
+      effectiveMessage: baseMessage,
+      matches: standaloneMatches,
+      resolvedContext: {
+        ...contextualCandidate,
+        effectiveMessage: baseMessage,
+        usedContext: false,
+      },
+    };
+  }
+
+  const contextualMatches = await searchDatabaseSources(contextualCandidate.effectiveMessage, target, options);
   const contextualScore = scoreMatchSet(contextualMatches);
   const shouldUseContext =
     contextualMatches.length > 0 &&
@@ -975,12 +1035,12 @@ function selectTieredSources(groups, intent = "general") {
   };
 }
 
-async function collectAnswerSources(message, target, session) {
+async function collectAnswerSources(message, target, session, options = {}) {
   const startedAt = nowMs();
   const questionIntent = classifyQuestionIntent(message);
   const effectiveMessage = String(message || "").trim();
 
-  const searchPlan = await resolveSearchPlan(message, target, session);
+  const searchPlan = await resolveSearchPlan(message, target, session, options);
   const afterDbSearchAt = nowMs();
 
   const resolvedEffectiveMessage = searchPlan.effectiveMessage || effectiveMessage;
@@ -989,9 +1049,21 @@ async function collectAnswerSources(message, target, session) {
     isClearlyCurrentOrExternalQuestion(resolvedEffectiveMessage) ||
     isLowConfidenceDatabaseResult(databaseMatches, questionIntent);
   let internetMatches = [];
+  const remainingBudgetBeforeInternetMs = getRemainingBudgetMs(
+    options.requestStartedAt,
+    options.totalBudgetMs,
+  );
+  const shouldSkipInternetForBudget =
+    shouldSearchInternet && remainingBudgetBeforeInternetMs < MIN_INTERNET_SEARCH_BUDGET_MS;
 
-  if (shouldSearchInternet) {
-    internetMatches = await searchInternetSources(resolvedEffectiveMessage, target);
+  if (shouldSearchInternet && !shouldSkipInternetForBudget) {
+    const internetTimeoutMs = Math.min(
+      WEB_SEARCH_TIMEOUT_MS,
+      Math.max(1000, remainingBudgetBeforeInternetMs - MIN_AI_SUMMARY_BUDGET_MS),
+    );
+    internetMatches = await searchInternetSources(resolvedEffectiveMessage, target, {
+      timeoutMs: internetTimeoutMs,
+    });
   }
   const afterInternetSearchAt = nowMs();
 
@@ -1009,6 +1081,7 @@ async function collectAnswerSources(message, target, session) {
 
   const { selectedSourceTier, selectedSources } = selectTieredSources(grouped, questionIntent);
   const afterSourceSelectionAt = nowMs();
+  const usedInternetFallback = selectedSources.some((item) => item && item.source === "internet_search");
 
   return {
     ...searchPlan,
@@ -1018,12 +1091,16 @@ async function collectAnswerSources(message, target, session) {
     internetMatches,
     sources: selectedSources,
     selectedSourceTier,
-    usedInternetSearch: shouldSearchInternet,
+    usedInternetFallback,
+    usedInternetSearch: shouldSearchInternet && !shouldSkipInternetForBudget,
+    skippedInternetSearch: shouldSkipInternetForBudget,
     timing: {
       dbSearchMs: Math.round(afterDbSearchAt - startedAt),
       internetSearchMs: Math.round(afterInternetSearchAt - afterDbSearchAt),
       sourceSelectionMs: Math.round(afterSourceSelectionAt - afterInternetSearchAt),
       totalSourceCollectionMs: Math.round(afterSourceSelectionAt - startedAt),
+      remainingBudgetBeforeInternetMs:
+        remainingBudgetBeforeInternetMs === Number.POSITIVE_INFINITY ? null : remainingBudgetBeforeInternetMs,
     },
   };
 }
@@ -1173,7 +1250,10 @@ async function replyToChat(payload, session) {
     }
   }
 
-  const evidence = await collectAnswerSources(message, target, session);
+  const evidence = await collectAnswerSources(message, target, session, {
+    requestStartedAt: startedAt,
+    totalBudgetMs: CHAT_REPLY_BUDGET_MS,
+  });
   const afterCollectSourcesAt = nowMs();
   const resolvedContext = evidence.resolvedContext;
   const effectiveMessage = evidence.effectiveMessage || message;
@@ -1186,9 +1266,12 @@ async function replyToChat(payload, session) {
     answer =
       "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนทั้งในฐานข้อมูลและแหล่งข้อมูลสาธารณะ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
+    const remainingBudgetBeforeAnswerMs = getRemainingBudgetMs(startedAt, CHAT_REPLY_BUDGET_MS);
     answer = await generateChatSummary(message, wantsExplanation(message) ? sources : sources.slice(0, 5), {
       conversationalFollowUp: resolvedContext.usedContext,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
+      forceFallback: remainingBudgetBeforeAnswerMs < MIN_AI_SUMMARY_BUDGET_MS,
+      aiTimeoutMs: Math.max(1000, remainingBudgetBeforeAnswerMs - 500),
     });
   }
   const afterAnswerGenerationAt = nowMs();

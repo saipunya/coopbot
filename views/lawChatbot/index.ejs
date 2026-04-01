@@ -1999,6 +1999,13 @@
         } catch (_) {}
       }
 
+      function removeLoadingBubble() {
+        const loadingBubble = chatMessages.querySelector('.bubble-loading');
+        if (loadingBubble && loadingBubble.parentElement) {
+          loadingBubble.parentElement.remove();
+        }
+      }
+
       async function submitMessage(message, options = {}) {
         const trimmed = String(message || '').trim();
         if (!trimmed) return;
@@ -2024,14 +2031,13 @@
           });
           clearTimeout(timeoutId);
           const data = await response.json();
-          chatMessages.lastElementChild.remove();
-          const hasContext = Boolean(data && data.hasContext);
+          removeLoadingBubble();
           const answerText = data && typeof data.answer === 'string' ? data.answer.trim() : '';
           const dbHighlightTerms = data && Array.isArray(data.highlightTerms) && data.highlightTerms.length
             ? data.highlightTerms
             : buildHighlightTerms(trimmed);
 
-          if (hasContext && answerText) {
+          if (answerText) {
             const botRow = addBubble(answerText, 'bot', false, dbHighlightTerms, {
               question: trimmed,
               target: selectedTarget,
@@ -2044,11 +2050,11 @@
 
           saveRecentChats();
         } catch (error) {
-          chatMessages.lastElementChild.remove();
+          removeLoadingBubble();
           const fallbackMessage = error && error.name === 'AbortError'
             ? 'ระบบใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง'
             : 'ขออภัยครับ ระบบไม่สามารถประมวลผลคำถามได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง';
-          const botRow = addBubble('ขออภัยครับ! ไม่พบข้อมูลที่ชัดเจน ลองเปลี่ยนคำค้นหา', 'bot', false, [], {
+          const botRow = addBubble(fallbackMessage, 'bot', false, [], {
             question: trimmed,
             target: selectedTarget,
             variant: 'ai'

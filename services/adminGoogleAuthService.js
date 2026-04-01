@@ -22,16 +22,45 @@ function debugGoogleAuth(...args) {
   }
 }
 
-function buildGoogleRedirectUri(req) {
-  const explicit = String(process.env.GOOGLE_REDIRECT_URI || "").trim();
-  if (explicit) {
-    return explicit;
-  }
+function isLoopbackHost(hostname) {
+  const normalizedHost = String(hostname || "").trim().toLowerCase();
+  return (
+    normalizedHost === "localhost" ||
+    normalizedHost === "127.0.0.1" ||
+    normalizedHost === "::1" ||
+    normalizedHost === "[::1]"
+  );
+}
 
+function buildRequestOrigin(req) {
   const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
   const protocol = forwardedProto || req.protocol || "http";
   const host = req.get("host");
-  return `${protocol}://${host}/auth/google/callback`;
+  return `${protocol}://${host}`;
+}
+
+function buildGoogleRedirectUri(req) {
+  const explicit = String(process.env.GOOGLE_REDIRECT_URI || "").trim();
+  const requestOrigin = buildRequestOrigin(req);
+
+  if (explicit) {
+    try {
+      const explicitUrl = new URL(explicit);
+      const requestUrl = new URL(`${requestOrigin}/`);
+
+      // Keep the configured production path, but swap in the current local origin
+      // so localhost testing uses the same browser session and OAuth state.
+      if (isLoopbackHost(requestUrl.hostname) && !isLoopbackHost(explicitUrl.hostname)) {
+        return `${requestOrigin}${explicitUrl.pathname}${explicitUrl.search}`;
+      }
+    } catch (error) {
+      return explicit;
+    }
+
+    return explicit;
+  }
+
+  return `${requestOrigin}/auth/google/callback`;
 }
 
 function createGoogleAuthUrl(req) {

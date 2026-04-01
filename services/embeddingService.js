@@ -1,6 +1,7 @@
 const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
+const OPENAI_EMBEDDING_TIMEOUT_MS = Number(process.env.OPENAI_EMBEDDING_TIMEOUT_MS || 4000);
 
 function getOpenAiEmbeddingConfig() {
   const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
@@ -37,6 +38,9 @@ async function createEmbedding(text) {
     throw new Error("fetch is not available in this runtime");
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), OPENAI_EMBEDDING_TIMEOUT_MS);
+
   try {
     const response = await fetch(OPENAI_EMBEDDINGS_URL, {
       method: "POST",
@@ -48,6 +52,7 @@ async function createEmbedding(text) {
         model: config.model,
         input: cleanText,
       }),
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -64,8 +69,17 @@ async function createEmbedding(text) {
 
     return new Float32Array(values);
   } catch (err) {
+    if (err?.name === "AbortError") {
+      console.error(
+        `[EmbeddingService] Embedding request timed out after ${OPENAI_EMBEDDING_TIMEOUT_MS}ms`,
+      );
+      return null;
+    }
+
     console.error("[EmbeddingService] Error creating embedding:", err?.message || err);
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

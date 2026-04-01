@@ -20,6 +20,8 @@ async function generateOpenAiCompletion(options = {}) {
     return "";
   }
 
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || OPENAI_TIMEOUT_MS));
+
   const body = {
     model: options.model || config.model,
     temperature: typeof options.temperature === "number" ? options.temperature : 0.2,
@@ -44,7 +46,7 @@ async function generateOpenAiCompletion(options = {}) {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
@@ -65,7 +67,7 @@ async function generateOpenAiCompletion(options = {}) {
     return String(payload?.choices?.[0]?.message?.content || "").trim();
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error(`OpenAI chat completion timed out after ${OPENAI_TIMEOUT_MS}ms`);
+      throw new Error(`OpenAI chat completion timed out after ${timeoutMs}ms`);
     }
 
     throw error;

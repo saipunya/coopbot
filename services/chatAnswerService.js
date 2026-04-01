@@ -601,7 +601,7 @@ async function generateChatSummary(message, sources, options = {}) {
   const filteredSources = filterHighQualitySources(sources, topScore);
   const effectiveSources = filteredSources.length > 0 ? filteredSources : sources.slice(0, 3);
 
-  if (!openAiConfig || effectiveSources.length === 0) {
+  if (options.forceFallback || !openAiConfig || effectiveSources.length === 0) {
     return buildFallbackSummary(sources, explainMode, {
       ...options,
       amountMode,
@@ -631,6 +631,7 @@ async function generateChatSummary(message, sources, options = {}) {
     const responseText = await generateOpenAiCompletion({
       systemInstruction: instruction,
       contents: `คำถามผู้ใช้: ${message}${conversationNote}\n\nข้อมูลอ้างอิง:\n${buildSourceContext(effectiveSources)}`,
+      timeoutMs: options.aiTimeoutMs,
       config: {
         systemInstruction: instruction,
       },
