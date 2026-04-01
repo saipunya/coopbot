@@ -26,6 +26,12 @@ const PLAN_DEFINITIONS = {
     allowDeepAnalysis: false,
     aiSourceLimit: 0,
     isPurchasable: false,
+    economyMode: {
+      enabled: false,
+      dbOnlyIntents: [],
+      requireHighConfidenceDb: false,
+      skipCurrentOrExternal: false,
+    },
   },
   standard: {
     code: "standard",
@@ -41,6 +47,12 @@ const PLAN_DEFINITIONS = {
     allowDeepAnalysis: false,
     aiSourceLimit: 3,
     isPurchasable: true,
+    economyMode: {
+      enabled: true,
+      dbOnlyIntents: ["short_answer", "law_section"],
+      requireHighConfidenceDb: true,
+      skipCurrentOrExternal: true,
+    },
   },
   pro: {
     code: "pro",
@@ -56,6 +68,12 @@ const PLAN_DEFINITIONS = {
     allowDeepAnalysis: false,
     aiSourceLimit: 5,
     isPurchasable: true,
+    economyMode: {
+      enabled: true,
+      dbOnlyIntents: ["short_answer", "law_section"],
+      requireHighConfidenceDb: true,
+      skipCurrentOrExternal: true,
+    },
   },
   premium: {
     code: "premium",
@@ -71,6 +89,12 @@ const PLAN_DEFINITIONS = {
     allowDeepAnalysis: true,
     aiSourceLimit: 7,
     isPurchasable: true,
+    economyMode: {
+      enabled: true,
+      dbOnlyIntents: ["short_answer", "law_section"],
+      requireHighConfidenceDb: true,
+      skipCurrentOrExternal: true,
+    },
   },
 };
 

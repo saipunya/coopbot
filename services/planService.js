@@ -37,6 +37,40 @@ function getPlanPriceBaht(planCode = DEFAULT_PLAN_CODE) {
   return Number(getPlanConfig(planCode).priceBaht || 0);
 }
 
+function shouldPreferDatabaseOnlyForEconomy(planCode = DEFAULT_PLAN_CODE, context = {}) {
+  const config = getPlanConfig(planCode);
+  const economyMode = config.economyMode || {};
+  if (!config.useAI || economyMode.enabled !== true) {
+    return false;
+  }
+
+  const questionIntent = String(context.questionIntent || "")
+    .trim()
+    .toLowerCase();
+  if (!questionIntent) {
+    return false;
+  }
+
+  const dbOnlyIntents = Array.isArray(economyMode.dbOnlyIntents) ? economyMode.dbOnlyIntents : [];
+  if (!dbOnlyIntents.includes(questionIntent)) {
+    return false;
+  }
+
+  if (economyMode.requireHighConfidenceDb && context.hasHighConfidenceDb !== true) {
+    return false;
+  }
+
+  if (economyMode.skipCurrentOrExternal !== false && context.isCurrentOrExternalQuestion === true) {
+    return false;
+  }
+
+  if (context.forceAI === true) {
+    return false;
+  }
+
+  return true;
+}
+
 function isPlanAllowedToUseAI(planCode = DEFAULT_PLAN_CODE) {
   return Boolean(getPlanConfig(planCode).useAI);
 }
@@ -153,4 +187,5 @@ module.exports = {
   listPurchasablePlans,
   normalizePlanCode,
   resolveUserPlanContext,
+  shouldPreferDatabaseOnlyForEconomy,
 };

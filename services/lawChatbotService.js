@@ -22,6 +22,7 @@ const {
   listPurchasablePlans,
   normalizePlanCode,
   resolveUserPlanContext,
+  shouldPreferDatabaseOnlyForEconomy,
 } = require("./planService");
 const { chunkText, extractTextFromFile } = require("./documentTextExtractor");
 const {
@@ -46,7 +47,7 @@ const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SE
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
 const WEB_SEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
-const ANSWER_CACHE_SCOPE_VERSION = "v3";
+const ANSWER_CACHE_SCOPE_VERSION = "v4";
 const answerCache = new Map();
 const suggestionThrottleMap = new Map();
 
@@ -134,6 +135,40 @@ function resolveChatPlanContext(session, options = {}) {
     useAI: effectiveUseAI,
     useInternet: effectiveUseInternet,
     promptProfile,
+  };
+}
+
+function applyEconomyDatabaseOnlyMode(planContext, message, databaseMatches, questionIntent) {
+  if (!planContext?.useAI) {
+    return {
+      ...planContext,
+      answerMode: "db_only",
+    };
+  }
+
+  const economicalDbOnly = shouldPreferDatabaseOnlyForEconomy(planContext.code, {
+    questionIntent,
+    hasHighConfidenceDb: !isLowConfidenceDatabaseResult(databaseMatches, questionIntent),
+    isCurrentOrExternalQuestion: isClearlyCurrentOrExternalQuestion(message),
+  });
+
+  if (!economicalDbOnly) {
+    return {
+      ...planContext,
+      answerMode: "ai",
+    };
+  }
+
+  return {
+    ...planContext,
+    useAI: false,
+    useInternet: false,
+    promptProfile: {
+      ...planContext.promptProfile,
+      code: `dbonly-${planContext.promptProfile?.code || planContext.code || "plan"}`,
+      aiSourceLimit: 0,
+    },
+    answerMode: "economy_db_only",
   };
 }
 
@@ -1271,7 +1306,9 @@ async function collectAnswerSources(message, target, session, options = {}) {
       ? options.allowInternetFallback
       : await isAiEnabled();
 
-  const searchPlan = await resolveSearchPlan(message, target, session, options);
+  const searchPlan =
+    options.searchPlan ||
+    (await resolveSearchPlan(message, target, session, options));
   const afterDbSearchAt = nowMs();
 
   const resolvedEffectiveMessage = searchPlan.effectiveMessage || effectiveMessage;
@@ -1390,11 +1427,9 @@ async function replyToChat(payload, session) {
   const aiRuntimeEnabled = await isAiEnabled();
   const openAiConfig = getOpenAiConfig();
   const aiFeatureAvailable = aiRuntimeEnabled && Boolean(openAiConfig);
-  const planContext = resolveChatPlanContext(session, {
+  const basePlanContext = resolveChatPlanContext(session, {
     aiAvailable: aiFeatureAvailable,
   });
-  const cacheScope = buildAnswerCacheScope(planContext);
-  const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target, cacheScope);
 
   if (runtimeFlags.useMockAI) {
     const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
@@ -1409,6 +1444,18 @@ async function replyToChat(payload, session) {
     };
   }
 
+  const searchPlan = await resolveSearchPlan(message, target, session, {
+    requestStartedAt: startedAt,
+    totalBudgetMs: CHAT_REPLY_BUDGET_MS,
+  });
+  const planContext = applyEconomyDatabaseOnlyMode(
+    basePlanContext,
+    searchPlan.effectiveMessage || message,
+    searchPlan.matches,
+    classifyQuestionIntent(message),
+  );
+  const cacheScope = buildAnswerCacheScope(planContext);
+  const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target, cacheScope);
   const cacheKey = buildAnswerCacheKey(message, target, planContext);
   const canUseCache = shouldUseAnswerCache(message) && !debugMode;
   const cachedAnswer = canUseCache ? getCachedAnswer(cacheKey) : null;
@@ -1450,6 +1497,7 @@ async function replyToChat(payload, session) {
       cachedResult.debug = {
         selectedSourceTier: cachedAnswer.selectedSourceTier || "cache",
         sourceCount: Array.isArray(cachedAnswer.sources) ? cachedAnswer.sources.length : 0,
+        answerMode: cachedAnswer.answerMode || "cache",
         timing: {
           cacheHit: true,
           totalReplyMs: Math.round(nowMs() - startedAt),
@@ -1473,6 +1521,18 @@ async function replyToChat(payload, session) {
         await LawChatbotAnswerCacheModel.incrementHitCount(dbCachedAnswer.id);
 
         const cachedResult = buildDbCachedChatResult(dbCachedAnswer, message);
+        if (debugMode) {
+          cachedResult.debug = {
+            selectedSourceTier: dbCachedAnswer?.metadata?.selectedSourceTier || "db_cache",
+            sourceCount: Number(dbCachedAnswer?.metadata?.sourceCount || 0),
+            answerMode: dbCachedAnswer?.metadata?.answerMode || "db_cache",
+            timing: {
+              cacheHit: true,
+              totalReplyMs: Math.round(nowMs() - startedAt),
+            },
+            sources: [],
+          };
+        }
 
         storeConversationContext(
           session,
@@ -1497,6 +1557,7 @@ async function replyToChat(payload, session) {
           highlightTerms: cachedResult.highlightTerms,
           usedInternetFallback: cachedResult.usedInternetFallback,
           selectedSourceTier: dbCachedAnswer?.metadata?.selectedSourceTier || "db_cache",
+          answerMode: dbCachedAnswer?.metadata?.answerMode || "db_cache",
           effectiveMessage: dbCachedAnswer.normalized_question || message,
           resolvedContext: { usedContext: false, topicHints: [] },
           sources: [],
@@ -1510,6 +1571,7 @@ async function replyToChat(payload, session) {
   }
 
   const evidence = await collectAnswerSources(message, target, session, {
+    searchPlan,
     requestStartedAt: startedAt,
     totalBudgetMs: CHAT_REPLY_BUDGET_MS,
     allowInternetFallback: planContext.useInternet,
@@ -1588,6 +1650,7 @@ async function replyToChat(payload, session) {
       selectedSourceTier: evidence.selectedSourceTier || "none",
       planCode: planContext.code,
       promptProfile: planContext.promptProfile?.code || "template",
+      answerMode: planContext.answerMode || (planContext.useAI ? "ai" : "db_only"),
       effectiveMessage,
       resolvedContext,
       sources,
@@ -1611,6 +1674,7 @@ async function replyToChat(payload, session) {
           sourceCount: sources.length,
           planCode: planContext.code,
           promptProfile: planContext.promptProfile?.code || "template",
+          answerMode: planContext.answerMode || (planContext.useAI ? "ai" : "db_only"),
         },
       });
     } catch (error) {
@@ -1624,6 +1688,8 @@ async function replyToChat(payload, session) {
       sourceCount: sources.length,
       databaseMatches: evidence.databaseMatches?.length || 0,
       internetMatches: evidence.internetMatches?.length || 0,
+      answerMode: planContext.answerMode || (planContext.useAI ? "ai" : "db_only"),
+      promptProfile: planContext.promptProfile?.code || "template",
       timing: {
         ...(evidence.timing || {}),
         answerGenerationMs: Math.round(afterAnswerGenerationAt - afterCollectSourcesAt),
@@ -1648,13 +1714,21 @@ async function summarizeChat(payload, session) {
   }
   const aiRuntimeEnabled = await isAiEnabled();
   const openAiConfig = getOpenAiConfig();
-  const planContext = resolveChatPlanContext(session, {
+  const basePlanContext = resolveChatPlanContext(session, {
     aiAvailable: aiRuntimeEnabled && Boolean(openAiConfig),
   });
 
   const target =
     payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
+  const searchPlan = await resolveSearchPlan(message, target, session);
+  const planContext = applyEconomyDatabaseOnlyMode(
+    basePlanContext,
+    searchPlan.effectiveMessage || message,
+    searchPlan.matches,
+    classifyQuestionIntent(message),
+  );
   const evidence = await collectAnswerSources(message, target, session, {
+    searchPlan,
     allowInternetFallback: planContext.useInternet,
     databaseOnlyMode: !planContext.useAI,
     sourceLimit: planContext.sourceLimit,
