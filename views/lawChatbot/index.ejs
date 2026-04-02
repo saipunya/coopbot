@@ -1904,11 +1904,52 @@
 
       function sanitizeDisplayText(text) {
         return String(text || '')
+          .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+          .replace(/(^|\n)\s*ข้อมูลที่พบจากฐานข้อมูลกฎหมาย(?:\s*\([^)]*\))?:?\s*(?=\n|$)/gu, '$1')
           .replace(/(^|\n)\s*\/\/\s*/g, '$1')
           .replace(/(^|[\s(])\/\/(?=[\s)]|$)/g, '$1')
           .replace(/[ \t]{2,}/g, ' ')
           .replace(/\n{3,}/g, '\n\n')
           .trim();
+      }
+
+      function shouldMergeBulletContinuationLine(currentLine, nextLine) {
+        const current = sanitizeDisplayText(currentLine).replace(/\s+/g, ' ').trim();
+        const next = sanitizeDisplayText(nextLine).replace(/\s+/g, ' ').trim();
+
+        if (!current || !next) {
+          return false;
+        }
+
+        const endsWithProtectedAbbreviation =
+          /(?:พ\.ศ\.|ค\.ศ\.|(?:[\u0E01-\u0E2E]{1,2}\.){2,})$/u.test(current);
+        const nextStartsWithYear =
+          /^(?:[0-9๐-๙]{4})(?:\b|$)/u.test(next);
+
+        return endsWithProtectedAbbreviation && nextStartsWithYear;
+      }
+
+      function mergeProtectedBulletLines(lines) {
+        const merged = [];
+
+        for (let index = 0; index < lines.length; index += 1) {
+          const current = String(lines[index] || '').trim();
+          const next = String(lines[index + 1] || '').trim();
+
+          if (!current) {
+            continue;
+          }
+
+          if (next && shouldMergeBulletContinuationLine(current, next)) {
+            merged.push(`${current} ${next}`.replace(/\s+/g, ' ').trim());
+            index += 1;
+            continue;
+          }
+
+          merged.push(current);
+        }
+
+        return merged;
       }
 
       function buildHighlightTerms(query) {
@@ -1993,10 +2034,10 @@
         if (!raw) return [];
 
         // Step 1: split on explicit newlines (already-formatted AI output)
-        const explicitLines = raw
+        const explicitLines = mergeProtectedBulletLines(raw
           .split('\n')
           .map((line) => line.trim())
-          .filter(Boolean);
+          .filter(Boolean));
 
         if (explicitLines.length > 1) {
           return explicitLines;
