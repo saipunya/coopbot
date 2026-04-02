@@ -246,7 +246,8 @@ function isNoisyLine(text) {
   if (
     /^พัก\s*[:|]/.test(line) ||
     /\|\s*ฝ่ายบริหารทั่วไป/.test(line) ||
-    /เล่ม\s*\d+.*ราชกิจจานุเบกษา/.test(line)
+    /เล่ม\s*\d+.*ราชกิจจานุเบกษา/.test(line) ||
+    /ส่วนเกิน\s*แห่งข้อมูล/.test(line)
   ) {
     return true;
   }
@@ -299,6 +300,123 @@ function getQueryTokens(message) {
 
 function getFocusQueryTokens(message) {
   return getQueryTokens(message).filter((token) => !GENERIC_QUERY_TOKENS.has(String(token || "").trim().toLowerCase()));
+}
+
+function normalizeComparisonText(text) {
+  return normalizeForSearch(cleanLine(text))
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function hasSubstantiveAnswerSignal(line) {
+  const text = cleanLine(line);
+  return /(ต้อง|ไม่ต้อง|ได้|ไม่ได้|ให้|กำหนด|จัดสรร|ชำระ|จ่าย|อัตรา|กำไรสุทธิ|มีหน้าที่|จำเป็นต้อง|ไม่จำเป็นต้อง|สามารถ|อาจ|ภายใน|เกิน|บาท|ร้อยละ|เปอร์เซ็นต์|%|ตามมาตรา|มาตรา|ข้อ|วรรค)/.test(
+    text,
+  );
+}
+
+function lineRepeatsOriginalQuestion(line, originalMessage = "") {
+  const cleanedLine = cleanLine(line);
+  const cleanedQuestion = cleanLine(originalMessage);
+  if (!cleanedLine || !cleanedQuestion) {
+    return false;
+  }
+
+  const normalizedLine = normalizeComparisonText(cleanedLine);
+  const normalizedQuestion = normalizeComparisonText(cleanedQuestion);
+  if (!normalizedLine || !normalizedQuestion) {
+    return false;
+  }
+
+  if (normalizedLine === normalizedQuestion) {
+    return true;
+  }
+
+  const questionLikePattern = /เท่าไร|เท่าไหร่|อย่างไร|ยังไง|หรือไม่|ได้ไหม|ได้หรือไม่|คืออะไร|หมายถึง|กี่/;
+  if (!questionLikePattern.test(cleanedLine)) {
+    return false;
+  }
+
+  const lineTokens = new Set(getFocusQueryTokens(cleanedLine));
+  const questionTokens = getFocusQueryTokens(cleanedQuestion);
+  if (!questionTokens.length) {
+    return false;
+  }
+
+  const tokenHits = questionTokens.filter((token) => lineTokens.has(token)).length;
+  return tokenHits >= Math.max(2, questionTokens.length - 1);
+}
+
+function lineLooksLikeSourceMetadata(line, sources = []) {
+  const cleanedLine = cleanLine(line);
+  if (!cleanedLine) {
+    return false;
+  }
+
+  if (hasSubstantiveAnswerSignal(cleanedLine)) {
+    return false;
+  }
+
+  if (/^(เรื่อง|เลขที่|ลงวันที่|ทะเบียนเอกสาร|ข้อมูลจากอินเทอร์เน็ต)\b/i.test(cleanedLine)) {
+    return true;
+  }
+
+  const normalizedLine = normalizeComparisonText(cleanedLine);
+  if (!normalizedLine) {
+    return false;
+  }
+
+  const candidates = dedupeSources(sources, Math.max(Array.isArray(sources) ? sources.length : 0, 8))
+    .flatMap((source) => [
+      source?.reference,
+      source?.title,
+      source?.keyword,
+      source?.documentNumber,
+      source?.documentDateText,
+    ])
+    .filter(Boolean);
+
+  return candidates.some((candidate) => {
+    const normalizedCandidate = normalizeComparisonText(candidate);
+    if (!normalizedCandidate || normalizedCandidate.length < 6) {
+      return false;
+    }
+
+    if (normalizedLine === normalizedCandidate) {
+      return true;
+    }
+
+    if (cleanedLine.length <= 120 && normalizedLine.startsWith(normalizedCandidate)) {
+      return true;
+    }
+
+    if (cleanedLine.length <= 90 && normalizedCandidate.startsWith(normalizedLine)) {
+      return true;
+    }
+
+    return false;
+  });
+}
+
+function shouldDropModelOutputLine(line, sources, options = {}) {
+  const cleanedLine = cleanLine(line);
+  if (!cleanedLine) {
+    return true;
+  }
+
+  if (isNoisyLine(cleanedLine)) {
+    return true;
+  }
+
+  if (lineRepeatsOriginalQuestion(cleanedLine, options.originalMessage || "")) {
+    return true;
+  }
+
+  if (lineLooksLikeSourceMetadata(cleanedLine, sources)) {
+    return true;
+  }
+
+  return false;
 }
 
 function countFocusTokenHits(line, message) {
@@ -1313,7 +1431,8 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
   const lines = raw
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((line) => !shouldDropModelOutputLine(line, sources, options));
   const structuredLawClauseLines = getPrimaryStructuredLawClauses(sources, options);
   const minimumSummaryLimit = Math.max(
     explainMode ? 6 : 7,
@@ -1566,9 +1685,11 @@ async function generateChatSummary(message, sources, options = {}) {
     options.questionIntent === "law_section"
       ? "หากแหล่งอ้างอิงมีรายการลำดับข้อ เช่น 1. 2. 3. หรือ (1) (2) ให้ถ่ายทอดให้ครบทุกข้อ คงหมายเลขเดิมตามแหล่งอ้างอิง ห้ามตกหล่น ห้ามรวมหลายข้อเป็นข้อเดียว และห้ามสลับลำดับ "
       : "";
+  const metadataExclusionInstruction =
+    "ห้ามคัดลอกคำถามของผู้ใช้มาเป็นบรรทัดคำตอบ และห้ามใส่ชื่อเรื่องเอกสาร ชื่อแหล่งข้อมูล เลขที่หนังสือ ลงวันที่ หรือ metadata ของเอกสารเป็นบรรทัดสรุป เว้นแต่ข้อมูลนั้นเป็นสาระคำตอบโดยตรง ";
   const instruction = explainMode
-    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${continuationInstruction}ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "5 ถึง 8 ข้อ"} และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.detailRange || "4 ถึง 8 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
-    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ตรงประเด็น ${planToneInstruction}${depthInstruction}${compareInstruction}พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "4 ถึง 6 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
+    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${continuationInstruction}ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "5 ถึง 8 ข้อ"} และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.detailRange || "4 ถึง 8 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
+    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ตรงประเด็น ${planToneInstruction}${depthInstruction}${compareInstruction}พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "4 ถึง 6 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
 
   try {
     const conversationNote = options.conversationalFollowUp
