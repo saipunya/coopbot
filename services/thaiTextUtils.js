@@ -36,12 +36,142 @@ const EXCLUSIVE_MEANING_RULES = [
   },
   {
     primary: "ผู้ตรวจสอบกิจการ",
-    conflicts: ["ผู้สอบบัญชี"],
+    conflicts: ["ผู้สอบบัญชี", "ผู้ตรวจการสหกรณ์"],
+  },
+  {
+    primary: "ผู้ตรวจการสหกรณ์",
+    conflicts: ["ผู้ตรวจสอบกิจการ", "ผู้สอบบัญชี"],
   },
   {
     primary: "ผู้สอบบัญชี",
-    conflicts: ["ผู้ตรวจสอบกิจการ"],
+    conflicts: ["ผู้ตรวจสอบกิจการ", "ผู้ตรวจการสหกรณ์"],
   },
+];
+const QUERY_TOPIC_RULES = [
+  {
+    primary: "ผู้ตรวจสอบกิจการ",
+    aliases: ["ผู้ตรวจสอบกิจการสหกรณ์"],
+    conflicts: ["ผู้ตรวจการสหกรณ์", "ผู้สอบบัญชี"],
+    contextSignals: [
+      "คุณสมบัติ",
+      "ลักษณะต้องห้าม",
+      "วิธีการรับสมัคร",
+      "ขาดจากการเป็น",
+      "อำนาจหน้าที่",
+      "รายงานเสนอต่อที่ประชุมใหญ่",
+      "เลือกตั้ง",
+      "บุคคลภายนอก",
+      "ตรวจสอบกิจการของสหกรณ์",
+    ],
+  },
+  {
+    primary: "ผู้ตรวจการสหกรณ์",
+    aliases: [],
+    conflicts: ["ผู้ตรวจสอบกิจการ", "ผู้สอบบัญชี"],
+    contextSignals: ["ออกคำสั่ง", "มอบหมาย", "ตรวจการสหกรณ์", "พนักงานเจ้าหน้าที่"],
+  },
+  {
+    primary: "ผู้สอบบัญชี",
+    aliases: [],
+    conflicts: ["ผู้ตรวจสอบกิจการ", "ผู้ตรวจการสหกรณ์"],
+    contextSignals: [
+      "สอบบัญชี",
+      "ตรวจสอบงบการเงิน",
+      "แสดงความเห็น",
+      "รับรองบัญชี",
+      "กรมตรวจบัญชีสหกรณ์",
+      "เป็นผู้สอบบัญชีของสหกรณ์",
+      "รายงานการสอบบัญชี",
+    ],
+  },
+  {
+    primary: "นายทะเบียนสหกรณ์",
+    aliases: ["นายทะเบียน"],
+    conflicts: ["รองนายทะเบียนสหกรณ์"],
+    contextSignals: [
+      "จดทะเบียน",
+      "รับจดทะเบียน",
+      "เพิกถอนทะเบียน",
+      "สั่งเลิก",
+      "มีอำนาจ",
+      "คำสั่ง",
+      "อนุญาต",
+      "แต่งตั้ง",
+      "ยับยั้งหรือเพิกถอนมติ",
+      "ร้องทุกข์หรือฟ้องคดีแทน",
+      "ออกคำสั่งเป็นหนังสือ",
+      "มอบอำนาจ",
+      "วินิจฉัย",
+      "นายทะเบียนสหกรณ์",
+    ],
+  },
+  {
+    primary: "รองนายทะเบียนสหกรณ์",
+    aliases: ["รองนายทะเบียน"],
+    conflicts: ["นายทะเบียนสหกรณ์"],
+    contextSignals: [
+      "รองนายทะเบียนสหกรณ์",
+      "ได้รับมอบหมาย",
+      "ปฏิบัติการแทน",
+      "ทำการแทน",
+      "คำสั่งมอบหมาย",
+    ],
+  },
+  {
+    primary: "สมาชิก",
+    aliases: [],
+    conflicts: ["สมาชิกสมทบ"],
+    contextSignals: [
+      "รับสมาชิก",
+      "สมัครเข้าเป็นสมาชิก",
+      "คุณสมบัติสมาชิก",
+      "สมาชิกมีสิทธิ",
+      "สมาชิกมีหน้าที่",
+      "สมาชิกของสหกรณ์",
+      "ขาดจากการเป็นสมาชิก",
+    ],
+  },
+  {
+    primary: "สมาชิกสมทบ",
+    aliases: ["สมาชิกประเภทสมทบ"],
+    conflicts: ["สมาชิก"],
+    contextSignals: [
+      "สมาชิกสมทบ",
+      "สมาชิกประเภทสมทบ",
+      "สิทธิออกเสียง",
+      "องค์ประชุม",
+      "เป็นกรรมการ",
+      "กู้ยืมเงิน",
+      "สิทธิของสมาชิกสมทบ",
+      "สิทธิและหน้าที่ของสมาชิกสมทบ",
+      "ถือหุ้นได้",
+      "รับเลือกตั้ง",
+      "คุณสมบัติสมาชิกสมทบ",
+    ],
+  },
+];
+const QUALIFICATION_INTENT_PATTERNS = [
+  "คุณสมบัติ",
+  "ลักษณะต้องห้าม",
+  "ไม่มีสิทธิ",
+  "ขาดจากการเป็น",
+  "ขาดคุณสมบัติ",
+  "วิธีการรับสมัคร",
+];
+const DUTY_INTENT_PATTERNS = [
+  "อำนาจหน้าที่",
+  "มีหน้าที่",
+  "หน้าที่ของ",
+  "หน้าที่ในการ",
+  "บทบาท",
+];
+const RIGHTS_INTENT_PATTERNS = [
+  "สิทธิ",
+  "สิทธิของ",
+  "สิทธิออกเสียง",
+  "องค์ประชุม",
+  "เป็นกรรมการ",
+  "กู้ยืมเงิน",
 ];
 
 function normalizeForSearch(text) {
@@ -84,6 +214,124 @@ function expandSearchConcepts(text) {
   }
 
   return [...new Set(phrases)].join(" ");
+}
+
+function getQueryFocusProfile(query) {
+  const normalizedQuery = normalizeForSearch(query).toLowerCase();
+  const matchedTopics = QUERY_TOPIC_RULES.filter((rule) => {
+    const primary = normalizeForSearch(rule.primary).toLowerCase();
+    const aliases = Array.isArray(rule.aliases)
+      ? rule.aliases.map((phrase) => normalizeForSearch(phrase).toLowerCase()).filter(Boolean)
+      : [];
+    return [primary, ...aliases].some((phrase) => phrase && normalizedQuery.includes(phrase));
+  }).map((rule) => ({
+    primary: normalizeForSearch(rule.primary).toLowerCase(),
+    aliases: Array.isArray(rule.aliases)
+      ? rule.aliases.map((phrase) => normalizeForSearch(phrase).toLowerCase()).filter(Boolean)
+      : [],
+    conflicts: Array.isArray(rule.conflicts)
+      ? rule.conflicts.map((phrase) => normalizeForSearch(phrase).toLowerCase()).filter(Boolean)
+      : [],
+    contextSignals: Array.isArray(rule.contextSignals)
+      ? rule.contextSignals.map((phrase) => normalizeForSearch(phrase).toLowerCase()).filter(Boolean)
+      : [],
+  }));
+
+  let intent = "general";
+  if (QUALIFICATION_INTENT_PATTERNS.some((phrase) => normalizedQuery.includes(normalizeForSearch(phrase).toLowerCase()))) {
+    intent = "qualification";
+  } else if (DUTY_INTENT_PATTERNS.some((phrase) => normalizedQuery.includes(normalizeForSearch(phrase).toLowerCase()))) {
+    intent = "duty";
+  } else if (RIGHTS_INTENT_PATTERNS.some((phrase) => normalizedQuery.includes(normalizeForSearch(phrase).toLowerCase()))) {
+    intent = "rights";
+  }
+
+  return {
+    normalizedQuery,
+    intent,
+    topics: matchedTopics,
+  };
+}
+
+function extractExplicitTopicHints(query) {
+  return getQueryFocusProfile(query).topics.map((item) => item.primary);
+}
+
+function scoreQueryFocusAlignment(query, text) {
+  const profile = getQueryFocusProfile(query);
+  const normalizedText = normalizeForSearch(text).toLowerCase();
+  if (!profile.normalizedQuery || !normalizedText || !profile.topics.length) {
+    return 0;
+  }
+
+  let score = 0;
+
+  for (const topic of profile.topics) {
+    const topicPhrases = [topic.primary, ...(topic.aliases || [])].filter(Boolean);
+    const hasPrimary = topicPhrases.some((phrase) => normalizedText.includes(phrase));
+    const conflictHits = (topic.conflicts || []).filter((phrase) => normalizedText.includes(phrase));
+    const queryHasConflict = conflictHits.some((phrase) => profile.normalizedQuery.includes(phrase));
+
+    if (hasPrimary) {
+      score += 22;
+    }
+
+    if (!hasPrimary && conflictHits.length > 0 && !queryHasConflict) {
+      score -= 60;
+      continue;
+    }
+
+    if (hasPrimary && conflictHits.length > 0 && !queryHasConflict) {
+      score -= conflictHits.length * 18;
+    }
+
+    const contextSignals = Array.isArray(topic.contextSignals) ? topic.contextSignals : [];
+    const contextHitCount = contextSignals.filter((phrase) => normalizedText.includes(phrase)).length;
+
+    if (hasPrimary && contextSignals.length > 0) {
+      if (contextHitCount > 0) {
+        score += Math.min(20, contextHitCount * 8);
+      } else {
+        score -= profile.intent === "general" ? 10 : 22;
+      }
+    }
+
+    if (profile.intent === "qualification") {
+      if (hasPrimary && /(คุณสมบัติ|ลักษณะต้องห้าม|ขาดจากการเป็น|ขาดคุณสมบัติ|วิธีการรับสมัคร|ไม่มีสิทธิ)/.test(normalizedText)) {
+        score += 40;
+      } else if (hasPrimary) {
+        score -= 18;
+      }
+    }
+
+    if (profile.intent === "duty") {
+      if (
+        hasPrimary &&
+        /(อำนาจหน้าที่|มีหน้าที่|หน้าที่ของ|หน้าที่ในการ|บทบาท|ตรวจสอบกิจการของสหกรณ์|รายงานเสนอต่อที่ประชุมใหญ่|ทำรายงานเสนอต่อที่ประชุมใหญ่)/.test(
+          normalizedText,
+        )
+      ) {
+        score += 32;
+      } else if (hasPrimary) {
+        score -= 20;
+      }
+    }
+
+    if (profile.intent === "rights") {
+      if (
+        hasPrimary &&
+        /(สิทธิ|สิทธิออกเสียง|องค์ประชุม|เป็นกรรมการ|กู้ยืมเงิน|สิทธิและหน้าที่|ถือหุ้นได้|รับเลือกตั้ง)/.test(
+          normalizedText,
+        )
+      ) {
+        score += 34;
+      } else if (hasPrimary) {
+        score -= 18;
+      }
+    }
+  }
+
+  return score;
 }
 
 function hasExclusiveMeaningMismatch(query, text) {
@@ -175,9 +423,13 @@ function makeBigrams(tokens) {
 
 module.exports = {
   expandSearchConcepts,
+  extractExplicitTopicHints,
+  getQueryFocusProfile,
   hasExclusiveMeaningMismatch,
   makeBigrams,
   normalizeForSearch,
+  scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,
+  RIGHTS_INTENT_PATTERNS,
 };

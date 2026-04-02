@@ -1,8 +1,11 @@
 const { getDbPool } = require("../config/db");
 const {
+  extractExplicitTopicHints,
+  getQueryFocusProfile,
   hasExclusiveMeaningMismatch,
   makeBigrams,
   normalizeForSearch,
+  scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,
 } = require("../services/thaiTextUtils");
@@ -45,6 +48,39 @@ function isDirectLawNumberQuery(text) {
   return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+(?:\s|$)/.test(normalized);
 }
 
+function getFocusedIntentTerms(intent = "general") {
+  if (intent === "qualification") {
+    return ["คุณสมบัติ", "ลักษณะต้องห้าม", "วิธีการรับสมัคร", "ขาดจากการเป็น", "ไม่มีสิทธิ"];
+  }
+
+  if (intent === "duty") {
+    return [
+      "อำนาจหน้าที่",
+      "มีหน้าที่",
+      "หน้าที่ของ",
+      "หน้าที่ในการ",
+      "รายงานเสนอต่อที่ประชุมใหญ่",
+      "ทำรายงานเสนอต่อที่ประชุมใหญ่",
+      "ตรวจสอบกิจการของสหกรณ์",
+    ];
+  }
+
+  if (intent === "rights") {
+    return [
+      "สิทธิ",
+      "สิทธิออกเสียง",
+      "องค์ประชุม",
+      "เป็นกรรมการ",
+      "กู้ยืมเงิน",
+      "สิทธิและหน้าที่",
+      "ถือหุ้นได้",
+      "รับเลือกตั้ง",
+    ];
+  }
+
+  return [];
+}
+
 async function findExactLawRows(pool, tableConfig, queryLawNumber) {
   const [tableName, idField, numberField, partField, detailField, commentField, sourceName] = tableConfig;
   const number = String(queryLawNumber || "").trim();
@@ -73,6 +109,57 @@ async function findExactLawRows(pool, tableConfig, queryLawNumber) {
   return rows.map((row) => ({ ...row, __sourceName: sourceName }));
 }
 
+async function findFocusedLawRows(pool, tableConfig, query) {
+  const [tableName, idField, numberField, partField, detailField, commentField, sourceName] = tableConfig;
+  const focusProfile = getQueryFocusProfile(query);
+  if (!focusProfile.topics.length) {
+    return [];
+  }
+
+  const topicTerms = uniqueTokens(
+    focusProfile.topics.flatMap((topic) => [topic.primary, ...(topic.aliases || [])]).filter(Boolean),
+  );
+  const topicContextTerms = uniqueTokens(
+    focusProfile.topics.flatMap((topic) => topic.contextSignals || []).filter(Boolean),
+  );
+  const intentTerms = uniqueTokens([
+    ...getFocusedIntentTerms(focusProfile.intent),
+    ...topicContextTerms,
+  ]);
+  if (!topicTerms.length) {
+    return [];
+  }
+
+  const topicClause = topicTerms
+    .map(() => `(LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`)
+    .join(" OR ");
+  const topicParams = topicTerms.flatMap((term) => {
+    const like = `%${term}%`;
+    return [like, like, like];
+  });
+
+  const intentClause = intentTerms.length
+    ? ` AND (${intentTerms
+        .map(() => `(LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`)
+        .join(" OR ")})`
+    : "";
+  const intentParams = intentTerms.flatMap((term) => {
+    const like = `%${normalizeForSearch(term).toLowerCase()}%`;
+    return [like, like, like];
+  });
+
+  const [rows] = await pool.query(
+    `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
+            ${detailField} AS law_detail, ${commentField} AS law_comment
+       FROM ${tableName}
+      WHERE (${topicClause})${intentClause}
+      LIMIT 20`,
+    [...topicParams, ...intentParams],
+  );
+
+  return rows.map((row) => ({ ...row, __sourceName: sourceName, __focusedMatch: true }));
+}
+
 function scoreResult(query, text, primaryLabel) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const normalizedText = normalizeForSearch(text).toLowerCase();
@@ -99,8 +186,17 @@ function scoreResult(query, text, primaryLabel) {
     score += 20;
   }
 
+  const explicitTopics = extractExplicitTopicHints(query);
+  if (
+    explicitTopics.length > 0 &&
+    explicitTopics.every((topic) => normalizedText.includes(topic))
+  ) {
+    score += 18;
+  }
+
   const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
   score += coverage * 25;
+  score += scoreQueryFocusAlignment(query, `${text} ${primaryLabel || ""}`);
 
   if (hasExclusiveMeaningMismatch(query, `${text} ${primaryLabel || ""}`)) {
     score -= 120;
@@ -188,7 +284,39 @@ class LawSearchModel {
           : [
               ["tbl_laws", "law_id", "law_number", "law_part", "law_detail", "law_comment", "tbl_laws"],
               ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws"],
-            ];
+          ];
+
+    const focusedRowGroups = await Promise.all(
+      tableConfigs.map((tableConfig) => findFocusedLawRows(pool, tableConfig, message)),
+    );
+    const focusedRows = focusedRowGroups.flat();
+    const focusedResults = focusedRows
+      .map((row) => {
+        const combinedText = [
+          row.law_number,
+          row.law_part,
+          row.law_detail,
+          row.law_comment,
+        ].join(" ");
+
+        return {
+          id: row.id,
+          source: row.__sourceName,
+          title: row.law_part || row.law_number || "กฎหมายที่เกี่ยวข้อง",
+          reference: row.law_number || row.law_part || row.__sourceName,
+          content: row.law_detail || "",
+          comment: row.law_comment || "",
+          score:
+            scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`) +
+            scoreQueryFocusAlignment(message, combinedText) +
+            80,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    if (focusedResults.length > 0 && getQueryFocusProfile(message).intent !== "general") {
+      return focusedResults.slice(0, limit);
+    }
 
     if (queryLawNumber && isDirectLawNumberQuery(message)) {
       const exactRowGroups = await Promise.all(
@@ -241,8 +369,7 @@ class LawSearchModel {
       }),
     );
 
-    const rankedResults = rowGroups
-      .flat()
+    const rankedResults = [...focusedRows, ...rowGroups.flat()]
       .map((row) => {
         const combinedText = [
           row.law_number,
@@ -282,10 +409,14 @@ class LawSearchModel {
           reference: row.law_number || row.law_part || row.__sourceName,
           content: row.law_detail || "",
           comment: row.law_comment || "",
-          score,
+          score: score + (row.__focusedMatch ? 60 : 0),
         };
       })
       .filter((row) => row.score > 0)
+      .filter((row, index, list) => {
+        const key = `${row.source || ""}::${row.id || ""}`;
+        return list.findIndex((item) => `${item.source || ""}::${item.id || ""}` === key) === index;
+      })
       .sort((a, b) => b.score - a.score);
 
     if (queryLawNumber && isDirectLawNumberQuery(message)) {

@@ -1,8 +1,10 @@
 const { getOpenAiConfig, generateOpenAiCompletion, getOpenAiClient } = require("./openAiService");
 const { isAiEnabled } = require("./runtimeSettingsService");
 const {
+  getQueryFocusProfile,
   hasExclusiveMeaningMismatch,
   normalizeForSearch,
+  scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,
 } = require("./thaiTextUtils");
@@ -232,8 +234,25 @@ function dedupeSources(sources, limit = sources.length) {
 }
 
 function buildReferenceSection(sources, limit = 5) {
-  const topSources = dedupeSources(sources, limit);
-  return ["แหล่งอ้างอิง:", ...topSources.map(formatReferenceLine)].join("\n");
+  const topSources = dedupeSources(sources, Math.max(limit * 2, limit));
+  const lines = [];
+  const seen = new Set();
+
+  for (const source of topSources) {
+    const line = formatReferenceLine(source);
+    if (!line || seen.has(line)) {
+      continue;
+    }
+
+    seen.add(line);
+    lines.push(line);
+
+    if (lines.length >= limit) {
+      break;
+    }
+  }
+
+  return ["แหล่งอ้างอิง:", ...lines].join("\n");
 }
 
 function stripStandaloneDoubleSlash(text) {
@@ -334,7 +353,16 @@ function getQueryTokens(message) {
 }
 
 function getFocusQueryTokens(message) {
-  return getQueryTokens(message).filter((token) => !GENERIC_QUERY_TOKENS.has(String(token || "").trim().toLowerCase()));
+  const baseTokens = getQueryTokens(message).filter(
+    (token) => !GENERIC_QUERY_TOKENS.has(String(token || "").trim().toLowerCase()),
+  );
+  const topicTokens = getQueryFocusProfile(message).topics.flatMap((topic) =>
+    String(topic.primary || "")
+      .split(/\s+/)
+      .map((token) => String(token || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return uniqueTokens([...baseTokens, ...topicTokens]);
 }
 
 function normalizeComparisonText(text) {
@@ -545,10 +573,23 @@ function filterSourcesByAnswerFocus(sources, options = {}) {
     return normalizedSources;
   }
 
+  const focusProfile = getQueryFocusProfile(message);
+
   if (options.amountMode) {
     const amountFocused = normalizedSources.filter((source) => sourceMatchesAmountFocus(source, message));
     if (amountFocused.length > 0) {
       return amountFocused;
+    }
+  }
+
+  if (focusProfile.topics.length > 0) {
+    const minimumFocusScore = focusProfile.intent === "general" ? 10 : 18;
+    const topicFocusedSources = normalizedSources.filter((source) => {
+      return scoreQueryFocusAlignment(message, buildSourceSearchText(source)) >= minimumFocusScore;
+    });
+
+    if (topicFocusedSources.length > 0) {
+      return topicFocusedSources;
     }
   }
 
@@ -569,7 +610,7 @@ function scoreLineByQuery(line, message) {
   const lineTokenSet = new Set(uniqueTokens(segmentWords(line)));
   const tokenHits = tokens.filter((token) => lineTokenSet.has(token) || normalizedLine.includes(token)).length;
   const coverage = tokenHits / tokens.length;
-  return tokenHits * 2 + coverage * 6;
+  return tokenHits * 2 + coverage * 6 + scoreQueryFocusAlignment(message, line);
 }
 
 function hasCoreLegalSignal(line) {
@@ -1265,6 +1306,7 @@ function formatDatabaseOnlySourceBlock(source, message, options = {}) {
 }
 
 function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
+  const focusMessage = String(options.focusMessage || options.originalMessage || "").trim();
   const explainMode = Boolean(options.explainMode);
   const shortDecisionMode = options.questionIntent === "short_answer" && options.decisionMode;
   const summaryLimit =
@@ -1298,16 +1340,16 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
     orderSourcesForDatabaseOnly(sources, {
       questionIntent: options.questionIntent,
       explainMode,
-      originalMessage: options.originalMessage || "",
+      originalMessage: focusMessage,
       planCode: options.planCode,
       sourceLimit: explainMode ? 8 : 6,
     }),
     explainMode ? 8 : 6,
   );
 
-  const decisionLead = options.decisionMode ? inferDecisionLead(options.originalMessage || "", visibleSources) : "";
+  const decisionLead = options.decisionMode ? inferDecisionLead(focusMessage, visibleSources) : "";
   const substantiveSegments = extractSubstantiveSegments(visibleSources, substantiveLimit, {
-    message: options.originalMessage || "",
+    message: focusMessage,
     requireFocus: true,
   });
   const numericEvidence = options.amountMode ? extractNumericEvidence(visibleSources, explainMode ? 4 : 2) : [];
@@ -1320,7 +1362,7 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
     summaryLimit,
   );
   const orderedSummaryLines = prioritizeConclusionLines(summaryLines, {
-    originalMessage: options.originalMessage || "",
+    originalMessage: focusMessage,
     questionIntent: options.questionIntent,
   });
   const detailLines = explainMode
@@ -1371,6 +1413,7 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
 }
 
 function buildDatabaseOnlyAnswer(sources, options = {}) {
+  const focusMessage = String(options.focusMessage || options.originalMessage || "").trim();
   if (options.questionIntent !== "law_section") {
     const compactAnswer = buildCompactDatabaseOnlyAnswer(sources, options);
     if (compactAnswer) {
@@ -1381,7 +1424,7 @@ function buildDatabaseOnlyAnswer(sources, options = {}) {
   const orderedSources = orderSourcesForDatabaseOnly(sources, {
     questionIntent: options.questionIntent,
     explainMode: options.explainMode,
-    originalMessage: options.originalMessage || "",
+    originalMessage: focusMessage,
     planCode: options.planCode,
     sourceLimit:
       Math.max(
@@ -1393,7 +1436,7 @@ function buildDatabaseOnlyAnswer(sources, options = {}) {
   const displayedSources = [];
   const sourceBlocks = orderedSources
     .map((source) => {
-      const block = formatDatabaseOnlySourceBlock(source, options.originalMessage || "", {
+      const block = formatDatabaseOnlySourceBlock(source, focusMessage, {
         explainMode: options.explainMode,
         questionIntent: options.questionIntent,
         preserveMoreContent: true,
@@ -1468,6 +1511,7 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
   const message = String(options.message || "").trim();
   const requireFocus = options.requireFocus === true;
   const focusTokens = getFocusQueryTokens(message);
+  const focusProfile = getQueryFocusProfile(message);
 
   for (const source of dedupeSources(sources, 10)) {
     const joined = [source.content, source.chunk_text, source.comment].filter(Boolean).join("\n");
@@ -1494,6 +1538,34 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
       score += queryScore;
 
       if (focusTokens.length > 0 && !focusHit && queryScore < 4) {
+        continue;
+      }
+
+      if (
+        focusProfile.intent === "qualification" &&
+        !/(คุณสมบัติ|ลักษณะต้องห้าม|วิธีการรับสมัคร|ขาดจากการเป็น|ขาดคุณสมบัติ|ไม่มีสิทธิ)/.test(segment) &&
+        scoreQueryFocusAlignment(message, segment) < 30
+      ) {
+        continue;
+      }
+
+      if (
+        focusProfile.intent === "duty" &&
+        !/(อำนาจหน้าที่|มีหน้าที่|หน้าที่ของ|หน้าที่ในการ|รายงานเสนอต่อที่ประชุมใหญ่|ทำรายงานเสนอต่อที่ประชุมใหญ่|ตรวจสอบกิจการของสหกรณ์)/.test(
+          segment,
+        ) &&
+        scoreQueryFocusAlignment(message, segment) < 30
+      ) {
+        continue;
+      }
+
+      if (
+        focusProfile.intent === "rights" &&
+        !/(สิทธิ|สิทธิออกเสียง|องค์ประชุม|เป็นกรรมการ|กู้ยืมเงิน|สิทธิและหน้าที่|ถือหุ้นได้|รับเลือกตั้ง)/.test(
+          segment,
+        ) &&
+        scoreQueryFocusAlignment(message, segment) < 30
+      ) {
         continue;
       }
 
@@ -1674,20 +1746,22 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
 }
 
 function buildFallbackSummary(sources, explainMode, options = {}) {
+  const focusMessage = String(options.focusMessage || options.originalMessage || "").trim();
   if (options.databaseOnlyMode) {
     return buildDatabaseOnlyAnswer(sources, {
       ...options,
       explainMode,
+      focusMessage,
     });
   }
 
   const topSources = dedupeSources(sources, 5);
   const amountHighlights = options.amountMode ? extractAmountHighlights(topSources, explainMode ? 5 : 3) : [];
   const numericEvidence = options.amountMode ? extractNumericEvidence(topSources, explainMode ? 5 : 3) : [];
-  const decisionLead = options.decisionMode ? inferDecisionLead(options.originalMessage || "", topSources) : "";
+  const decisionLead = options.decisionMode ? inferDecisionLead(focusMessage, topSources) : "";
   const substantiveSegments = options.decisionMode
     ? extractSubstantiveSegments(topSources, explainMode ? 5 : 3, {
-        message: options.originalMessage || "",
+        message: focusMessage,
       })
     : [];
   const importantPoints = uniqueCleanLines(
@@ -1758,6 +1832,7 @@ async function generateChatSummary(message, sources, options = {}) {
   const explainMode = wantsExplanation(message);
   const amountMode = wantsAmountAnswer(message);
   const decisionMode = wantsDecisionAnswer(message);
+  const focusMessage = String(options.focusMessage || message || "").trim() || String(message || "").trim();
   const openAiConfig = getOpenAiConfig();
   const aiEnabled = await isAiEnabled();
   const promptProfile = options.promptProfile || {
@@ -1774,7 +1849,7 @@ async function generateChatSummary(message, sources, options = {}) {
     ...options,
     amountMode,
     decisionMode,
-    originalMessage: message,
+    originalMessage: focusMessage,
   });
 
   // Filter out low-quality sources before sending to Gemini
@@ -1793,6 +1868,7 @@ async function generateChatSummary(message, sources, options = {}) {
       decisionMode,
       databaseOnlyMode,
       originalMessage: message,
+      focusMessage,
     });
   }
 

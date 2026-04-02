@@ -3,6 +3,7 @@ const {
   hasExclusiveMeaningMismatch,
   makeBigrams,
   normalizeForSearch,
+  scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,
 } = require("../services/thaiTextUtils");
@@ -119,6 +120,7 @@ function scoreChunkMatch(query, row) {
 
   const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
   score += coverage * 20;
+  score += scoreQueryFocusAlignment(query, `${rawKeyword} ${rawChunkText}`);
 
   if (hasExclusiveMeaningMismatch(query, `${row.keyword || ""} ${row.chunk_text || ""}`)) {
     score -= 120;
@@ -254,6 +256,13 @@ class LawChatbotPdfChunkModel {
       originalname: String(entry.originalname || "").slice(0, 255),
       mimetype: String(entry.mimetype || "").slice(0, 150),
       fileSize: Number(entry.fileSize || 0),
+      extractionMethod: String(entry.extractionMethod || "").slice(0, 50),
+      extractionQualityScore: Number.isFinite(Number(entry.extractionQualityScore))
+        ? Number(entry.extractionQualityScore)
+        : null,
+      extractionNotes: String(entry.extractionNotes || "").slice(0, 2000),
+      isSearchable: entry.isSearchable === false ? 0 : 1,
+      qualityStatus: String(entry.qualityStatus || "accepted").slice(0, 20) || "accepted",
     };
 
     const pool = getDbPool();
@@ -270,8 +279,8 @@ class LawChatbotPdfChunkModel {
 
     const [result] = await pool.query(
       `INSERT INTO documents
-        (title, document_number, document_date, document_date_text, document_source, filename, originalname, mimetype, file_size)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (title, document_number, document_date, document_date_text, document_source, filename, originalname, mimetype, file_size, extraction_method, extraction_quality_score, extraction_notes, is_searchable, quality_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         normalizedEntry.title || null,
         normalizedEntry.documentNumber || null,
@@ -282,6 +291,11 @@ class LawChatbotPdfChunkModel {
         normalizedEntry.originalname || null,
         normalizedEntry.mimetype || null,
         normalizedEntry.fileSize || 0,
+        normalizedEntry.extractionMethod || null,
+        normalizedEntry.extractionQualityScore,
+        normalizedEntry.extractionNotes || null,
+        normalizedEntry.isSearchable,
+        normalizedEntry.qualityStatus,
       ],
     );
 
@@ -363,6 +377,9 @@ class LawChatbotPdfChunkModel {
 
           const score = scoreChunkMatch(message, row) + coarseScore;
           const document = memoryDocuments.find((item) => item.id === row.document_id);
+          if (document && document.isSearchable === 0) {
+            return null;
+          }
           return {
             ...row,
             title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
@@ -436,6 +453,7 @@ class LawChatbotPdfChunkModel {
        AS c
        LEFT JOIN documents AS d ON d.id = c.document_id
        WHERE ${whereClause}
+         AND (d.id IS NULL OR d.is_searchable = 1)
        ORDER BY ${orderClause}
        LIMIT 500`,
       [...params, ...orderParams]
@@ -491,6 +509,7 @@ class LawChatbotPdfChunkModel {
 
     if (!pool) {
       return memoryDocuments
+        .filter((row) => row.isSearchable !== 0)
         .map((row) => {
           const rowText = normalizeForSearch(
             `${row.title || ""} ${row.documentNumber || ""} ${row.documentDateText || ""} ${row.documentSource || ""} ${row.originalname || ""}`,
@@ -532,7 +551,8 @@ class LawChatbotPdfChunkModel {
     const [rows] = await pool.query(
       `SELECT id, title, document_number, document_date_text, document_source, originalname
        FROM documents
-       WHERE ${whereClause}
+       WHERE (${whereClause})
+         AND is_searchable = 1
        ORDER BY id DESC
        LIMIT 50`,
       params,
@@ -586,6 +606,7 @@ class LawChatbotPdfChunkModel {
       FROM pdf_chunks AS c
       LEFT JOIN documents AS d ON d.id = c.document_id
       WHERE c.embedding IS NOT NULL
+        AND (d.id IS NULL OR d.is_searchable = 1)
     `);
 
     // Pre-convert embeddings to Float32Array

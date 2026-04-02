@@ -27,13 +27,23 @@ const {
   canUseSearchHistory,
   shouldUseAIForPlan,
 } = require("./planService");
-const { chunkText, extractTextFromFile } = require("./documentTextExtractor");
+const {
+  chunkText,
+  extractTextResultFromFile,
+} = require("./documentTextExtractor");
 const {
   extractKeywords,
   extractDocumentKeywords,
 } = require("./keywordExtractionService");
 const { extractDocumentMetadata } = require("./documentMetadataService");
-const { normalizeForSearch, segmentWords, uniqueTokens } = require("./thaiTextUtils");
+const {
+  extractExplicitTopicHints,
+  getQueryFocusProfile,
+  normalizeForSearch,
+  scoreQueryFocusAlignment,
+  segmentWords,
+  uniqueTokens,
+} = require("./thaiTextUtils");
 
 const CHAT_CONTEXT_KEY = "lawChatbotContext";
 const CONTEXT_HISTORY_LIMIT = 8;
@@ -64,6 +74,89 @@ function getRemainingBudgetMs(startedAt, totalBudgetMs = CHAT_REPLY_BUDGET_MS) {
   }
 
   return Math.max(0, Math.round(totalBudgetMs - (nowMs() - startedAt)));
+}
+
+function getExtractionMethodLabel(method) {
+  switch (String(method || "").trim()) {
+    case "pdf_text_layer":
+      return "PDF text layer";
+    case "ocrmypdf_text_layer":
+      return "OCRmyPDF text layer";
+    case "tesseract_ocr":
+      return "Tesseract OCR";
+    case "ocrmypdf+tesseract_ocr":
+      return "OCRmyPDF + Tesseract OCR";
+    case "docx_text":
+      return "DOCX text";
+    case "doc_text":
+      return "DOC text";
+    default:
+      return "";
+  }
+}
+
+function getExtractionNoteLabel(note) {
+  switch (String(note || "").trim()) {
+    case "ocrmypdf_missing_language_data":
+      return "OCRmyPDF ยังไม่มี language pack ภาษาไทย";
+    case "ocrmypdf_not_installed":
+      return "ยังไม่ได้ติดตั้ง OCRmyPDF";
+    case "preprocessed_with_ocrmypdf":
+      return "preprocess PDF ด้วย OCRmyPDF";
+    default:
+      return "";
+  }
+}
+
+function getMinimumExtractionQualityScore(file = null) {
+  const extension = String(file?.originalname || file?.filename || "")
+    .toLowerCase()
+    .split(".")
+    .pop();
+
+  if (extension === "pdf") {
+    return Number(process.env.PDF_MIN_EXTRACTION_QUALITY_SCORE || process.env.DOCUMENT_MIN_EXTRACTION_QUALITY_SCORE || 50);
+  }
+
+  return Number(process.env.DOCUMENT_MIN_EXTRACTION_QUALITY_SCORE || 45);
+}
+
+function decideDocumentIndexing(extractionResult, file = null, chunkCount = 0) {
+  const qualityScore = Number(extractionResult?.qualityScore);
+  const minimumScore = getMinimumExtractionQualityScore(file);
+  const notes = Array.isArray(extractionResult?.notes) ? extractionResult.notes : [];
+  const extractionMethod = String(extractionResult?.extractionMethod || "").trim();
+  const reliedOnOcr = extractionMethod.includes("tesseract_ocr");
+
+  if (chunkCount <= 0 || !String(extractionResult?.text || "").trim()) {
+    return {
+      isSearchable: false,
+      qualityStatus: "quarantined",
+      reason: "ไม่พบข้อความที่นำไปสร้างดัชนีได้",
+    };
+  }
+
+  if (Number.isFinite(qualityScore) && qualityScore < minimumScore) {
+    return {
+      isSearchable: false,
+      qualityStatus: "quarantined",
+      reason: `คะแนนคุณภาพข้อความต่ำกว่าเกณฑ์ (${qualityScore}/${minimumScore})`,
+    };
+  }
+
+  if (reliedOnOcr && notes.includes("ocrmypdf_missing_language_data")) {
+    return {
+      isSearchable: false,
+      qualityStatus: "quarantined",
+      reason: "ยังไม่มี OCR ภาษาไทยพร้อมใช้งานบนเครื่องนี้",
+    };
+  }
+
+  return {
+    isSearchable: true,
+    qualityStatus: "accepted",
+    reason: "",
+  };
 }
 
 async function withTimeout(task, timeoutMs, fallbackValue, label = "task") {
@@ -720,7 +813,7 @@ async function searchDatabaseSources(message, target, options = {}) {
         retrievalPriority: routingPlan.priorities.structured_laws || 5,
       });
 
-  return [
+  const combinedMatches = [
     ...structuredMatches,
     ...knowledgeMatches,
     ...suggestionMatches,
@@ -739,6 +832,8 @@ async function searchDatabaseSources(message, target, options = {}) {
       return (b.score || 0) - (a.score || 0);
     })
     .slice(0, 120);
+
+  return pruneFocusedQueryMatches(combinedMatches, message);
 }
 
 function getSessionContext(session) {
@@ -774,13 +869,24 @@ function looksLikeFollowUpQuestion(message) {
     return true;
   }
 
+  if (/^(ตกลง|แล้ว|ส่วน|ประเด็นนี้|กรณีนี้|สรุปแล้ว|ท้ายที่สุด)/.test(text)) {
+    return true;
+  }
+
+  if (
+    /(อำนาจหน้าที่|มีหน้าที่|หน้าที่|คุณสมบัติ|ลักษณะต้องห้าม|ขาดจากการเป็น)/.test(text) &&
+    extractExplicitTopicHints(text).length === 0
+  ) {
+    return true;
+  }
+
   return /^(คืออะไร|คือ|เมื่อไร|เมื่อไหร่|อย่างไร|ยังไง|ได้หรือไม่|ได้ไหม|ได้หรือเปล่า|หรือไม่|สมาชิก|คณะกรรมการ|จะ|ต้อง|ควร|หาก)/.test(
     text,
   );
 }
 
 function extractTopicHints(message, matches) {
-  const hints = [];
+  const hints = [...extractExplicitTopicHints(message)];
   const strippedMessage = stripQuestionTail(message);
 
   if (strippedMessage && strippedMessage.length >= 6) {
@@ -1027,6 +1133,96 @@ function sortByScore(matches) {
   return (Array.isArray(matches) ? matches : [])
     .filter(Boolean)
     .sort((a, b) => (b.score || 0) - (a.score || 0));
+}
+
+function buildSourceFocusSearchText(item = {}) {
+  return normalizeForSearch(
+    [
+      item.reference,
+      item.title,
+      item.keyword,
+      item.content,
+      item.chunk_text,
+      item.comment,
+      item.documentNumber,
+      item.documentDateText,
+      item.documentSource,
+      item.sourceNote,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).toLowerCase();
+}
+
+function pruneFocusedQueryMatches(matches, message) {
+  const ranked = sortByScore(matches);
+  const focusProfile = getQueryFocusProfile(message);
+  if (!focusProfile.topics.length) {
+    return ranked;
+  }
+
+  const structuredSources = new Set(["tbl_laws", "tbl_glaws"]);
+  const secondaryFocusedSources = new Set(["admin_knowledge", "knowledge_suggestion", "tbl_vinichai"]);
+  const documentLikeSources = new Set(["documents", "pdf_chunks", "knowledge_base"]);
+  const generalMinimumFocusScore = focusProfile.intent === "general" ? 18 : 24;
+  const documentMinimumFocusScore = focusProfile.intent === "general" ? 26 : 32;
+
+  const scoredMatches = ranked.map((item) => ({
+    ...item,
+    __focusScore: scoreQueryFocusAlignment(message, buildSourceFocusSearchText(item)),
+  }));
+
+  let filtered = scoredMatches.filter((item) => {
+    const sourceName = String(item.source || "").trim().toLowerCase();
+    const focusScore = Number(item.__focusScore || 0);
+
+    if (structuredSources.has(sourceName)) {
+      return focusScore >= generalMinimumFocusScore;
+    }
+
+    if (secondaryFocusedSources.has(sourceName)) {
+      return focusScore >= generalMinimumFocusScore;
+    }
+
+    if (documentLikeSources.has(sourceName)) {
+      return focusScore >= documentMinimumFocusScore;
+    }
+
+    return focusScore >= generalMinimumFocusScore;
+  });
+
+  if (focusProfile.intent !== "general") {
+    const strongStructured = filtered.filter((item) => {
+      const sourceName = String(item.source || "").trim().toLowerCase();
+      return structuredSources.has(sourceName) && Number(item.__focusScore || 0) >= generalMinimumFocusScore;
+    });
+
+    if (strongStructured.length > 0) {
+      filtered = filtered.filter((item) => {
+        const sourceName = String(item.source || "").trim().toLowerCase();
+        if (structuredSources.has(sourceName)) {
+          return true;
+        }
+
+        if (secondaryFocusedSources.has(sourceName)) {
+          const extraThreshold = sourceName === "admin_knowledge" ? 18 : 10;
+          return Number(item.__focusScore || 0) >= generalMinimumFocusScore + extraThreshold;
+        }
+
+        return false;
+      });
+    }
+  }
+
+  if (filtered.length === 0) {
+    return ranked;
+  }
+
+  return filtered.map((item) => {
+    const normalized = { ...item };
+    delete normalized.__focusScore;
+    return normalized;
+  });
 }
 
 function normalizeSourceIdentityText(value) {
@@ -1863,6 +2059,7 @@ async function replyToChat(payload, session) {
           : sources.slice(0, answerSourceLimit);
     answer = await generateChatSummary(message, answerSources, {
       conversationalFollowUp: resolvedContext.usedContext,
+      focusMessage: effectiveMessage,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
       forceFallback: !planContext.useAI || remainingBudgetBeforeAnswerMs < MIN_AI_SUMMARY_BUDGET_MS,
       aiTimeoutMs: Math.max(1000, remainingBudgetBeforeAnswerMs - 500),
@@ -2074,12 +2271,28 @@ async function processUploadInBackground(file, uploadRecord) {
       processingMessage: "กำลังอ่านไฟล์และแปลงข้อความ",
     });
 
-    const extractedText = await extractTextFromFile(file);
+    const extractionResult = await extractTextResultFromFile(file);
+    const extractedText = extractionResult.text;
     const chunks = chunkText(extractedText, Number(process.env.CHUNK_SIZE || 1400));
     const documentMetadata = await extractDocumentMetadata(extractedText, file);
+    const extractionMethodLabel = getExtractionMethodLabel(extractionResult.extractionMethod);
+    const extractionNoteLabel = (extractionResult.notes || [])
+      .map((note) => getExtractionNoteLabel(note))
+      .find(Boolean);
+    const indexingDecision = decideDocumentIndexing(extractionResult, file, chunks.length);
+    const extractionSummary = [
+      extractionMethodLabel ? `วิธีอ่าน: ${extractionMethodLabel}` : "",
+      Number.isFinite(Number(extractionResult.qualityScore))
+        ? `คุณภาพข้อความ: ${Math.max(0, Math.min(100, Number(extractionResult.qualityScore)))}/100`
+        : "",
+      extractionNoteLabel,
+      indexingDecision.reason || "",
+    ]
+      .filter(Boolean)
+      .join(" | ");
 
     LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
-      processingMessage: `กำลังสร้างดัชนีเอกสาร ${chunks.length} ส่วน`,
+      processingMessage: `กำลังสร้างดัชนีเอกสาร ${chunks.length} ส่วน${extractionSummary ? ` | ${extractionSummary}` : ""}`,
       title: documentMetadata.title || file.originalname,
       documentNumber: documentMetadata.documentNumber || "",
       documentDateText: documentMetadata.documentDateText || "",
@@ -2096,7 +2309,25 @@ async function processUploadInBackground(file, uploadRecord) {
       originalname: file.originalname,
       mimetype: file.mimetype,
       fileSize: file.size,
+      extractionMethod: extractionResult.extractionMethod || "",
+      extractionQualityScore: extractionResult.qualityScore,
+      extractionNotes: (extractionResult.notes || []).filter(Boolean).join(" | "),
+      isSearchable: indexingDecision.isSearchable,
+      qualityStatus: indexingDecision.qualityStatus,
     });
+
+    if (!indexingDecision.isSearchable) {
+      LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
+        status: "quarantined",
+        processingMessage: `นำเข้าแบบกักกันแล้ว ยังไม่ถูกใช้ค้นหา${extractionSummary ? ` | ${extractionSummary}` : ""}`,
+        insertedChunkCount: 0,
+        title: documentRecord.title || file.originalname,
+        documentNumber: documentRecord.documentNumber || "",
+        documentDateText: documentRecord.documentDateText || "",
+        documentSource: documentRecord.documentSource || "",
+      });
+      return;
+    }
 
     const documentKeywords = await extractDocumentKeywords(extractedText);
     const chunkRecords = await mapWithConcurrency(
@@ -2118,7 +2349,7 @@ async function processUploadInBackground(file, uploadRecord) {
 
     LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
       status: "completed",
-      processingMessage: "นำเข้าข้อมูลเรียบร้อยแล้ว",
+      processingMessage: `นำเข้าข้อมูลเรียบร้อยแล้ว${extractionSummary ? ` | ${extractionSummary}` : ""}`,
       insertedChunkCount,
       title: documentRecord.title || file.originalname,
       documentNumber: documentRecord.documentNumber || "",

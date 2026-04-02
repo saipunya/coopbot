@@ -3,6 +3,7 @@ const {
   hasExclusiveMeaningMismatch,
   makeBigrams,
   normalizeForSearch,
+  scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,
 } = require("../services/thaiTextUtils");
@@ -46,6 +47,10 @@ function scoreKnowledgeMatch(query, row) {
 
   const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
   score += coverage * 18;
+  score += scoreQueryFocusAlignment(
+    query,
+    `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`,
+  );
 
   if (String(row.title || row.law_number || row.lawNumber || "").trim()) {
     score += 8;

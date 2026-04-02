@@ -161,6 +161,11 @@ async function ensureSchema() {
       originalname varchar(255) DEFAULT NULL,
       mimetype varchar(150) DEFAULT NULL,
       file_size bigint DEFAULT NULL,
+      extraction_method varchar(50) DEFAULT NULL,
+      extraction_quality_score int(11) DEFAULT NULL,
+      extraction_notes text DEFAULT NULL,
+      is_searchable tinyint(1) NOT NULL DEFAULT 1,
+      quality_status varchar(20) NOT NULL DEFAULT 'accepted',
       created_at timestamp NULL DEFAULT current_timestamp(),
       updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
       PRIMARY KEY (id)
@@ -218,6 +223,26 @@ async function ensureSchema() {
 
   try {
     await pool.query("ALTER TABLE law_chatbot_answer_cache ADD KEY idx_law_chatbot_answer_cache_target (target)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE documents ADD COLUMN extraction_method varchar(50) DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE documents ADD COLUMN extraction_quality_score int(11) DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE documents ADD COLUMN extraction_notes text DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE documents ADD COLUMN is_searchable tinyint(1) NOT NULL DEFAULT 1");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE documents ADD COLUMN quality_status varchar(20) NOT NULL DEFAULT 'accepted'");
   } catch (_) {}
 
   try {
