@@ -20,6 +20,19 @@ function sanitizePaymentRequestReturnPath(value, fallbackPath = "/admin/payment-
   return path;
 }
 
+function sanitizeAdminUsersReturnPath(value, fallbackPath = "/admin/users") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!path.startsWith("/admin/users")) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
 function renderLogin(req, res) {
   res.render("admin/login", {
     title: "Admin Login",
@@ -178,6 +191,19 @@ async function renderPaymentRequests(req, res) {
   });
 }
 
+async function renderUsers(req, res) {
+  const data = await lawChatbotService.getAdminUsersData(req.query.q || "");
+
+  res.render("admin/users", {
+    title: "Manage Users",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data,
+    returnPath: req.originalUrl || "/admin/users",
+  });
+}
+
 async function renderPaymentRequestDetail(req, res) {
   const data = await lawChatbotService.getAdminPaymentRequestDetail(req.params.id);
   if (!data) {
@@ -222,6 +248,47 @@ async function updatePaymentRequestPlan(req, res) {
       encodeURIComponent(
         `อัปเดตแพ็กเกจเป็น ${result.planLabel || "ที่เลือก"} แล้ว ยอดชำระถูกปรับอัตโนมัติเป็น ${Number(result.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท`
       )
+  );
+}
+
+async function updateUserPlan(req, res) {
+  const userId = Number(req.body.userId || req.body.id || 0);
+  const planCode = String(req.body.planCode || "").trim();
+  const durationDays = Number(req.body.durationDays || 0);
+  const fallbackPath = userId ? "/admin/users" : "/admin/users";
+  const returnTo = sanitizeAdminUsersReturnPath(req.body.returnTo, fallbackPath);
+
+  if (!userId) {
+    return res.redirect(
+      `${returnTo}?error=` + encodeURIComponent("ไม่พบผู้ใช้ที่ต้องการอัปเดตแพ็กเกจ")
+    );
+  }
+
+  const result = await lawChatbotService.adminUpdateUserPlan(userId, planCode, {
+    durationDays,
+    updatedBy:
+      (req.session.adminUser && (req.session.adminUser.email || req.session.adminUser.username || req.session.adminUser.name)) ||
+      "admin",
+  });
+
+  if (!result.ok) {
+    return res.redirect(
+      `${returnTo}?error=` + encodeURIComponent("ไม่สามารถอัปเดตแพ็กเกจของผู้ใช้งานรายนี้ได้")
+    );
+  }
+
+  const displayName = result.user?.name || result.user?.email || `#${userId}`;
+  const successMessage =
+    result.planCode === "free"
+      ? `ปรับแพ็กเกจของ ${displayName} เป็น Free แล้ว และล้างวันหมดอายุแพ็กเกจเรียบร้อย`
+      : `ปรับแพ็กเกจของ ${displayName} เป็น ${result.planLabel} ${result.durationDays} วัน เรียบร้อยแล้ว${
+          result.user?.planExpiresAt
+            ? ` (หมดอายุ ${new Date(result.user.planExpiresAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })})`
+            : ""
+        }`;
+
+  return res.redirect(
+    `${returnTo}?success=` + encodeURIComponent(successMessage)
   );
 }
 
@@ -292,6 +359,36 @@ async function approveKnowledgeSuggestion(req, res) {
   return res.redirect(
     "/admin?success=" +
       encodeURIComponent("อนุมัติข้อเสนอและนำเข้าฐานความรู้เรียบร้อยแล้ว")
+  );
+}
+
+async function updateKnowledgeSuggestion(req, res) {
+  const id = Number(req.body.id || 0);
+  if (!id) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบรายการข้อเสนอที่ต้องการแก้ไข")
+    );
+  }
+
+  const result = await lawChatbotService.updateKnowledgeSuggestion(id, {
+    target: req.body.target,
+    title: req.body.title,
+    content: req.body.content,
+    reviewNote: req.body.reviewNote,
+  });
+
+  if (!result.ok) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่สามารถบันทึกการแก้ไขข้อเสนอรายการนี้ได้")
+    );
+  }
+
+  return res.redirect(
+    "/admin?success=" +
+      encodeURIComponent("บันทึกการแก้ไขข้อเสนอเรียบร้อยแล้ว") +
+      "#knowledge-suggestions"
   );
 }
 
@@ -395,11 +492,14 @@ module.exports = {
   redirectToGoogleLogin,
   handleGoogleCallback,
   renderDashboard,
+  renderUsers,
   renderPaymentRequests,
   renderPaymentRequestDetail,
+  updateUserPlan,
   updatePaymentRequestPlan,
   submitKnowledge,
   deleteKnowledge,
+  updateKnowledgeSuggestion,
   approveKnowledgeSuggestion,
   rejectKnowledgeSuggestion,
   approvePaymentRequest,

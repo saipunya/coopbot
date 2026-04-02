@@ -1760,6 +1760,48 @@ function enrichPaymentRequestRecord(record = {}) {
   };
 }
 
+function listAdminManageablePlans() {
+  const purchasable = listPurchasablePlans();
+  return [
+    {
+      value: "free",
+      code: "free",
+      label: getPlanLabel("free"),
+      priceBaht: 0,
+      monthlyLimit: resolveUserPlanContext({ plan: "free" }).monthlyLimit,
+      description: "ค้นฐานข้อมูลอย่างเดียว ไม่มี AI และไม่มี internet search",
+    },
+    ...purchasable,
+  ];
+}
+
+function enrichAdminUserRecord(record = {}) {
+  const planCode = normalizePlanCode(record.plan || "free");
+  const planLabel = getPlanLabel(planCode);
+  const expiresAt = record.plan_expires_at || record.premium_expires_at || null;
+  const expiresDate = expiresAt ? new Date(expiresAt) : null;
+  const now = new Date();
+  const remainingDays =
+    expiresDate instanceof Date && !Number.isNaN(expiresDate.getTime())
+      ? Math.ceil((expiresDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
+      : null;
+
+  return {
+    ...record,
+    planCode,
+    planLabel,
+    planPriceBaht: getPlanPriceBaht(planCode),
+    searchHistoryRetentionLabel: getSearchHistoryRetentionLabel(planCode),
+    monthlyLimit: resolveUserPlanContext({ plan: planCode }).monthlyLimit,
+    planExpiresAt: expiresAt,
+    remainingDays,
+    isExpired:
+      remainingDays !== null &&
+      Number.isFinite(remainingDays) &&
+      remainingDays < 0,
+  };
+}
+
 function buildSignedInProfile(signedInUser = {}, persistedUser = null) {
   if (!persistedUser) {
     return signedInUser;
@@ -2514,6 +2556,67 @@ async function submitPaymentRequest(payload, file, user) {
   return paymentRequest;
 }
 
+async function getAdminUsersData(query = "") {
+  const trimmedQuery = String(query || "").trim();
+  const [stats, users] = await Promise.all([
+    UserModel.getAdminStats(),
+    UserModel.listForAdmin({ query: trimmedQuery, limit: 100 }),
+  ]);
+
+  return {
+    query: trimmedQuery,
+    totalCount: Number(stats.total_count || 0),
+    freeCount: Number(stats.free_count || 0),
+    paidCount: Number(stats.paid_count || 0),
+    activeCount: Number(stats.active_count || 0),
+    defaultPlanDurationDays: getPlanDurationDays(),
+    plans: listAdminManageablePlans(),
+    users: users.map((item) => enrichAdminUserRecord(item)),
+  };
+}
+
+async function adminUpdateUserPlan(userId, planCode, options = {}) {
+  const normalizedUserId = Number(userId || 0);
+  const normalizedPlanCode = normalizePlanCode(planCode || "free");
+  const allowedPlans = new Set(listAdminManageablePlans().map((plan) => plan.code));
+  const durationDays = Math.max(
+    1,
+    Number(options.durationDays || getPlanDurationDays()),
+  );
+
+  if (!normalizedUserId) {
+    return { ok: false, reason: "invalid_user" };
+  }
+
+  if (!allowedPlans.has(normalizedPlanCode)) {
+    return { ok: false, reason: "invalid_plan" };
+  }
+
+  const currentUser = await UserModel.findById(normalizedUserId);
+  if (!currentUser) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const updated = await UserModel.setPlanByAdmin(normalizedUserId, normalizedPlanCode, {
+    durationDays,
+  });
+
+  if (!updated) {
+    return { ok: false, reason: "not_updated" };
+  }
+
+  const refreshedUser = await UserModel.findById(normalizedUserId);
+  const enrichedUser = enrichAdminUserRecord(refreshedUser || currentUser);
+
+  return {
+    ok: true,
+    user: enrichedUser,
+    planCode: normalizedPlanCode,
+    planLabel: getPlanLabel(normalizedPlanCode),
+    durationDays,
+  };
+}
+
 async function getAdminPaymentRequestsData() {
   const requests = (await PaymentRequestModel.listAll(100)).map((item) => enrichPaymentRequestRecord(item));
 
@@ -2730,6 +2833,31 @@ async function approveKnowledgeSuggestion(id, reviewMeta = {}) {
   };
 }
 
+async function updateKnowledgeSuggestion(id, patch = {}) {
+  const suggestion = await LawChatbotKnowledgeSuggestionModel.findById(id);
+  if (!suggestion || suggestion.status !== "pending") {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const updated = await LawChatbotKnowledgeSuggestionModel.updatePendingSuggestion(id, {
+    target: patch.target,
+    title: patch.title,
+    content: patch.content,
+    reviewNote: patch.reviewNote || "",
+  });
+
+  if (!updated) {
+    return { ok: false, reason: "not_updated" };
+  }
+
+  const refreshed = await LawChatbotKnowledgeSuggestionModel.findById(id);
+
+  return {
+    ok: true,
+    suggestion: refreshed,
+  };
+}
+
 async function rejectKnowledgeSuggestion(id, reviewMeta = {}) {
   return LawChatbotKnowledgeSuggestionModel.updateStatus(id, "rejected", {
     reviewedBy: reviewMeta.reviewedBy || "",
@@ -2776,12 +2904,15 @@ module.exports = {
   getUserDashboardData,
   getUserSearchHistoryData,
   getPaymentRequestPageData,
+  getAdminUsersData,
+  adminUpdateUserPlan,
   getAdminPaymentRequestsData,
   getAdminPaymentRequestDetail,
   updatePaymentRequestPlan,
   getKnowledgeAdminData,
   submitKnowledgeSuggestion,
   approveKnowledgeSuggestion,
+  updateKnowledgeSuggestion,
   rejectKnowledgeSuggestion,
   saveKnowledgeEntry,
   deleteKnowledgeEntry,

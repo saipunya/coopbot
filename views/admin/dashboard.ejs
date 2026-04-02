@@ -218,6 +218,25 @@
         font-size: 0.92rem;
         line-height: 1.6;
       }
+      .suggestion-editor {
+        margin-top: 0.9rem;
+        padding: 0.95rem;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(241, 246, 251, 0.82);
+      }
+      .suggestion-editor .field textarea {
+        min-height: 160px;
+      }
+      .suggestion-actions {
+        display: flex;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+        margin-top: 0.9rem;
+      }
+      .suggestion-actions form {
+        margin: 0;
+      }
       .soft-list {
         list-style: none;
         padding: 0;
@@ -302,6 +321,14 @@
         .topbar {
           flex-direction: column;
           align-items: stretch;
+        }
+        .suggestion-actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .suggestion-actions form,
+        .suggestion-actions button {
+          width: 100%;
         }
       }
     </style>
@@ -409,6 +436,7 @@
         <h2>Quick links</h2>
         <ul class="quick-links">
           <li><a href="/law-chatbot">หน้าแชตสาธารณะ</a></li>
+          <li><a href="/admin/users">จัดการแพ็กเกจผู้ใช้งาน</a></li>
           <li><a href="/law-chatbot/upload">หน้าจัดการอัปโหลด</a></li>
           <li><a href="/law-chatbot/feedback">หน้าดู feedback</a></li>
           <li><a href="/admin/payment-requests">ตรวจคำขออัปเกรดแพ็กเกจ <% if (paymentRequestData.pendingCount > 0) { %>(<%= paymentRequestData.pendingCount %> รออนุมัติ)<% } %></a></li>
@@ -500,10 +528,45 @@
                 <% if (item.createdAt) { %> | ส่งเมื่อ: <%= item.createdAt %><% } %>
               </div>
               <div style="margin-top: 0.6rem; color: var(--text-main); white-space: pre-line;"><%= item.content %></div>
-              <div class="knowledge-actions">
-                <form action="/admin/knowledge-suggestions/approve" method="post" onsubmit="return confirm('ยืนยันการอนุมัติและนำเข้าฐานความรู้ใช่หรือไม่');">
+              <div class="suggestion-editor">
+                <form action="/admin/knowledge-suggestions/update" method="post">
                   <input type="hidden" name="id" value="<%= item.id %>" />
-                  <button class="primary-btn" type="submit">อนุมัติและนำเข้า</button>
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="suggestion-target-<%= item.id %>">ประเภทข้อมูล</label>
+                      <select id="suggestion-target-<%= item.id %>" name="target" required>
+                        <option value="coop" <%= item.target === 'coop' ? 'selected' : '' %>>สหกรณ์</option>
+                        <option value="group" <%= item.target === 'group' ? 'selected' : '' %>>กลุ่มเกษตรกร</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="suggestion-title-<%= item.id %>">หัวข้อ</label>
+                      <input id="suggestion-title-<%= item.id %>" name="title" type="text" value="<%= item.title %>" required />
+                    </div>
+                  </div>
+                  <div class="field" style="margin-top: 0.9rem;">
+                    <label for="suggestion-content-<%= item.id %>">รายละเอียดคำตอบ</label>
+                    <textarea id="suggestion-content-<%= item.id %>" name="content" required><%= item.content %></textarea>
+                  </div>
+                  <div class="field" style="margin-top: 0.9rem;">
+                    <label for="suggestion-review-note-<%= item.id %>">หมายเหตุการตรวจทาน</label>
+                    <input
+                      id="suggestion-review-note-<%= item.id %>"
+                      name="reviewNote"
+                      type="text"
+                      value="<%= item.reviewNote || '' %>"
+                      placeholder="เช่น ปรับถ้อยคำก่อนนำเข้าฐานความรู้"
+                    />
+                  </div>
+                  <div class="suggestion-actions">
+                    <button class="secondary-btn" type="submit">บันทึกการแก้ไขก่อน</button>
+                  </div>
+                </form>
+              </div>
+              <div class="knowledge-actions">
+                <form action="/admin/knowledge-suggestions/approve" method="post" onsubmit="return confirm('ยืนยันการอนุมัติและนำเข้าฐานความรู้จากข้อมูลฉบับล่าสุดใช่หรือไม่');">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <button class="primary-btn" type="submit">อนุมัติและนำเข้าจากฉบับล่าสุด</button>
                 </form>
                 <form action="/admin/knowledge-suggestions/reject" method="post" onsubmit="return confirm('ยืนยันการปฏิเสธข้อเสนอนี้ใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />

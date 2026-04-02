@@ -3,6 +3,61 @@ const { DEFAULT_PLAN_DURATION_DAYS } = require("../config/planConfig");
 const { normalizePlanCode } = require("../services/planService");
 
 class UserModel {
+  static async listForAdmin(options = {}) {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for admin user listing.");
+    }
+
+    const query = String(options.query || "").trim().toLowerCase();
+    const limit = Math.max(1, Math.min(200, Number(options.limit || 50)));
+    const where = [];
+    const params = [];
+
+    if (query) {
+      const like = `%${query}%`;
+      where.push(
+        "(LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(google_id) LIKE ?)"
+      );
+      params.push(like, like, like);
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, google_id, email, name, avatar_url, plan, plan_started_at, plan_expires_at,
+              premium_expires_at, status, created_at, updated_at
+       FROM users
+       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+       ORDER BY updated_at DESC, id DESC
+       LIMIT ?`,
+      [...params, limit]
+    );
+
+    return rows;
+  }
+
+  static async getAdminStats() {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for admin user stats.");
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+          COUNT(*) AS total_count,
+          SUM(CASE WHEN plan = 'free' THEN 1 ELSE 0 END) AS free_count,
+          SUM(CASE WHEN plan IN ('standard', 'pro', 'premium') THEN 1 ELSE 0 END) AS paid_count,
+          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_count
+       FROM users`
+    );
+
+    return rows[0] || {
+      total_count: 0,
+      free_count: 0,
+      paid_count: 0,
+      active_count: 0,
+    };
+  }
+
   static async findById(userId) {
     const pool = getDbPool();
     if (!pool) {
@@ -111,6 +166,62 @@ class UserModel {
         : isSameActivePlan
           ? new Date(currentExpiryDate.getTime() + normalizedDays * 24 * 60 * 60 * 1000)
           : new Date(now.getTime() + normalizedDays * 24 * 60 * 60 * 1000);
+
+    const [result] = await pool.query(
+      `UPDATE users
+       SET plan = ?,
+           plan_started_at = ?,
+           plan_expires_at = ?,
+           premium_expires_at = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [
+        normalizedPlanCode,
+        planStartedAt,
+        planExpiresAt,
+        normalizedPlanCode === "premium" ? planExpiresAt : null,
+        normalizedUserId,
+      ]
+    );
+
+    return result.affectedRows > 0;
+  }
+
+  static async setPlanByAdmin(userId, planCode, options = {}) {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for plan update.");
+    }
+
+    const normalizedUserId = Number(userId || 0);
+    const normalizedPlanCode = normalizePlanCode(planCode);
+    const normalizedDays = Math.max(
+      1,
+      Number(options.durationDays || DEFAULT_PLAN_DURATION_DAYS),
+    );
+
+    if (!normalizedUserId) {
+      return false;
+    }
+
+    const currentUser = await this.findById(normalizedUserId);
+    if (!currentUser) {
+      return false;
+    }
+
+    const now = new Date();
+    const planStartedAt =
+      normalizedPlanCode === "free"
+        ? now
+        : options.planStartedAt
+          ? new Date(options.planStartedAt)
+          : now;
+    const planExpiresAt =
+      normalizedPlanCode === "free"
+        ? null
+        : options.planExpiresAt
+          ? new Date(options.planExpiresAt)
+          : new Date(planStartedAt.getTime() + normalizedDays * 24 * 60 * 60 * 1000);
 
     const [result] = await pool.query(
       `UPDATE users

@@ -57,6 +57,7 @@ function mapRow(row) {
     reviewNote: row.review_note || row.reviewNote || "",
     createdAt: row.created_at || row.createdAt || "",
     reviewedAt: row.reviewed_at || row.reviewedAt || "",
+    updatedAt: row.updated_at || row.updatedAt || "",
   };
 }
 
@@ -277,7 +278,7 @@ class LawChatbotKnowledgeSuggestionModel {
     await ensureTable();
     const [rows] = await pool.query(
       `SELECT id, target, title, content, source_type, submitted_by, submitter_session,
-              submitter_ip, status, reviewed_by, review_note, reviewed_at, created_at
+              submitter_ip, status, reviewed_by, review_note, reviewed_at, created_at, updated_at
          FROM chatbot_knowledge_suggestions
         WHERE id = ?
         LIMIT 1`,
@@ -285,6 +286,64 @@ class LawChatbotKnowledgeSuggestionModel {
     );
 
     return rows[0] ? mapRow(rows[0]) : null;
+  }
+
+  static async updatePendingSuggestion(id, patch = {}) {
+    const normalizedId = Number(id || 0);
+    if (!normalizedId) {
+      return false;
+    }
+
+    const normalizedPatch = {
+      target: patch.target === "group" ? "group" : "coop",
+      title: String(patch.title || "").trim().slice(0, 255),
+      content: String(patch.content || "").trim(),
+      reviewNote: String(patch.reviewNote || "").trim().slice(0, 255),
+    };
+
+    if (!normalizedPatch.title || !normalizedPatch.content) {
+      return false;
+    }
+
+    const pool = getDbPool();
+    if (!pool) {
+      const record = memorySuggestions.find(
+        (item) => Number(item.id) === normalizedId && item.status === "pending",
+      );
+      if (!record) {
+        return false;
+      }
+
+      Object.assign(record, {
+        target: normalizedPatch.target,
+        title: normalizedPatch.title,
+        content: normalizedPatch.content,
+        reviewNote: normalizedPatch.reviewNote,
+        updatedAt: new Date().toISOString(),
+      });
+      return true;
+    }
+
+    await ensureTable();
+    const [result] = await pool.query(
+      `UPDATE chatbot_knowledge_suggestions
+       SET target = ?,
+           title = ?,
+           content = ?,
+           review_note = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?
+         AND status = 'pending'`,
+      [
+        normalizedPatch.target,
+        normalizedPatch.title,
+        normalizedPatch.content,
+        normalizedPatch.reviewNote || null,
+        normalizedId,
+      ],
+    );
+
+    return result.affectedRows > 0;
   }
 
   static async searchApproved(message, target = "all", limit = 5) {

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" fill="none">
+  <defs>
+    <linearGradient id="ropeOuterA" x1="132" y1="124" x2="468" y2="476" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7ba4bf"/>
+      <stop offset="1" stop-color="#2f5f7a"/>
+    </linearGradient>
+    <linearGradient id="ropeOuterB" x1="468" y1="124" x2="132" y2="476" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9bb7ca"/>
+      <stop offset="1" stop-color="#5f7e93"/>
+    </linearGradient>
+    <linearGradient id="ropeInner" x1="220" y1="210" x2="380" y2="390" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8eaec3"/>
+      <stop offset="1" stop-color="#4f7088"/>
+    </linearGradient>
+  </defs>
+
+  <g opacity="0.88" stroke-linecap="round" stroke-linejoin="round">
+    <circle
+      cx="300"
+      cy="300"
+      r="156"
+      stroke="url(#ropeOuterA)"
+      stroke-width="28"
+      stroke-dasharray="18 14"
+    />
+    <circle
+      cx="300"
+      cy="300"
+      r="156"
+      stroke="url(#ropeOuterB)"
+      stroke-width="28"
+      stroke-dasharray="18 14"
+      stroke-dashoffset="16"
+    />
+    <circle
+      cx="300"
+      cy="300"
+      r="112"
+      stroke="url(#ropeInner)"
+      stroke-width="10"
+      stroke-dasharray="9 9"
+      opacity="0.56"
+    />
+    <path
+      d="M300 170c18 0 37 22 37 46 0 13-5 22-17 37l-20 23-20-23c-12-15-17-24-17-37 0-24 19-46 37-46z"
+      stroke="url(#ropeInner)"
+      stroke-width="10"
+      opacity="0.5"
+    />
+    <path
+      d="M300 430c-18 0-37-22-37-46 0-13 5-22 17-37l20-23 20 23c12 15 17 24 17 37 0 24-19 46-37 46z"
+      stroke="url(#ropeInner)"
+      stroke-width="10"
+      opacity="0.5"
+    />
+    <path
+      d="M170 300c0-18 22-37 46-37 13 0 22 5 37 17l23 20-23 20c-15 12-24 17-37 17-24 0-46-19-46-37z"
+      stroke="url(#ropeInner)"
+      stroke-width="10"
+      opacity="0.5"
+    />
+    <path
+      d="M430 300c0 18-22 37-46 37-13 0-22-5-37-17l-23-20 23-20c15-12 24-17 37-17 24 0 46 19 46 37z"
+      stroke="url(#ropeInner)"
+      stroke-width="10"
+      opacity="0.5"
+    />
+  </g>
+</svg>
