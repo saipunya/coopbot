@@ -129,56 +129,75 @@
 
     .page-header {
       width: min(1160px, 100%);
-      border-radius: 0.95rem;
-      padding: 0.48rem 0.62rem;
-      border: 1px solid rgba(255, 255, 255, 0.68);
-      background: rgba(255, 255, 255, 0.88);
+      --header-icon-size: 2rem;
+      --header-icon-radius: 0.68rem;
+      --header-icon-font-size: 0.82rem;
+      border-radius: 1rem;
+      padding: 0.46rem 0.54rem;
+      border: 1px solid rgba(255, 255, 255, 0.72);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(245, 249, 252, 0.9));
       box-shadow: var(--shadow-soft);
-      backdrop-filter: blur(14px);
-      display: flex;
+      backdrop-filter: blur(16px);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
-      justify-content: space-between;
-      gap: 0.45rem;
-      flex-wrap: wrap;
+      gap: 0.58rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .page-header::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(120deg, rgba(43, 132, 187, 0.07), transparent 34%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.46), transparent 48%);
+      pointer-events: none;
     }
 
     .page-brand {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.58rem;
       min-width: 0;
-      flex: 1 1 260px;
+      position: relative;
+      z-index: 1;
     }
 
     .brand-icon {
-      width: 2.1rem;
-      height: 2.1rem;
-      border-radius: 0.72rem;
+      width: var(--header-icon-size);
+      height: var(--header-icon-size);
+      border-radius: var(--header-icon-radius);
       display: inline-flex;
       align-items: center;
       justify-content: center;
       background: linear-gradient(145deg, #2b84bb, #0f4667);
       color: #fff;
-      font-size: 0.9rem;
-      box-shadow: 0 6px 14px rgba(15, 70, 103, 0.18);
+      font-size: var(--header-icon-font-size);
+      line-height: 1;
+      box-shadow: 0 8px 18px rgba(15, 70, 103, 0.18);
       flex: 0 0 auto;
     }
 
     .brand-title {
       min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.08rem;
     }
 
     .brand-heading {
       display: flex;
       align-items: center;
-      gap: 0.38rem;
+      gap: 0.42rem;
       min-width: 0;
     }
 
     .brand-title h6 {
       margin: 0;
       font-size: clamp(0.92rem, 1.4vw, 1.05rem);
-      line-height: 1.08;
+      line-height: 1.06;
       color: var(--primary-strong);
       flex: 0 1 auto;
       min-width: 0;
@@ -191,33 +210,56 @@
       display: none;
     }
 
+    .page-toolbar {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.32rem;
+      min-width: 0;
+      padding: 0;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      position: relative;
+      z-index: 1;
+    }
+
+    .page-toolbar-divider {
+      width: 1px;
+      align-self: center;
+      height: 1.55rem;
+      background: linear-gradient(180deg, rgba(21, 84, 122, 0.04), rgba(21, 84, 122, 0.16), rgba(21, 84, 122, 0.04));
+      flex: 0 0 auto;
+    }
+
     .page-identity {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.42rem;
       min-width: 0;
-      padding: 0.42rem 0.5rem;
-      border-radius: 0.85rem;
-      border: 1px solid rgba(21, 84, 122, 0.12);
-      background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(241, 246, 251, 0.94));
-      box-shadow: 0 6px 16px rgba(34, 63, 87, 0.06);
-      flex: 0 1 315px;
+      padding: 0.24rem 0.3rem;
+      border-radius: 0.82rem;
+      border: 1px solid rgba(21, 84, 122, 0.08);
+      background: rgba(255, 255, 255, 0.54);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46);
+      flex: 0 1 320px;
     }
 
     .page-identity-avatar {
-      width: 2rem;
-      height: 2rem;
-      border-radius: 0.68rem;
+      width: var(--header-icon-size);
+      height: var(--header-icon-size);
+      border-radius: var(--header-icon-radius);
       overflow: hidden;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       color: #fff;
       background: linear-gradient(145deg, var(--primary), var(--primary-strong));
-      box-shadow: 0 5px 12px rgba(15, 70, 103, 0.16);
+      box-shadow: 0 6px 14px rgba(15, 70, 103, 0.16);
       flex: 0 0 auto;
-      font-size: 0.82rem;
+      font-size: var(--header-icon-font-size);
+      line-height: 1;
     }
 
     .page-identity-avatar img {
@@ -239,7 +281,7 @@
       display: flex;
       flex-direction: row;
       align-items: center;
-      gap: 0.38rem;
+      gap: 0.3rem;
       flex: 1 1 auto;
     }
 
@@ -248,17 +290,18 @@
       align-items: center;
       justify-content: center;
       min-height: 1.1rem;
-      padding: 0.08rem 0.42rem;
+      padding: 0.08rem 0.4rem;
       border-radius: 999px;
-      background: rgba(21, 84, 122, 0.1);
+      background: rgba(21, 84, 122, 0.08);
       color: var(--primary-strong);
-      font-size: 0.64rem;
+      font-size: 0.62rem;
       font-weight: 700;
       flex: 0 0 auto;
+      letter-spacing: 0.02em;
     }
 
     .page-identity-name {
-      font-size: 0.84rem;
+      font-size: 0.82rem;
       line-height: 1.05;
       color: var(--primary-strong);
       white-space: nowrap;
@@ -273,7 +316,7 @@
     .page-identity-actions {
       display: flex;
       flex-wrap: nowrap;
-      gap: 0.3rem;
+      gap: 0.24rem;
       margin-top: 0;
       justify-content: flex-end;
     }
@@ -281,16 +324,16 @@
     .page-identity-action {
       border-radius: 999px;
       min-height: 1.7rem;
-      padding: 0.28rem 0.58rem;
-      font-size: 0.7rem;
+      padding: 0.26rem 0.54rem;
+      font-size: 0.68rem;
       font-weight: 700;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 0.3rem;
       text-decoration: none;
-      border: 1px solid rgba(21, 84, 122, 0.16);
-      background: #fff;
+      border: 1px solid rgba(21, 84, 122, 0.14);
+      background: rgba(255, 255, 255, 0.78);
       color: var(--primary-strong);
       box-shadow: none;
       white-space: nowrap;
@@ -313,8 +356,9 @@
       display: flex;
       align-items: center;
       justify-content: flex-end;
-      gap: 0.25rem;
+      gap: 0.24rem;
       flex-wrap: nowrap;
+      padding-left: 0.04rem;
     }
 
     .icon-chip-btn {
@@ -327,6 +371,21 @@
       border-radius: 999px;
     }
 
+    .page-actions .icon-chip-btn {
+      border: 1px solid rgba(21, 84, 122, 0.12) !important;
+      background: rgba(255, 255, 255, 0.62) !important;
+      color: var(--primary-strong) !important;
+      box-shadow: none !important;
+    }
+
+    .page-actions .icon-chip-btn:hover,
+    .page-actions .icon-chip-btn:focus-visible {
+      background: rgba(255, 255, 255, 0.96) !important;
+      border-color: rgba(21, 84, 122, 0.2) !important;
+      color: var(--primary-strong) !important;
+      transform: translateY(-1px);
+    }
+
     .top-status {
       width: min(1160px, 100%);
       display: flex;
@@ -337,16 +396,15 @@
     }
 
     .status-chip {
-      background: rgba(255, 255, 255, 0.86);
-      border: 1px solid var(--border);
+      background: rgba(21, 84, 122, 0.06);
+      border: 1px solid rgba(21, 84, 122, 0.08);
       border-radius: 999px;
-      padding: 0.2rem 0.48rem;
-      font-size: 0.72rem;
-      color: var(--text-sub);
+      padding: 0.16rem 0.42rem;
+      font-size: 0.68rem;
+      color: var(--primary-strong);
       display: inline-flex;
       align-items: center;
       gap: 0.25rem;
-      backdrop-filter: blur(6px);
       line-height: 1;
     }
 
@@ -1150,6 +1208,10 @@
       min-width: 84px;
     }
 
+    .composer-inline-only {
+      display: none !important;
+    }
+
     .composer-hint {
       display: flex;
       justify-content: space-between;
@@ -1195,13 +1257,50 @@
       to { background-color: #fff2a2; }
     }
 
-    @media (min-width: 768px) {
+    @media (min-width: 768px) and (max-width: 1024.98px) {
       .floating-controls {
         top: auto;
         bottom: calc(env(safe-area-inset-bottom) + 9rem);
         right: 1rem;
-        flex-direction: row;
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+
+    @media (min-width: 1025px) {
+      .floating-controls {
+        display: none;
+      }
+
+      #sendBtn {
+        border-radius: 0;
+      }
+
+      .composer-inline-only {
+        display: inline-flex !important;
         align-items: center;
+        justify-content: center;
+        gap: 0.38rem;
+        min-height: 44px;
+        padding: 0 0.86rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .composer-inline-only i {
+        font-size: 0.84rem;
+        margin-right: 0 !important;
+      }
+
+      .composer-inline-header-btn {
+        border-radius: 0;
+        border-left: 0;
+      }
+
+      .composer-inline-clear-btn {
+        border-radius: 0 0.75rem 0.75rem 0;
+        border-left: 0;
       }
     }
 
@@ -1214,9 +1313,13 @@
         overflow: hidden;
       }
       .page-header {
-        padding: 0.32rem 0.38rem;
-        border-radius: 0.72rem;
-        align-items: center;
+        --header-icon-size: 1.8rem;
+        --header-icon-radius: 0.56rem;
+        --header-icon-font-size: 0.72rem;
+        padding: 0.34rem 0.4rem;
+        border-radius: 0.78rem;
+        grid-template-columns: 1fr;
+        gap: 0.38rem;
       }
 
       .floating-controls {
@@ -1262,15 +1365,9 @@
       }
       .page-brand {
         gap: 0.38rem;
-        flex: 1 1 auto;
         min-width: 0;
-        width: auto;
-      }
-      .brand-icon {
-        width: 1.9rem;
-        height: 1.9rem;
-        border-radius: 0.62rem;
-        font-size: 0.8rem;
+        width: 100%;
+        padding-left: 0.22rem;
       }
       .brand-title h6 {
         font-size: 0.84rem;
@@ -1278,22 +1375,27 @@
       }
       .brand-heading {
         gap: 0.25rem;
+        flex-wrap: wrap;
+      }
+      .page-toolbar {
+        width: 100%;
+        justify-content: space-between;
+        gap: 0.24rem;
+      }
+      .page-toolbar-divider {
+        display: none;
       }
       .page-identity {
-        order: 2;
         width: auto;
         min-width: 0;
-        padding: 0.26rem 0.34rem;
-        gap: 0.35rem;
-        border-radius: 0.72rem;
+        padding: 0.2rem 0.22rem;
+        gap: 0.32rem;
+        border-radius: 0.68rem;
         flex: 1 1 auto;
         grid-template-columns: auto minmax(0, 1fr) auto;
       }
       .page-identity-avatar {
-        width: 1.8rem;
-        height: 1.8rem;
-        border-radius: 0.56rem;
-        font-size: 0.72rem;
+        flex-shrink: 0;
       }
       .page-identity-text {
         gap: 0.24rem;
@@ -1324,7 +1426,6 @@
         display: none;
       }
       .page-actions {
-        order: 3;
         width: auto;
         justify-content: flex-end;
         margin-left: 0;
@@ -1411,11 +1512,11 @@
 <body>
   <div class="lawbot-app">
     <div class="floating-controls">
-      <button type="button" id="toggleHeaderBtn" class="btn btn-sm btn-outline-secondary header-toggle-btn" title="ซ่อนส่วนหัวของระบบ" aria-label="ซ่อนส่วนหัวของระบบ" aria-pressed="false">
+      <button type="button" id="toggleHeaderBtn" data-toggle-header-control="1" class="btn btn-sm btn-outline-secondary header-toggle-btn" title="ซ่อนส่วนหัวของระบบ" aria-label="ซ่อนส่วนหัวของระบบ" aria-pressed="false">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
         <span>ซ่อนหัวระบบ</span>
       </button>
-      <button type="button" id="clearChatBtn" class="btn btn-sm btn-outline-danger clear-chat-btn" title="ลบประวัติแชต" aria-label="ลบประวัติแชต">
+      <button type="button" id="clearChatBtn" data-clear-chat-control="1" class="btn btn-sm btn-outline-danger clear-chat-btn" title="ลบประวัติแชต" aria-label="ลบประวัติแชต">
         <i class="bi bi-trash-fill"></i>
         <span>ลบประวัติ</span>
       </button>
@@ -1464,6 +1565,9 @@
 
     <div class="page-header">
       <div class="page-brand">
+        <div class="brand-icon" aria-hidden="true">
+          <i class="bi bi-robot"></i>
+        </div>
         <div class="brand-title">
           <div class="brand-heading">
             <h6><strong>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร</strong> (v.1)</h6>
@@ -1472,54 +1576,57 @@
           <p>ค้นหากฎหมายสหกรณ์แบบ PWA สำหรับมือถือและเดสก์ท็อป</p>
         </div>
       </div>
-      <div class="page-identity page-identity-<%= headerUserVariant %>">
-        <div class="page-identity-avatar" aria-hidden="true">
-          <% if (headerUserImage) { %>
-            <img src="<%= headerUserImage %>" alt="User profile" />
-          <% } else { %>
-            <i class="bi <%= headerUserIcon %>"></i>
-          <% } %>
-        </div>
-        <div class="page-identity-text">
-          <strong class="page-identity-name" title="<%= headerUserMeta %>"><%= headerUserName %></strong>
-          <span class="page-identity-badge"><%= headerUserRole %></span>
-        </div>
-        <div class="page-identity-actions">
-          <% if (isGoogleUser) { %>
-            <a href="/user" class="page-identity-action primary" title="ไปยังหน้าบัญชีผู้ใช้">
-              <i class="bi bi-person-circle"></i><span class="page-identity-action-text">บัญชี</span>
-            </a>
-          <% } else { %>
-            <a href="/auth/google?returnTo=%2Flaw-chatbot" class="page-identity-action primary" title="เข้าสู่ระบบด้วย Google">
-              <i class="bi bi-google"></i><span class="page-identity-action-text">Google</span>
-            </a>
-          <% } %>
+      <div class="page-toolbar">
+        <div class="page-identity page-identity-<%= headerUserVariant %>">
+          <div class="page-identity-avatar" aria-hidden="true">
+            <% if (headerUserImage) { %>
+              <img src="<%= headerUserImage %>" alt="User profile" />
+            <% } else { %>
+              <i class="bi <%= headerUserIcon %>"></i>
+            <% } %>
+          </div>
+          <div class="page-identity-text">
+            <strong class="page-identity-name" title="<%= headerUserMeta %>"><%= headerUserName %></strong>
+            <span class="page-identity-badge"><%= headerUserRole %></span>
+          </div>
+          <div class="page-identity-actions">
+            <% if (isGoogleUser) { %>
+              <a href="/user" class="page-identity-action primary" title="ไปยังหน้าบัญชีผู้ใช้">
+                <i class="bi bi-person-circle"></i><span class="page-identity-action-text">บัญชี</span>
+              </a>
+            <% } else { %>
+              <a href="/auth/google?returnTo=%2Flaw-chatbot" class="page-identity-action primary" title="เข้าสู่ระบบด้วย Google">
+                <i class="bi bi-google"></i><span class="page-identity-action-text">Google</span>
+              </a>
+            <% } %>
 
-          <% if (currentUser) { %>
-            <a href="/admin" class="page-identity-action" title="ไปยังหน้าแอดมิน">
-              <i class="bi bi-speedometer2"></i><span class="page-identity-action-text">Admin</span>
-            </a>
-          <% } else if (!isGoogleUser) { %>
-            <a href="/admin/login" class="page-identity-action" title="เข้าสู่ระบบผู้ดูแล">
-              <i class="bi bi-shield-lock"></i><span class="page-identity-action-text">Admin</span>
-            </a>
-          <% } %>
+            <% if (currentUser) { %>
+              <a href="/admin" class="page-identity-action" title="ไปยังหน้าแอดมิน">
+                <i class="bi bi-speedometer2"></i><span class="page-identity-action-text">Admin</span>
+              </a>
+            <% } else if (!isGoogleUser) { %>
+              <a href="/admin/login" class="page-identity-action" title="เข้าสู่ระบบผู้ดูแล">
+                <i class="bi bi-shield-lock"></i><span class="page-identity-action-text">Admin</span>
+              </a>
+            <% } %>
+          </div>
         </div>
-      </div>
-      <div class="page-actions">
-        <button type="button" class="btn btn-sm btn-outline-secondary icon-chip-btn" data-bs-toggle="modal" data-bs-target="#developerModal" title="ข้อมูลผู้พัฒนา" aria-label="ผู้พัฒนาระบบ">
-          <i class="bi bi-person-badge"></i>
-          <span class="visually-hidden">ผู้พัฒนาระบบ</span>
-        </button>
-       
-        <button id="installBtn" class="btn btn-sm btn-success btn-install icon-chip-btn" title="ติดตั้งแอป" aria-label="ติดตั้งแอป">
-          <i class="bi bi-android2"></i>
-          <span class="visually-hidden">ติดตั้งแอป</span>
-        </button>
-        <button id="iosInstallBtn" type="button" class="btn btn-sm btn-outline-primary btn-install-ios icon-chip-btn" data-bs-toggle="modal" data-bs-target="#iosInstallModal" title="วิธีติดตั้งบน iPhone และ iPad" aria-label="วิธีติดตั้งบน iPhone และ iPad">
-          <i class="bi bi-apple"></i>
-          <span class="visually-hidden">iPhone/iPad</span>
-        </button>
+        <span class="page-toolbar-divider" aria-hidden="true"></span>
+        <div class="page-actions">
+          <button type="button" class="btn btn-sm btn-outline-secondary icon-chip-btn" data-bs-toggle="modal" data-bs-target="#developerModal" title="ข้อมูลผู้พัฒนา" aria-label="ผู้พัฒนาระบบ">
+            <i class="bi bi-person-badge"></i>
+            <span class="visually-hidden">ผู้พัฒนาระบบ</span>
+          </button>
+
+          <button id="installBtn" class="btn btn-sm btn-success btn-install icon-chip-btn" title="ติดตั้งแอป" aria-label="ติดตั้งแอป">
+            <i class="bi bi-android2"></i>
+            <span class="visually-hidden">ติดตั้งแอป</span>
+          </button>
+          <button id="iosInstallBtn" type="button" class="btn btn-sm btn-outline-primary btn-install-ios icon-chip-btn" data-bs-toggle="modal" data-bs-target="#iosInstallModal" title="วิธีติดตั้งบน iPhone และ iPad" aria-label="วิธีติดตั้งบน iPhone และ iPad">
+            <i class="bi bi-apple"></i>
+            <span class="visually-hidden">iPhone/iPad</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -1704,6 +1811,27 @@
             </button>
           <% } %>
           <button id="sendBtn" type="submit" class="btn btn-primary px-4">ส่ง</button>
+          <button
+            type="button"
+            data-toggle-header-control="1"
+            class="btn btn-outline-secondary composer-inline-only composer-inline-header-btn"
+            title="ซ่อนส่วนหัวของระบบ"
+            aria-label="ซ่อนส่วนหัวของระบบ"
+            aria-pressed="false"
+          >
+            <i class="bi bi-layout-text-sidebar-reverse"></i>
+            <span>ซ่อนหัวระบบ</span>
+          </button>
+          <button
+            type="button"
+            data-clear-chat-control="1"
+            class="btn btn-outline-danger composer-inline-only composer-inline-clear-btn"
+            title="ลบประวัติแชต"
+            aria-label="ลบประวัติแชต"
+          >
+            <i class="bi bi-trash-fill"></i>
+            <span>ลบประวัติ</span>
+          </button>
         </div>
         <div id="voiceStatus" class="small text-muted mt-1"></div>
         <div class="composer-hint">
@@ -1773,8 +1901,8 @@
       const voiceStatus = document.getElementById('voiceStatus');
       const sendBtn = document.getElementById('sendBtn');
       const debugBtn = document.getElementById('debugBtn');
-      const clearChatBtn = document.getElementById('clearChatBtn');
-      const toggleHeaderBtn = document.getElementById('toggleHeaderBtn');
+      const clearChatButtons = Array.from(document.querySelectorAll('[data-clear-chat-control="1"]'));
+      const toggleHeaderButtons = Array.from(document.querySelectorAll('[data-toggle-header-control="1"]'));
       const lawbotApp = document.querySelector('.lawbot-app');
       const quickButtons = document.querySelectorAll('.quick-btn');
       const installBtn = document.getElementById('installBtn');
@@ -1913,19 +2041,22 @@
       }
 
       function setHeaderCollapsed(collapsed) {
-        if (!lawbotApp || !toggleHeaderBtn) return;
+        if (!lawbotApp || !toggleHeaderButtons.length) return;
         lawbotApp.classList.toggle('headers-collapsed', collapsed);
-        toggleHeaderBtn.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
 
-        if (collapsed) {
-          toggleHeaderBtn.innerHTML = '<i class="bi bi-layout-sidebar-inset"></i><span>แสดงหัวระบบ</span>';
-          toggleHeaderBtn.title = 'แสดงส่วนหัวของระบบ';
-          toggleHeaderBtn.setAttribute('aria-label', 'แสดงส่วนหัวของระบบ');
-        } else {
-          toggleHeaderBtn.innerHTML = '<i class="bi bi-layout-text-sidebar-reverse"></i><span>ซ่อนหัวระบบ</span>';
-          toggleHeaderBtn.title = 'ซ่อนส่วนหัวของระบบ';
-          toggleHeaderBtn.setAttribute('aria-label', 'ซ่อนส่วนหัวของระบบ');
-        }
+        toggleHeaderButtons.forEach((button) => {
+          button.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+
+          if (collapsed) {
+            button.innerHTML = '<i class="bi bi-layout-sidebar-inset"></i><span>แสดงหัวระบบ</span>';
+            button.title = 'แสดงส่วนหัวของระบบ';
+            button.setAttribute('aria-label', 'แสดงส่วนหัวของระบบ');
+          } else {
+            button.innerHTML = '<i class="bi bi-layout-text-sidebar-reverse"></i><span>ซ่อนหัวระบบ</span>';
+            button.title = 'ซ่อนส่วนหัวของระบบ';
+            button.setAttribute('aria-label', 'ซ่อนส่วนหัวของระบบ');
+          }
+        });
 
         localStorage.setItem(HEADER_COLLAPSE_KEY, collapsed ? '1' : '0');
       }
@@ -3278,7 +3409,7 @@
 
       quickButtons.forEach((button) => button.addEventListener('click', () => submitMessage(button.dataset.question || '')));
 
-      clearChatBtn.addEventListener('click', async () => {
+      clearChatButtons.forEach((button) => button.addEventListener('click', async () => {
         hideComposerSuggestions();
         await resetConversationContext();
         chatMessages.innerHTML = '';
@@ -3287,14 +3418,13 @@
         addBubble('ล้างประวัติแล้ว', 'bot', false, [], null, true, {
           renderedHtml: 'ล้างประวัติแล้ว'
         });
-      });
+      }));
 
-      if (toggleHeaderBtn) {
-        toggleHeaderBtn.addEventListener('click', () => {
+      toggleHeaderButtons.forEach((button) => button.addEventListener('click', () => {
+        if (!lawbotApp) return;
           const collapsed = lawbotApp && lawbotApp.classList.contains('headers-collapsed');
           setHeaderCollapsed(!collapsed);
-        });
-      }
+        }));
 
       window.addEventListener('beforeinstallprompt', (event) => {
         event.preventDefault();
