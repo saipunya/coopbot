@@ -135,37 +135,69 @@ function getPromptProfile(planCode = DEFAULT_PLAN_CODE) {
       return {
         code: "brief",
         instructionTone: "ตอบแบบสั้น ชัด และตรงประเด็น",
-        summaryRange: "3 ถึง 5 ข้อ",
-        detailRange: "2 ถึง 4 ข้อ",
+        summaryRange: config.summaryRange || "3 ถึง 5 ข้อ",
+        detailRange: config.detailRange || "2 ถึง 4 ข้อ",
         aiSourceLimit: config.aiSourceLimit || 3,
+        aiTimeoutMs: Number(config.aiTimeoutMs || 4500),
+        aiMaxOutputTokens: Number(config.aiMaxOutputTokens || 220),
+        aiSourceContextCharLimit: Number(config.aiSourceContextCharLimit || 550),
         compareSources: false,
+        strictSourceFiltering: Boolean(config.strictSourceFiltering),
+        referenceLimit: Number(config.referenceLimit || 2),
+        preferDatabaseOnlyForLawSections: Boolean(config.preferDatabaseOnlyForLawSections),
+        followUpStrength: config.followUpStrength || "basic",
+        allowDeepAnalysis: false,
       };
     case "deep":
       return {
         code: "deep",
         instructionTone: "ตอบแบบละเอียด เป็นระบบ และเชื่อมโยงหลายแหล่งข้อมูลเมื่อจำเป็น",
-        summaryRange: "5 ถึง 8 ข้อ",
-        detailRange: "5 ถึง 8 ข้อ",
+        summaryRange: config.summaryRange || "5 ถึง 8 ข้อ",
+        detailRange: config.detailRange || "5 ถึง 8 ข้อ",
         aiSourceLimit: config.aiSourceLimit || 7,
+        aiTimeoutMs: Number(config.aiTimeoutMs || 6500),
+        aiMaxOutputTokens: Number(config.aiMaxOutputTokens || 420),
+        aiSourceContextCharLimit: Number(config.aiSourceContextCharLimit || 900),
         compareSources: true,
+        strictSourceFiltering: Boolean(config.strictSourceFiltering),
+        referenceLimit: Number(config.referenceLimit || 6),
+        preferDatabaseOnlyForLawSections: Boolean(config.preferDatabaseOnlyForLawSections),
+        followUpStrength: config.followUpStrength || "deep",
+        allowDeepAnalysis: Boolean(config.allowDeepAnalysis),
       };
     case "detailed":
       return {
         code: "detailed",
         instructionTone: "ตอบแบบละเอียดพอสมควร พร้อมเหตุผลหรือเงื่อนไขที่เกี่ยวข้อง",
-        summaryRange: "4 ถึง 6 ข้อ",
-        detailRange: "4 ถึง 6 ข้อ",
+        summaryRange: config.summaryRange || "4 ถึง 6 ข้อ",
+        detailRange: config.detailRange || "4 ถึง 6 ข้อ",
         aiSourceLimit: config.aiSourceLimit || 5,
+        aiTimeoutMs: Number(config.aiTimeoutMs || 5500),
+        aiMaxOutputTokens: Number(config.aiMaxOutputTokens || 320),
+        aiSourceContextCharLimit: Number(config.aiSourceContextCharLimit || 700),
         compareSources: false,
+        strictSourceFiltering: Boolean(config.strictSourceFiltering),
+        referenceLimit: Number(config.referenceLimit || 4),
+        preferDatabaseOnlyForLawSections: Boolean(config.preferDatabaseOnlyForLawSections),
+        followUpStrength: config.followUpStrength || "enhanced",
+        allowDeepAnalysis: Boolean(config.allowDeepAnalysis),
       };
     default:
       return {
         code: "template",
         instructionTone: "ตอบตามข้อมูลจากฐานข้อมูลภายในระบบ",
-        summaryRange: "4 ถึง 6 ข้อ",
-        detailRange: "3 ถึง 5 ข้อ",
+        summaryRange: config.summaryRange || "4 ถึง 6 ข้อ",
+        detailRange: config.detailRange || "3 ถึง 5 ข้อ",
         aiSourceLimit: config.aiSourceLimit || 0,
+        aiTimeoutMs: Number(config.aiTimeoutMs || 0),
+        aiMaxOutputTokens: Number(config.aiMaxOutputTokens || 0),
+        aiSourceContextCharLimit: Number(config.aiSourceContextCharLimit || 0),
         compareSources: false,
+        strictSourceFiltering: Boolean(config.strictSourceFiltering),
+        referenceLimit: Number(config.referenceLimit || 3),
+        preferDatabaseOnlyForLawSections: Boolean(config.preferDatabaseOnlyForLawSections),
+        followUpStrength: config.followUpStrength || "basic",
+        allowDeepAnalysis: Boolean(config.allowDeepAnalysis),
       };
   }
 }
@@ -206,6 +238,29 @@ function listPurchasablePlans() {
   });
 }
 
+function listPlanComparisons() {
+  return PLAN_ORDER.map((planCode) => {
+    const config = getPlanConfig(planCode);
+    return {
+      code: config.code,
+      label: config.label,
+      priceBaht: Number(config.priceBaht || 0),
+      monthlyLimit: config.monthlyLimit,
+      allowSearchHistory: Boolean(config.allowSearchHistory),
+      searchHistoryRetentionDays: getSearchHistoryRetentionDays(planCode),
+      searchHistoryRetentionLabel: getSearchHistoryRetentionLabel(planCode),
+      useAI: Boolean(config.useAI),
+      useInternet: Boolean(config.useInternet),
+      detailLevel: config.detailLevel || "template",
+      allowDeepAnalysis: Boolean(config.allowDeepAnalysis),
+      aiSourceLimit: Number(config.aiSourceLimit || 0),
+      sourceLimit: Number(config.sourceLimit || 0),
+      planSummary: config.planSummary || "",
+      highlights: Array.isArray(config.highlights) ? config.highlights : [],
+    };
+  });
+}
+
 function getPlanDurationDays() {
   return DEFAULT_PLAN_DURATION_DAYS;
 }
@@ -227,6 +282,7 @@ module.exports = {
   isPlanAllowedToUseInternet,
   isUnlimitedPlan,
   listPurchasablePlans,
+  listPlanComparisons,
   normalizePlanCode,
   resolveUserPlanContext,
   shouldUseAIForPlan,

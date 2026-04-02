@@ -142,6 +142,15 @@ function wantsExplanation(message) {
   return /อธิบาย|รายละเอียด|ขยายความ|ยกตัวอย่าง/.test(text);
 }
 
+function wantsStepAnswer(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return /ขั้นตอน|ลำดับขั้น|วิธีการ|ทำอย่างไร/.test(text);
+}
+
 function wantsAmountAnswer(message) {
   const text = String(message || "").trim();
   return /เท่าไร|เท่าไหร่|กี่บาท|กี่เปอร์เซ็นต์|กี่ร้อยละ|อัตรา|จำนวนเงิน|ค่าบำรุง|ชำระ|จ่าย/.test(
@@ -533,6 +542,7 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
     return "";
   }
 
+  const stepMode = options.stepMode === true || wantsStepAnswer(message);
   const scope = detectLiquidationScope(message);
   const allowedSources = scope === "group" ? ["tbl_glaws"] : ["tbl_laws"];
   const references = [];
@@ -611,6 +621,8 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
   return [
     buildParagraphSummary(normalizedSummaryLines, [], false, {
       summaryLimit: normalizedSummaryLines.length,
+      orderedSummary: stepMode,
+      summaryHeading: stepMode ? "ขั้นตอนสำคัญ:" : "สรุปสาระสำคัญ:",
     }),
     buildReferenceSection(references, Math.min(references.length || 1, 5)),
   ]
@@ -951,19 +963,35 @@ function wantsDecisionAnswer(message) {
   );
 }
 
-function buildSourceContext(sources) {
+function truncateContextText(text, limit = 0) {
+  const normalized = cleanLine(text);
+  const safeLimit = Math.max(0, Number(limit || 0));
+  if (!normalized || safeLimit <= 0 || normalized.length <= safeLimit) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, safeLimit).trim()}...`;
+}
+
+function buildSourceContext(sources, options = {}) {
+  const promptProfile = options.promptProfile || {};
+  const perSourceCharLimit = Math.max(280, Number(promptProfile.aiSourceContextCharLimit || 700));
   return dedupeSources(sources)
     .map((source, index) => {
+      const bodyText = truncateContextText(
+        [source.content, source.chunk_text, source.comment]
+          .filter(Boolean)
+          .join(" "),
+        perSourceCharLimit,
+      );
+      const title = cleanLine(source.title || "");
+      const reference = cleanLine(source.reference || "");
       return [
         `แหล่งข้อมูลที่ ${index + 1}`,
-        `ตาราง: ${SOURCE_LABELS[source.source] || source.source || "เอกสารที่อัปโหลด"}`,
-        `หัวข้อ: ${source.title || "-"}`,
-        `อ้างอิง: ${source.reference || "-"}`,
-        `เลขที่หนังสือ: ${source.documentNumber || "-"}`,
-        `วันที่หนังสือ: ${source.documentDateText || "-"}`,
-        `หน่วยงาน: ${source.documentSource || "-"}`,
-        `เนื้อหา: ${source.content || source.chunk_text || "-"}`,
-        `หมายเหตุ: ${source.comment || "-"}`,
+        `ประเภท: ${SOURCE_LABELS[source.source] || source.source || "เอกสารที่อัปโหลด"}`,
+        `หัวข้อ: ${title || "-"}`,
+        `อ้างอิง: ${reference || "-"}`,
+        `เนื้อหาที่เกี่ยวข้อง: ${bodyText || "-"}`,
       ].join("\n");
     })
     .join("\n\n");
@@ -1602,6 +1630,12 @@ function buildSectionLines(lines, limit = 5) {
     .filter(Boolean);
 }
 
+function buildOrderedLines(lines = []) {
+  return lines
+    .map((line, index) => `${index + 1}. ${String(line || "").trim()}`)
+    .filter(Boolean);
+}
+
 function shouldDisplayContentHeading(heading, options = {}) {
   const text = cleanLine(heading);
   if (!text) {
@@ -1713,9 +1747,14 @@ function buildParagraphSummary(summaryLines, detailLines, explainMode, options =
   const summaryItems = buildSectionLines(summaryLines, summaryLimit);
   const detailItems = buildSectionLines(detailLines, detailLimit);
   const blocks = [];
+  const orderedSummary = options.orderedSummary === true;
+  const summaryHeading = String(
+    options.summaryHeading || (orderedSummary ? "ขั้นตอนสำคัญ:" : "สรุปสาระสำคัญ:"),
+  ).trim();
+  const renderedSummaryItems = orderedSummary ? buildOrderedLines(summaryItems) : summaryItems;
 
-  if (summaryItems.length) {
-    blocks.push(`สรุปสาระสำคัญ:\n${summaryItems.join("\n")}`);
+  if (renderedSummaryItems.length) {
+    blocks.push(`${summaryHeading}\n${renderedSummaryItems.join("\n")}`);
   }
 
   if (explainMode && detailItems.length) {
@@ -2764,6 +2803,7 @@ function extractAnswerBodyLines(answerText) {
 }
 
 function hasMeaningfulSummaryContent(answerText, sources, options = {}) {
+  const promptProfile = options.promptProfile || {};
   const bodyLines = extractAnswerBodyLines(answerText)
     .filter((line) => !/^สรุปสาระสำคัญ:?$/i.test(line))
     .filter((line) => !/^รายละเอียดเพิ่มเติม:?$/i.test(line))
@@ -2790,6 +2830,15 @@ function hasMeaningfulSummaryContent(answerText, sources, options = {}) {
   });
 
   if (substantiveLines.length === 0) {
+    return false;
+  }
+
+  if (
+    promptProfile.code === "brief" &&
+    !options.amountMode &&
+    !options.decisionMode &&
+    substantiveLines.length < 2
+  ) {
     return false;
   }
 
@@ -2932,6 +2981,9 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
 
 function buildFallbackSummary(sources, explainMode, options = {}) {
   const focusMessage = String(options.focusMessage || options.originalMessage || "").trim();
+  const promptProfile = options.promptProfile || {};
+  const referenceLimit = Math.max(1, Number(promptProfile.referenceLimit || 5));
+  const stepMode = options.stepMode === true;
   if (options.databaseOnlyMode) {
     return buildDatabaseOnlyAnswer(sources, {
       ...options,
@@ -2940,7 +2992,7 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
     });
   }
 
-  const topSources = dedupeSources(sources, 5);
+  const topSources = dedupeSources(sources, Math.max(referenceLimit + 1, 5));
   const amountHighlights = options.amountMode ? extractAmountHighlights(topSources, explainMode ? 5 : 3) : [];
   const numericEvidence = options.amountMode ? extractNumericEvidence(topSources, explainMode ? 5 : 3, focusMessage) : [];
   const decisionLead = options.decisionMode ? inferDecisionLead(focusMessage, topSources) : "";
@@ -2984,9 +3036,13 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
       ? detailPoints
       : ["หากต้องการรายละเอียดเพิ่ม สามารถพิมพ์คำว่า อธิบาย แล้วตามด้วยประเด็นที่ต้องการได้"],
     explainMode,
+    {
+      orderedSummary: stepMode,
+      summaryHeading: stepMode ? "ขั้นตอนสำคัญ:" : "สรุปสาระสำคัญ:",
+    },
   );
 
-  return [decorateConversationalAnswer(answerText, options), buildReferenceSection(topSources)]
+  return [decorateConversationalAnswer(answerText, options), buildReferenceSection(topSources, referenceLimit)]
     .filter(Boolean)
     .join("\n\n");
 }
@@ -2996,7 +3052,11 @@ function filterHighQualitySources(sources, topScore, limit = 4, options = {}) {
   // Use stricter threshold: 70% of top score to focus on most relevant sources
   const queryText = String(options.message || options.originalMessage || "").trim();
   const amountMode = options.amountMode === true;
-  const minScore = amountMode ? Math.max(topScore * 0.55, 52) : Math.max(topScore * 0.7, 80);
+  const promptProfile = options.promptProfile || {};
+  const strictSourceFiltering = promptProfile.strictSourceFiltering === true;
+  const minScore = amountMode
+    ? Math.max(topScore * (strictSourceFiltering ? 0.62 : 0.55), strictSourceFiltering ? 60 : 52)
+    : Math.max(topScore * (strictSourceFiltering ? 0.8 : 0.7), strictSourceFiltering ? 88 : 80);
   const garbledPattern = /[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/g;
   
   const filtered = sources.filter((source) => {
@@ -3050,6 +3110,7 @@ async function generateChatSummary(message, sources, options = {}) {
   const explainMode = wantsExplanation(message);
   const amountMode = wantsAmountAnswer(message);
   const decisionMode = wantsDecisionAnswer(message);
+  const stepMode = wantsStepAnswer(message);
   const focusMessage = String(options.focusMessage || message || "").trim() || String(message || "").trim();
   const openAiConfig = getOpenAiConfig();
   const aiEnabled = await isAiEnabled();
@@ -3130,6 +3191,7 @@ async function generateChatSummary(message, sources, options = {}) {
       ...options,
       originalMessage: focusMessage,
       message,
+      stepMode,
     },
   );
 
@@ -3150,12 +3212,31 @@ async function generateChatSummary(message, sources, options = {}) {
     return coopDissolutionFocusedAnswer;
   }
 
+  if (
+    promptProfile.preferDatabaseOnlyForLawSections === true &&
+    options.questionIntent === "law_section" &&
+    focusedAnswerSources.some((item) => item && (item.source === "tbl_laws" || item.source === "tbl_glaws"))
+  ) {
+    return buildFallbackSummary(answerInputSources, explainMode, {
+      ...options,
+      amountMode,
+      decisionMode,
+      stepMode,
+      databaseOnlyMode: true,
+      promptProfile,
+      originalMessage: message,
+      focusMessage,
+    });
+  }
+
   if (options.forceFallback || databaseOnlyMode || effectiveSources.length === 0) {
     return buildFallbackSummary(answerInputSources, explainMode, {
       ...options,
       amountMode,
       decisionMode,
+      stepMode,
       databaseOnlyMode,
+      promptProfile,
       originalMessage: message,
       focusMessage,
     });
@@ -3174,6 +3255,9 @@ async function generateChatSummary(message, sources, options = {}) {
   const compareInstruction = promptProfile.compareSources
     ? "หากมีข้อมูลจากหลายแหล่ง ให้เปรียบเทียบประเด็นที่สอดคล้องหรือแตกต่างกันอย่างกระชับ โดยไม่แต่งข้อมูลนอกแหล่งอ้างอิง "
     : "";
+  const deepAnalysisInstruction = promptProfile.allowDeepAnalysis
+    ? "หากข้อมูลหลายแหล่งพูดถึงเงื่อนไข ข้อยกเว้น หรือผลทางกฎหมายต่างกัน ให้แยกอธิบายเป็นประเด็นและชี้ให้เห็นภาพรวมเชิงวิเคราะห์อย่างเป็นระบบ "
+    : "";
   const depthInstruction =
     promptProfile.code === "brief"
       ? "ให้ตัดรายละเอียดรองที่ไม่จำเป็นออก และเน้นเฉพาะข้อสรุปที่ผู้ใช้ต้องรู้ก่อน "
@@ -3190,8 +3274,8 @@ async function generateChatSummary(message, sources, options = {}) {
   const metadataExclusionInstruction =
     "ห้ามคัดลอกคำถามของผู้ใช้มาเป็นบรรทัดคำตอบ และห้ามใส่ชื่อเรื่องเอกสาร ชื่อแหล่งข้อมูล เลขที่หนังสือ ลงวันที่ หรือ metadata ของเอกสารเป็นบรรทัดสรุป เว้นแต่ข้อมูลนั้นเป็นสาระคำตอบโดยตรง ";
   const instruction = explainMode
-    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${continuationInstruction}ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "5 ถึง 8 ข้อ"} และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.detailRange || "4 ถึง 8 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
-    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ตรงประเด็น ${planToneInstruction}${depthInstruction}${compareInstruction}พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "4 ถึง 6 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
+    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${deepAnalysisInstruction}${continuationInstruction}ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "5 ถึง 8 ข้อ"} และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.detailRange || "4 ถึง 8 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
+    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ตรงประเด็น ${planToneInstruction}${depthInstruction}${compareInstruction}${deepAnalysisInstruction}พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดประมาณ ${promptProfile.summaryRange || "4 ถึง 6 ข้อ"} ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
 
   try {
     const conversationNote = options.conversationalFollowUp
@@ -3199,8 +3283,9 @@ async function generateChatSummary(message, sources, options = {}) {
       : "";
     const responseText = await generateOpenAiCompletion({
       systemInstruction: instruction,
-      contents: `คำถามผู้ใช้: ${message}${conversationNote}\n\nข้อมูลอ้างอิง:\n${buildSourceContext(effectiveSources)}`,
+      contents: `คำถามผู้ใช้: ${message}${conversationNote}\n\nข้อมูลอ้างอิง:\n${buildSourceContext(effectiveSources, { promptProfile })}`,
       timeoutMs: options.aiTimeoutMs,
+      maxTokens: Number(promptProfile.aiMaxOutputTokens || 0),
       config: {
         systemInstruction: instruction,
       },
@@ -3228,15 +3313,23 @@ async function generateChatSummary(message, sources, options = {}) {
         ...options,
         amountMode,
         decisionMode,
+        promptProfile,
         originalMessage: message,
       });
     }
-    return [normalized, buildReferenceSection(effectiveSources.length > 0 ? effectiveSources : answerInputSources)].join("\n\n");
+    return [
+      normalized,
+      buildReferenceSection(
+        effectiveSources.length > 0 ? effectiveSources : answerInputSources,
+        Math.max(1, Number(promptProfile.referenceLimit || 5)),
+      ),
+    ].join("\n\n");
   } catch (error) {
     return buildFallbackSummary(answerInputSources, explainMode, {
       ...options,
       amountMode,
       decisionMode,
+      promptProfile,
       originalMessage: message,
     });
   }

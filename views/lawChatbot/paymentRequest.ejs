@@ -11,6 +11,43 @@
     <% } %>
   </div>
 
+  <% if (Array.isArray(data.planComparison) && data.planComparison.length > 0) { %>
+    <section style="margin-bottom: 1.25rem;">
+      <h2 style="margin: 0 0 0.8rem;">เปรียบเทียบแพ็กเกจ</h2>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.85rem;">
+        <% data.planComparison.forEach((plan) => { %>
+          <article style="padding:1rem; border-radius:16px; border:1px solid <%= plan.code === data.currentPlanContext.code ? '#2f5f7a' : '#d8e2ea' %>; background:<%= plan.code === data.currentPlanContext.code ? 'linear-gradient(180deg, #edf6fb, #ffffff)' : '#ffffff' %>;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; margin-bottom:0.5rem;">
+              <strong style="font-size:1.05rem; color:#0f4667;"><%= plan.label %></strong>
+              <% if (plan.code === data.currentPlanContext.code) { %>
+                <span style="padding:0.15rem 0.55rem; border-radius:999px; background:#d5e8f5; color:#0f4667; font-size:0.75rem; font-weight:700;">Current</span>
+              <% } %>
+            </div>
+            <div style="font-size:1.15rem; font-weight:700; color:#1f2a37;">
+              <%= Number(plan.priceBaht || 0).toLocaleString('th-TH') %> บาท
+            </div>
+            <div style="margin-top:0.15rem; color:#5d6a79; font-size:0.9rem;">
+              <% if (Number.isFinite(plan.monthlyLimit)) { %>
+                ใช้งานได้ <strong><%= plan.monthlyLimit %></strong> คำถาม/เดือน
+              <% } else { %>
+                ไม่จำกัดจำนวนคำถามรายเดือน
+              <% } %>
+            </div>
+            <p style="margin:0.75rem 0 0.65rem; color:#3f4e5e; min-height:2.6rem;"><%= plan.planSummary || '' %></p>
+            <ul style="margin:0; padding-left:1rem; color:#1f2a37;">
+              <% (plan.highlights || []).forEach((item) => { %>
+                <li style="margin-bottom:0.25rem;"><%= item %></li>
+              <% }) %>
+              <li style="margin-bottom:0.25rem;">AI: <strong><%= plan.useAI ? 'มี' : 'ไม่มี' %></strong></li>
+              <li style="margin-bottom:0.25rem;">Internet search: <strong><%= plan.useInternet ? 'มี' : 'ไม่มี' %></strong></li>
+              <li>ประวัติการค้นหา: <strong><%= plan.searchHistoryRetentionLabel %></strong></li>
+            </ul>
+          </article>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
   <% if (errorMessage) { %>
     <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #fce9e7; border: 1px solid #f1b8b1; color: #9b2c22; font-weight: 700;">
       <%= errorMessage %>

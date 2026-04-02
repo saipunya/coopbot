@@ -18,11 +18,13 @@ const { sendPaymentRequestNotification } = require("./telegramService");
 const { generateChatSummary, wantsExplanation } = require("./chatAnswerService");
 const {
   getPlanDurationDays,
+  getPlanConfig,
   getPlanLabel,
   getPlanPriceBaht,
   getSearchHistoryRetentionLabel,
   isPaidPlan,
   listPurchasablePlans,
+  listPlanComparisons,
   normalizePlanCode,
   resolveUserPlanContext,
   canUseSearchHistory,
@@ -61,7 +63,7 @@ const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SE
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
 const WEB_SEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
-const ANSWER_CACHE_SCOPE_VERSION = "v12";
+const ANSWER_CACHE_SCOPE_VERSION = "v13";
 const answerCache = new Map();
 const suggestionThrottleMap = new Map();
 
@@ -1203,8 +1205,69 @@ function isLowConfidenceDatabaseResult(matches, questionIntent = "general") {
   return topScore < 85 || (ranked.length < 2 && topScore < 105) || aggregateScore < 120 || secondScore < 35;
 }
 
+function getFollowUpResolutionProfile(planCode = "free") {
+  const normalizedPlanCode = normalizePlanCode(planCode);
+
+  if (normalizedPlanCode === "premium") {
+    return {
+      contextScoreBuffer: 0,
+      contextScoreMultiplier: 1.0,
+      shortFollowUpContextScoreBuffer: 0,
+      shortFollowUpContextScoreMultiplier: 1.0,
+      minimumContextTopScore: 44,
+      allowStrongerContextCarry: true,
+    };
+  }
+
+  if (normalizedPlanCode === "pro") {
+    return {
+      contextScoreBuffer: 4,
+      contextScoreMultiplier: 1.08,
+      shortFollowUpContextScoreBuffer: 1,
+      shortFollowUpContextScoreMultiplier: 1.02,
+      minimumContextTopScore: 46,
+      allowStrongerContextCarry: true,
+    };
+  }
+
+  return {
+    contextScoreBuffer: 8,
+    contextScoreMultiplier: 1.2,
+    shortFollowUpContextScoreBuffer: 2,
+    shortFollowUpContextScoreMultiplier: 1.05,
+    minimumContextTopScore: 48,
+    allowStrongerContextCarry: false,
+  };
+}
+
+function shouldSearchInternetForPlan(planCode, message, matches, questionIntent = "general") {
+  const config = getPlanConfig(planCode);
+  if (!config.useInternet) {
+    return false;
+  }
+
+  const normalizedMessage = String(message || "").trim();
+  const currentOrExternal = isClearlyCurrentOrExternalQuestion(normalizedMessage);
+  const lowConfidence = isLowConfidenceDatabaseResult(matches, questionIntent);
+  const topScore = Number(sortByScore(matches)[0]?.score || 0);
+  const mostlyInternalQuestion =
+    !currentOrExternal &&
+    (questionIntent === "law_section" || questionIntent === "document" || questionIntent === "short_answer");
+
+  if (mostlyInternalQuestion) {
+    return false;
+  }
+
+  if (config.internetMode === "full") {
+    return currentOrExternal || lowConfidence || (questionIntent === "general" && topScore < 78);
+  }
+
+  return currentOrExternal || lowConfidence;
+}
+
 async function resolveSearchPlan(message, target, session, options = {}) {
   const baseMessage = String(message || "").trim();
+  const followUpProfile = getFollowUpResolutionProfile(options.planCode || "free");
   const contextualCandidate = resolveMessageWithContext(baseMessage, target, session);
   const baseTopicHints = extractExplicitTopicHints(baseMessage);
   const implicitFollowUpQuestion =
@@ -1256,20 +1319,29 @@ async function resolveSearchPlan(message, target, session, options = {}) {
   const contextualScore = scoreMatchSet(contextualMatches);
   const standaloneTopScore = Number(standaloneMatches[0]?.score || 0);
   const contextualTopScore = Number(contextualMatches[0]?.score || 0);
-  const contextScoreBuffer = shortFollowUpBias ? 2 : 8;
-  const contextScoreMultiplier = shortFollowUpBias ? 1.05 : 1.2;
+  const contextScoreBuffer = shortFollowUpBias
+    ? followUpProfile.shortFollowUpContextScoreBuffer
+    : followUpProfile.contextScoreBuffer;
+  const contextScoreMultiplier = shortFollowUpBias
+    ? followUpProfile.shortFollowUpContextScoreMultiplier
+    : followUpProfile.contextScoreMultiplier;
   const shouldPreferShortFollowUpContext =
     shortFollowUpBias &&
     contextualMatches.length > 0 &&
     (
       standaloneMatches.length === 0 ||
-      contextualTopScore >= Math.max(48, standaloneTopScore * 0.75) ||
+      contextualTopScore >= Math.max(followUpProfile.minimumContextTopScore, standaloneTopScore * 0.75) ||
       contextualScore >= Math.max(60, standaloneScore - 18)
     );
   const shouldUseContext =
     contextualMatches.length > 0 &&
     (implicitFollowUpQuestion ||
       shouldPreferShortFollowUpContext ||
+      (
+        followUpProfile.allowStrongerContextCarry &&
+        contextualCandidate.usedContext &&
+        contextualTopScore >= Math.max(followUpProfile.minimumContextTopScore, standaloneTopScore * 0.7)
+      ) ||
       standaloneMatches.length === 0 ||
       contextualScore >= standaloneScore + contextScoreBuffer ||
       contextualScore >= standaloneScore * contextScoreMultiplier);
@@ -2088,8 +2160,7 @@ async function collectAnswerSources(message, target, session, options = {}) {
   const databaseMatches = Array.isArray(searchPlan.matches) ? searchPlan.matches : [];
   const shouldSearchInternet =
     allowInternetFallback &&
-    (isClearlyCurrentOrExternalQuestion(resolvedEffectiveMessage) ||
-      isLowConfidenceDatabaseResult(databaseMatches, questionIntent));
+    shouldSearchInternetForPlan(options.planCode || "free", resolvedEffectiveMessage, databaseMatches, questionIntent);
   let internetMatches = [];
   const remainingBudgetBeforeInternetMs = getRemainingBudgetMs(
     options.requestStartedAt,
@@ -2600,7 +2671,13 @@ async function replyToChat(payload, session) {
       focusMessage: effectiveMessage,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
       forceFallback: !planContext.useAI || remainingBudgetBeforeAnswerMs < MIN_AI_SUMMARY_BUDGET_MS,
-      aiTimeoutMs: Math.max(1000, remainingBudgetBeforeAnswerMs - 500),
+      aiTimeoutMs: Math.max(
+        1000,
+        Math.min(
+          Number(planContext.promptProfile?.aiTimeoutMs || remainingBudgetBeforeAnswerMs - 500),
+          remainingBudgetBeforeAnswerMs - 500,
+        ),
+      ),
       questionIntent: evidence.questionIntent,
       databaseOnlyMode: !planContext.useAI,
       promptProfile: planContext.promptProfile,
@@ -3010,6 +3087,7 @@ async function getPaymentRequestPageData(user) {
   return {
     appName: "Coopbot Law Chatbot",
     plans: listPurchasablePlans(),
+    planComparison: listPlanComparisons(),
     currentPlanContext,
     user: signedInUser,
     recentRequests: userId
