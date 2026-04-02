@@ -30,6 +30,7 @@ router.post("/payment-requests/approve", requireAdminAuth, adminController.appro
 router.post("/payment-requests/reject", requireAdminAuth, adminController.rejectPaymentRequest);
 router.post("/settings/ai", requireAdminAuth, adminController.updateAiSetting);
 router.post("/knowledge", requireAdminAuth, adminController.submitKnowledge);
+router.post("/knowledge/update", requireAdminAuth, adminController.updateKnowledge);
 router.post("/knowledge/delete", requireAdminAuth, adminController.deleteKnowledge);
 router.post("/knowledge-suggestions/update", requireAdminAuth, adminController.updateKnowledgeSuggestion);
 router.post("/knowledge-suggestions/approve", requireAdminAuth, adminController.approveKnowledgeSuggestion);

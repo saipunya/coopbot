@@ -3057,6 +3057,36 @@ async function saveKnowledgeEntry(payload) {
   });
 }
 
+async function updateKnowledgeEntry(id, payload = {}) {
+  const existing = await LawChatbotKnowledgeModel.findById(id);
+  if (!existing) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const target = payload.target === "group" ? "group" : "coop";
+
+  clearAnswerCache();
+
+  const updated = await LawChatbotKnowledgeModel.updateById(id, {
+    target,
+    title: payload.title || "",
+    lawNumber: payload.lawNumber || "",
+    content: payload.content || "",
+    sourceNote: payload.sourceNote || payload.note || "",
+  });
+
+  if (!updated) {
+    return { ok: false, reason: "not_updated" };
+  }
+
+  const refreshed = await LawChatbotKnowledgeModel.findById(id);
+
+  return {
+    ok: true,
+    entry: refreshed,
+  };
+}
+
 async function deleteKnowledgeEntry(id) {
   clearAnswerCache();
   return LawChatbotKnowledgeModel.removeById(id);
@@ -3093,6 +3123,7 @@ module.exports = {
   updateKnowledgeSuggestion,
   rejectKnowledgeSuggestion,
   saveKnowledgeEntry,
+  updateKnowledgeEntry,
   deleteKnowledgeEntry,
   saveFeedback,
   submitPaymentRequest,

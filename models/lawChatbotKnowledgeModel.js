@@ -206,6 +206,96 @@ class LawChatbotKnowledgeModel {
     return rows[0]?.total || 0;
   }
 
+  static async findById(id) {
+    const normalizedId = Number(id || 0);
+    if (!normalizedId) {
+      return null;
+    }
+
+    const pool = getDbPool();
+
+    if (!pool) {
+      const found = memoryKnowledgeEntries.find((row) => Number(row.id) === normalizedId);
+      if (!found) {
+        return null;
+      }
+
+      return mapRow({
+        id: found.id,
+        target: found.target,
+        title: found.title,
+        law_number: found.lawNumber,
+        content: found.content,
+        source_note: found.sourceNote,
+        created_at: found.createdAt,
+        updated_at: found.updatedAt,
+      });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, target, title, law_number, content, source_note, created_at, updated_at
+       FROM chatbot_knowledge
+       WHERE id = ?
+       LIMIT 1`,
+      [normalizedId],
+    );
+
+    return rows[0] ? mapRow(rows[0]) : null;
+  }
+
+  static async updateById(id, patch = {}) {
+    const normalizedId = Number(id || 0);
+    if (!normalizedId) {
+      return false;
+    }
+
+    const normalizedPatch = normalizeEntry(patch);
+    if (!normalizedPatch.title || !normalizedPatch.content) {
+      return false;
+    }
+
+    const pool = getDbPool();
+
+    if (!pool) {
+      const found = memoryKnowledgeEntries.find((row) => Number(row.id) === normalizedId);
+      if (!found) {
+        return false;
+      }
+
+      Object.assign(found, {
+        target: normalizedPatch.target,
+        title: normalizedPatch.title,
+        lawNumber: normalizedPatch.lawNumber,
+        content: normalizedPatch.content,
+        sourceNote: normalizedPatch.sourceNote,
+        updatedAt: new Date().toISOString(),
+      });
+      return true;
+    }
+
+    const [result] = await pool.query(
+      `UPDATE chatbot_knowledge
+       SET target = ?,
+           title = ?,
+           law_number = ?,
+           content = ?,
+           source_note = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?
+       LIMIT 1`,
+      [
+        normalizedPatch.target,
+        normalizedPatch.title || null,
+        normalizedPatch.lawNumber || null,
+        normalizedPatch.content || null,
+        normalizedPatch.sourceNote || null,
+        normalizedId,
+      ],
+    );
+
+    return Number(result.affectedRows || 0) > 0;
+  }
+
   static async removeById(id) {
     const normalizedId = Number(id || 0);
     if (!normalizedId) {

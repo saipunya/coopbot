@@ -225,6 +225,46 @@
         border-radius: 16px;
         background: rgba(241, 246, 251, 0.82);
       }
+      details.suggestion-editor {
+        padding: 0.85rem 0.95rem;
+      }
+      .editor-summary {
+        cursor: pointer;
+        font-weight: 700;
+        color: var(--primary-strong);
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+      }
+      .editor-summary::-webkit-details-marker {
+        display: none;
+      }
+      .editor-summary::before {
+        content: "+";
+        width: 1.3rem;
+        height: 1.3rem;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--primary-soft);
+        color: var(--primary-strong);
+        font-weight: 700;
+        flex: 0 0 auto;
+      }
+      details[open] > .editor-summary::before {
+        content: "-";
+      }
+      .editor-body {
+        margin-top: 0.9rem;
+      }
+      .knowledge-meta {
+        margin-top: 0.45rem;
+        color: var(--text-sub);
+        font-size: 0.92rem;
+        line-height: 1.6;
+      }
       .suggestion-editor .field textarea {
         min-height: 160px;
       }
@@ -483,7 +523,7 @@
         </form>
       </section>
 
-      <section class="card">
+      <section class="card" id="knowledge-library">
         <h2>ความรู้ที่บันทึกล่าสุด</h2>
         <p>ทั้งหมด <strong><%= knowledgeData.knowledgeCount %></strong> รายการ</p>
         <ul class="knowledge-list soft-list">
@@ -494,13 +534,60 @@
             <li>
               <strong><%= item.title %></strong>
               <% if (item.lawNumber) { %> - <%= item.lawNumber %><% } %>
-              <br />
-              <small>
+              <div class="knowledge-meta">
                 ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : 'สหกรณ์' %>
                 <% if (item.sourceNote) { %> | แหล่งที่มา: <%= item.sourceNote %><% } %>
-              </small>
-              <br />
-              <%= item.content %>
+                <% if (item.updatedAt) { %> | แก้ไขล่าสุด: <%= item.updatedAt %><% } %>
+              </div>
+              <div style="margin-top: 0.6rem; color: var(--text-main); white-space: pre-line;"><%= item.content %></div>
+              <details class="suggestion-editor">
+                <summary class="editor-summary">แก้ไขข้อมูลฐานความรู้นี้</summary>
+                <div class="editor-body">
+                  <form action="/admin/knowledge/update" method="post">
+                    <input type="hidden" name="id" value="<%= item.id %>" />
+                    <div class="form-grid">
+                      <div class="field">
+                        <label for="knowledge-target-<%= item.id %>">ประเภทข้อมูล</label>
+                        <select id="knowledge-target-<%= item.id %>" name="target" required>
+                          <option value="coop" <%= item.target === 'coop' ? 'selected' : '' %>>สหกรณ์</option>
+                          <option value="group" <%= item.target === 'group' ? 'selected' : '' %>>กลุ่มเกษตรกร</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label for="knowledge-law-number-<%= item.id %>">เลขอ้างอิง / หมวด</label>
+                        <input
+                          id="knowledge-law-number-<%= item.id %>"
+                          name="lawNumber"
+                          type="text"
+                          value="<%= item.lawNumber || '' %>"
+                          placeholder="เช่น มาตรา 15 หรือ หมวดสมาชิก"
+                        />
+                      </div>
+                    </div>
+                    <div class="field" style="margin-top: 0.9rem;">
+                      <label for="knowledge-title-<%= item.id %>">หัวข้อ</label>
+                      <input id="knowledge-title-<%= item.id %>" name="title" type="text" value="<%= item.title %>" required />
+                    </div>
+                    <div class="field" style="margin-top: 0.9rem;">
+                      <label for="knowledge-content-<%= item.id %>">รายละเอียดความรู้ / คำตอบที่ถูกต้อง</label>
+                      <textarea id="knowledge-content-<%= item.id %>" name="content" required><%= item.content %></textarea>
+                    </div>
+                    <div class="field" style="margin-top: 0.9rem;">
+                      <label for="knowledge-source-note-<%= item.id %>">หมายเหตุ / แหล่งที่มา</label>
+                      <input
+                        id="knowledge-source-note-<%= item.id %>"
+                        name="sourceNote"
+                        type="text"
+                        value="<%= item.sourceNote || '' %>"
+                        placeholder="เช่น มาตรา 15, เอกสารประชุม, หรือคำชี้แจงจากผู้เชี่ยวชาญ"
+                      />
+                    </div>
+                    <div class="suggestion-actions">
+                      <button class="secondary-btn" type="submit">บันทึกการแก้ไข</button>
+                    </div>
+                  </form>
+                </div>
+              </details>
               <div class="knowledge-actions">
                 <form action="/admin/knowledge/delete" method="post" onsubmit="return confirm('ยืนยันการลบข้อมูลฐานความรู้นี้ใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />
@@ -528,41 +615,44 @@
                 <% if (item.createdAt) { %> | ส่งเมื่อ: <%= item.createdAt %><% } %>
               </div>
               <div style="margin-top: 0.6rem; color: var(--text-main); white-space: pre-line;"><%= item.content %></div>
-              <div class="suggestion-editor">
-                <form action="/admin/knowledge-suggestions/update" method="post">
-                  <input type="hidden" name="id" value="<%= item.id %>" />
-                  <div class="form-grid">
-                    <div class="field">
-                      <label for="suggestion-target-<%= item.id %>">ประเภทข้อมูล</label>
-                      <select id="suggestion-target-<%= item.id %>" name="target" required>
-                        <option value="coop" <%= item.target === 'coop' ? 'selected' : '' %>>สหกรณ์</option>
-                        <option value="group" <%= item.target === 'group' ? 'selected' : '' %>>กลุ่มเกษตรกร</option>
-                      </select>
+              <details class="suggestion-editor" open>
+                <summary class="editor-summary">แก้ไขข้อเสนอก่อนอนุมัติ</summary>
+                <div class="editor-body">
+                  <form action="/admin/knowledge-suggestions/update" method="post">
+                    <input type="hidden" name="id" value="<%= item.id %>" />
+                    <div class="form-grid">
+                      <div class="field">
+                        <label for="suggestion-target-<%= item.id %>">ประเภทข้อมูล</label>
+                        <select id="suggestion-target-<%= item.id %>" name="target" required>
+                          <option value="coop" <%= item.target === 'coop' ? 'selected' : '' %>>สหกรณ์</option>
+                          <option value="group" <%= item.target === 'group' ? 'selected' : '' %>>กลุ่มเกษตรกร</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label for="suggestion-title-<%= item.id %>">หัวข้อ</label>
+                        <input id="suggestion-title-<%= item.id %>" name="title" type="text" value="<%= item.title %>" required />
+                      </div>
                     </div>
-                    <div class="field">
-                      <label for="suggestion-title-<%= item.id %>">หัวข้อ</label>
-                      <input id="suggestion-title-<%= item.id %>" name="title" type="text" value="<%= item.title %>" required />
+                    <div class="field" style="margin-top: 0.9rem;">
+                      <label for="suggestion-content-<%= item.id %>">รายละเอียดคำตอบ</label>
+                      <textarea id="suggestion-content-<%= item.id %>" name="content" required><%= item.content %></textarea>
                     </div>
-                  </div>
-                  <div class="field" style="margin-top: 0.9rem;">
-                    <label for="suggestion-content-<%= item.id %>">รายละเอียดคำตอบ</label>
-                    <textarea id="suggestion-content-<%= item.id %>" name="content" required><%= item.content %></textarea>
-                  </div>
-                  <div class="field" style="margin-top: 0.9rem;">
-                    <label for="suggestion-review-note-<%= item.id %>">หมายเหตุการตรวจทาน</label>
-                    <input
-                      id="suggestion-review-note-<%= item.id %>"
-                      name="reviewNote"
-                      type="text"
-                      value="<%= item.reviewNote || '' %>"
-                      placeholder="เช่น ปรับถ้อยคำก่อนนำเข้าฐานความรู้"
-                    />
-                  </div>
-                  <div class="suggestion-actions">
-                    <button class="secondary-btn" type="submit">บันทึกการแก้ไขก่อน</button>
-                  </div>
-                </form>
-              </div>
+                    <div class="field" style="margin-top: 0.9rem;">
+                      <label for="suggestion-review-note-<%= item.id %>">หมายเหตุการตรวจทาน</label>
+                      <input
+                        id="suggestion-review-note-<%= item.id %>"
+                        name="reviewNote"
+                        type="text"
+                        value="<%= item.reviewNote || '' %>"
+                        placeholder="เช่น ปรับถ้อยคำก่อนนำเข้าฐานความรู้"
+                      />
+                    </div>
+                    <div class="suggestion-actions">
+                      <button class="secondary-btn" type="submit">บันทึกการแก้ไขก่อน</button>
+                    </div>
+                  </form>
+                </div>
+              </details>
               <div class="knowledge-actions">
                 <form action="/admin/knowledge-suggestions/approve" method="post" onsubmit="return confirm('ยืนยันการอนุมัติและนำเข้าฐานความรู้จากข้อมูลฉบับล่าสุดใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />

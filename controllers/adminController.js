@@ -310,6 +310,43 @@ async function submitKnowledge(req, res) {
   );
 }
 
+async function updateKnowledge(req, res) {
+  const id = Number(req.body.id || 0);
+  const title = String(req.body.title || "").trim();
+  const content = String(req.body.content || "").trim();
+
+  if (!id) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบรายการฐานความรู้ที่ต้องการแก้ไข") +
+        "#knowledge-library"
+    );
+  }
+
+  if (!title || !content) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("กรุณากรอกหัวข้อและรายละเอียดความรู้ก่อนบันทึกการแก้ไข") +
+        "#knowledge-library"
+    );
+  }
+
+  const result = await lawChatbotService.updateKnowledgeEntry(id, req.body);
+  if (!result.ok) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่สามารถบันทึกการแก้ไขข้อมูลฐานความรู้นี้ได้") +
+        "#knowledge-library"
+    );
+  }
+
+  return res.redirect(
+    "/admin?success=" +
+      encodeURIComponent(`บันทึกการแก้ไขข้อมูลฐานความรู้ "${result.entry?.title || title}" เรียบร้อยแล้ว`) +
+      "#knowledge-library"
+  );
+}
+
 async function deleteKnowledge(req, res) {
   const id = Number(req.body.id || 0);
 
@@ -498,6 +535,7 @@ module.exports = {
   updateUserPlan,
   updatePaymentRequestPlan,
   submitKnowledge,
+  updateKnowledge,
   deleteKnowledge,
   updateKnowledgeSuggestion,
   approveKnowledgeSuggestion,
