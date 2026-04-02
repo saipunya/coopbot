@@ -37,6 +37,29 @@ function getPlanPriceBaht(planCode = DEFAULT_PLAN_CODE) {
   return Number(getPlanConfig(planCode).priceBaht || 0);
 }
 
+function getSearchHistoryRetentionDays(planCode = DEFAULT_PLAN_CODE) {
+  return Math.max(0, Number(getPlanConfig(planCode).searchHistoryRetentionDays || 0));
+}
+
+function canUseSearchHistory(planCode = DEFAULT_PLAN_CODE) {
+  const config = getPlanConfig(planCode);
+  return Boolean(config.allowSearchHistory) && getSearchHistoryRetentionDays(planCode) > 0;
+}
+
+function getSearchHistoryRetentionLabel(planCode = DEFAULT_PLAN_CODE) {
+  const days = getSearchHistoryRetentionDays(planCode);
+  if (!canUseSearchHistory(planCode) || days <= 0) {
+    return "ไม่รองรับ";
+  }
+
+  if (days >= 30 && days % 30 === 0) {
+    const months = days / 30;
+    return months === 1 ? "1 เดือน" : `${months} เดือน`;
+  }
+
+  return `${days} วัน`;
+}
+
 function shouldUseAIForPlan(planCode = DEFAULT_PLAN_CODE, context = {}) {
   const config = getPlanConfig(planCode);
   const economyMode = config.economyMode || {};
@@ -195,7 +218,10 @@ module.exports = {
   getPlanDurationDays,
   getPlanLabel,
   getPlanPriceBaht,
+  getSearchHistoryRetentionDays,
+  getSearchHistoryRetentionLabel,
   getPromptProfile,
+  canUseSearchHistory,
   isPaidPlan,
   isPlanAllowedToUseAI,
   isPlanAllowedToUseInternet,

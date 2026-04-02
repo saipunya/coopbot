@@ -8,6 +8,7 @@ const LawChatbotAnswerCacheModel = require("../models/lawChatbotAnswerCacheModel
 const PaymentRequestModel = require("../models/paymentRequestModel");
 const UserModel = require("../models/userModel");
 const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
+const UserSearchHistoryModel = require("../models/userSearchHistoryModel");
 const runtimeFlags = require("../config/runtimeFlags");
 const { isAiEnabled } = require("./runtimeSettingsService");
 const { getOpenAiConfig } = require("./openAiService");
@@ -18,10 +19,12 @@ const {
   getPlanDurationDays,
   getPlanLabel,
   getPlanPriceBaht,
+  getSearchHistoryRetentionLabel,
   isPaidPlan,
   listPurchasablePlans,
   normalizePlanCode,
   resolveUserPlanContext,
+  canUseSearchHistory,
   shouldUseAIForPlan,
 } = require("./planService");
 const { chunkText, extractTextFromFile } = require("./documentTextExtractor");
@@ -1561,6 +1564,87 @@ function enrichPaymentRequestRecord(record = {}) {
   };
 }
 
+function buildSignedInProfile(signedInUser = {}, persistedUser = null) {
+  if (!persistedUser) {
+    return signedInUser;
+  }
+
+  return {
+    ...signedInUser,
+    id: persistedUser.id,
+    userId: persistedUser.id,
+    username: persistedUser.email,
+    email: persistedUser.email,
+    name: persistedUser.name || signedInUser.name || persistedUser.email,
+    picture: persistedUser.avatar_url || signedInUser.picture || signedInUser.avatarUrl || "",
+    avatarUrl: persistedUser.avatar_url || signedInUser.avatarUrl || signedInUser.picture || "",
+    googleId: persistedUser.google_id || signedInUser.googleId || "",
+    plan: persistedUser.plan || signedInUser.plan || "free",
+    planStartedAt: persistedUser.plan_started_at || signedInUser.planStartedAt || null,
+    planExpiresAt: persistedUser.plan_expires_at || signedInUser.planExpiresAt || null,
+    status: persistedUser.status || signedInUser.status || "active",
+    premiumExpiresAt: persistedUser.premium_expires_at || signedInUser.premiumExpiresAt || null,
+  };
+}
+
+function buildSearchHistoryMeta(planContext = {}) {
+  return {
+    enabled: canUseSearchHistory(planContext.code),
+    retentionDays: Math.max(0, Number(planContext.searchHistoryRetentionDays || 0)),
+    retentionLabel: getSearchHistoryRetentionLabel(planContext.code),
+  };
+}
+
+function buildSearchHistoryPreview(answer) {
+  const text = String(answer || "").replace(/\s+/g, " ").trim();
+  if (!text) {
+    return "";
+  }
+
+  if (text.length <= 500) {
+    return text;
+  }
+
+  return `${text.slice(0, 500).trim()}...`;
+}
+
+async function recordUserSearchHistory(session, planContext, payload = {}) {
+  const sessionUser = session?.user || null;
+  const userId = Number(sessionUser?.userId || sessionUser?.id || 0);
+  const questionText = String(payload.questionText || "").trim();
+  if (!userId || !questionText) {
+    return;
+  }
+
+  const userPlanCode = normalizePlanCode(sessionUser?.plan || planContext?.code || "free");
+  if (!canUseSearchHistory(userPlanCode)) {
+    return;
+  }
+
+  const userPlanContext = resolveUserPlanContext({ plan: userPlanCode });
+  const retentionDays = Math.max(0, Number(userPlanContext.searchHistoryRetentionDays || 0));
+  if (retentionDays <= 0) {
+    return;
+  }
+
+  const createdAt = new Date();
+  const expiresAt = new Date(createdAt.getTime() + retentionDays * 24 * 60 * 60 * 1000);
+
+  try {
+    await UserSearchHistoryModel.create({
+      userId,
+      planCode: userPlanCode,
+      target: payload.target || "all",
+      questionText,
+      answerPreview: buildSearchHistoryPreview(payload.answerText || ""),
+      createdAt,
+      expiresAt,
+    });
+  } catch (error) {
+    console.error("[recordUserSearchHistory] Failed to save search history:", error.message || error);
+  }
+}
+
 async function replyToChat(payload, session) {
   const startedAt = nowMs();
   const message = String(payload.message || "").trim();
@@ -1586,10 +1670,17 @@ async function replyToChat(payload, session) {
 
   if (runtimeFlags.useMockAI) {
     const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
+    const answer = `Mock AI\n\nคำถาม: "${message}"\n\nสรุปจำลอง: ระบบกำลังอยู่ในโหมดทดสอบและยังไม่ได้เรียก AI จริง`;
+
+    await recordUserSearchHistory(session, basePlanContext, {
+      questionText: message,
+      target,
+      answerText: answer,
+    });
 
     return {
       hasContext: true,
-      answer: `Mock AI\n\nคำถาม: "${message}"\n\nสรุปจำลอง: ระบบกำลังอยู่ในโหมดทดสอบและยังไม่ได้เรียก AI จริง`,
+      answer,
       highlightTerms,
       usedFollowUpContext: false,
       usedInternetFallback: false,
@@ -1665,6 +1756,12 @@ async function replyToChat(payload, session) {
       };
     }
 
+    await recordUserSearchHistory(session, planContext, {
+      questionText: message,
+      target,
+      answerText: cachedResult.answer,
+    });
+
     return cachedResult;
   }
 
@@ -1715,6 +1812,12 @@ async function replyToChat(payload, session) {
           effectiveMessage: dbCachedAnswer.normalized_question || message,
           resolvedContext: { usedContext: false, topicHints: [] },
           sources: [],
+        });
+
+        await recordUserSearchHistory(session, planContext, {
+          questionText: message,
+          target,
+          answerText: cachedResult.answer,
         });
 
         return cachedResult;
@@ -1859,6 +1962,12 @@ async function replyToChat(payload, session) {
       })),
     };
   }
+
+  await recordUserSearchHistory(session, planContext, {
+    questionText: message,
+    target,
+    answerText: answer,
+  });
 
   return result;
 }
@@ -2078,25 +2187,7 @@ async function getUserDashboardData(user) {
     PaymentRequestModel.listByUserId(userId, 10),
   ]);
 
-  const profile = persistedUser
-    ? {
-        ...signedInUser,
-        id: persistedUser.id,
-        userId: persistedUser.id,
-        username: persistedUser.email,
-        email: persistedUser.email,
-        name: persistedUser.name || signedInUser.name || persistedUser.email,
-        picture: persistedUser.avatar_url || signedInUser.picture || signedInUser.avatarUrl || "",
-        avatarUrl: persistedUser.avatar_url || signedInUser.avatarUrl || signedInUser.picture || "",
-        googleId: persistedUser.google_id || signedInUser.googleId || "",
-        plan: persistedUser.plan || signedInUser.plan || "free",
-        planStartedAt: persistedUser.plan_started_at || signedInUser.planStartedAt || null,
-        planExpiresAt: persistedUser.plan_expires_at || signedInUser.planExpiresAt || null,
-        status: persistedUser.status || signedInUser.status || "active",
-        premiumExpiresAt: persistedUser.premium_expires_at || signedInUser.premiumExpiresAt || null,
-      }
-    : signedInUser;
-
+  const profile = buildSignedInProfile(signedInUser, persistedUser);
   const planContext = resolveUserPlanContext(profile);
   const questionCount = Number(usage?.question_count || 0);
   const questionLimit = Number.isFinite(planContext.monthlyLimit) ? planContext.monthlyLimit : null;
@@ -2114,7 +2205,31 @@ async function getUserDashboardData(user) {
       remainingQuestions,
       isUnlimited: planContext.isUnlimited,
     },
+    searchHistory: buildSearchHistoryMeta(planContext),
     recentRequests: recentRequests.map((item) => enrichPaymentRequestRecord(item)),
+  };
+}
+
+async function getUserSearchHistoryData(user) {
+  const signedInUser = user || {};
+  const userId = Number(signedInUser.userId || signedInUser.id || 0);
+  if (!userId) {
+    throw new Error("Please sign in before opening search history.");
+  }
+
+  const persistedUser = await UserModel.findById(userId);
+  const profile = buildSignedInProfile(signedInUser, persistedUser);
+  const planContext = resolveUserPlanContext(profile);
+  const searchHistory = buildSearchHistoryMeta(planContext);
+  await UserSearchHistoryModel.deleteExpired();
+  const entries = await UserSearchHistoryModel.listActiveByUserId(userId, 100);
+
+  return {
+    appName: "Coopbot Law Chatbot",
+    user: profile,
+    planContext,
+    searchHistory,
+    entries,
   };
 }
 
@@ -2428,6 +2543,7 @@ module.exports = {
   recordUpload,
   getFeedbackPageData,
   getUserDashboardData,
+  getUserSearchHistoryData,
   getPaymentRequestPageData,
   getAdminPaymentRequestsData,
   getAdminPaymentRequestDetail,

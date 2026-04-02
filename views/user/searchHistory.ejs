@@ -1,0 +1,221 @@
+<%- include("../partials/header", { title, page }) %>
+
+<style>
+  .history-hero,
+  .history-list {
+    margin-bottom: 1rem;
+  }
+
+  .history-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr);
+    gap: 1rem;
+  }
+
+  .history-actions,
+  .history-summary {
+    display: grid;
+    gap: 0.85rem;
+    align-content: start;
+  }
+
+  .history-actions .button,
+  .history-actions .ghost-button {
+    text-align: center;
+  }
+
+  .ghost-button {
+    background: #fff;
+    color: var(--accent-strong);
+    border: 1px solid var(--line);
+    box-shadow: none;
+  }
+
+  .ghost-button:hover {
+    background: #f5f9fc;
+  }
+
+  .history-meta {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin-top: 0.8rem;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.45rem 0.8rem;
+    font-size: 0.92rem;
+    font-weight: 700;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .chip.ok {
+    background: #e8f7ee;
+    color: var(--ok);
+  }
+
+  .history-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .history-item {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.74);
+  }
+
+  .history-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.55rem;
+  }
+
+  .history-question {
+    margin: 0;
+    color: var(--ink);
+    font-size: 1.05rem;
+  }
+
+  .history-submeta {
+    display: flex;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+    color: var(--subtle);
+    font-size: 0.95rem;
+    margin-bottom: 0.7rem;
+  }
+
+  .history-preview {
+    margin: 0;
+    color: var(--subtle);
+    line-height: 1.7;
+    white-space: normal;
+  }
+
+  @media (max-width: 920px) {
+    .history-hero {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<%
+  const profile = data.user || {};
+  const planContext = data.planContext || {};
+  const searchHistory = data.searchHistory || {};
+  const entries = data.entries || [];
+  const targetLabelMap = {
+    all: "ค้นหาทุกหมวด",
+    coop: "สหกรณ์",
+    group: "กลุ่มเกษตรกร",
+  };
+%>
+
+<% if (errorMessage) { %>
+  <section class="card" style="background: #fce9e7; border-color: #f1b8b1; color: #9b2c22;">
+    <strong><%= errorMessage %></strong>
+  </section>
+<% } %>
+
+<% if (successMessage) { %>
+  <section class="card" style="background: #e8f7ee; border-color: #b8e3c8; color: #1f6a3a;">
+    <strong><%= successMessage %></strong>
+  </section>
+<% } %>
+
+<section class="history-hero">
+  <article class="card history-summary">
+    <div>
+      <p style="margin: 0 0 0.35rem; font-weight: 700; color: var(--accent);">ประวัติการค้นหาของฉัน</p>
+      <h1 style="margin: 0 0 0.45rem; color: var(--accent-strong);"><%= profile.name || profile.email || "ผู้ใช้งาน" %></h1>
+      <p style="margin: 0;">
+        <% if (searchHistory.enabled) { %>
+          ระบบจะเก็บประวัติการค้นหาของบัญชีนี้ย้อนหลังได้ <strong><%= searchHistory.retentionLabel %></strong> ตามแพ็กเกจ <strong><%= planContext.label || "Free" %></strong> และจะลบรายการเก่าออกอัตโนมัติเมื่อครบกำหนด
+        <% } else if (entries.length) { %>
+          แพ็กเกจ <strong><%= planContext.label || "Free" %></strong> จะไม่เก็บประวัติการค้นหาใหม่ แต่รายการเก่าที่ยังไม่หมดอายุยังเปิดดูได้จากหน้านี้จนกว่าจะครบกำหนดลบอัตโนมัติ
+        <% } else { %>
+          แพ็กเกจ <strong><%= planContext.label || "Free" %></strong> ยังไม่รองรับการเก็บประวัติการค้นหา หากต้องการดูประวัติย้อนหลัง กรุณาอัปเกรดแพ็กเกจ
+        <% } %>
+      </p>
+    </div>
+
+    <div class="history-meta">
+      <span class="chip"><%= planContext.label || "Free" %> Plan</span>
+      <span class="chip <%= searchHistory.enabled ? 'ok' : '' %>">
+        <%= searchHistory.enabled ? `เก็บย้อนหลัง ${searchHistory.retentionLabel}` : (entries.length ? 'ไม่เก็บรายการใหม่' : 'ไม่รองรับการเก็บประวัติ') %>
+      </span>
+      <% if (searchHistory.enabled) { %>
+        <span class="chip"><%= entries.length %> รายการที่ยังอยู่ในระบบ</span>
+      <% } else if (entries.length) { %>
+        <span class="chip"><%= entries.length %> รายการเก่าที่ยังดูได้</span>
+      <% } %>
+    </div>
+  </article>
+
+  <aside class="card history-actions">
+    <a class="button" href="/law-chatbot">ไปหน้าแชตบอท</a>
+    <a class="button ghost-button" href="/user">กลับหน้าบัญชีผู้ใช้</a>
+    <% if (!searchHistory.enabled) { %>
+      <a class="button ghost-button" href="/law-chatbot/payment-request">อัปเกรดแพ็กเกจเพื่อเปิดใช้</a>
+    <% } %>
+  </aside>
+</section>
+
+<section class="card">
+  <div style="display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap;">
+    <div>
+      <h2 style="margin: 0 0 0.35rem; color: var(--accent-strong);">รายการประวัติการค้นหา</h2>
+      <p style="margin: 0;">แสดงเฉพาะประวัติที่ยังไม่หมดอายุภายใต้เงื่อนไขของแพ็กเกจปัจจุบัน</p>
+    </div>
+  </div>
+
+  <ul class="history-list" style="margin-top: 1rem;">
+    <% if (!searchHistory.enabled && !entries.length) { %>
+      <li class="history-item">
+        <strong>แพ็กเกจนี้ยังไม่รองรับประวัติการค้นหา</strong>
+        <p class="history-preview" style="margin-top: 0.45rem;">
+          คุณยังใช้งานแผน <strong><%= planContext.label || "Free" %></strong> อยู่ จึงไม่สามารถเก็บหรือเปิดดูประวัติการค้นหาย้อนหลังได้
+        </p>
+      </li>
+    <% } else if (!entries.length) { %>
+      <li class="history-item">
+        <strong>ยังไม่มีประวัติการค้นหา</strong>
+        <p class="history-preview" style="margin-top: 0.45rem;">
+          เมื่อคุณถามคำถามผ่านหน้าแชต รายการล่าสุดจะมาแสดงที่หน้านี้โดยอัตโนมัติ
+        </p>
+      </li>
+    <% } %>
+
+    <% entries.forEach((item) => { %>
+      <li class="history-item">
+        <div class="history-head">
+          <h3 class="history-question"><%= item.question_text %></h3>
+          <span class="chip"><%= targetLabelMap[item.target] || "ค้นหาทุกหมวด" %></span>
+        </div>
+        <div class="history-submeta">
+          <span>ค้นหาเมื่อ <strong><%= new Date(item.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) %></strong></span>
+          <% if (item.expires_at) { %>
+            <span>หมดอายุ <strong><%= new Date(item.expires_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) %></strong></span>
+          <% } %>
+        </div>
+        <% if (item.answer_preview) { %>
+          <p class="history-preview"><%= item.answer_preview %></p>
+        <% } %>
+      </li>
+    <% }) %>
+  </ul>
+</section>
+
+<%- include("../partials/footer") %>

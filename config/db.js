@@ -90,6 +90,22 @@ async function ensureSchema() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_search_history (
+      id int(11) NOT NULL AUTO_INCREMENT,
+      user_id int(11) NOT NULL,
+      plan_code varchar(50) NOT NULL DEFAULT 'free',
+      target varchar(20) NOT NULL DEFAULT 'all',
+      question_text text NOT NULL,
+      answer_preview text DEFAULT NULL,
+      created_at timestamp NULL DEFAULT current_timestamp(),
+      expires_at timestamp NULL DEFAULT NULL,
+      PRIMARY KEY (id),
+      KEY idx_user_search_history_user_id_created_at (user_id, created_at),
+      KEY idx_user_search_history_expires_at (expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS sessions (
       sid varchar(255) NOT NULL,
       sess longtext NOT NULL,
@@ -325,6 +341,38 @@ async function ensureSchema() {
   } catch (_) {}
 
   try {
+    await pool.query("ALTER TABLE user_search_history ADD COLUMN plan_code varchar(50) NOT NULL DEFAULT 'free'");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_search_history ADD COLUMN target varchar(20) NOT NULL DEFAULT 'all'");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_search_history ADD COLUMN question_text text NOT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_search_history ADD COLUMN answer_preview text DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_search_history ADD COLUMN created_at timestamp NULL DEFAULT current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_search_history ADD COLUMN expires_at timestamp NULL DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_search_history ADD KEY idx_user_search_history_user_id_created_at (user_id, created_at)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_search_history ADD KEY idx_user_search_history_expires_at (expires_at)");
+  } catch (_) {}
+
+  try {
     await pool.query(`
       UPDATE users
       SET plan_started_at = COALESCE(plan_started_at, created_at, CURRENT_TIMESTAMP),
@@ -344,6 +392,14 @@ async function ensureSchema() {
       SET created_at = COALESCE(created_at, last_used_at, CURRENT_TIMESTAMP),
           updated_at = COALESCE(updated_at, last_used_at, CURRENT_TIMESTAMP)
       WHERE created_at IS NULL OR updated_at IS NULL
+    `);
+  } catch (_) {}
+
+  try {
+    await pool.query(`
+      DELETE FROM user_search_history
+      WHERE expires_at IS NOT NULL
+        AND expires_at <= CURRENT_TIMESTAMP
     `);
   } catch (_) {}
 }

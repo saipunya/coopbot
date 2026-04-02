@@ -12,6 +12,18 @@ async function renderDashboard(req, res) {
   });
 }
 
+async function renderSearchHistory(req, res) {
+  const data = await lawChatbotService.getUserSearchHistoryData(req.session.user);
+
+  res.render("user/searchHistory", {
+    title: "ประวัติการค้นหา",
+    page: "user",
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data,
+  });
+}
+
 function logout(req, res) {
   req.session.destroy(() => {
     res.clearCookie("connect.sid");
@@ -21,5 +33,6 @@ function logout(req, res) {
 
 module.exports = {
   renderDashboard,
+  renderSearchHistory,
   logout,
 };

@@ -194,6 +194,7 @@
   const profile = data.user || {};
   const planContext = data.planContext || {};
   const usage = data.usage || {};
+  const searchHistory = data.searchHistory || {};
   const plan = String(profile.plan || planContext.code || "free").toLowerCase();
   const planLabel = planContext.label || String(plan || "free").charAt(0).toUpperCase() + String(plan || "free").slice(1);
   const planExpiresAt = (profile.planExpiresAt || profile.premiumExpiresAt)
@@ -246,6 +247,7 @@
     </div>
     <div class="action-stack">
       <a class="button action-link" href="/law-chatbot">ไปหน้าแชตบอท</a>
+      <a class="button action-link ghost-button" href="/user/search-history">ดูประวัติการค้นหา</a>
       <a class="button action-link ghost-button" href="/law-chatbot/payment-request">ส่งคำขออัปเกรดแพ็กเกจ</a>
       <form class="logout-form" action="/user/logout" method="post">
         <button type="submit" class="ghost-button">ออกจากระบบ</button>
@@ -289,6 +291,18 @@
         ใช้งานถามตอบต่อได้ทันทีโดยไม่ติดโควต้ารายเดือน
       <% } else { %>
         หากต้องการถามได้มากขึ้น สามารถส่งคำขออัปเกรดเป็นแพ็กเกจที่สูงขึ้นได้
+      <% } %>
+    </p>
+  </article>
+
+  <article class="card stat-card">
+    <h2>ประวัติการค้นหา</h2>
+    <p class="stat-value"><%= searchHistory.enabled ? searchHistory.retentionLabel : "ปิด" %></p>
+    <p class="stat-note">
+      <% if (searchHistory.enabled) { %>
+        ระบบจะเก็บประวัติการค้นหาย้อนหลังได้ <strong><%= searchHistory.retentionLabel %></strong> และคุณสามารถเปิดดูรายการของตนเองได้ที่หน้าประวัติการค้นหา
+      <% } else { %>
+        แพ็กเกจปัจจุบันยังไม่รองรับการเก็บประวัติการค้นหา หากต้องการใช้งานฟีเจอร์นี้สามารถอัปเกรดแพ็กเกจได้
       <% } %>
     </p>
   </article>

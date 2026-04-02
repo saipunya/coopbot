@@ -146,10 +146,34 @@ function buildSourceContext(sources) {
     .join("\n\n");
 }
 
+function cleanReferencePrimaryText(text, source = {}) {
+  const cleaned = cleanLine(text);
+  if (!cleaned) {
+    return "";
+  }
+
+  const normalizedSource = String(source?.source || "").trim().toLowerCase();
+  let result = cleaned;
+
+  if (normalizedSource === "documents" || normalizedSource === "pdf_chunks") {
+    result = result
+      .replace(/\s*\|\s*ลงวันที่[\s\S]*$/u, "")
+      .replace(/\s*\|\s*เลขที่[\s\S]*$/u, "")
+      .replace(/\s*\|\s*(?:พ\.ศ\.|ค\.ศ\.)[\s\S]*$/u, "")
+      .trim();
+  }
+
+  return cleanLine(result);
+}
+
 function formatReferenceLine(source) {
   const tableName = SOURCE_LABELS[source.source] || source.source || "เอกสารที่อัปโหลด";
   const shouldHideSourceLabel = String(source?.source || "").trim().toLowerCase() === "admin_knowledge";
-  const primaryReference = cleanLine(source.reference || source.title || "ไม่ระบุอ้างอิง");
+  const fallbackPrimaryReference = cleanReferencePrimaryText(source.title || source.keyword || "", source);
+  const primaryReference =
+    cleanReferencePrimaryText(source.reference || "", source) ||
+    fallbackPrimaryReference ||
+    "ไม่ระบุอ้างอิง";
   const parts = [primaryReference];
   const documentNumber = cleanLine(source.documentNumber || "");
   const documentDateText = cleanLine(source.documentDateText || "");
@@ -220,6 +244,7 @@ function stripStandaloneDoubleSlash(text) {
 
 function cleanLine(text) {
   return stripStandaloneDoubleSlash(text)
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
     .replace(/^#{1,6}\s*/, "")
     .replace(/^[*-]\s*/, "")
     .replace(/^สรุป:\s*/i, "")
@@ -231,6 +256,15 @@ function cleanLine(text) {
     .replace(/^ข้อมูลที่พบจากฐานข้อมูลกฎหมาย(?:\s*\([^)]*\))?:?\s*/u, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeProtectedLineBreaks(text) {
+  return String(text || "")
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    .replace(
+      /((?:พ\.ศ\.|ค\.ศ\.|(?:[\u0E01-\u0E2E]{1,2}\.){2,}))\s*[\r\n]+\s*(?=[0-9๐-๙]{4}(?:\b|$))/gu,
+      "$1 ",
+    );
 }
 
 function isNoisyLine(text) {
@@ -359,6 +393,16 @@ function lineLooksLikeSourceMetadata(line, sources = []) {
   }
 
   if (/^(เรื่อง|เลขที่|ลงวันที่|ทะเบียนเอกสาร|ข้อมูลจากอินเทอร์เน็ต)\b/i.test(cleanedLine)) {
+    return true;
+  }
+
+  if (/\|\s*(?:ลงวันที่|เลขที่)\b/u.test(cleanedLine)) {
+    return true;
+  }
+
+  if (
+    /ลงวันที่\s*[0-9๐-๙]{1,2}\s*[ก-๙]+\s*(?:พ\.ศ\.?|ค\.ศ\.?)\s*[0-9๐-๙]{0,4}/u.test(cleanedLine)
+  ) {
     return true;
   }
 
@@ -633,6 +677,63 @@ function buildSourceContentFallbackLines(sources, limit = 5, options = {}) {
   return uniqueCleanLines(lines, limit);
 }
 
+function looksLikeOutcomeQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return /เกินกว่า|เกิน|ภายใน|ล่าช้า|ทัน|ครบกำหนด|ได้ไหม|ได้หรือไม่|หรือไม่|ต้อง|ควร|สามารถ/.test(
+    text,
+  );
+}
+
+function getConclusionLinePriority(line, options = {}) {
+  const text = cleanLine(line);
+  if (!text) {
+    return -1;
+  }
+
+  let priority = 0;
+
+  if (/^(ดังนั้น|สรุป|จึง)/.test(text)) {
+    priority += 8;
+  }
+
+  if (/สามารถ|ได้|ไม่ได้|ต้อง|ไม่ต้อง|ควร|ไม่ควร|จำเป็นต้อง|ไม่จำเป็นต้อง/.test(text)) {
+    priority += 6;
+  }
+
+  if (/เกินกว่า|ภายใน|ล่าช้า|ทัน|ครบกำหนด/.test(text)) {
+    priority += 4;
+  }
+
+  if (
+    String(options.questionIntent || "") === "short_answer" &&
+    looksLikeOutcomeQuestion(options.originalMessage || "")
+  ) {
+    priority += 2;
+  }
+
+  return priority;
+}
+
+function prioritizeConclusionLines(lines, options = {}) {
+  const normalizedLines = Array.isArray(lines) ? lines.filter(Boolean) : [];
+  if (normalizedLines.length <= 1) {
+    return normalizedLines;
+  }
+
+  return [...normalizedLines].sort((left, right) => {
+    const priorityDiff = getConclusionLinePriority(right, options) - getConclusionLinePriority(left, options);
+    if (priorityDiff !== 0) {
+      return priorityDiff;
+    }
+
+    return 0;
+  });
+}
+
 function buildParagraphSummary(summaryLines, detailLines, explainMode, options = {}) {
   const summaryLimit = Math.max(1, Number(options.summaryLimit || 6));
   const detailLimit = Math.max(1, Number(options.detailLimit || (explainMode ? 6 : 4)));
@@ -690,10 +791,33 @@ function extractAmountHighlights(sources, limit = 4) {
 }
 
 function splitContentSegments(text) {
-  return String(text || "")
+  const rawSegments = normalizeProtectedLineBreaks(text)
     .split(/[\n\r]+|(?<=\.)\s+|(?<=;)\s+|(?<=:)\s+/)
     .map((segment) => cleanLine(segment))
     .filter(Boolean);
+
+  const mergedSegments = [];
+  for (let index = 0; index < rawSegments.length; index += 1) {
+    const current = cleanLine(rawSegments[index]);
+    const next = cleanLine(rawSegments[index + 1] || "");
+
+    if (
+      current &&
+      next &&
+      /(?:พ\.ศ\.|ค\.ศ\.|(?:[\u0E01-\u0E2E]{1,2}\.){2,})$/u.test(current) &&
+      /^(?:[0-9๐-๙]{4})(?:\b|$)/u.test(next)
+    ) {
+      mergedSegments.push(cleanLine(`${current} ${next}`));
+      index += 1;
+      continue;
+    }
+
+    if (current) {
+      mergedSegments.push(current);
+    }
+  }
+
+  return mergedSegments;
 }
 
 function extractQueryLawNumber(message) {
@@ -1065,6 +1189,7 @@ function extractRelevantSegmentsFromSource(source, message, options = {}) {
       score: scoreSourceSegment(segment, message, source, options),
     }))
     .filter((item) => !isNoisyLine(item.text))
+    .filter((item) => !lineLooksLikeSourceMetadata(item.text, [source]))
     .filter((item) => item.text.length >= 12)
     .filter((item) => {
       if (options.questionIntent === "law_section") {
@@ -1107,9 +1232,12 @@ function extractRelevantSegmentsFromSource(source, message, options = {}) {
   }
 
   const fallbackText = cleanLine(
-    String(rawText || "").slice(0, preserveMoreContent ? 720 : options.explainMode ? 420 : 280),
+    normalizeProtectedLineBreaks(String(rawText || "")).slice(
+      0,
+      preserveMoreContent ? 720 : options.explainMode ? 420 : 280,
+    ),
   );
-  if (fallbackText && !isNoisyLine(fallbackText)) {
+  if (fallbackText && !isNoisyLine(fallbackText) && !lineLooksLikeSourceMetadata(fallbackText, [source])) {
     return [fallbackText];
   }
 
@@ -1191,6 +1319,10 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
     [decisionLead, ...substantiveSegments, ...numericEvidence, ...fallbackLines],
     summaryLimit,
   );
+  const orderedSummaryLines = prioritizeConclusionLines(summaryLines, {
+    originalMessage: options.originalMessage || "",
+    questionIntent: options.questionIntent,
+  });
   const detailLines = explainMode
     ? buildSourceContentFallbackLines(visibleSources, detailLimit, {
         ...options,
@@ -1199,7 +1331,7 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
       })
     : [];
 
-  if (summaryLines.length === 0) {
+  if (orderedSummaryLines.length === 0) {
     return "";
   }
 
@@ -1228,7 +1360,7 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
   });
 
   return [
-    buildParagraphSummary(summaryLines, detailLines, explainMode, {
+    buildParagraphSummary(orderedSummaryLines, detailLines, explainMode, {
       summaryLimit,
       detailLimit: Math.max(detailLimit, 1),
     }),
@@ -1343,6 +1475,10 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
 
     for (const segment of segments) {
       if (segment.length < 18 || isNoisyLine(segment)) {
+        continue;
+      }
+
+      if (lineLooksLikeSourceMetadata(segment, [source])) {
         continue;
       }
 
