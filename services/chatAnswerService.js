@@ -1248,6 +1248,13 @@ function filterSourcesByAnswerFocus(sources, options = {}) {
     return normalizedSources;
   }
 
+  if (options.questionIntent === "law_section") {
+    const scopedLawSectionSources = getScopedLawSectionSources(normalizedSources, options);
+    if (scopedLawSectionSources.length > 0) {
+      return scopedLawSectionSources;
+    }
+  }
+
   const focusProfile = getQueryFocusProfile(message);
 
   if (options.amountMode) {
@@ -1548,6 +1555,10 @@ function extractQueryLawNumber(message) {
   return match ? match[1] : "";
 }
 
+function isStructuredLawSource(source = {}) {
+  return STRUCTURED_LAW_SOURCES.has(String(source?.source || "").trim().toLowerCase());
+}
+
 function normalizeThaiDigits(text) {
   return String(text || "").replace(/[๐-๙]/g, (character) => THAI_DIGIT_MAP[character] || character);
 }
@@ -1559,6 +1570,82 @@ function normalizeClauseNumber(value) {
   }
 
   return String(Number(digits));
+}
+
+function extractPrimaryLawNumberFromText(text) {
+  const normalized = normalizeThaiDigits(String(text || ""));
+  const match = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]{1,4})/i);
+  return normalizeClauseNumber(match?.[1] || "");
+}
+
+function getSourcePrimaryLawNumber(source = {}) {
+  const candidates = [source?.lawNumber, source?.reference, source?.title, source?.keyword];
+
+  for (const candidate of candidates) {
+    const number = extractPrimaryLawNumberFromText(candidate);
+    if (number) {
+      return number;
+    }
+  }
+
+  return "";
+}
+
+function sourceMatchesQueryLawNumber(source, queryLawNumber) {
+  const normalizedQueryLawNumber = normalizeClauseNumber(queryLawNumber);
+  if (!normalizedQueryLawNumber) {
+    return false;
+  }
+
+  return getSourcePrimaryLawNumber(source) === normalizedQueryLawNumber;
+}
+
+function sortLawSectionSources(left, right, queryLawNumber = "") {
+  const normalizedQueryLawNumber = normalizeClauseNumber(queryLawNumber);
+  const leftExact = normalizedQueryLawNumber ? sourceMatchesQueryLawNumber(left, normalizedQueryLawNumber) : false;
+  const rightExact = normalizedQueryLawNumber ? sourceMatchesQueryLawNumber(right, normalizedQueryLawNumber) : false;
+  if (leftExact !== rightExact) {
+    return rightExact ? 1 : -1;
+  }
+
+  const leftStructured = isStructuredLawSource(left);
+  const rightStructured = isStructuredLawSource(right);
+  if (leftStructured !== rightStructured) {
+    return rightStructured ? 1 : -1;
+  }
+
+  const scoreDiff = Number(right?.score || 0) - Number(left?.score || 0);
+  if (scoreDiff !== 0) {
+    return scoreDiff;
+  }
+
+  return getSourceStableOrderValue(left) - getSourceStableOrderValue(right);
+}
+
+function getScopedLawSectionSources(sources, options = {}) {
+  if (options.questionIntent !== "law_section") {
+    return Array.isArray(sources) ? sources.filter(Boolean) : [];
+  }
+
+  const queryLawNumber = extractQueryLawNumber(options.originalMessage || options.message || "");
+  const deduped = dedupeSources(Array.isArray(sources) ? sources : [], Array.isArray(sources) ? sources.length : 0);
+  const exactStructured = deduped
+    .filter((source) => isStructuredLawSource(source) && sourceMatchesQueryLawNumber(source, queryLawNumber))
+    .sort((left, right) => sortLawSectionSources(left, right, queryLawNumber));
+
+  if (exactStructured.length > 0) {
+    return exactStructured;
+  }
+
+  const structuredSources = deduped
+    .filter((source) => isStructuredLawSource(source))
+    .sort((left, right) => sortLawSectionSources(left, right, queryLawNumber));
+
+  if (structuredSources.length > 0) {
+    return structuredSources.slice(0, 2);
+  }
+
+  return deduped.sort((left, right) => sortLawSectionSources(left, right, queryLawNumber));
 }
 
 function extractClauseNumberFromLine(line) {
@@ -1638,6 +1725,52 @@ function getPrimaryStructuredLawClauses(sources, options = {}) {
   }
 
   return [];
+}
+
+function buildStructuredLawSectionDisplayLines(source, options = {}) {
+  const rawText = [source?.content, source?.comment].filter(Boolean).join("\n");
+  const queryLawNumber = extractQueryLawNumber(options.originalMessage || options.message || "");
+  const sourceHeadingCandidates = [source?.reference, source?.title]
+    .map((item) => cleanLine(item))
+    .filter(Boolean);
+  const headingKeys = new Set(sourceHeadingCandidates.map((item) => normalizeComparisonText(item)).filter(Boolean));
+  const segments = splitContentSegments(rawText)
+    .filter((segment) => !isNoisyLine(segment))
+    .filter((segment) => !lineLooksLikeSourceMetadata(segment, [source]))
+    .filter((segment) => !looksLikeBareDocumentTitle(segment, [source]))
+    .filter((segment) => {
+      const headingNumber = extractPrimaryLawNumberFromText(segment);
+      return !headingNumber || !queryLawNumber || headingNumber === normalizeClauseNumber(queryLawNumber);
+    });
+  const leadLines = uniqueCleanLines(
+    segments.filter((segment) => {
+      if (extractClauseNumberFromLine(segment)) {
+        return false;
+      }
+
+      const normalizedSegment = normalizeComparisonText(segment);
+      if (normalizedSegment && headingKeys.has(normalizedSegment)) {
+        return false;
+      }
+
+      return true;
+    }),
+    2,
+  );
+  const clauses = extractNumberedClauses(rawText)
+    .map((item) => item.line)
+    .filter((line) => !isNoisyLine(line));
+
+  if (clauses.length > 0) {
+    return uniqueCleanLines([...leadLines.slice(0, 1), ...clauses], Math.max(clauses.length + 1, 8));
+  }
+
+  return extractRelevantSegmentsFromSource(source, options.originalMessage || options.message || "", {
+    explainMode: options.explainMode,
+    amountMode: options.amountMode === true,
+    questionIntent: options.questionIntent,
+    preserveMoreContent: true,
+  });
 }
 
 function ensureStructuredLawSummaryCompleteness(lines, sources, options = {}) {
@@ -1975,7 +2108,14 @@ function formatDatabaseOnlySourceBlock(source, message, options = {}) {
   const title = cleanLine(source.title || "");
   const heading = reference && title && title !== reference ? `${reference} | ${title}` : reference || title || label;
 
-  const segments = extractRelevantSegmentsFromSource(source, message, options);
+  const segments =
+    options.questionIntent === "law_section" && isStructuredLawSource(source)
+      ? buildStructuredLawSectionDisplayLines(source, {
+          ...options,
+          originalMessage: options.originalMessage || message,
+          message,
+        })
+      : extractRelevantSegmentsFromSource(source, message, options);
   if (segments.length === 0) {
     return "";
   }
@@ -2120,14 +2260,23 @@ function buildDatabaseOnlyAnswer(sources, options = {}) {
         options.questionIntent === "law_section" ? 12 : options.explainMode ? 14 : 12,
       ),
   });
+  const displaySources =
+    options.questionIntent === "law_section"
+      ? getScopedLawSectionSources(orderedSources, {
+          ...options,
+          originalMessage: focusMessage,
+          message: focusMessage,
+        })
+      : orderedSources;
   const displayedSources = [];
-  const sourceBlocks = orderedSources
+  const sourceBlocks = displaySources
     .map((source) => {
       const block = formatDatabaseOnlySourceBlock(source, focusMessage, {
         explainMode: options.explainMode,
         amountMode: options.amountMode === true,
         questionIntent: options.questionIntent,
         preserveMoreContent: true,
+        originalMessage: focusMessage,
       });
       if (block) {
         displayedSources.push(source);
