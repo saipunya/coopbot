@@ -132,6 +132,339 @@ function isUnionFeeQuestion(message) {
   return /(ค่าบำรุง|บำรุง)/.test(text) && /สันนิบาต/.test(text);
 }
 
+function detectLegalEntityScope(message) {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  const asksCoop = /พรบ|พระราชบัญญัติ|สหกรณ์/.test(normalized);
+  const asksGroup = /พรฎ|พระราชกฤษฎีกา|กลุ่มเกษตรกร/.test(normalized);
+
+  if (asksCoop && !asksGroup) {
+    return "coop";
+  }
+
+  if (asksGroup && !asksCoop) {
+    return "group";
+  }
+
+  return "all";
+}
+
+function isReserveFundQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  return Boolean(text) && /ทุนสำรอง/.test(text);
+}
+
+function containsReserveFundPhrase(text) {
+  const raw = String(text || "");
+  if (!raw) {
+    return false;
+  }
+
+  if (/ทุนสำรอง/u.test(raw)) {
+    return true;
+  }
+
+  return /ทุนสำรอง/.test(normalizeForSearch(raw).toLowerCase());
+}
+
+function isReserveFundEvidence(text) {
+  const raw = String(text || "");
+  if (!containsReserveFundPhrase(raw)) {
+    return false;
+  }
+
+  const normalized = normalizeForSearch(raw).toLowerCase();
+  const hasProfit = /(กำไรสุทธิ|กําไรสุทธิ)/u.test(raw) || /กำไรสุทธิ/.test(normalized);
+  const hasMinimum = /ไม่น้อยกว่า/u.test(raw) || /ไม่น้อยกว่า/.test(normalized);
+  const hasTenPercent =
+    /ร้อยละ(?:สิบ| 10)?|(?:^|[^0-9])10(?:[^0-9]|$)|๑๐/u.test(raw) ||
+    /ร้อยละสิบ|ร้อยละ10|10ของกำไรสุทธิ|สิบของกำไรสุทธิ/.test(normalized);
+
+  return hasProfit && hasMinimum && hasTenPercent;
+}
+
+function scoreReserveFundEvidence(line, source = {}) {
+  const raw = String(line || "");
+  const normalized = normalizeForSearch(raw).toLowerCase();
+  const sourceName = String(source?.source || "").trim().toLowerCase();
+  let score = Number(source?.score || 0) * 0.15;
+
+  if (containsReserveFundPhrase(raw)) {
+    score += 36;
+  }
+  if (/(กำไรสุทธิ|กําไรสุทธิ)/u.test(raw) || /กำไรสุทธิ/.test(normalized)) {
+    score += 20;
+  }
+  if (/ไม่น้อยกว่า/u.test(raw) || /ไม่น้อยกว่า/.test(normalized)) {
+    score += 18;
+  }
+  if (/ร้อยละ(?:สิบ| 10)?|10|๑๐/u.test(raw) || /ร้อยละสิบ|ร้อยละ10/.test(normalized)) {
+    score += 24;
+  }
+  if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+    score += 20;
+  }
+
+  return score;
+}
+
+function isDividendQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  if (!/(เงินปันผล|ปันผล)/.test(text)) {
+    return false;
+  }
+
+  if (/(สมาชิกสมทบ|ผู้รับโอนประโยชน์|ตาย|มรดก|ขาดจากสมาชิกภาพ|ออกจากสหกรณ์|ออกจากสมาชิกภาพ)/.test(text)) {
+    return false;
+  }
+
+  return true;
+}
+
+function containsDividendPhrase(text) {
+  const raw = String(text || "");
+  if (!raw) {
+    return false;
+  }
+
+  if (/(เงินปันผล|ปันผล)/u.test(raw)) {
+    return true;
+  }
+
+  return /(เงินปันผล|ปันผล)/.test(normalizeForSearch(raw).toLowerCase());
+}
+
+function isDividendEvidence(text) {
+  const raw = String(text || "");
+  if (!containsDividendPhrase(raw)) {
+    return false;
+  }
+
+  const normalized = normalizeForSearch(raw).toLowerCase();
+  const hasPaidShares = /(หุ้นที่ชำระแล้ว|หุ้นที่ชําระแล้ว)/u.test(raw) || /หุ้นที่ชำระแล้ว/.test(normalized);
+  const hasRateControl =
+    /(อัตราที่กำหนดในกฎกระทรวง|อัตราที่นายทะเบียนสหกรณ์กำหนด)/u.test(raw) ||
+    /อัตราที่กำหนดในกฎกระทรวง|อัตราที่นายทะเบียนสหกรณ์กำหนด/.test(normalized);
+
+  return hasPaidShares && hasRateControl;
+}
+
+function scoreDividendEvidence(line, source = {}, scope = "all") {
+  const raw = String(line || "");
+  const normalized = normalizeForSearch(raw).toLowerCase();
+  const sourceName = String(source?.source || "").trim().toLowerCase();
+  let score = Number(source?.score || 0) * 0.15;
+
+  if (containsDividendPhrase(raw)) {
+    score += 34;
+  }
+  if (/(หุ้นที่ชำระแล้ว|หุ้นที่ชําระแล้ว)/u.test(raw) || /หุ้นที่ชำระแล้ว/.test(normalized)) {
+    score += 20;
+  }
+  if (/อัตรา/u.test(raw) || /อัตรา/.test(normalized)) {
+    score += 18;
+  }
+  if (/กฎกระทรวง|นายทะเบียนสหกรณ์กำหนด/u.test(raw) || /กฎกระทรวง|นายทะเบียนสหกรณ์กำหนด/.test(normalized)) {
+    score += 18;
+  }
+  if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+    score += 20;
+  }
+  if (scope === "coop" && sourceName === "tbl_laws") {
+    score += 16;
+  }
+  if (scope === "group" && sourceName === "tbl_glaws") {
+    score += 16;
+  }
+  if (scope === "all" && sourceName === "tbl_laws") {
+    score += 8;
+  }
+
+  return score;
+}
+
+function buildReserveFundFocusedAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isReserveFundQuestion(message)) {
+    return "";
+  }
+
+  const candidateSources = dedupeSources(sources, 10);
+  let selectedEvidence = null;
+
+  for (const source of candidateSources) {
+    const segments = splitContentSegments(buildSourceRawContentText(source));
+    const candidateSegments = [];
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const first = cleanLine(segments[index]);
+      const second = cleanLine(segments[index + 1] || "");
+      if (first) {
+        candidateSegments.push(first);
+      }
+      if (first && second) {
+        candidateSegments.push(cleanLine(`${first} ${second}`));
+      }
+    }
+
+    for (const segment of candidateSegments) {
+      const cleaned = cleanLine(segment);
+      if (!cleaned || looksLikeAttachmentFilename(cleaned) || lineLooksLikeSourceMetadata(cleaned, [source])) {
+        continue;
+      }
+
+      if (!isReserveFundEvidence(cleaned)) {
+        continue;
+      }
+
+      const scoredEvidence = {
+        text: cleaned,
+        source,
+        score: scoreReserveFundEvidence(cleaned, source),
+      };
+      if (!selectedEvidence || scoredEvidence.score > selectedEvidence.score) {
+        selectedEvidence = scoredEvidence;
+      }
+    }
+  }
+
+  if (!selectedEvidence) {
+    const fallbackSource = candidateSources
+      .map((source) => ({
+        source,
+        score: scoreReserveFundEvidence(buildSourceSearchText(source), source),
+        searchText: buildSourceSearchText(source),
+      }))
+      .filter((item) => containsReserveFundPhrase(item.searchText))
+      .filter((item) => /(กำไรสุทธิ|ไม่น้อยกว่า|ร้อยละสิบ|ร้อยละ10)/.test(item.searchText))
+      .sort((left, right) => right.score - left.score)[0];
+
+    if (fallbackSource) {
+      selectedEvidence = {
+        text: "",
+        source: fallbackSource.source,
+        score: fallbackSource.score,
+      };
+    }
+  }
+
+  if (!selectedEvidence) {
+    return "";
+  }
+
+  return [
+    buildParagraphSummary(
+      ["สหกรณ์ต้องจัดสรรกำไรสุทธิประจำปีเป็นทุนสำรองไม่น้อยกว่าร้อยละสิบของกำไรสุทธิ"],
+      [],
+      false,
+      { summaryLimit: 1 },
+    ),
+    buildReferenceSection([selectedEvidence.source], 1),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function buildDividendFocusedAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isDividendQuestion(message)) {
+    return "";
+  }
+
+  const scope = detectLegalEntityScope(message);
+  const candidateSources = dedupeSources(sources, 10);
+  let selectedEvidence = null;
+
+  for (const source of candidateSources) {
+    const sourceName = String(source?.source || "").trim().toLowerCase();
+    if (sourceName !== "tbl_laws" && sourceName !== "tbl_glaws") {
+      continue;
+    }
+
+    const segments = splitContentSegments(buildSourceRawContentText(source));
+    const candidateSegments = [];
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const first = cleanLine(segments[index]);
+      const second = cleanLine(segments[index + 1] || "");
+      const third = cleanLine(segments[index + 2] || "");
+      if (first) {
+        candidateSegments.push(first);
+      }
+      if (first && second) {
+        candidateSegments.push(cleanLine(`${first} ${second}`));
+      }
+      if (first && second && third) {
+        candidateSegments.push(cleanLine(`${first} ${second} ${third}`));
+      }
+    }
+
+    for (const segment of candidateSegments) {
+      const cleaned = cleanLine(segment);
+      if (!cleaned || lineLooksLikeSourceMetadata(cleaned, [source])) {
+        continue;
+      }
+
+      if (!isDividendEvidence(cleaned)) {
+        continue;
+      }
+
+      const scoredEvidence = {
+        text: cleaned,
+        source,
+        score: scoreDividendEvidence(cleaned, source, scope),
+      };
+      if (!selectedEvidence || scoredEvidence.score > selectedEvidence.score) {
+        selectedEvidence = scoredEvidence;
+      }
+    }
+  }
+
+  if (!selectedEvidence) {
+    const fallbackSource = candidateSources
+      .filter((source) => {
+        const sourceName = String(source?.source || "").trim().toLowerCase();
+        return sourceName === "tbl_laws" || sourceName === "tbl_glaws";
+      })
+      .map((source) => ({
+        source,
+        score: scoreDividendEvidence(buildSourceSearchText(source), source, scope),
+        searchText: buildSourceSearchText(source),
+      }))
+      .filter((item) => containsDividendPhrase(item.searchText))
+      .filter((item) => /(หุ้นที่ชำระแล้ว|อัตราที่กำหนดในกฎกระทรวง|อัตราที่นายทะเบียนสหกรณ์กำหนด)/.test(item.searchText))
+      .sort((left, right) => right.score - left.score)[0];
+
+    if (fallbackSource) {
+      selectedEvidence = {
+        text: "",
+        source: fallbackSource.source,
+        score: fallbackSource.score,
+      };
+    }
+  }
+
+  if (!selectedEvidence) {
+    return "";
+  }
+
+  const sourceName = String(selectedEvidence.source?.source || "").trim().toLowerCase();
+  const summaryLine =
+    sourceName === "tbl_glaws"
+      ? "กลุ่มเกษตรกรอาจจ่ายเงินปันผลตามหุ้นที่ชำระแล้ว แต่ต้องไม่เกินอัตราที่นายทะเบียนสหกรณ์กำหนด"
+      : "สหกรณ์อาจจ่ายเงินปันผลตามหุ้นที่ชำระแล้ว แต่ต้องไม่เกินอัตราที่กำหนดในกฎกระทรวงสำหรับสหกรณ์แต่ละประเภท";
+
+  return [
+    buildParagraphSummary([summaryLine], [], false, { summaryLimit: 1 }),
+    buildReferenceSection([selectedEvidence.source], 1),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function containsUnionFeePhrase(text) {
   const raw = String(text || "");
   if (!raw) {
@@ -2335,6 +2668,32 @@ async function generateChatSummary(message, sources, options = {}) {
 
   if (unionFeeFocusedAnswer) {
     return unionFeeFocusedAnswer;
+  }
+
+  const reserveFundFocusedAnswer = buildReserveFundFocusedAnswer(
+    effectiveSources.length > 0 ? effectiveSources : answerInputSources,
+    {
+      ...options,
+      originalMessage: focusMessage,
+      message,
+    },
+  );
+
+  if (reserveFundFocusedAnswer) {
+    return reserveFundFocusedAnswer;
+  }
+
+  const dividendFocusedAnswer = buildDividendFocusedAnswer(
+    effectiveSources.length > 0 ? effectiveSources : answerInputSources,
+    {
+      ...options,
+      originalMessage: focusMessage,
+      message,
+    },
+  );
+
+  if (dividendFocusedAnswer) {
+    return dividendFocusedAnswer;
   }
 
   if (options.forceFallback || databaseOnlyMode || effectiveSources.length === 0) {

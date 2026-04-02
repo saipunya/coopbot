@@ -855,7 +855,68 @@ function stripQuestionTail(message) {
     .trim();
 }
 
-function looksLikeFollowUpQuestion(message) {
+function startsWithFollowUpLead(message) {
+  return /^(ตกลง|แล้ว|ส่วน|ประเด็นนี้|กรณีนี้|สรุปแล้ว|ท้ายที่สุด|เรื่องนี้|หัวข้อนี้)/.test(
+    String(message || "").trim(),
+  );
+}
+
+function normalizeTopicHintForCompare(value) {
+  return normalizeForSearch(String(value || ""))
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasTopicHintOverlap(topicHints, recentTopic = "") {
+  const normalizedRecentTopic = normalizeTopicHintForCompare(recentTopic);
+  if (!normalizedRecentTopic) {
+    return false;
+  }
+
+  return (Array.isArray(topicHints) ? topicHints : []).some((hint) => {
+    const normalizedHint = normalizeTopicHintForCompare(hint);
+    if (!normalizedHint) {
+      return false;
+    }
+
+    return (
+      normalizedRecentTopic.includes(normalizedHint) ||
+      normalizedHint.includes(normalizedRecentTopic)
+    );
+  });
+}
+
+function countMeaningfulQuestionTokens(message) {
+  return uniqueTokens(segmentWords(message)).filter((token) => String(token || "").trim().length >= 3).length;
+}
+
+function looksLikeNewTopicQuestion(message, recentTopic = "") {
+  const text = String(message || "").trim();
+  if (!text || isStandaloneLawLookup(text)) {
+    return false;
+  }
+
+  if (text.length <= 18 || startsWithFollowUpLead(text)) {
+    return false;
+  }
+
+  const explicitTopicHints = extractExplicitTopicHints(text);
+  const hasTopicOverlap = hasTopicHintOverlap(explicitTopicHints, recentTopic);
+  const meaningfulTokenCount = countMeaningfulQuestionTokens(text);
+
+  if (explicitTopicHints.length > 0 && !hasTopicOverlap && text.length >= 24) {
+    return true;
+  }
+
+  if (explicitTopicHints.length > 0 && !hasTopicOverlap && text.length >= 18 && meaningfulTokenCount >= 5) {
+    return true;
+  }
+
+  return false;
+}
+
+function looksLikeFollowUpQuestion(message, recentTopic = "") {
   const text = String(message || "").trim();
   if (!text) {
     return false;
@@ -869,7 +930,11 @@ function looksLikeFollowUpQuestion(message) {
     return true;
   }
 
-  if (/^(ตกลง|แล้ว|ส่วน|ประเด็นนี้|กรณีนี้|สรุปแล้ว|ท้ายที่สุด)/.test(text)) {
+  if (looksLikeNewTopicQuestion(text, recentTopic)) {
+    return false;
+  }
+
+  if (startsWithFollowUpLead(text)) {
     return true;
   }
 
@@ -919,17 +984,16 @@ function resolveMessageWithContext(message, target, session) {
   const history = getSessionContext(session)
     .filter((item) => item && item.target === target)
     .slice(0, CONTEXT_HISTORY_LIMIT);
+  const recent = history[0];
+  const recentTopic = Array.isArray(recent?.topicHints) ? recent.topicHints[0] : "";
 
-  if (!looksLikeFollowUpQuestion(text) || history.length === 0) {
+  if (history.length === 0 || !looksLikeFollowUpQuestion(text, recentTopic)) {
     return {
       effectiveMessage: text,
       usedContext: false,
       topicHints: baseTopic ? [baseTopic] : [],
     };
   }
-
-  const recent = history[0];
-  const recentTopic = Array.isArray(recent.topicHints) ? recent.topicHints[0] : "";
 
   if (!recentTopic) {
     return {
@@ -939,7 +1003,7 @@ function resolveMessageWithContext(message, target, session) {
     };
   }
 
-  const alreadyContainsTopic = baseTopic && recentTopic.includes(baseTopic);
+  const alreadyContainsTopic = baseTopic && hasTopicHintOverlap([baseTopic], recentTopic);
   const effectiveMessage = alreadyContainsTopic ? text : `${recentTopic} ${text}`.trim();
 
   return {
@@ -1077,6 +1141,27 @@ function isLowConfidenceDatabaseResult(matches, questionIntent = "general") {
 async function resolveSearchPlan(message, target, session, options = {}) {
   const baseMessage = String(message || "").trim();
   const contextualCandidate = resolveMessageWithContext(baseMessage, target, session);
+  const baseTopicHints = extractExplicitTopicHints(baseMessage);
+  const implicitFollowUpQuestion =
+    contextualCandidate.usedContext &&
+    baseTopicHints.length === 0 &&
+    (
+      baseMessage.length <= 18 ||
+      startsWithFollowUpLead(baseMessage) ||
+      /(อำนาจหน้าที่|มีหน้าที่|หน้าที่|คุณสมบัติ|ลักษณะต้องห้าม|ขาดจากการเป็น|ต้องทำอย่างไร|ทำอย่างไร|อย่างไร|ยังไง)/.test(
+        baseMessage,
+      )
+    );
+  const shortFollowUpBias =
+    contextualCandidate.usedContext &&
+    (
+      baseMessage.length <= 18 ||
+      startsWithFollowUpLead(baseMessage) ||
+      (
+        /(อำนาจหน้าที่|มีหน้าที่|หน้าที่|คุณสมบัติ|ลักษณะต้องห้าม|ขาดจากการเป็น)/.test(baseMessage) &&
+        baseTopicHints.length === 0
+      )
+    );
 
   const standaloneMatches = await searchDatabaseSources(baseMessage, target, options);
   const standaloneScore = scoreMatchSet(standaloneMatches);
@@ -1104,11 +1189,25 @@ async function resolveSearchPlan(message, target, session, options = {}) {
 
   const contextualMatches = await searchDatabaseSources(contextualCandidate.effectiveMessage, target, options);
   const contextualScore = scoreMatchSet(contextualMatches);
+  const standaloneTopScore = Number(standaloneMatches[0]?.score || 0);
+  const contextualTopScore = Number(contextualMatches[0]?.score || 0);
+  const contextScoreBuffer = shortFollowUpBias ? 2 : 8;
+  const contextScoreMultiplier = shortFollowUpBias ? 1.05 : 1.2;
+  const shouldPreferShortFollowUpContext =
+    shortFollowUpBias &&
+    contextualMatches.length > 0 &&
+    (
+      standaloneMatches.length === 0 ||
+      contextualTopScore >= Math.max(48, standaloneTopScore * 0.75) ||
+      contextualScore >= Math.max(60, standaloneScore - 18)
+    );
   const shouldUseContext =
     contextualMatches.length > 0 &&
-    (standaloneMatches.length === 0 ||
-      contextualScore >= standaloneScore + 8 ||
-      contextualScore >= standaloneScore * 1.2);
+    (implicitFollowUpQuestion ||
+      shouldPreferShortFollowUpContext ||
+      standaloneMatches.length === 0 ||
+      contextualScore >= standaloneScore + contextScoreBuffer ||
+      contextualScore >= standaloneScore * contextScoreMultiplier);
 
   if (!shouldUseContext) {
     return {
