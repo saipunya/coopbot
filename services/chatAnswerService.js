@@ -1689,6 +1689,26 @@ function extractNumberedClauses(text) {
   return clauses;
 }
 
+function extractLawSectionPreamble(text) {
+  const raw = String(text || "");
+  if (!raw.trim()) {
+    return "";
+  }
+
+  const normalized = normalizeProtectedLineBreaks(raw);
+  const match = normalized.match(/^[\s\S]*?(?=(?:ข้อ\s*)?(?:\(?[1-9๐-๙][0-9๐-๙]{0,2}\)|[1-9๐-๙][0-9๐-๙]{0,2}[.)]))/);
+  const preamble = cleanLine(match?.[0] || "");
+  if (!preamble) {
+    return "";
+  }
+
+  if (isNoisyLine(preamble)) {
+    return "";
+  }
+
+  return preamble.replace(/[;,.\-–—]+$/g, "").trim();
+}
+
 function getPrimaryStructuredLawClauses(sources, options = {}) {
   if (options.questionIntent !== "law_section") {
     return [];
@@ -1739,11 +1759,14 @@ function buildStructuredLawSectionDisplayLines(source, options = {}) {
     .filter((segment) => !lineLooksLikeSourceMetadata(segment, [source]))
     .filter((segment) => !looksLikeBareDocumentTitle(segment, [source]))
     .filter((segment) => {
-      const headingNumber = extractPrimaryLawNumberFromText(segment);
+      const headingNumber = extractPrimaryLawNumberFromText(
+        cleanLine(segment).replace(/\s.*$/, ""),
+      );
       return !headingNumber || !queryLawNumber || headingNumber === normalizeClauseNumber(queryLawNumber);
     });
+  const preambleLine = extractLawSectionPreamble(rawText);
   const leadLines = uniqueCleanLines(
-    segments.filter((segment) => {
+    [preambleLine, ...segments].filter((segment) => {
       if (extractClauseNumberFromLine(segment)) {
         return false;
       }
