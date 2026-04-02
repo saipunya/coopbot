@@ -915,6 +915,63 @@ function getSessionContext(session) {
   return session[CHAT_CONTEXT_KEY];
 }
 
+function buildContextSourceKey(source = {}) {
+  return [
+    String(source.source || "").trim().toLowerCase(),
+    String(source.id || "").trim(),
+    String(source.reference || "").trim().toLowerCase(),
+    String(source.title || "").trim().toLowerCase(),
+    String(source.lawNumber || "").trim().toLowerCase(),
+    String(source.url || "").trim().toLowerCase(),
+  ].join("::");
+}
+
+function compactContextSource(source = {}) {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const content = String(
+    source.content || source.chunk_text || source.comment || "",
+  ).replace(/\s+/g, " ").trim();
+
+  return {
+    id: source.id || null,
+    source: source.source || "",
+    title: source.title || "",
+    reference: source.reference || source.title || "",
+    lawNumber: source.lawNumber || "",
+    url: source.url || "",
+    score: Number(source.score || 0),
+    keyword: source.keyword || "",
+    content: content.slice(0, 900),
+    chunk_text: content.slice(0, 900),
+    comment: content.slice(0, 900),
+  };
+}
+
+function mergeUniqueSources(...groups) {
+  const seen = new Set();
+  const results = [];
+
+  groups.flat().forEach((source) => {
+    const compacted = compactContextSource(source);
+    if (!compacted) {
+      return;
+    }
+
+    const key = buildContextSourceKey(compacted);
+    if (!key || seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    results.push(compacted);
+  });
+
+  return results;
+}
+
 function stripQuestionTail(message) {
   return String(message || "")
     .replace(/^(อธิบาย|รายละเอียด|ขยายความ|ยกตัวอย่าง)\s*/i, "")
@@ -1119,10 +1176,38 @@ function storeConversationContext(session, target, originalMessage, effectiveMes
     originalMessage,
     effectiveMessage,
     topicHints,
+    focusSources: mergeUniqueSources(Array.isArray(matches) ? matches.slice(0, 6) : []).slice(0, 6),
     createdAt: new Date().toISOString(),
   });
 
   session[CHAT_CONTEXT_KEY] = history.slice(0, CONTEXT_HISTORY_LIMIT);
+}
+
+function getFollowUpCarrySources(session, target, message, resolvedContext = {}) {
+  if (!resolvedContext?.usedContext || !wantsExplanation(message)) {
+    return [];
+  }
+
+  const recent = getSessionContext(session).find((item) => item && item.target === target);
+  if (!recent || !Array.isArray(recent.focusSources)) {
+    return [];
+  }
+
+  return recent.focusSources
+    .map((source, index) => {
+      const compacted = compactContextSource(source);
+      if (!compacted) {
+        return null;
+      }
+
+      return {
+        ...compacted,
+        score: Math.max(Number(compacted.score || 0), 92 - index * 3),
+        contextCarry: true,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 6);
 }
 
 function scoreMatchSet(matches) {
@@ -2157,9 +2242,23 @@ async function collectAnswerSources(message, target, session, options = {}) {
   const afterDbSearchAt = nowMs();
 
   const resolvedEffectiveMessage = searchPlan.effectiveMessage || effectiveMessage;
-  const databaseMatches = Array.isArray(searchPlan.matches) ? searchPlan.matches : [];
+  const carrySources = getFollowUpCarrySources(
+    session,
+    target,
+    message,
+    searchPlan.resolvedContext || {},
+  );
+  const databaseMatches = mergeUniqueSources(
+    carrySources,
+    Array.isArray(searchPlan.matches) ? searchPlan.matches : [],
+  );
+  const suppressInternetForFollowUpExplanation =
+    carrySources.length > 0 &&
+    searchPlan.resolvedContext?.usedContext === true &&
+    wantsExplanation(message);
   const shouldSearchInternet =
     allowInternetFallback &&
+    !suppressInternetForFollowUpExplanation &&
     shouldSearchInternetForPlan(options.planCode || "free", resolvedEffectiveMessage, databaseMatches, questionIntent);
   let internetMatches = [];
   const remainingBudgetBeforeInternetMs = getRemainingBudgetMs(
@@ -2223,6 +2322,7 @@ async function collectAnswerSources(message, target, session, options = {}) {
       totalSourceCollectionMs: Math.round(afterSourceSelectionAt - startedAt),
       remainingBudgetBeforeInternetMs:
         remainingBudgetBeforeInternetMs === Number.POSITIVE_INFINITY ? null : remainingBudgetBeforeInternetMs,
+      carrySourceCount: carrySources.length,
     },
   };
 }

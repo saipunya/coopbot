@@ -542,11 +542,13 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
     return "";
   }
 
+  const explainMode = options.explainMode === true || wantsExplanation(options.message || "");
   const stepMode = options.stepMode === true || wantsStepAnswer(message);
   const scope = detectLiquidationScope(message);
   const allowedSources = scope === "group" ? ["tbl_glaws"] : ["tbl_laws"];
   const references = [];
   const summaryLines = [];
+  const detailLines = [];
   const pushUniqueReference = (source) => {
     if (!source) {
       return;
@@ -566,22 +568,26 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
       summaryLines.push("ถ้ากลุ่มเกษตรกรล้มละลาย การชำระบัญชีให้เป็นไปตามกฎหมายว่าด้วยล้มละลาย");
       summaryLines.push("ถ้าเลิกเพราะเหตุอื่น ให้นำบทบัญญัติเกี่ยวกับการชำระบัญชีตามกฎหมายว่าด้วยสหกรณ์มาใช้บังคับโดยอนุโลม");
       summaryLines.push("แม้กลุ่มเกษตรกรจะเลิกแล้ว ก็ยังถือว่าดำรงอยู่เท่าที่จำเป็นเพื่อการชำระบัญชี");
+      detailLines.push("หากกลุ่มเกษตรกรล้มละลาย การชำระบัญชีจะดำเนินไปตามกฎหมายล้มละลาย ไม่ใช้ขั้นตอนปกติของการเลือกตั้งผู้ชำระบัญชี");
       pushUniqueReference(bankruptcySource);
     }
 
     if (remainingAssetSource) {
       summaryLines.push("เมื่อชำระหนี้แล้ว หากยังมีทรัพย์สินเหลืออยู่ ให้ผู้ชำระบัญชีจัดการตามลำดับที่กฎหมายกำหนด");
+      detailLines.push("หลังจากชำระหนี้ครบแล้ว ผู้ชำระบัญชีต้องจัดการทรัพย์สินที่เหลือตามลำดับและหลักเกณฑ์ที่กฎหมายกำหนด ไม่สามารถจัดการตามดุลพินิจลอย ๆ ได้");
       pushUniqueReference(remainingAssetSource);
     }
 
     if (transitionalSource) {
       summaryLines.push("ในบางกรณีที่กฎหมายเฉพาะยังไม่มีระเบียบรอง ให้ใช้บทบัญญัติการชำระบัญชีตามกฎหมายสหกรณ์ไปก่อน");
+      detailLines.push("กรณีที่กฎหมายเฉพาะของกลุ่มเกษตรกรยังไม่มีรายละเอียดเพียงพอ ระบบกฎหมายจะให้อาศัยบทบัญญัติการชำระบัญชีตามกฎหมายสหกรณ์โดยอนุโลม");
       pushUniqueReference(transitionalSource);
     }
   } else {
     const openingSource = selectBestLawSourceByNumbers(sources, ["73"], allowedSources);
     const bankruptcySource = selectBestLawSourceByNumbers(sources, ["74"], allowedSources);
     const appointmentSource = selectBestLawSourceByNumbers(sources, ["75"], allowedSources);
+    const continuitySource = selectBestLawSourceByNumbers(sources, ["76"], allowedSources);
     const dutySource =
       selectBestLawSourceByNumbers(sources, ["77"], allowedSources) ||
       selectBestLawSourceByNumbers(sources, ["81"], allowedSources);
@@ -589,26 +595,37 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
 
     if (openingSource) {
       summaryLines.push("เมื่อสหกรณ์เลิกตามเหตุที่กฎหมายกำหนด ต้องจัดการชำระบัญชีตามหมวด 4 ว่าด้วยการชำระบัญชี");
+      detailLines.push("จุดเริ่มต้นของการชำระบัญชีคือการที่สหกรณ์เลิกตามเหตุที่กฎหมายกำหนดไว้ก่อน แล้วจึงเข้าสู่กระบวนการสะสางทรัพย์สินและหนี้สินตามหมวด 4");
       pushUniqueReference(openingSource);
     }
 
     if (bankruptcySource) {
       summaryLines.push("ถ้าสหกรณ์ล้มละลาย การชำระบัญชีให้เป็นไปตามกฎหมายว่าด้วยล้มละลาย");
+      detailLines.push("ถ้าสหกรณ์ล้มละลาย จะไม่ใช้ขั้นตอนปกติของการตั้งผู้ชำระบัญชีตามที่ประชุมใหญ่ แต่ต้องดำเนินการตามกฎหมายล้มละลายโดยตรง");
       pushUniqueReference(bankruptcySource);
     }
 
     if (appointmentSource) {
       summaryLines.push("ถ้าเลิกด้วยเหตุอื่นนอกจากล้มละลาย ที่ประชุมใหญ่ต้องตั้งผู้ชำระบัญชีโดยได้รับความเห็นชอบจากนายทะเบียนสหกรณ์ภายในกำหนดเวลา และหากไม่ตั้งหรือตั้งแล้วไม่ผ่านความเห็นชอบ นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีได้");
+      detailLines.push("มาตรา 75 กำหนดให้ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชีภายในสามสิบวันนับแต่วันที่เลิก และต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์");
+      detailLines.push("ถ้าที่ประชุมใหญ่ไม่เลือกตั้งภายในกำหนด หรือเลือกตั้งแล้วไม่ได้รับความเห็นชอบ นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีแทนได้");
       pushUniqueReference(appointmentSource);
+    }
+
+    if (continuitySource) {
+      detailLines.push("แม้สหกรณ์จะเลิกแล้ว มาตรา 76 ยังถือว่าสหกรณ์ดำรงอยู่ต่อไปเท่าที่จำเป็นเพื่อให้การชำระบัญชีดำเนินจนเสร็จ");
+      pushUniqueReference(continuitySource);
     }
 
     if (dutySource) {
       summaryLines.push("ผู้ชำระบัญชีมีหน้าที่ชำระสะสางกิจการ ชำระหนี้ และจัดการทรัพย์สินของสหกรณ์ให้เสร็จตามขั้นตอนของกฎหมาย");
+      detailLines.push("ในทางปฏิบัติ ผู้ชำระบัญชีต้องรวบรวมทรัพย์สิน ตรวจสอบเจ้าหนี้และลูกหนี้ ชำระหนี้ตามลำดับ และจัดการทรัพย์สินของสหกรณ์ภายใต้กรอบอำนาจหน้าที่ตามมาตรา 81");
       pushUniqueReference(dutySource);
     }
 
     if (completionSource) {
       summaryLines.push("เมื่อชำระบัญชีเสร็จ ผู้ชำระบัญชีต้องทำรายงานการชำระบัญชีและเสนอต่อนายทะเบียนสหกรณ์เพื่อให้การชำระบัญชีสิ้นสุดตามกฎหมาย");
+      detailLines.push("ขั้นตอนสุดท้ายคือการสรุปรายงานการชำระบัญชีเสนอให้นายทะเบียนสหกรณ์ตรวจรับ เพื่อให้กระบวนการชำระบัญชีสิ้นสุดลงอย่างสมบูรณ์ตามกฎหมาย");
       pushUniqueReference(completionSource);
     }
   }
@@ -618,12 +635,17 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
     return "";
   }
 
-  return [
-    buildParagraphSummary(normalizedSummaryLines, [], false, {
+  const normalizedDetailLines = explainMode ? uniqueCleanLines(detailLines, 6) : [];
+
+  const answerBody = buildParagraphSummary(normalizedSummaryLines, normalizedDetailLines, explainMode, {
       summaryLimit: normalizedSummaryLines.length,
+      detailLimit: normalizedDetailLines.length || 4,
       orderedSummary: stepMode,
       summaryHeading: stepMode ? "ขั้นตอนสำคัญ:" : "สรุปสาระสำคัญ:",
-    }),
+    });
+
+  return [
+    decorateConversationalAnswer(answerBody, options),
     buildReferenceSection(references, Math.min(references.length || 1, 5)),
   ]
     .filter(Boolean)
