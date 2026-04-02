@@ -2271,18 +2271,29 @@ function buildDatabaseOnlyAnswer(sources, options = {}) {
     }
   }
 
-  const orderedSources = orderSourcesForDatabaseOnly(sources, {
-    questionIntent: options.questionIntent,
-    explainMode: options.explainMode,
-    originalMessage: focusMessage,
-    planCode: options.planCode,
-    sourceLimit:
-      Math.max(
-        Number(options.sourceLimit || 0),
-        Array.isArray(sources) ? sources.length : 0,
-        options.questionIntent === "law_section" ? 12 : options.explainMode ? 14 : 12,
-      ),
-  });
+  const scopedLawSectionSources =
+    options.questionIntent === "law_section"
+      ? getScopedLawSectionSources(sources, {
+          ...options,
+          originalMessage: focusMessage,
+          message: focusMessage,
+        })
+      : [];
+  const orderedSources =
+    options.questionIntent === "law_section" && scopedLawSectionSources.length > 0
+      ? scopedLawSectionSources
+      : orderSourcesForDatabaseOnly(sources, {
+          questionIntent: options.questionIntent,
+          explainMode: options.explainMode,
+          originalMessage: focusMessage,
+          planCode: options.planCode,
+          sourceLimit:
+            Math.max(
+              Number(options.sourceLimit || 0),
+              Array.isArray(sources) ? sources.length : 0,
+              options.questionIntent === "law_section" ? 12 : options.explainMode ? 14 : 12,
+            ),
+        });
   const displaySources =
     options.questionIntent === "law_section"
       ? getScopedLawSectionSources(orderedSources, {
