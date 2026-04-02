@@ -60,7 +60,7 @@ const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SE
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
 const WEB_SEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
-const ANSWER_CACHE_SCOPE_VERSION = "v6";
+const ANSWER_CACHE_SCOPE_VERSION = "v9";
 const answerCache = new Map();
 const suggestionThrottleMap = new Map();
 
@@ -1154,8 +1154,87 @@ function buildSourceFocusSearchText(item = {}) {
   ).toLowerCase();
 }
 
+function isUnionFeeQuestion(message) {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /(ค่าบำรุง|บำรุง)/.test(normalized) && /สันนิบาต/.test(normalized);
+}
+
+function scoreUnionFeeSourceFocus(item = {}) {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  const sourceText = buildSourceFocusSearchText(item);
+  if (!sourceText) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  let score = 0;
+
+  if (/ค่าบำรุง\s*สันนิบาต|บำรุง\s*สันนิบาต/.test(sourceText)) {
+    score += 60;
+  } else if (/สันนิบาต/.test(sourceText) && /(?:ค่าบำรุง|บำรุง|อัตรา|ร้อยละ|เปอร์เซ็นต์|กำไรสุทธิ|กฎกระทรวง)/.test(sourceText)) {
+    score += 32;
+  } else {
+    score -= 80;
+  }
+
+  if (/(อัตรา|ร้อยละ|เปอร์เซ็นต์|กำไรสุทธิ|สามหมื่นบาท|กฎกระทรวง|จัดสรร)/.test(sourceText)) {
+    score += 24;
+  }
+
+  if (/(ชำระ|จ่าย|คำนวณ|เรียกเก็บ)/.test(sourceText)) {
+    score += 14;
+  }
+
+  if (sourceName === "pdf_chunks" || sourceName === "documents") {
+    score += 12;
+  }
+
+  if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+    score += 6;
+  }
+
+  if (sourceName === "knowledge_base") {
+    score -= 28;
+  }
+
+  if (/(ประชุมใหญ่|คณะกรรมการ|สมาชิก|เลือกตั้ง|รับสมาชิก)/.test(sourceText)) {
+    score -= 48;
+  }
+
+  score += Number(item.score || 0) * 0.15;
+  return score;
+}
+
 function pruneFocusedQueryMatches(matches, message) {
   const ranked = sortByScore(matches);
+  if (isUnionFeeQuestion(message)) {
+    const focusedUnionMatches = ranked
+      .map((item) => ({
+        ...item,
+        __unionFeeScore: scoreUnionFeeSourceFocus(item),
+      }))
+      .filter((item) => Number(item.__unionFeeScore || 0) >= 20)
+      .sort((left, right) => {
+        const focusDiff = Number(right.__unionFeeScore || 0) - Number(left.__unionFeeScore || 0);
+        if (focusDiff !== 0) {
+          return focusDiff;
+        }
+
+        return Number(right.score || 0) - Number(left.score || 0);
+      });
+
+    if (focusedUnionMatches.length > 0) {
+      return focusedUnionMatches.map((item) => {
+        const normalized = { ...item };
+        delete normalized.__unionFeeScore;
+        return normalized;
+      });
+    }
+  }
+
   const focusProfile = getQueryFocusProfile(message);
   if (!focusProfile.topics.length) {
     return ranked;

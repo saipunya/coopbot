@@ -123,6 +123,284 @@ function wantsAmountAnswer(message) {
   );
 }
 
+function isUnionFeeQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return /(ค่าบำรุง|บำรุง)/.test(text) && /สันนิบาต/.test(text);
+}
+
+function containsUnionFeePhrase(text) {
+  const raw = String(text || "");
+  if (!raw) {
+    return false;
+  }
+
+  if (/ค่าบ(?:ำ|ํา)รุง[\s\S]{0,40}สันนิบาต|สันนิบาต[\s\S]{0,40}ค่าบ(?:ำ|ํา)รุง/u.test(raw)) {
+    return true;
+  }
+
+  const normalized = normalizeForSearch(raw).toLowerCase();
+  return /(?:ค่าบำรุง|บำรุง).{0,20}สันนิบาต|สันนิบาต.{0,20}(?:ค่าบำรุง|บำรุง)/.test(normalized);
+}
+
+function isUnionFeeFormulaEvidence(text) {
+  const raw = String(text || "");
+  if (!containsUnionFeePhrase(raw)) {
+    return false;
+  }
+
+  const normalized = normalizeForSearch(raw).toLowerCase();
+  const hasProfit = /(กำไรสุทธิ|กําไรสุทธิ)/u.test(raw) || /กำไรสุทธิ/.test(normalized);
+  const hasRate =
+    /ร้อยละ(?:หนึ่ง| 1)?|(?:^|[^0-9])1(?:[^0-9]|$)|๑/u.test(raw) ||
+    /ร้อยละหนึ่ง|ร้อยละ1|อัตรา1|อัตราหนึ่ง|หนึ่งของกำไรสุทธิ/.test(normalized);
+  const hasCap =
+    /สามหมื่นบาท|30,000|30000/u.test(raw) ||
+    /สามหมื่นบาท|30000|30000บาท/.test(normalized);
+
+  return hasProfit && hasRate && hasCap;
+}
+
+function isUnionFeeLegalCapEvidence(text) {
+  const raw = String(text || "");
+  if (!containsUnionFeePhrase(raw)) {
+    return false;
+  }
+
+  const normalized = normalizeForSearch(raw).toLowerCase();
+  const hasProfit = /(กำไรสุทธิ|กําไรสุทธิ)/u.test(raw) || /กำไรสุทธิ/.test(normalized);
+  const hasCapVerb = /ไม่เกิน/u.test(raw) || /ไม่เกิน/.test(normalized);
+  const hasFivePercent =
+    /ร้อยละ(?:ห้า| 5)?|(?:^|[^0-9])5(?:[^0-9]|$)|๕/u.test(raw) ||
+    /ร้อยละห้า|ร้อยละ5|ห้าของกำไรสุทธิ|5ของกำไรสุทธิ/.test(normalized);
+
+  return hasProfit && hasCapVerb && hasFivePercent;
+}
+
+function scoreUnionFeeEvidence(line, source = {}, kind = "formula") {
+  const raw = String(line || "");
+  const normalized = normalizeForSearch(raw).toLowerCase();
+  const sourceName = String(source?.source || "").trim().toLowerCase();
+  let score = Number(source?.score || 0) * 0.15;
+
+  if (containsUnionFeePhrase(raw)) {
+    score += 40;
+  }
+
+  if (/(กำไรสุทธิ|กําไรสุทธิ)/u.test(raw) || /กำไรสุทธิ/.test(normalized)) {
+    score += 18;
+  }
+
+  if (/อัตรา|จัดสรร|กฎกระทรวง/u.test(raw) || /อัตรา|จัดสรร|กฎกระทรวง/.test(normalized)) {
+    score += 14;
+  }
+
+  if (kind === "formula") {
+    if (isUnionFeeFormulaEvidence(raw)) {
+      score += 45;
+    }
+    if (/สามหมื่นบาท|30,000|30000/u.test(raw) || /สามหมื่นบาท|30000/.test(normalized)) {
+      score += 24;
+    }
+    if (sourceName === "pdf_chunks" || sourceName === "documents") {
+      score += 16;
+    }
+  } else {
+    if (isUnionFeeLegalCapEvidence(raw)) {
+      score += 40;
+    }
+    if (/ไม่เกิน/u.test(raw) || /ไม่เกิน/.test(normalized)) {
+      score += 18;
+    }
+    if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+      score += 16;
+    }
+  }
+
+  return score;
+}
+
+function lineMatchesUnionFeeFocus(line) {
+  const text = normalizeForSearch(String(line || "")).toLowerCase();
+  if (!text || !/สันนิบาต/.test(text)) {
+    return false;
+  }
+
+  return /(อัตรา|ร้อยละ|เปอร์เซ็นต์|กำไรสุทธิ|กฎกระทรวง|จัดสรร|ชำระ|จ่าย|คำนวณ|ไม่เกิน)/.test(
+    text,
+  );
+}
+
+function filterUnionFeeFocusedLines(lines, message, limit = 8) {
+  const cleaned = uniqueCleanLines(lines, Math.max(limit * 2, limit));
+  if (!isUnionFeeQuestion(message)) {
+    return cleaned.slice(0, limit);
+  }
+
+  const focused = cleaned.filter((line) => lineMatchesUnionFeeFocus(line) && !looksLikeAttachmentFilename(line));
+  if (focused.length > 0) {
+    return uniqueCleanLines(focused, limit);
+  }
+
+  return cleaned.slice(0, limit);
+}
+
+function buildUnionFeeFocusedAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isUnionFeeQuestion(message)) {
+    return "";
+  }
+
+  const asksAmount = wantsAmountAnswer(message);
+
+  let ministerialRuleEvidence = null;
+  let legalCapEvidence = null;
+  const candidateSources = dedupeSources(sources, 10);
+
+  for (const source of candidateSources) {
+    const segments = splitContentSegments(buildSourceRawContentText(source));
+    const candidateSegments = [];
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const first = cleanLine(segments[index]);
+      const second = cleanLine(segments[index + 1] || "");
+      const third = cleanLine(segments[index + 2] || "");
+
+      if (first) {
+        candidateSegments.push(first);
+      }
+      if (first && second) {
+        candidateSegments.push(cleanLine(`${first} ${second}`));
+      }
+      if (first && second && third) {
+        candidateSegments.push(cleanLine(`${first} ${second} ${third}`));
+      }
+    }
+
+    for (const segment of candidateSegments) {
+      const cleaned = cleanLine(segment);
+      if (!cleaned || looksLikeAttachmentFilename(cleaned) || lineLooksLikeSourceMetadata(cleaned, [source])) {
+        continue;
+      }
+
+      if (isUnionFeeFormulaEvidence(cleaned)) {
+        const scoredEvidence = {
+          text: cleaned,
+          source,
+          score: scoreUnionFeeEvidence(cleaned, source, "formula"),
+        };
+        if (!ministerialRuleEvidence || scoredEvidence.score > ministerialRuleEvidence.score) {
+          ministerialRuleEvidence = scoredEvidence;
+        }
+      }
+
+      if (isUnionFeeLegalCapEvidence(cleaned)) {
+        const scoredEvidence = {
+          text: cleaned,
+          source,
+          score: scoreUnionFeeEvidence(cleaned, source, "cap"),
+        };
+        if (!legalCapEvidence || scoredEvidence.score > legalCapEvidence.score) {
+          legalCapEvidence = scoredEvidence;
+        }
+      }
+    }
+  }
+
+  if (!ministerialRuleEvidence && asksAmount) {
+    const fallbackMinisterialSource = candidateSources
+      .map((source) => ({
+        source,
+        score: scoreUnionFeeEvidence(buildSourceSearchText(source), source, "formula"),
+        searchText: buildSourceSearchText(source),
+      }))
+      .filter((item) => containsUnionFeePhrase(item.searchText))
+      .filter((item) => /(กฎกระทรวง|กำหนดอัตรา|ร้อยละหนึ่ง|สามหมื่นบาท|ค่าบำรุงสันนิบาต)/.test(item.searchText))
+      .sort((left, right) => right.score - left.score)[0];
+
+    if (fallbackMinisterialSource) {
+      ministerialRuleEvidence = {
+        text: "",
+        source: fallbackMinisterialSource.source,
+        score: fallbackMinisterialSource.score,
+      };
+    }
+  }
+
+  if (!legalCapEvidence) {
+    const fallbackLegalCapSource = candidateSources
+      .map((source) => ({
+        source,
+        score: scoreUnionFeeEvidence(buildSourceSearchText(source), source, "cap"),
+        searchText: buildSourceSearchText(source),
+      }))
+      .filter((item) => containsUnionFeePhrase(item.searchText))
+      .filter((item) => /(มาตรา60|กฎกระทรวง|ไม่เกิน|ร้อยละห้า|ร้อยละ5)/.test(item.searchText))
+      .sort((left, right) => right.score - left.score)[0];
+
+    if (fallbackLegalCapSource) {
+      legalCapEvidence = {
+        text: "",
+        source: fallbackLegalCapSource.source,
+        score: fallbackLegalCapSource.score,
+      };
+    }
+  }
+
+  if (!ministerialRuleEvidence && !legalCapEvidence) {
+    return "";
+  }
+
+  const summaryLines = [];
+  if (ministerialRuleEvidence) {
+    summaryLines.push(
+      "ค่าบำรุงสันนิบาตสหกรณ์แห่งประเทศไทย ให้จัดสรรจากกำไรสุทธิประจำปีของสหกรณ์ ในอัตราร้อยละหนึ่งของกำไรสุทธิ แต่ไม่เกินสามหมื่นบาท",
+    );
+  }
+
+  if (legalCapEvidence) {
+    summaryLines.push(
+      "ตามมาตรา 60 กฎหมายกำหนดกรอบว่า อัตราที่กำหนดในกฎกระทรวงต้องไม่เกินร้อยละห้าของกำไรสุทธิ",
+    );
+  }
+
+  const normalizedLines = uniqueCleanLines(summaryLines, 3);
+  if (normalizedLines.length === 0) {
+    return "";
+  }
+
+  const supportingMinisterialSource = candidateSources
+    .map((source) => ({
+      source,
+      sourceName: String(source?.source || "").trim().toLowerCase(),
+      searchText: buildSourceSearchText(source),
+      score: scoreUnionFeeEvidence(buildSourceSearchText(source), source, "formula"),
+    }))
+    .filter((item) => item.sourceName === "pdf_chunks" || item.sourceName === "documents")
+    .filter((item) => containsUnionFeePhrase(item.searchText))
+    .filter((item) => /(กฎกระทรวง|กำหนดอัตรา|ร้อยละหนึ่ง|สามหมื่นบาท|ค่าบำรุงสันนิบาต)/.test(item.searchText))
+    .sort((left, right) => right.score - left.score)[0]?.source;
+
+  const referenceSources = dedupeSources(
+    [supportingMinisterialSource, ministerialRuleEvidence?.source, legalCapEvidence?.source].filter(Boolean),
+    3,
+  );
+  return [
+    buildParagraphSummary(normalizedLines, [], false, {
+      summaryLimit: normalizedLines.length,
+    }),
+    buildReferenceSection(
+      referenceSources.length > 0 ? referenceSources : dedupeSources(sources, 2),
+      Math.min(referenceSources.length || 1, 3),
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function wantsDecisionAnswer(message) {
   const text = String(message || "").trim();
   return /หรือไม่|ได้ไหม|ได้หรือไม่|ควรหรือไม่|ต้อง.*ไหม|ต้อง.*หรือไม่|จำเป็นต้อง.*ไหม|จำเป็นต้อง.*หรือไม่/.test(
@@ -261,6 +539,16 @@ function stripStandaloneDoubleSlash(text) {
     .replace(/(^|[\s(])\/\/(?=[\s)]|$)/g, "$1");
 }
 
+function buildSourceRawContentText(source = {}) {
+  return [
+    source?.content,
+    source?.chunk_text,
+    source?.comment,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function cleanLine(text) {
   return stripStandaloneDoubleSlash(text)
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
@@ -378,6 +666,56 @@ function hasSubstantiveAnswerSignal(line) {
   );
 }
 
+function looksLikeAttachmentFilename(line) {
+  const text = cleanLine(line);
+  if (!text) {
+    return false;
+  }
+
+  return /\b[^\s|]+\.(?:pdf|docx?|xlsx?|pptx?|txt)\b/i.test(text);
+}
+
+function looksLikeBareDocumentTitle(line, sources = []) {
+  const text = cleanLine(line);
+  if (!text) {
+    return false;
+  }
+
+  if (hasSubstantiveAnswerSignal(text)) {
+    return false;
+  }
+
+  if (looksLikeAttachmentFilename(text)) {
+    return true;
+  }
+
+  if (/^(?:เรื่อง|ทะเบียนเอกสาร)\b/i.test(text)) {
+    return true;
+  }
+
+  if (text.length > 120) {
+    return false;
+  }
+
+  const normalizedLine = normalizeComparisonText(text);
+  if (!normalizedLine) {
+    return false;
+  }
+
+  const candidates = dedupeSources(sources, Math.max(Array.isArray(sources) ? sources.length : 0, 8))
+    .flatMap((source) => [source?.reference, source?.title, source?.keyword])
+    .filter(Boolean);
+
+  return candidates.some((candidate) => {
+    const normalizedCandidate = normalizeComparisonText(candidate);
+    if (!normalizedCandidate || normalizedCandidate.length < 6) {
+      return false;
+    }
+
+    return normalizedLine === normalizedCandidate;
+  });
+}
+
 function lineRepeatsOriginalQuestion(line, originalMessage = "") {
   const cleanedLine = cleanLine(line);
   const cleanedQuestion = cleanLine(originalMessage);
@@ -414,6 +752,10 @@ function lineLooksLikeSourceMetadata(line, sources = []) {
   const cleanedLine = cleanLine(line);
   if (!cleanedLine) {
     return false;
+  }
+
+  if (looksLikeBareDocumentTitle(cleanedLine, sources)) {
+    return true;
   }
 
   if (hasSubstantiveAnswerSignal(cleanedLine)) {
@@ -692,6 +1034,7 @@ function shouldDisplayContentHeading(heading, options = {}) {
 
 function buildSourceContentFallbackLines(sources, limit = 5, options = {}) {
   const lines = [];
+  const unionFeeQuestion = options.amountMode === true && isUnionFeeQuestion(options.originalMessage || options.message || "");
 
   for (const source of dedupeSources(sources, Math.max(limit * 2, 8))) {
     const extractedSegments = extractRelevantSegmentsFromSource(
@@ -699,6 +1042,7 @@ function buildSourceContentFallbackLines(sources, limit = 5, options = {}) {
       options.originalMessage || options.message || "",
       {
         explainMode: options.explainMode,
+        amountMode: options.amountMode === true,
         questionIntent: options.questionIntent,
         preserveMoreContent: options.preserveMoreContent === true,
       },
@@ -710,7 +1054,12 @@ function buildSourceContentFallbackLines(sources, limit = 5, options = {}) {
     }
 
     const fallbackText = cleanLine(String(source.content || source.chunk_text || "").slice(0, options.explainMode ? 320 : 220));
-    if (fallbackText && !isNoisyLine(fallbackText)) {
+    if (
+      fallbackText &&
+      !isNoisyLine(fallbackText) &&
+      !lineLooksLikeSourceMetadata(fallbackText, [source]) &&
+      (!unionFeeQuestion || lineMatchesUnionFeeFocus(fallbackText))
+    ) {
       lines.push(fallbackText);
     }
   }
@@ -1223,6 +1572,7 @@ function extractRelevantSegmentsFromSource(source, message, options = {}) {
   const segments = splitContentSegments(rawText);
   const preserveMoreContent = options.preserveMoreContent === true;
   const focusTokens = getFocusQueryTokens(message);
+  const unionFeeQuestion = options.amountMode === true && isUnionFeeQuestion(message);
   const scoredSegments = segments
     .map((segment, index) => ({
       index,
@@ -1231,6 +1581,7 @@ function extractRelevantSegmentsFromSource(source, message, options = {}) {
     }))
     .filter((item) => !isNoisyLine(item.text))
     .filter((item) => !lineLooksLikeSourceMetadata(item.text, [source]))
+    .filter((item) => !unionFeeQuestion || lineMatchesUnionFeeFocus(item.text))
     .filter((item) => item.text.length >= 12)
     .filter((item) => {
       if (options.questionIntent === "law_section") {
@@ -1352,13 +1703,15 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
     message: focusMessage,
     requireFocus: true,
   });
-  const numericEvidence = options.amountMode ? extractNumericEvidence(visibleSources, explainMode ? 4 : 2) : [];
+  const numericEvidence = options.amountMode ? extractNumericEvidence(visibleSources, explainMode ? 4 : 2, focusMessage) : [];
   const fallbackLines = buildSourceContentFallbackLines(visibleSources, fallbackLimit, {
     ...options,
+    amountMode: options.amountMode === true,
     explainMode,
   });
-  const summaryLines = uniqueCleanLines(
+  const summaryLines = filterUnionFeeFocusedLines(
     [decisionLead, ...substantiveSegments, ...numericEvidence, ...fallbackLines],
+    focusMessage,
     summaryLimit,
   );
   const orderedSummaryLines = prioritizeConclusionLines(summaryLines, {
@@ -1368,6 +1721,7 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
   const detailLines = explainMode
     ? buildSourceContentFallbackLines(visibleSources, detailLimit, {
         ...options,
+        amountMode: options.amountMode === true,
         explainMode: true,
         preserveMoreContent: true,
       })
@@ -1438,6 +1792,7 @@ function buildDatabaseOnlyAnswer(sources, options = {}) {
     .map((source) => {
       const block = formatDatabaseOnlySourceBlock(source, focusMessage, {
         explainMode: options.explainMode,
+        amountMode: options.amountMode === true,
         questionIntent: options.questionIntent,
         preserveMoreContent: true,
       });
@@ -1473,8 +1828,9 @@ function buildDatabaseOnlyAnswer(sources, options = {}) {
     .join("\n\n");
 }
 
-function extractNumericEvidence(sources, limit = 5) {
+function extractNumericEvidence(sources, limit = 5, message = "") {
   const scored = [];
+  const unionFeeQuestion = isUnionFeeQuestion(message);
 
   for (const source of dedupeSources(sources, 10)) {
     const segments = splitContentSegments(
@@ -1483,6 +1839,10 @@ function extractNumericEvidence(sources, limit = 5) {
 
     for (const segment of segments) {
       if (!/\d/.test(segment)) {
+        continue;
+      }
+
+      if (unionFeeQuestion && !lineMatchesUnionFeeFocus(segment)) {
         continue;
       }
 
@@ -1512,6 +1872,7 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
   const requireFocus = options.requireFocus === true;
   const focusTokens = getFocusQueryTokens(message);
   const focusProfile = getQueryFocusProfile(message);
+  const unionFeeQuestion = isUnionFeeQuestion(message);
 
   for (const source of dedupeSources(sources, 10)) {
     const joined = [source.content, source.chunk_text, source.comment].filter(Boolean).join("\n");
@@ -1523,6 +1884,10 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
       }
 
       if (lineLooksLikeSourceMetadata(segment, [source])) {
+        continue;
+      }
+
+      if (unionFeeQuestion && !lineMatchesUnionFeeFocus(segment)) {
         continue;
       }
 
@@ -1630,6 +1995,59 @@ function decorateConversationalAnswer(answerText, options = {}) {
     .trim();
 }
 
+function extractAnswerBodyLines(answerText) {
+  return normalizeParagraph(answerText)
+    .split("\n")
+    .map((line) => cleanLine(line))
+    .filter(Boolean)
+    .filter((line) => !/^แหล่งอ้างอิง:?$/i.test(line))
+    .filter((line) => !line.startsWith("- "));
+}
+
+function hasMeaningfulSummaryContent(answerText, sources, options = {}) {
+  const bodyLines = extractAnswerBodyLines(answerText)
+    .filter((line) => !/^สรุปสาระสำคัญ:?$/i.test(line))
+    .filter((line) => !/^รายละเอียดเพิ่มเติม:?$/i.test(line))
+    .filter((line) => !isSectionHeading(line))
+    .filter((line) => !lineLooksLikeSourceMetadata(line, sources))
+    .filter((line) => !looksLikeBareDocumentTitle(line, sources));
+
+  if (bodyLines.length === 0) {
+    return false;
+  }
+
+  const message = String(options.originalMessage || options.focusMessage || "").trim();
+  const substantiveLines = bodyLines.filter((line) => {
+    if (hasSubstantiveAnswerSignal(line)) {
+      return true;
+    }
+
+    const focusHits = countFocusTokenHits(line, message);
+    if (focusHits >= 2 && line.length >= 24) {
+      return true;
+    }
+
+    return false;
+  });
+
+  if (substantiveLines.length === 0) {
+    return false;
+  }
+
+  if (options.amountMode) {
+    const hasAmountLine = substantiveLines.some((line) =>
+      /\d[\d,]*(?:\.\d+)?\s*(?:บาท|ร้อยละ|เปอร์เซ็นต์|%)/.test(line) ||
+      /(อัตรา|จัดสรร|กำไรสุทธิ|เรียกเก็บ|ค่าบำรุง|สันนิบาต)/.test(line),
+    );
+
+    if (!hasAmountLine) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function normalizeModelSummary(text, explainMode, sources, options = {}) {
   const raw = normalizeParagraph(text);
 
@@ -1657,12 +2075,14 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
       ? summary
       : buildSourceContentFallbackLines(sources, Math.max(4, minimumSummaryLimit), {
           ...options,
+          amountMode: options.amountMode === true,
           explainMode,
         });
     const fallbackDetail = detail.length
       ? detail
       : buildSourceContentFallbackLines(sources, 3, {
           ...options,
+          amountMode: options.amountMode === true,
           explainMode: true,
           preserveMoreContent: true,
         });
@@ -1687,13 +2107,19 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
 
   if (options.amountMode) {
     const amountHighlights = extractAmountHighlights(sources, 3);
-    const numericEvidence = extractNumericEvidence(sources, 3);
-    const hasNumericLine = conciseLines.some((line) =>
+    const numericEvidence = extractNumericEvidence(sources, 3, options.originalMessage || options.focusMessage || "");
+    const focusedLines = filterUnionFeeFocusedLines(
+      conciseLines,
+      options.originalMessage || options.focusMessage || "",
+      minimumSummaryLimit,
+    );
+    const workingLines = focusedLines.length > 0 ? focusedLines : conciseLines;
+    const hasNumericLine = workingLines.some((line) =>
       /\d[\d,]*(?:\.\d+)?\s*(?:บาท|ร้อยละ|เปอร์เซ็นต์|%)/.test(line),
     );
     const mergedLines = hasNumericLine
-      ? conciseLines
-      : uniqueCleanLines([...numericEvidence, ...amountHighlights, ...conciseLines], minimumSummaryLimit);
+      ? workingLines
+      : uniqueCleanLines([...numericEvidence, ...amountHighlights, ...workingLines], minimumSummaryLimit);
     const completedLines = ensureStructuredLawSummaryCompleteness(mergedLines, sources, {
       ...options,
       summaryLimit: minimumSummaryLimit,
@@ -1757,14 +2183,14 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
 
   const topSources = dedupeSources(sources, 5);
   const amountHighlights = options.amountMode ? extractAmountHighlights(topSources, explainMode ? 5 : 3) : [];
-  const numericEvidence = options.amountMode ? extractNumericEvidence(topSources, explainMode ? 5 : 3) : [];
+  const numericEvidence = options.amountMode ? extractNumericEvidence(topSources, explainMode ? 5 : 3, focusMessage) : [];
   const decisionLead = options.decisionMode ? inferDecisionLead(focusMessage, topSources) : "";
   const substantiveSegments = options.decisionMode
     ? extractSubstantiveSegments(topSources, explainMode ? 5 : 3, {
         message: focusMessage,
       })
     : [];
-  const importantPoints = uniqueCleanLines(
+  const importantPoints = filterUnionFeeFocusedLines(
     [
       decisionLead,
       ...substantiveSegments,
@@ -1772,9 +2198,11 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
       ...amountHighlights,
       ...buildSourceContentFallbackLines(topSources, explainMode ? 8 : 5, {
         ...options,
+        amountMode: options.amountMode === true,
         explainMode,
       }),
     ],
+    focusMessage,
     explainMode ? 8 : 5,
   );
   const detailPoints = uniqueCleanLines(
@@ -1804,20 +2232,39 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
     .join("\n\n");
 }
 
-function filterHighQualitySources(sources, topScore, limit = 4) {
+function filterHighQualitySources(sources, topScore, limit = 4, options = {}) {
   // Filter out sources with garbled OCR text or very low scores
   // Use stricter threshold: 70% of top score to focus on most relevant sources
-  const minScore = Math.max(topScore * 0.7, 80);
+  const queryText = String(options.message || options.originalMessage || "").trim();
+  const amountMode = options.amountMode === true;
+  const minScore = amountMode ? Math.max(topScore * 0.55, 52) : Math.max(topScore * 0.7, 80);
   const garbledPattern = /[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/g;
   
   const filtered = sources.filter((source) => {
-    if ((source.score || 0) < minScore) {
+    const rawContent = buildSourceRawContentText(source);
+    const referenceText = cleanLine(source.reference || source.title || source.keyword || "");
+    const hasAmountSubstance =
+      amountMode &&
+      sourceMatchesAmountFocus(source, queryText) &&
+      (
+        /\d[\d,]*(?:\.\d+)?\s*(?:บาท|ร้อยละ|เปอร์เซ็นต์|%)/.test(rawContent) ||
+        /(อัตรา|ร้อยละ|เปอร์เซ็นต์|กำไรสุทธิ|จัดสรร|กฎกระทรวง|ค่าบำรุง|สันนิบาต)/.test(rawContent)
+      );
+    const looksLikeMetadataOnly =
+      looksLikeAttachmentFilename(referenceText) ||
+      looksLikeBareDocumentTitle(referenceText, [source]);
+
+    if ((source.score || 0) < minScore && !hasAmountSubstance) {
       return false;
     }
     
-    const content = String(source.content || source.chunk_text || source.preview || "");
+    const content = String(rawContent || source.preview || "");
     const garbledHits = (content.match(garbledPattern) || []).length;
     if (garbledHits > 2) {
+      return false;
+    }
+
+    if (amountMode && looksLikeMetadataOnly && !hasAmountSubstance) {
       return false;
     }
     
@@ -1825,7 +2272,19 @@ function filterHighQualitySources(sources, topScore, limit = 4) {
   });
   
   // Limit effective sources by prompt profile to keep AI focused and cost-controlled.
-  return filtered.slice(0, Math.max(1, Number(limit || 4)));
+  return filtered
+    .sort((left, right) => {
+      if (amountMode) {
+        const leftAmountScore = sourceMatchesAmountFocus(left, queryText) ? 1 : 0;
+        const rightAmountScore = sourceMatchesAmountFocus(right, queryText) ? 1 : 0;
+        if (leftAmountScore !== rightAmountScore) {
+          return rightAmountScore - leftAmountScore;
+        }
+      }
+
+      return Number(right.score || 0) - Number(left.score || 0);
+    })
+    .slice(0, Math.max(1, Number(limit || 4)));
 }
 
 async function generateChatSummary(message, sources, options = {}) {
@@ -1855,11 +2314,28 @@ async function generateChatSummary(message, sources, options = {}) {
   // Filter out low-quality sources before sending to Gemini
   const topScore =
     answerInputSources.length > 0 ? Math.max(...answerInputSources.map((s) => s.score || 0)) : 0;
-  const filteredSources = filterHighQualitySources(answerInputSources, topScore, aiSourceLimit);
+  const filteredSources = filterHighQualitySources(answerInputSources, topScore, aiSourceLimit, {
+    ...options,
+    amountMode,
+    originalMessage: focusMessage,
+    message,
+  });
   const effectiveSources =
     filteredSources.length > 0
       ? filteredSources
       : answerInputSources.slice(0, aiSourceLimit);
+  const unionFeeFocusedAnswer = buildUnionFeeFocusedAnswer(
+    effectiveSources.length > 0 ? effectiveSources : answerInputSources,
+    {
+      ...options,
+      originalMessage: focusMessage,
+      message,
+    },
+  );
+
+  if (unionFeeFocusedAnswer) {
+    return unionFeeFocusedAnswer;
+  }
 
   if (options.forceFallback || databaseOnlyMode || effectiveSources.length === 0) {
     return buildFallbackSummary(answerInputSources, explainMode, {
@@ -1928,7 +2404,13 @@ async function generateChatSummary(message, sources, options = {}) {
         originalMessage: message,
       },
     );
-    if (!normalized) {
+    if (!normalized || !hasMeaningfulSummaryContent(normalized, effectiveSources, {
+      ...options,
+      amountMode,
+      decisionMode,
+      originalMessage: message,
+      focusMessage,
+    })) {
       return buildFallbackSummary(answerInputSources, explainMode, {
         ...options,
         amountMode,
