@@ -60,7 +60,7 @@ const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SE
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
 const WEB_SEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
-const ANSWER_CACHE_SCOPE_VERSION = "v10";
+const ANSWER_CACHE_SCOPE_VERSION = "v11";
 const answerCache = new Map();
 const suggestionThrottleMap = new Map();
 
@@ -580,6 +580,10 @@ function isLawPrioritySearch(message) {
   return /(มาตรา|ข้อ|วรรค|อนุมาตรา)/.test(normalizeForSearch(message).toLowerCase());
 }
 
+function isLiquidationPrioritySearch(message) {
+  return /ชำระบัญชี|ผู้ชำระบัญชี/.test(normalizeForSearch(message).toLowerCase());
+}
+
 function isFreePlanSearch(planCode = "") {
   return normalizePlanCode(planCode || "free") === "free";
 }
@@ -594,6 +598,19 @@ function getFreeSourcePriorityPlan(message) {
       vinichai: 6,
       documents: 4,
       pdf_chunks: 3,
+      knowledge_base: 1,
+    };
+  }
+
+  if (isLiquidationPrioritySearch(message)) {
+    return {
+      tbl_laws: 10,
+      admin_knowledge: 8,
+      knowledge_suggestion: 7,
+      documents: 5,
+      pdf_chunks: 4,
+      vinichai: 3,
+      tbl_glaws: 2,
       knowledge_base: 1,
     };
   }
@@ -1669,6 +1686,19 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
       "tbl_vinichai",
       "pdf_chunks",
       "documents",
+      "knowledge_base",
+    ];
+  }
+
+  if (isFreePlanSearch(options.planCode) && isLiquidationPrioritySearch(options.originalMessage || options.message || "")) {
+    return [
+      "tbl_laws",
+      "admin_knowledge",
+      "knowledge_suggestion",
+      "documents",
+      "pdf_chunks",
+      "tbl_vinichai",
+      "tbl_glaws",
       "knowledge_base",
     ];
   }

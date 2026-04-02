@@ -83,6 +83,19 @@ function getDatabaseOnlySourceOrder(options = {}) {
     ];
   }
 
+  if (isFreePlanDisplay(options) && isLiquidationQuestion(options.originalMessage || options.message || "")) {
+    return [
+      "tbl_laws",
+      "admin_knowledge",
+      "knowledge_suggestion",
+      "documents",
+      "pdf_chunks",
+      "tbl_vinichai",
+      "tbl_glaws",
+      "knowledge_base",
+    ];
+  }
+
   if (isFreePlanDisplay(options)) {
     return [
       "admin_knowledge",
@@ -132,6 +145,15 @@ function isUnionFeeQuestion(message) {
   return /(ค่าบำรุง|บำรุง)/.test(text) && /สันนิบาต/.test(text);
 }
 
+function isLiquidationQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return /ชำระบัญชี|ผู้ชำระบัญชี/.test(text);
+}
+
 function detectLegalEntityScope(message) {
   const normalized = normalizeForSearch(String(message || "")).toLowerCase();
   const asksCoop = /พรบ|พระราชบัญญัติ|สหกรณ์/.test(normalized);
@@ -146,6 +168,11 @@ function detectLegalEntityScope(message) {
   }
 
   return "all";
+}
+
+function detectLiquidationScope(message) {
+  const scope = detectLegalEntityScope(message);
+  return scope === "all" ? "coop" : scope;
 }
 
 function isReserveFundQuestion(message) {
@@ -460,6 +487,110 @@ function buildDividendFocusedAnswer(sources, options = {}) {
   return [
     buildParagraphSummary([summaryLine], [], false, { summaryLimit: 1 }),
     buildReferenceSection([selectedEvidence.source], 1),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function selectBestLawSourceByNumbers(sources, numbers = [], allowedSources = []) {
+  const targetNumbers = new Set(numbers.map((item) => normalizeClauseNumber(item)).filter(Boolean));
+  const allowedSourceNames = new Set(allowedSources.map((item) => String(item || "").trim().toLowerCase()));
+  if (targetNumbers.size === 0 || allowedSourceNames.size === 0) {
+    return null;
+  }
+
+  return dedupeSources(sources, Math.max(Array.isArray(sources) ? sources.length : 0, 12))
+    .filter((source) => allowedSourceNames.has(String(source?.source || "").trim().toLowerCase()))
+    .filter((source) => targetNumbers.has(getSourcePrimaryLawNumber(source)))
+    .sort((left, right) => Number(right?.score || 0) - Number(left?.score || 0))[0] || null;
+}
+
+function buildLiquidationFocusedAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isLiquidationQuestion(message)) {
+    return "";
+  }
+
+  const scope = detectLiquidationScope(message);
+  const allowedSources = scope === "group" ? ["tbl_glaws"] : ["tbl_laws"];
+  const references = [];
+  const summaryLines = [];
+  const pushUniqueReference = (source) => {
+    if (!source) {
+      return;
+    }
+
+    if (!references.find((item) => String(item?.source || "") === String(source?.source || "") && String(item?.id || "") === String(source?.id || ""))) {
+      references.push(source);
+    }
+  };
+
+  if (scope === "group") {
+    const bankruptcySource = selectBestLawSourceByNumbers(sources, ["34"], allowedSources);
+    const remainingAssetSource = selectBestLawSourceByNumbers(sources, ["35"], allowedSources);
+    const transitionalSource = selectBestLawSourceByNumbers(sources, ["44"], allowedSources);
+
+    if (bankruptcySource) {
+      summaryLines.push("ถ้ากลุ่มเกษตรกรล้มละลาย การชำระบัญชีให้เป็นไปตามกฎหมายว่าด้วยล้มละลาย");
+      summaryLines.push("ถ้าเลิกเพราะเหตุอื่น ให้นำบทบัญญัติเกี่ยวกับการชำระบัญชีตามกฎหมายว่าด้วยสหกรณ์มาใช้บังคับโดยอนุโลม");
+      summaryLines.push("แม้กลุ่มเกษตรกรจะเลิกแล้ว ก็ยังถือว่าดำรงอยู่เท่าที่จำเป็นเพื่อการชำระบัญชี");
+      pushUniqueReference(bankruptcySource);
+    }
+
+    if (remainingAssetSource) {
+      summaryLines.push("เมื่อชำระหนี้แล้ว หากยังมีทรัพย์สินเหลืออยู่ ให้ผู้ชำระบัญชีจัดการตามลำดับที่กฎหมายกำหนด");
+      pushUniqueReference(remainingAssetSource);
+    }
+
+    if (transitionalSource) {
+      summaryLines.push("ในบางกรณีที่กฎหมายเฉพาะยังไม่มีระเบียบรอง ให้ใช้บทบัญญัติการชำระบัญชีตามกฎหมายสหกรณ์ไปก่อน");
+      pushUniqueReference(transitionalSource);
+    }
+  } else {
+    const openingSource = selectBestLawSourceByNumbers(sources, ["73"], allowedSources);
+    const bankruptcySource = selectBestLawSourceByNumbers(sources, ["74"], allowedSources);
+    const appointmentSource = selectBestLawSourceByNumbers(sources, ["75"], allowedSources);
+    const dutySource =
+      selectBestLawSourceByNumbers(sources, ["77"], allowedSources) ||
+      selectBestLawSourceByNumbers(sources, ["81"], allowedSources);
+    const completionSource = selectBestLawSourceByNumbers(sources, ["87"], allowedSources);
+
+    if (openingSource) {
+      summaryLines.push("เมื่อสหกรณ์เลิกตามเหตุที่กฎหมายกำหนด ต้องจัดการชำระบัญชีตามหมวด 4 ว่าด้วยการชำระบัญชี");
+      pushUniqueReference(openingSource);
+    }
+
+    if (bankruptcySource) {
+      summaryLines.push("ถ้าสหกรณ์ล้มละลาย การชำระบัญชีให้เป็นไปตามกฎหมายว่าด้วยล้มละลาย");
+      pushUniqueReference(bankruptcySource);
+    }
+
+    if (appointmentSource) {
+      summaryLines.push("ถ้าเลิกด้วยเหตุอื่นนอกจากล้มละลาย ที่ประชุมใหญ่ต้องตั้งผู้ชำระบัญชีโดยได้รับความเห็นชอบจากนายทะเบียนสหกรณ์ภายในกำหนดเวลา และหากไม่ตั้งหรือตั้งแล้วไม่ผ่านความเห็นชอบ นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีได้");
+      pushUniqueReference(appointmentSource);
+    }
+
+    if (dutySource) {
+      summaryLines.push("ผู้ชำระบัญชีมีหน้าที่ชำระสะสางกิจการ ชำระหนี้ และจัดการทรัพย์สินของสหกรณ์ให้เสร็จตามขั้นตอนของกฎหมาย");
+      pushUniqueReference(dutySource);
+    }
+
+    if (completionSource) {
+      summaryLines.push("เมื่อชำระบัญชีเสร็จ ผู้ชำระบัญชีต้องทำรายงานการชำระบัญชีและเสนอต่อนายทะเบียนสหกรณ์เพื่อให้การชำระบัญชีสิ้นสุดตามกฎหมาย");
+      pushUniqueReference(completionSource);
+    }
+  }
+
+  const normalizedSummaryLines = uniqueCleanLines(summaryLines, 6);
+  if (normalizedSummaryLines.length === 0) {
+    return "";
+  }
+
+  return [
+    buildParagraphSummary(normalizedSummaryLines, [], false, {
+      summaryLimit: normalizedSummaryLines.length,
+    }),
+    buildReferenceSection(references, Math.min(references.length || 1, 5)),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -2877,6 +3008,19 @@ async function generateChatSummary(message, sources, options = {}) {
 
   if (dividendFocusedAnswer) {
     return dividendFocusedAnswer;
+  }
+
+  const liquidationFocusedAnswer = buildLiquidationFocusedAnswer(
+    effectiveSources.length > 0 ? effectiveSources : answerInputSources,
+    {
+      ...options,
+      originalMessage: focusMessage,
+      message,
+    },
+  );
+
+  if (liquidationFocusedAnswer) {
+    return liquidationFocusedAnswer;
   }
 
   if (options.forceFallback || databaseOnlyMode || effectiveSources.length === 0) {

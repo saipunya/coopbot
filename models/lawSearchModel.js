@@ -19,6 +19,7 @@ function detectLawScope(text) {
   const normalized = normalizeForSearch(text).toLowerCase();
   const asksCoop = /พรบ|พระราชบัญญัติ|สหกรณ์/.test(normalized);
   const asksGroup = /พรฎ|พระราชกฤษฎีกา|กลุ่มเกษตรกร/.test(normalized);
+  const asksLiquidation = /ชำระบัญชี|ผู้ชำระบัญชี/.test(normalized);
 
   if (asksCoop && !asksGroup) {
     return "coop";
@@ -26,6 +27,10 @@ function detectLawScope(text) {
 
   if (asksGroup && !asksCoop) {
     return "group";
+  }
+
+  if (asksLiquidation) {
+    return "coop";
   }
 
   return "all";
