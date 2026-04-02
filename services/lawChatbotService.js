@@ -1,6 +1,7 @@
 const LawChatbotModel = require("../models/lawChatbotModel");
 const LawChatbotKnowledgeModel = require("../models/lawChatbotKnowledgeModel");
 const LawChatbotKnowledgeSuggestionModel = require("../models/lawChatbotKnowledgeSuggestionModel");
+const LawChatbotSuggestedQuestionModel = require("../models/lawChatbotSuggestedQuestionModel");
 const LawSearchModel = require("../models/lawSearchModel");
 const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
@@ -60,7 +61,7 @@ const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SE
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
 const WEB_SEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
-const ANSWER_CACHE_SCOPE_VERSION = "v11";
+const ANSWER_CACHE_SCOPE_VERSION = "v12";
 const answerCache = new Map();
 const suggestionThrottleMap = new Map();
 
@@ -305,6 +306,31 @@ function setCachedAnswer(cacheKey, value) {
 
 function clearAnswerCache() {
   answerCache.clear();
+}
+
+function buildManagedSuggestedQuestionSource(match = {}) {
+  return {
+    id: match.id || null,
+    target: match.target || "all",
+    title: match.questionText || "",
+    reference: match.questionText || "คำถามแนะนำ",
+    content: match.answerText || "",
+    source: "managed_suggested_question",
+    comment: "คำตอบที่ผู้ดูแลกำหนดไว้ล่วงหน้า",
+    score: 1000,
+  };
+}
+
+async function findManagedSuggestedQuestionMatch(message, target = "all") {
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(message, target);
+  if (!match?.answerText) {
+    return null;
+  }
+
+  return {
+    ...match,
+    source: buildManagedSuggestedQuestionSource(match),
+  };
 }
 
 function shouldPersistDbAnswerCache(answer, options = {}) {
@@ -584,6 +610,15 @@ function isLiquidationPrioritySearch(message) {
   return /ชำระบัญชี|ผู้ชำระบัญชี/.test(normalizeForSearch(message).toLowerCase());
 }
 
+function isDissolutionPrioritySearch(message) {
+  const normalized = normalizeForSearch(message).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก)/.test(normalized);
+}
+
 function isFreePlanSearch(planCode = "") {
   return normalizePlanCode(planCode || "free") === "free";
 }
@@ -606,6 +641,19 @@ function getFreeSourcePriorityPlan(message) {
     return {
       tbl_laws: 10,
       admin_knowledge: 8,
+      knowledge_suggestion: 7,
+      documents: 5,
+      pdf_chunks: 4,
+      vinichai: 3,
+      tbl_glaws: 2,
+      knowledge_base: 1,
+    };
+  }
+
+  if (isDissolutionPrioritySearch(message)) {
+    return {
+      tbl_laws: 10,
+      admin_knowledge: 9,
       knowledge_suggestion: 7,
       documents: 5,
       pdf_chunks: 4,
@@ -1324,6 +1372,134 @@ function scoreUnionFeeSourceFocus(item = {}) {
   return score;
 }
 
+function scoreDissolutionSourceFocus(item = {}) {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  const sourceText = buildSourceFocusSearchText(item);
+  if (!sourceText) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  let score = 0;
+
+  if (/(มาตรา 70|มาตรา70)/.test(sourceText)) {
+    score += 56;
+  }
+  if (/(มาตรา 71|มาตรา71)/.test(sourceText)) {
+    score += 52;
+  }
+  if (/(มาตรา 89 3|มาตรา89 3|89 3)/.test(sourceText)) {
+    score += 34;
+  }
+
+  if (/(เลิกสหกรณ์|สหกรณ์ย่อมเลิก|สั่งเลิกสหกรณ์|การเลิกสหกรณ์)/.test(sourceText)) {
+    score += 42;
+  }
+
+  if (/(มีเหตุตามที่กำหนดในข้อบังคับ|สมาชิกน้อยกว่าสิบคน|ที่ประชุมใหญ่ลงมติให้เลิก|ล้มละลาย)/.test(sourceText)) {
+    score += 24;
+  }
+
+  if (/(ไม่เริ่มดำเนินกิจการภายในหนึ่งปี|หยุดดำเนินกิจการติดต่อกันเป็นเวลาสองปี|ไม่ส่งสำเนารายงานประจำปี|งบการเงินประจำปี|สามปีติดต่อกัน|ก่อให้เกิดความเสียหาย|ดำเนินกิจการไม่เป็นผลดี)/.test(sourceText)) {
+    score += 28;
+  }
+
+  if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion") {
+    score += 12;
+  }
+
+  if (sourceName === "tbl_laws") {
+    score += 8;
+  }
+
+  if (sourceName === "knowledge_base") {
+    score -= 30;
+  }
+
+  if (/(องค์ประชุม|การประชุมใหญ่|ผู้ตรวจการสหกรณ์|กำหนดระบบบัญชี|อำนาจหน้าที่)/.test(sourceText) && !/(เลิก|สั่งเลิก)/.test(sourceText)) {
+    score -= 44;
+  }
+
+  if (sourceName === "tbl_laws" && /นายทะเบียนสหกรณ์มีอำนาจหน้าที่/.test(sourceText) && !/สั่งเลิกสหกรณ์/.test(sourceText)) {
+    score -= 36;
+  }
+
+  score += Number(item.score || 0) * 0.12;
+  return score;
+}
+
+function normalizeLawFocusDigits(text) {
+  const digitMap = {
+    "๐": "0",
+    "๑": "1",
+    "๒": "2",
+    "๓": "3",
+    "๔": "4",
+    "๕": "5",
+    "๖": "6",
+    "๗": "7",
+    "๘": "8",
+    "๙": "9",
+  };
+  return String(text || "").replace(/[๐-๙]/g, (character) => digitMap[character] || character);
+}
+
+function extractPrimaryLawFocusNumber(item = {}) {
+  const candidates = [item.reference, item.title, item.keyword];
+  for (const candidate of candidates) {
+    const raw = normalizeLawFocusDigits(String(candidate || "").trim());
+    if (!raw) {
+      continue;
+    }
+
+    const explicitMatch = raw.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]+(?:\/[0-9]+)?)/i);
+    if (explicitMatch?.[1]) {
+      return explicitMatch[1];
+    }
+
+    const bareMatch = raw.match(/^([0-9]+(?:\/[0-9]+)?)$/);
+    if (bareMatch?.[1]) {
+      return bareMatch[1];
+    }
+  }
+
+  return "";
+}
+
+function rankSourcesForMessageFocus(items, message = "") {
+  const ranked = dedupeSourcesConservatively(items);
+  if (!isDissolutionPrioritySearch(message)) {
+    return ranked;
+  }
+
+  const preferredLawNumbers = {
+    "70": 140,
+    "71": 132,
+    "89/3": 116,
+  };
+
+  return ranked
+    .map((item) => {
+      const lawNumber = extractPrimaryLawFocusNumber(item);
+      const bonus = preferredLawNumbers[lawNumber] || 0;
+      return {
+        ...item,
+        __messageFocusRank: scoreDissolutionSourceFocus(item) + bonus,
+      };
+    })
+    .sort((left, right) => {
+      const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+      if (focusDiff !== 0) {
+        return focusDiff;
+      }
+      return Number(right.score || 0) - Number(left.score || 0);
+    })
+    .map((item) => {
+      const normalized = { ...item };
+      delete normalized.__messageFocusRank;
+      return normalized;
+    });
+}
+
 function pruneFocusedQueryMatches(matches, message) {
   const ranked = sortByScore(matches);
   if (isUnionFeeQuestion(message)) {
@@ -1346,6 +1522,31 @@ function pruneFocusedQueryMatches(matches, message) {
       return focusedUnionMatches.map((item) => {
         const normalized = { ...item };
         delete normalized.__unionFeeScore;
+        return normalized;
+      });
+    }
+  }
+
+  if (isDissolutionPrioritySearch(message)) {
+    const focusedDissolutionMatches = ranked
+      .map((item) => ({
+        ...item,
+        __dissolutionScore: scoreDissolutionSourceFocus(item),
+      }))
+      .filter((item) => Number(item.__dissolutionScore || 0) >= 18)
+      .sort((left, right) => {
+        const focusDiff = Number(right.__dissolutionScore || 0) - Number(left.__dissolutionScore || 0);
+        if (focusDiff !== 0) {
+          return focusDiff;
+        }
+
+        return Number(right.score || 0) - Number(left.score || 0);
+      });
+
+    if (focusedDissolutionMatches.length > 0) {
+      return focusedDissolutionMatches.map((item) => {
+        const normalized = { ...item };
+        delete normalized.__dissolutionScore;
         return normalized;
       });
     }
@@ -1554,8 +1755,9 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
   const plan = getFinalSourceCompactionPlan(intent);
   const targetLimit = Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const compacted = [];
+  const focusMessage = String(options.originalMessage || options.message || "").trim();
   const pushUnique = (items, limit) => {
-    dedupeSourcesConservatively(items)
+    rankSourcesForMessageFocus(items, focusMessage)
       .slice(0, limit)
       .forEach((item) => {
         if (compacted.find((existing) => areNearDuplicateSources(existing, item))) {
@@ -1584,7 +1786,7 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
     pushUnique(fallbackPool, targetLimit - compacted.length);
   }
 
-  return sortByScore(compacted).slice(0, targetLimit || plan.totalLimit);
+  return rankSourcesForMessageFocus(compacted, focusMessage).slice(0, targetLimit || plan.totalLimit);
 }
 
 function getDatabaseOnlySelectionPlan(intent = "general") {
@@ -1703,6 +1905,19 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
     ];
   }
 
+  if (isFreePlanSearch(options.planCode) && isDissolutionPrioritySearch(options.originalMessage || options.message || "")) {
+    return [
+      "tbl_laws",
+      "admin_knowledge",
+      "knowledge_suggestion",
+      "documents",
+      "pdf_chunks",
+      "tbl_vinichai",
+      "tbl_glaws",
+      "knowledge_base",
+    ];
+  }
+
   if (isFreePlanSearch(options.planCode)) {
     return [
       "admin_knowledge",
@@ -1732,9 +1947,10 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   const targetLimit = Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const selected = [];
   const usedTiers = [];
+  const focusMessage = String(options.originalMessage || options.message || "").trim();
 
   const pushUnique = (items, limit, tierName) => {
-    const ranked = dedupeSourcesConservatively(items).slice(0, limit);
+    const ranked = rankSourcesForMessageFocus(items, focusMessage).slice(0, limit);
     if (ranked.length === 0) {
       return;
     }
@@ -1770,7 +1986,7 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   });
 
   if (selected.length < targetLimit) {
-    const fallbackPool = dedupeSourcesConservatively([
+    const fallbackPool = rankSourcesForMessageFocus([
       ...(groups.admin_knowledge || []),
       ...(groups.knowledge_suggestion || []),
       ...structuredLaws.filter((item) => item && item.source === "tbl_laws"),
@@ -1779,7 +1995,7 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
       ...(groups.vinichai || []),
       ...(groups.documents || []),
       ...(groups.knowledge_base || []),
-    ]);
+    ], focusMessage);
 
     fallbackPool.forEach((item) => {
       if (selected.length >= targetLimit) {
@@ -1823,9 +2039,10 @@ function selectTieredSources(groups, intent = "general", options = {}) {
 
   const selected = [];
   const usedTiers = [];
+  const focusMessage = String(options.originalMessage || options.message || "").trim();
 
   plan.forEach(({ key, limit }) => {
-    const ranked = dedupeSourcesConservatively(groups[key]).slice(0, limit);
+    const ranked = rankSourcesForMessageFocus(groups[key], focusMessage).slice(0, limit);
     if (ranked.length > 0) {
       usedTiers.push(key);
       selected.push(...ranked);
@@ -1940,7 +2157,10 @@ async function collectAnswerSources(message, target, session, options = {}) {
 }
 
 async function getDashboardData() {
-  const uploadedChunkCount = await LawChatbotPdfChunkModel.countChunks();
+  const [uploadedChunkCount, suggestedQuestions] = await Promise.all([
+    LawChatbotPdfChunkModel.countChunks(),
+    LawChatbotSuggestedQuestionModel.listActive(18, "all"),
+  ]);
 
   return {
     appName: "Coopbot Law Chatbot",
@@ -1950,6 +2170,7 @@ async function getDashboardData() {
     uploadedPdfCount: LawChatbotPdfChunkModel.countDocuments(),
     uploadedChunkCount,
     recentConversations: LawChatbotModel.listRecent(6),
+    suggestedQuestions,
   };
 }
 
@@ -2113,6 +2334,81 @@ async function replyToChat(payload, session) {
   const basePlanContext = resolveChatPlanContext(session, {
     aiAvailable: aiFeatureAvailable,
   });
+
+  const managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(message, target);
+  if (managedSuggestedQuestionMatch) {
+    const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
+    const matchedSource = managedSuggestedQuestionMatch.source;
+    const answer = managedSuggestedQuestionMatch.answerText;
+
+    storeConversationContext(
+      session,
+      target,
+      message,
+      message,
+      [matchedSource],
+      {
+        usedContext: false,
+        topicHints: [normalizeForSearch(managedSuggestedQuestionMatch.questionText || message).toLowerCase()],
+      },
+    );
+
+    LawChatbotModel.create({
+      message,
+      effectiveMessage: message,
+      target,
+      answer,
+      matchedSources: [
+        {
+          id: matchedSource.id || managedSuggestedQuestionMatch.id || managedSuggestedQuestionMatch.questionText,
+          title: managedSuggestedQuestionMatch.questionText,
+          lawNumber: "",
+          source: matchedSource.source,
+          url: "",
+          score: Number(matchedSource.score || 0),
+        },
+      ],
+    });
+
+    const result = {
+      hasContext: true,
+      answer,
+      highlightTerms,
+      usedFollowUpContext: false,
+      usedInternetFallback: false,
+      fromCache: false,
+    };
+
+    if (debugMode) {
+      result.debug = {
+        selectedSourceTier: "managed_suggested_question",
+        sourceCount: 1,
+        databaseMatches: 0,
+        internetMatches: 0,
+        answerMode: "managed_answer",
+        promptProfile: "managed",
+        timing: {
+          totalReplyMs: Math.round(nowMs() - startedAt),
+        },
+        sources: [
+          {
+            source: matchedSource.source,
+            reference: matchedSource.reference,
+            score: Number(matchedSource.score || 0),
+            preview: String(answer || "").replace(/\s+/g, " ").slice(0, 180),
+          },
+        ],
+      };
+    }
+
+    await recordUserSearchHistory(session, basePlanContext, {
+      questionText: message,
+      target,
+      answerText: answer,
+    });
+
+    return result;
+  }
 
   if (runtimeFlags.useMockAI) {
     const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
@@ -2298,15 +2594,7 @@ async function replyToChat(payload, session) {
         : "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนในฐานข้อมูลและเอกสารภายในระบบ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
   } else {
     const remainingBudgetBeforeAnswerMs = getRemainingBudgetMs(startedAt, CHAT_REPLY_BUDGET_MS);
-    const answerSourceLimit = wantsExplanation(message)
-      ? Math.max(1, Number(planContext.sourceLimit || sources.length || 1))
-      : Math.max(1, Number(planContext.promptProfile?.aiSourceLimit || 5));
-    const answerSources =
-      !planContext.useAI
-        ? sources
-        : wantsExplanation(message)
-          ? sources.slice(0, answerSourceLimit)
-          : sources.slice(0, answerSourceLimit);
+    const answerSources = sources;
     answer = await generateChatSummary(message, answerSources, {
       conversationalFollowUp: resolvedContext.usedContext,
       focusMessage: effectiveMessage,
@@ -2952,11 +3240,22 @@ async function rejectPaymentRequest(id, reviewMeta = {}) {
 }
 
 async function getKnowledgeAdminData() {
-  const [knowledgeCount, recentKnowledge, pendingSuggestionCount, pendingSuggestions] = await Promise.all([
+  const [
+    knowledgeCount,
+    recentKnowledge,
+    pendingSuggestionCount,
+    pendingSuggestions,
+    suggestedQuestionCount,
+    activeSuggestedQuestionCount,
+    suggestedQuestions,
+  ] = await Promise.all([
     LawChatbotKnowledgeModel.count(),
     LawChatbotKnowledgeModel.listRecent(10),
     LawChatbotKnowledgeSuggestionModel.countPending(),
     LawChatbotKnowledgeSuggestionModel.listPending(12),
+    LawChatbotSuggestedQuestionModel.countAll(),
+    LawChatbotSuggestedQuestionModel.countActive(),
+    LawChatbotSuggestedQuestionModel.listRecent(20),
   ]);
 
   return {
@@ -2965,11 +3264,75 @@ async function getKnowledgeAdminData() {
     recentKnowledge,
     pendingSuggestionCount,
     pendingSuggestions,
+    suggestedQuestionCount,
+    activeSuggestedQuestionCount,
+    suggestedQuestions,
     targets: [
       { value: "coop", label: "สหกรณ์" },
       { value: "group", label: "กลุ่มเกษตรกร" },
     ],
+    suggestedQuestionTargets: [
+      { value: "all", label: "ทุกประเภท" },
+      { value: "coop", label: "สหกรณ์" },
+      { value: "group", label: "กลุ่มเกษตรกร" },
+    ],
   };
+}
+
+async function saveSuggestedQuestionEntry(payload = {}) {
+  const entry = await LawChatbotSuggestedQuestionModel.create({
+    target: payload.target,
+    questionText: payload.questionText || payload.question,
+    answerText: payload.answerText || payload.answer,
+    displayOrder: payload.displayOrder,
+    isActive: payload.isActive,
+  });
+
+  if (!entry) {
+    return { ok: false, reason: "invalid_payload" };
+  }
+
+  clearAnswerCache();
+
+  return {
+    ok: true,
+    entry,
+  };
+}
+
+async function updateSuggestedQuestionEntry(id, payload = {}) {
+  const existing = await LawChatbotSuggestedQuestionModel.findById(id);
+  if (!existing) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const updated = await LawChatbotSuggestedQuestionModel.updateById(id, {
+    target: payload.target,
+    questionText: payload.questionText || payload.question,
+    answerText: payload.answerText || payload.answer,
+    displayOrder: payload.displayOrder,
+    isActive: payload.isActive,
+  });
+
+  if (!updated) {
+    return { ok: false, reason: "not_updated" };
+  }
+
+  clearAnswerCache();
+  const refreshed = await LawChatbotSuggestedQuestionModel.findById(id);
+
+  return {
+    ok: true,
+    entry: refreshed,
+  };
+}
+
+async function deleteSuggestedQuestionEntry(id) {
+  const removed = await LawChatbotSuggestedQuestionModel.removeById(id);
+  if (removed) {
+    clearAnswerCache();
+  }
+  return removed;
 }
 
 async function submitKnowledgeSuggestion(payload, meta = {}) {
@@ -3148,6 +3511,9 @@ module.exports = {
   getAdminPaymentRequestDetail,
   updatePaymentRequestPlan,
   getKnowledgeAdminData,
+  saveSuggestedQuestionEntry,
+  updateSuggestedQuestionEntry,
+  deleteSuggestedQuestionEntry,
   submitKnowledgeSuggestion,
   approveKnowledgeSuggestion,
   updateKnowledgeSuggestion,

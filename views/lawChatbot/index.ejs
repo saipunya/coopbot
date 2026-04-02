@@ -1956,7 +1956,7 @@
       let pendingKnowledgeSuggestionResolve = null;
       let suggestionRecognition = null;
       let isSuggestionListening = false;
-      const FREQUENT_CHAT_SUGGESTIONS = [
+      const DEFAULT_FREQUENT_CHAT_SUGGESTIONS = [
         'มาตรา 12 ของ พ.ร.บ.สหกรณ์ คืออะไร',
         'สมาชิกสหกรณ์ลาออกต้องทำอย่างไร',
         'สหกรณ์ประชุมใหญ่สามัญปีละกี่ครั้ง',
@@ -1970,6 +1970,16 @@
         'สมาชิกขาดจากสมาชิกภาพในกรณีใดบ้าง',
         'การแก้ไขข้อบังคับสหกรณ์ต้องทำอย่างไร'
       ];
+      const MANAGED_CHAT_SUGGESTIONS = <%- JSON.stringify(
+        data && Array.isArray(data.suggestedQuestions)
+          ? data.suggestedQuestions
+              .map((item) => String((item && item.questionText) || '').trim())
+              .filter(Boolean)
+          : []
+      ) %>;
+      const FREQUENT_CHAT_SUGGESTIONS = MANAGED_CHAT_SUGGESTIONS.length > 0
+        ? MANAGED_CHAT_SUGGESTIONS
+        : DEFAULT_FREQUENT_CHAT_SUGGESTIONS;
       let lastComposerSuggestionSignature = '';
 
       function setOnlineState() {

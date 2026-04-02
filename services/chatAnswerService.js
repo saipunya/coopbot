@@ -96,6 +96,19 @@ function getDatabaseOnlySourceOrder(options = {}) {
     ];
   }
 
+  if (isFreePlanDisplay(options) && isCoopDissolutionQuestion(options.originalMessage || options.message || "")) {
+    return [
+      "tbl_laws",
+      "admin_knowledge",
+      "knowledge_suggestion",
+      "documents",
+      "pdf_chunks",
+      "tbl_vinichai",
+      "tbl_glaws",
+      "knowledge_base",
+    ];
+  }
+
   if (isFreePlanDisplay(options)) {
     return [
       "admin_knowledge",
@@ -152,6 +165,15 @@ function isLiquidationQuestion(message) {
   }
 
   return /ชำระบัญชี|ผู้ชำระบัญชี/.test(text);
+}
+
+function isCoopDissolutionQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text || /ชำระบัญชี|ผู้ชำระบัญชี/.test(text)) {
+    return false;
+  }
+
+  return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก)/.test(text);
 }
 
 function detectLegalEntityScope(message) {
@@ -582,6 +604,63 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
   }
 
   const normalizedSummaryLines = uniqueCleanLines(summaryLines, 6);
+  if (normalizedSummaryLines.length === 0) {
+    return "";
+  }
+
+  return [
+    buildParagraphSummary(normalizedSummaryLines, [], false, {
+      summaryLimit: normalizedSummaryLines.length,
+    }),
+    buildReferenceSection(references, Math.min(references.length || 1, 5)),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function buildCoopDissolutionFocusedAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isCoopDissolutionQuestion(message)) {
+    return "";
+  }
+
+  const allowedSources = ["tbl_laws"];
+  const references = [];
+  const summaryLines = [];
+  const pushUniqueReference = (source) => {
+    if (!source) {
+      return;
+    }
+
+    if (!references.find((item) => String(item?.source || "") === String(source?.source || "") && String(item?.id || "") === String(source?.id || ""))) {
+      references.push(source);
+    }
+  };
+
+  const openingSource = selectBestLawSourceByNumbers(sources, ["70"], allowedSources);
+  const registrarSource = selectBestLawSourceByNumbers(sources, ["71"], allowedSources);
+  const specialRegistrarSource = selectBestLawSourceByNumbers(sources, ["89/3"], allowedSources);
+
+  if (openingSource || registrarSource) {
+    summaryLines.push("สหกรณ์ต้องเลิกได้ 2 ช่องทางหลัก คือ เลิกเพราะเกิดเหตุที่กฎหมายกำหนดในมาตรา 70 หรือถูกนายทะเบียนสหกรณ์สั่งให้เลิกตามมาตรา 71");
+  }
+
+  if (openingSource) {
+    summaryLines.push("เหตุเลิกตามมาตรา 70 ได้แก่ มีเหตุตามที่กำหนดในข้อบังคับ สมาชิกเหลือน้อยกว่าสิบคน ที่ประชุมใหญ่ลงมติให้เลิก ล้มละลาย หรือถูกนายทะเบียนสหกรณ์สั่งให้เลิกตามมาตรา 71");
+    pushUniqueReference(openingSource);
+  }
+
+  if (registrarSource) {
+    summaryLines.push("นายทะเบียนสหกรณ์สั่งเลิกได้เมื่อสหกรณ์ไม่เริ่มดำเนินกิจการภายในหนึ่งปี หยุดดำเนินกิจการติดต่อกันสองปี ไม่ส่งรายงานประจำปีและงบการเงินเป็นเวลาสามปีติดต่อกัน หรือดำเนินกิจการไม่เป็นผลดีหรือก่อให้เกิดความเสียหายแก่สหกรณ์หรือประโยชน์ส่วนรวม");
+    pushUniqueReference(registrarSource);
+  }
+
+  if (specialRegistrarSource) {
+    summaryLines.push("สำหรับสหกรณ์ออมทรัพย์หรือสหกรณ์เครดิตยูเนี่ยน หากฝ่าฝืนกฎกระทรวงและอาจก่อให้เกิดความเสียหายอย่างร้ายแรง นายทะเบียนสหกรณ์มีอำนาจสั่งให้เลิกได้ตามมาตรา 89/3");
+    pushUniqueReference(specialRegistrarSource);
+  }
+
+  const normalizedSummaryLines = uniqueCleanLines(summaryLines, 5);
   if (normalizedSummaryLines.length === 0) {
     return "";
   }
@@ -1331,6 +1410,32 @@ function buildSourceSearchText(source) {
   ).toLowerCase();
 }
 
+function sourceMatchesCoopDissolutionFocus(source, message) {
+  const query = normalizeForSearch(message).toLowerCase();
+  const sourceText = buildSourceSearchText(source);
+  const sourceName = String(source?.source || "").trim().toLowerCase();
+  const referenceText = normalizeForSearch(
+    [source?.reference, source?.title, source?.lawNumber].filter(Boolean).join(" "),
+  ).toLowerCase();
+  if (!query || !sourceText) {
+    return false;
+  }
+
+  if (!isCoopDissolutionQuestion(query)) {
+    return false;
+  }
+
+  if (sourceName === "tbl_laws") {
+    return /(มาตรา 70|มาตรา70|มาตรา 71|มาตรา71|มาตรา 89 3|มาตรา89 3|89 3)/.test(referenceText);
+  }
+
+  if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion") {
+    return scoreQueryFocusAlignment(message, sourceText) >= 18;
+  }
+
+  return scoreQueryFocusAlignment(message, sourceText) >= 24;
+}
+
 function sourceMatchesAmountFocus(source, message) {
   const query = normalizeForSearch(message).toLowerCase();
   const sourceText = buildSourceSearchText(source);
@@ -1387,6 +1492,13 @@ function filterSourcesByAnswerFocus(sources, options = {}) {
   }
 
   const focusProfile = getQueryFocusProfile(message);
+
+  if (isCoopDissolutionQuestion(message)) {
+    const dissolutionFocused = normalizedSources.filter((source) => sourceMatchesCoopDissolutionFocus(source, message));
+    if (dissolutionFocused.length > 0) {
+      return dissolutionFocused;
+    }
+  }
 
   if (options.amountMode) {
     const amountFocused = normalizedSources.filter((source) => sourceMatchesAmountFocus(source, message));
@@ -2971,8 +3083,10 @@ async function generateChatSummary(message, sources, options = {}) {
     filteredSources.length > 0
       ? filteredSources
       : answerInputSources.slice(0, aiSourceLimit);
+  const focusedAnswerSources =
+    answerInputSources.length > 0 ? answerInputSources : effectiveSources;
   const unionFeeFocusedAnswer = buildUnionFeeFocusedAnswer(
-    effectiveSources.length > 0 ? effectiveSources : answerInputSources,
+    focusedAnswerSources,
     {
       ...options,
       originalMessage: focusMessage,
@@ -2985,7 +3099,7 @@ async function generateChatSummary(message, sources, options = {}) {
   }
 
   const reserveFundFocusedAnswer = buildReserveFundFocusedAnswer(
-    effectiveSources.length > 0 ? effectiveSources : answerInputSources,
+    focusedAnswerSources,
     {
       ...options,
       originalMessage: focusMessage,
@@ -2998,7 +3112,7 @@ async function generateChatSummary(message, sources, options = {}) {
   }
 
   const dividendFocusedAnswer = buildDividendFocusedAnswer(
-    effectiveSources.length > 0 ? effectiveSources : answerInputSources,
+    focusedAnswerSources,
     {
       ...options,
       originalMessage: focusMessage,
@@ -3011,7 +3125,7 @@ async function generateChatSummary(message, sources, options = {}) {
   }
 
   const liquidationFocusedAnswer = buildLiquidationFocusedAnswer(
-    effectiveSources.length > 0 ? effectiveSources : answerInputSources,
+    focusedAnswerSources,
     {
       ...options,
       originalMessage: focusMessage,
@@ -3021,6 +3135,19 @@ async function generateChatSummary(message, sources, options = {}) {
 
   if (liquidationFocusedAnswer) {
     return liquidationFocusedAnswer;
+  }
+
+  const coopDissolutionFocusedAnswer = buildCoopDissolutionFocusedAnswer(
+    focusedAnswerSources,
+    {
+      ...options,
+      originalMessage: focusMessage,
+      message,
+    },
+  );
+
+  if (coopDissolutionFocusedAnswer) {
+    return coopDissolutionFocusedAnswer;
   }
 
   if (options.forceFallback || databaseOnlyMode || effectiveSources.length === 0) {

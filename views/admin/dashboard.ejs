@@ -480,8 +480,143 @@
           <li><a href="/law-chatbot/upload">หน้าจัดการอัปโหลด</a></li>
           <li><a href="/law-chatbot/feedback">หน้าดู feedback</a></li>
           <li><a href="/admin/payment-requests">ตรวจคำขออัปเกรดแพ็กเกจ <% if (paymentRequestData.pendingCount > 0) { %>(<%= paymentRequestData.pendingCount %> รออนุมัติ)<% } %></a></li>
+          <li><a href="#frequent-questions-management">จัดการคำถามแนะนำ / คำถามที่พบบ่อย</a></li>
           <li><a href="#knowledge-management">จัดการความรู้แชตบอท</a></li>
           <li><a href="#knowledge-suggestions">ตรวจข้อเสนอจากผู้ใช้งาน</a></li>
+        </ul>
+      </section>
+
+      <section class="card" id="frequent-questions-management">
+        <h2>จัดการคำถามแนะนำ / คำถามที่พบบ่อย</h2>
+        <p class="section-note">
+          คำถามชุดนี้จะถูกใช้แสดงในกล่องคำถามแนะนำเหนือช่องพิมพ์ และถ้าผู้ใช้ถามตรงกับคำถามที่กำหนดไว้ ระบบจะใช้คำตอบที่บันทึกไว้ล่วงหน้าได้ทันที
+        </p>
+        <p>
+          ทั้งหมด <strong><%= knowledgeData.suggestedQuestionCount %></strong> รายการ
+          <% if (Number(knowledgeData.activeSuggestedQuestionCount || 0) > 0) { %>
+            | ใช้งานอยู่ <strong><%= knowledgeData.activeSuggestedQuestionCount %></strong> รายการ
+          <% } %>
+        </p>
+        <form action="/admin/suggested-questions" method="post">
+          <div class="form-grid">
+            <div class="field">
+              <label for="suggestedQuestionTarget">ประเภทข้อมูล</label>
+              <select id="suggestedQuestionTarget" name="target" required>
+                <% (knowledgeData.suggestedQuestionTargets || []).forEach((target) => { %>
+                  <option value="<%= target.value %>"><%= target.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="field">
+              <label for="suggestedQuestionDisplayOrder">ลำดับการแสดง</label>
+              <input id="suggestedQuestionDisplayOrder" name="displayOrder" type="number" min="0" step="1" value="0" />
+            </div>
+          </div>
+          <div class="field" style="margin-top: 0.9rem;">
+            <label for="suggestedQuestionText">คำถามแนะนำ</label>
+            <input
+              id="suggestedQuestionText"
+              name="questionText"
+              type="text"
+              placeholder="เช่น มาตรา 12 ของ พ.ร.บ.สหกรณ์ คืออะไร"
+              required
+            />
+          </div>
+          <div class="field" style="margin-top: 0.9rem;">
+            <label for="suggestedQuestionAnswer">คำตอบที่บันทึกไว้</label>
+            <textarea
+              id="suggestedQuestionAnswer"
+              name="answerText"
+              placeholder="พิมพ์คำตอบที่ต้องการให้ระบบใช้ทันทีเมื่อผู้ใช้ถามตรงกับคำถามนี้"
+              required
+            ></textarea>
+          </div>
+          <div class="field" style="margin-top: 0.9rem;">
+            <label style="display: inline-flex; align-items: center; gap: 0.45rem;">
+              <input type="hidden" name="isActive" value="0" />
+              <input type="checkbox" name="isActive" value="1" checked />
+              <span>เปิดใช้งานคำถามนี้ทันที</span>
+            </label>
+          </div>
+          <div style="margin-top: 1rem;">
+            <button class="primary-btn" type="submit">บันทึกคำถามแนะนำ</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card" id="frequent-questions-library">
+        <h2>รายการคำถามแนะนำที่ตั้งค่าไว้</h2>
+        <ul class="knowledge-list soft-list">
+          <% if (!knowledgeData.suggestedQuestions || knowledgeData.suggestedQuestions.length === 0) { %>
+            <li>ยังไม่มีคำถามแนะนำที่ผู้ดูแลสร้างไว้</li>
+          <% } %>
+          <% (knowledgeData.suggestedQuestions || []).forEach((item) => { %>
+            <li>
+              <strong><%= item.questionText %></strong>
+              <div class="knowledge-meta">
+                ใช้กับ:
+                <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : item.target === 'coop' ? 'สหกรณ์' : 'ทุกประเภท' %>
+                | สถานะ:
+                <%= item.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน' %>
+                | ลำดับ: <%= Number(item.displayOrder || 0) %>
+                <% if (item.updatedAt) { %> | แก้ไขล่าสุด: <%= item.updatedAt %><% } %>
+              </div>
+              <div style="margin-top: 0.6rem; color: var(--text-main); white-space: pre-line;"><%= item.answerText %></div>
+              <details class="suggestion-editor">
+                <summary class="editor-summary">แก้ไขคำถามแนะนำนี้</summary>
+                <div class="editor-body">
+                  <form action="/admin/suggested-questions/update" method="post">
+                    <input type="hidden" name="id" value="<%= item.id %>" />
+                    <div class="form-grid">
+                      <div class="field">
+                        <label for="suggested-target-<%= item.id %>">ประเภทข้อมูล</label>
+                        <select id="suggested-target-<%= item.id %>" name="target" required>
+                          <% (knowledgeData.suggestedQuestionTargets || []).forEach((target) => { %>
+                            <option value="<%= target.value %>" <%= item.target === target.value ? 'selected' : '' %>><%= target.label %></option>
+                          <% }) %>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label for="suggested-display-order-<%= item.id %>">ลำดับการแสดง</label>
+                        <input
+                          id="suggested-display-order-<%= item.id %>"
+                          name="displayOrder"
+                          type="number"
+                          min="0"
+                          step="1"
+                          value="<%= Number(item.displayOrder || 0) %>"
+                        />
+                      </div>
+                    </div>
+                    <div class="field" style="margin-top: 0.9rem;">
+                      <label for="suggested-question-text-<%= item.id %>">คำถามแนะนำ</label>
+                      <input id="suggested-question-text-<%= item.id %>" name="questionText" type="text" value="<%= item.questionText %>" required />
+                    </div>
+                    <div class="field" style="margin-top: 0.9rem;">
+                      <label for="suggested-answer-text-<%= item.id %>">คำตอบที่บันทึกไว้</label>
+                      <textarea id="suggested-answer-text-<%= item.id %>" name="answerText" required><%= item.answerText %></textarea>
+                    </div>
+                    <div class="field" style="margin-top: 0.9rem;">
+                      <label style="display: inline-flex; align-items: center; gap: 0.45rem;">
+                        <input type="hidden" name="isActive" value="0" />
+                        <input type="checkbox" name="isActive" value="1" <%= item.isActive ? 'checked' : '' %> />
+                        <span>เปิดใช้งานคำถามนี้</span>
+                      </label>
+                    </div>
+                    <div class="suggestion-actions">
+                      <button class="secondary-btn" type="submit">บันทึกการแก้ไข</button>
+                    </div>
+                  </form>
+                </div>
+              </details>
+              <div class="knowledge-actions">
+                <form action="/admin/suggested-questions/delete" method="post" onsubmit="return confirm('ยืนยันการลบคำถามแนะนำนี้ใช่หรือไม่');">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <button class="danger-btn" type="submit">ลบรายการนี้</button>
+                </form>
+              </div>
+            </li>
+          <% }) %>
         </ul>
       </section>
 

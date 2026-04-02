@@ -310,6 +310,34 @@ async function submitKnowledge(req, res) {
   );
 }
 
+async function submitSuggestedQuestion(req, res) {
+  const questionText = String(req.body.questionText || req.body.question || "").trim();
+  const answerText = String(req.body.answerText || req.body.answer || "").trim();
+
+  if (!questionText || !answerText) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("กรุณากรอกคำถามแนะนำและคำตอบให้ครบก่อนบันทึก") +
+        "#frequent-questions-management"
+    );
+  }
+
+  const result = await lawChatbotService.saveSuggestedQuestionEntry(req.body);
+  if (!result.ok) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่สามารถบันทึกคำถามแนะนำรายการนี้ได้") +
+        "#frequent-questions-management"
+    );
+  }
+
+  return res.redirect(
+    "/admin?success=" +
+      encodeURIComponent(`บันทึกคำถามแนะนำ "${result.entry?.questionText || questionText}" เรียบร้อยแล้ว`) +
+      "#frequent-questions-management"
+  );
+}
+
 async function updateKnowledge(req, res) {
   const id = Number(req.body.id || 0);
   const title = String(req.body.title || "").trim();
@@ -347,6 +375,43 @@ async function updateKnowledge(req, res) {
   );
 }
 
+async function updateSuggestedQuestion(req, res) {
+  const id = Number(req.body.id || 0);
+  const questionText = String(req.body.questionText || req.body.question || "").trim();
+  const answerText = String(req.body.answerText || req.body.answer || "").trim();
+
+  if (!id) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบรายการคำถามแนะนำที่ต้องการแก้ไข") +
+        "#frequent-questions-management"
+    );
+  }
+
+  if (!questionText || !answerText) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("กรุณากรอกคำถามแนะนำและคำตอบให้ครบก่อนบันทึกการแก้ไข") +
+        "#frequent-questions-management"
+    );
+  }
+
+  const result = await lawChatbotService.updateSuggestedQuestionEntry(id, req.body);
+  if (!result.ok) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่สามารถบันทึกการแก้ไขคำถามแนะนำรายการนี้ได้") +
+        "#frequent-questions-management"
+    );
+  }
+
+  return res.redirect(
+    "/admin?success=" +
+      encodeURIComponent(`บันทึกการแก้ไขคำถามแนะนำ "${result.entry?.questionText || questionText}" เรียบร้อยแล้ว`) +
+      "#frequent-questions-management"
+  );
+}
+
 async function deleteKnowledge(req, res) {
   const id = Number(req.body.id || 0);
 
@@ -368,6 +433,33 @@ async function deleteKnowledge(req, res) {
   return res.redirect(
     "/admin?success=" +
       encodeURIComponent("ลบข้อมูลฐานความรู้เรียบร้อยแล้ว")
+  );
+}
+
+async function deleteSuggestedQuestion(req, res) {
+  const id = Number(req.body.id || 0);
+
+  if (!id) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบรายการคำถามแนะนำที่ต้องการลบ") +
+        "#frequent-questions-management"
+    );
+  }
+
+  const removed = await lawChatbotService.deleteSuggestedQuestionEntry(id);
+  if (!removed) {
+    return res.redirect(
+      "/admin?error=" +
+        encodeURIComponent("ไม่พบคำถามแนะนำที่ต้องการลบ หรืออาจถูกลบไปแล้ว") +
+        "#frequent-questions-management"
+    );
+  }
+
+  return res.redirect(
+    "/admin?success=" +
+      encodeURIComponent("ลบคำถามแนะนำเรียบร้อยแล้ว") +
+      "#frequent-questions-management"
   );
 }
 
@@ -535,8 +627,11 @@ module.exports = {
   updateUserPlan,
   updatePaymentRequestPlan,
   submitKnowledge,
+  submitSuggestedQuestion,
   updateKnowledge,
+  updateSuggestedQuestion,
   deleteKnowledge,
+  deleteSuggestedQuestion,
   updateKnowledgeSuggestion,
   approveKnowledgeSuggestion,
   rejectKnowledgeSuggestion,

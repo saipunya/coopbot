@@ -201,6 +201,25 @@ async function ensureSchema() {
  
     `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chatbot_suggested_questions (
+      id int(11) NOT NULL AUTO_INCREMENT,
+      target enum('all','coop','group') NOT NULL DEFAULT 'all',
+      question_text varchar(255) NOT NULL,
+      normalized_question varchar(255) NOT NULL,
+      answer_text text NOT NULL,
+      display_order int(11) NOT NULL DEFAULT 0,
+      is_active tinyint(1) NOT NULL DEFAULT 1,
+      created_at timestamp NULL DEFAULT current_timestamp(),
+      updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+      PRIMARY KEY (id),
+      KEY idx_chatbot_suggested_questions_active_order (is_active, display_order, id),
+      KEY idx_chatbot_suggested_questions_target_active (target, is_active),
+      KEY idx_chatbot_suggested_questions_normalized (normalized_question)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+
+    `);
+
   try {
     await pool.query("ALTER TABLE law_chatbot_answer_cache ADD COLUMN metadata_json longtext DEFAULT NULL");
   } catch (_) {}
@@ -255,6 +274,50 @@ async function ensureSchema() {
 
   try {
     await pool.query("ALTER TABLE chatbot_knowledge ADD COLUMN source_note varchar(255) DEFAULT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN target enum('all','coop','group') NOT NULL DEFAULT 'all'");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN question_text varchar(255) NOT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN normalized_question varchar(255) NOT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN answer_text text NOT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN display_order int(11) NOT NULL DEFAULT 0");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN is_active tinyint(1) NOT NULL DEFAULT 1");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN created_at timestamp NULL DEFAULT current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_active_order (is_active, display_order, id)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_target_active (target, is_active)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_normalized (normalized_question)");
   } catch (_) {}
 
   try {

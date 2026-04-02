@@ -20,6 +20,8 @@ function detectLawScope(text) {
   const asksCoop = /พรบ|พระราชบัญญัติ|สหกรณ์/.test(normalized);
   const asksGroup = /พรฎ|พระราชกฤษฎีกา|กลุ่มเกษตรกร/.test(normalized);
   const asksLiquidation = /ชำระบัญชี|ผู้ชำระบัญชี/.test(normalized);
+  const asksCoopDissolution =
+    /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก)/.test(normalized);
 
   if (asksCoop && !asksGroup) {
     return "coop";
@@ -30,6 +32,10 @@ function detectLawScope(text) {
   }
 
   if (asksLiquidation) {
+    return "coop";
+  }
+
+  if (asksCoopDissolution) {
     return "coop";
   }
 
