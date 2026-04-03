@@ -487,7 +487,10 @@ class LawSearchModel {
       return [];
     }
 
-    const terms = uniqueTokens(segmentWords(message)).slice(0, 8);
+    const terms = uniqueTokens([
+      ...segmentWords(message),
+      ...getVinichaiQueryTerms(message),
+    ]).slice(0, 10);
     if (terms.length === 0) {
       return [];
     }

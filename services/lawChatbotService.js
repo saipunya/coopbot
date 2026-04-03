@@ -653,6 +653,37 @@ function prioritizeMatches(matches, options = {}) {
   }));
 }
 
+function isCompensationGovernanceQuestion(message) {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const asksBonus = /โบนัส|เงินโบนัส/.test(normalized) && /(กรรมการ|เจ้าหน้าที่)/.test(normalized);
+  const asksCompensation =
+    /ค่าตอบแทน/.test(normalized) &&
+    /(กรรมการ|เจ้าหน้าที่|งบประมาณ|แผนงาน|มติที่ประชุมใหญ่|ส่วนได้ส่วนเสีย)/.test(normalized);
+  const asksMeetingAllowance =
+    /(เบี้ยประชุม|ค่าใช้จ่ายประชุม|ค่าใช้จ่ายในการประชุม|ประชุมสัมมนา|ค่าใช้จ่ายสัมมนา|ค่าตอบแทน)/.test(normalized) &&
+    /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ|ประชุมใหญ่|ประชุมคณะกรรมการ|ประชุมกรรมการ)/.test(normalized);
+
+  return asksBonus || asksCompensation || asksMeetingAllowance;
+}
+
+function getCompensationGovernanceProfile(message) {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  return {
+    asksBonus: /โบนัส|เงินโบนัส/.test(normalized) && /(กรรมการ|เจ้าหน้าที่)/.test(normalized),
+    asksCompensation:
+      /ค่าตอบแทน/.test(normalized) &&
+      /(กรรมการ|เจ้าหน้าที่|งบประมาณ|แผนงาน|มติที่ประชุมใหญ่|ส่วนได้ส่วนเสีย)/.test(normalized),
+    asksMeetingAllowance:
+      /(เบี้ยประชุม|ค่าใช้จ่ายประชุม|ค่าใช้จ่ายในการประชุม|ประชุมสัมมนา|ค่าใช้จ่ายสัมมนา|ค่าตอบแทน)/.test(
+        normalized,
+      ) && /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ|ประชุมใหญ่|ประชุมคณะกรรมการ|ประชุมกรรมการ)/.test(normalized),
+  };
+}
+
 function classifyQuestionIntent(message) {
   const text = normalizeForSearch(String(message || "")).toLowerCase();
   const asksExplanation = wantsExplanation(text);
@@ -679,12 +710,12 @@ function classifyQuestionIntent(message) {
     return "law_section";
   }
 
-  if (asksDocumentStyle || asksFeeOrAmountStyle) {
-    return "document";
+  if (isCompensationGovernanceQuestion(text) || asksQaStyle) {
+    return "qa";
   }
 
-  if (asksQaStyle) {
-    return "qa";
+  if (asksDocumentStyle || asksFeeOrAmountStyle) {
+    return "document";
   }
 
   if (asksShortAnswer) {
@@ -717,7 +748,7 @@ function isVinichaiPrioritySearch(message) {
     return false;
   }
 
-  return /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ|ถามตอบ|คำถามคำตอบ/.test(normalized);
+  return /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ|ถามตอบ|คำถามคำตอบ/.test(normalized) || isCompensationGovernanceQuestion(normalized);
 }
 
 function isFreePlanSearch(planCode = "") {
@@ -1676,6 +1707,82 @@ function scoreUnionFeeSourceFocus(item = {}) {
   return score;
 }
 
+function scoreCompensationGovernanceSourceFocus(item = {}, message = "") {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  const sourceText = buildSourceFocusSearchText(item);
+  if (!sourceText) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const { asksBonus, asksCompensation, asksMeetingAllowance } = getCompensationGovernanceProfile(message);
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  const asksManagerStaff = /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ)/.test(normalizedMessage);
+  const asksBoard = /(กรรมการ|คณะกรรมการดำเนินการ)/.test(normalizedMessage);
+  let score = 0;
+
+  if (asksMeetingAllowance) {
+    if (/(เบี้ยประชุม|ประชุมสัมมนา|ค่าใช้จ่ายประชุม|ค่าใช้จ่ายในการประชุม|ค่าใช้จ่ายสัมมนา|ค่าตอบแทน)/.test(sourceText) && /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ)/.test(sourceText)) {
+      score += 72;
+    } else if (/(เบี้ยประชุม|ค่าตอบแทน)/.test(sourceText) && /ประชุมใหญ่/.test(sourceText)) {
+      score += 40;
+    } else {
+      score -= 90;
+    }
+  }
+
+  if (asksCompensation) {
+    if (/(ค่าตอบแทน)/.test(sourceText) && /(กรรมการ|เจ้าหน้าที่)/.test(sourceText)) {
+      score += 58;
+    } else {
+      score -= 48;
+    }
+    if (/(แผนงาน|งบประมาณ|มติที่ประชุมใหญ่|ส่วนได้ส่วนเสีย|ให้ตนเอง)/.test(sourceText)) {
+      score += 34;
+    }
+    if (/(ผิดนัดชำระหนี้|เงินเฉลี่ยคืน|สมาชิกที่ผิดนัดชำระหนี้|ชดเชยให้กับสมาชิก)/.test(sourceText)) {
+      score -= 84;
+    }
+  }
+
+  if (asksBonus) {
+    if (/(โบนัส|เงินโบนัส)/.test(sourceText) && /(กรรมการ|เจ้าหน้าที่)/.test(sourceText)) {
+      score += 64;
+    } else {
+      score -= 72;
+    }
+    if (/(ข้อบังคับ|กำไรสุทธิ|การจัดสรรกำไรสุทธิ|ร้อยละ|ไม่ต่ำกว่า)/.test(sourceText)) {
+      score += 30;
+    }
+  }
+
+  if (asksManagerStaff && /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ)/.test(sourceText)) {
+    score += 18;
+  }
+
+  if (asksBoard && /(กรรมการ|คณะกรรมการดำเนินการ)/.test(sourceText)) {
+    score += 14;
+  }
+
+  if (/(ได้หรือไม่|จ่าย|เบิกจ่าย|เข้าร่วมประชุม|ชี้แจง)/.test(sourceText)) {
+    score += 18;
+  }
+
+  if (sourceName === "tbl_vinichai") {
+    score += 16;
+  } else if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion") {
+    score += 10;
+  } else if (sourceName === "pdf_chunks" || sourceName === "documents") {
+    score -= 18;
+  }
+
+  if (/(150 วัน|ผู้แทนสมาชิก|องค์ประชุม|หน่วยเลือกตั้ง|วิสามัญ|นับเวลา|วันสิ้นปีทางบัญชี)/.test(sourceText)) {
+    score -= 64;
+  }
+
+  score += Number(item.score || 0) * 0.12;
+  return score;
+}
+
 function scoreDissolutionSourceFocus(item = {}) {
   const sourceName = String(item.source || "").trim().toLowerCase();
   const sourceText = buildSourceFocusSearchText(item);
@@ -1771,6 +1878,26 @@ function extractPrimaryLawFocusNumber(item = {}) {
 
 function rankSourcesForMessageFocus(items, message = "") {
   const ranked = dedupeSourcesConservatively(items);
+  if (isCompensationGovernanceQuestion(message)) {
+    return ranked
+      .map((item) => ({
+        ...item,
+        __messageFocusRank: scoreCompensationGovernanceSourceFocus(item, message),
+      }))
+      .sort((left, right) => {
+        const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+        if (focusDiff !== 0) {
+          return focusDiff;
+        }
+        return Number(right.score || 0) - Number(left.score || 0);
+      })
+      .map((item) => {
+        const normalized = { ...item };
+        delete normalized.__messageFocusRank;
+        return normalized;
+      });
+  }
+
   if (!isDissolutionPrioritySearch(message)) {
     return ranked;
   }
@@ -1806,6 +1933,32 @@ function rankSourcesForMessageFocus(items, message = "") {
 
 function pruneFocusedQueryMatches(matches, message) {
   const ranked = sortByScore(matches);
+  if (isCompensationGovernanceQuestion(message)) {
+    const focusedMeetingCompensationMatches = ranked
+      .map((item) => ({
+        ...item,
+        __meetingCompensationScore: scoreCompensationGovernanceSourceFocus(item, message),
+      }))
+      .filter((item) => Number(item.__meetingCompensationScore || 0) >= 24)
+      .sort((left, right) => {
+        const focusDiff =
+          Number(right.__meetingCompensationScore || 0) - Number(left.__meetingCompensationScore || 0);
+        if (focusDiff !== 0) {
+          return focusDiff;
+        }
+
+        return Number(right.score || 0) - Number(left.score || 0);
+      });
+
+    if (focusedMeetingCompensationMatches.length > 0) {
+      return focusedMeetingCompensationMatches.map((item) => {
+        const normalized = { ...item };
+        delete normalized.__meetingCompensationScore;
+        return normalized;
+      });
+    }
+  }
+
   if (isUnionFeeQuestion(message)) {
     const focusedUnionMatches = ranked
       .map((item) => ({
@@ -2000,12 +2153,38 @@ function dedupeSourcesConservatively(matches) {
   return deduped;
 }
 
-function getFinalSourceCompactionPlan(intent = "general") {
+function getFinalSourceCompactionPlan(intent = "general", options = {}) {
+  const compensationGovernanceQuestion = isCompensationGovernanceQuestion(options.originalMessage || options.message || "");
+  const compensationProfile = getCompensationGovernanceProfile(options.originalMessage || options.message || "");
   switch (intent) {
+    case "qa":
+      if (compensationGovernanceQuestion) {
+        return {
+          totalLimit: compensationProfile.asksBonus ? 2 : 1,
+          quotas: {
+            vinichai: 1,
+            structured_laws: compensationProfile.asksBonus ? 1 : 0,
+            admin_knowledge: 0,
+            document_like: 0,
+            internet: 0,
+          },
+        };
+      }
+      return {
+        totalLimit: 5,
+        quotas: {
+          vinichai: 3,
+          structured_laws: 1,
+          admin_knowledge: 1,
+          document_like: 1,
+          internet: 0,
+        },
+      };
     case "law_section":
       return {
         totalLimit: 4,
         quotas: {
+          vinichai: 0,
           structured_laws: 3,
           admin_knowledge: 1,
           document_like: 1,
@@ -2016,6 +2195,7 @@ function getFinalSourceCompactionPlan(intent = "general") {
       return {
         totalLimit: 4,
         quotas: {
+          vinichai: 0,
           structured_laws: 2,
           admin_knowledge: 1,
           document_like: 1,
@@ -2026,6 +2206,7 @@ function getFinalSourceCompactionPlan(intent = "general") {
       return {
         totalLimit: 5,
         quotas: {
+          vinichai: 0,
           structured_laws: 2,
           admin_knowledge: 1,
           document_like: 2,
@@ -2036,6 +2217,7 @@ function getFinalSourceCompactionPlan(intent = "general") {
       return {
         totalLimit: 6,
         quotas: {
+          vinichai: 0,
           structured_laws: 3,
           admin_knowledge: 1,
           document_like: 2,
@@ -2046,6 +2228,7 @@ function getFinalSourceCompactionPlan(intent = "general") {
       return {
         totalLimit: 5,
         quotas: {
+          vinichai: 0,
           structured_laws: 2,
           admin_knowledge: 1,
           document_like: 2,
@@ -2056,10 +2239,11 @@ function getFinalSourceCompactionPlan(intent = "general") {
 }
 
 function compactSourcesForSummarization(groups, intent = "general", options = {}) {
-  const plan = getFinalSourceCompactionPlan(intent);
+  const plan = getFinalSourceCompactionPlan(intent, options);
   const targetLimit = Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const compacted = [];
   const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
   const pushUnique = (items, limit) => {
     rankSourcesForMessageFocus(items, focusMessage)
       .slice(0, limit)
@@ -2071,12 +2255,13 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
       });
   };
 
+  pushUnique(groups.vinichai, plan.quotas.vinichai || 0);
   pushUnique(groups.structured_laws, plan.quotas.structured_laws || 0);
   pushUnique(groups.admin_knowledge, plan.quotas.admin_knowledge || 0);
   pushUnique([...(groups.documents || []), ...(groups.pdf_chunks || [])], plan.quotas.document_like || 0);
   pushUnique(groups.internet, plan.quotas.internet || 0);
 
-  if (compacted.length < targetLimit) {
+  if (compacted.length < targetLimit && !compensationGovernanceQuestion) {
     const fallbackPool = [
       ...(groups.vinichai || []),
       ...(groups.knowledge_base || []),
@@ -2096,6 +2281,8 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
 function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
   const freePlan = isFreePlanSearch(options.planCode);
   const vinichaiPrioritySearch = isVinichaiPrioritySearch(options.originalMessage || options.message || "");
+  const compensationGovernanceQuestion = isCompensationGovernanceQuestion(options.originalMessage || options.message || "");
+  const compensationProfile = getCompensationGovernanceProfile(options.originalMessage || options.message || "");
   switch (intent) {
     case "law_section":
       return {
@@ -2140,6 +2327,21 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
         },
       };
     case "qa":
+      if (compensationGovernanceQuestion) {
+        return {
+          totalLimit: compensationProfile.asksBonus ? 2 : 1,
+          quotas: {
+            admin_knowledge: 0,
+            knowledge_suggestion: 0,
+            tbl_laws: compensationProfile.asksBonus ? 1 : 0,
+            tbl_glaws: 0,
+            pdf_chunks: 0,
+            tbl_vinichai: 1,
+            documents: 0,
+            knowledge_base: 0,
+          },
+        };
+      }
       return {
         totalLimit: 8,
         quotas: {
@@ -2271,6 +2473,7 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   const selected = [];
   const usedTiers = [];
   const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
 
   const pushUnique = (items, limit, tierName) => {
     const ranked = rankSourcesForMessageFocus(items, focusMessage).slice(0, limit);
@@ -2308,7 +2511,7 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
     );
   });
 
-  if (selected.length < targetLimit) {
+  if (selected.length < targetLimit && !compensationGovernanceQuestion) {
     const sourceOrder = getDatabaseOnlySourceOrder(intent, options);
     const fallbackOrder = new Map(sourceOrder.map((sourceName, index) => [sourceName, index]));
     const fallbackPool = rankSourcesForMessageFocus([
