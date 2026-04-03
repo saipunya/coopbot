@@ -25,8 +25,12 @@ const {
   shouldUseAIForPlan,
 } = require("./planService");
 const {
+  expandSearchConcepts,
   extractExplicitTopicHints,
+  getQueryFocusProfile,
   normalizeForSearch,
+  segmentWords,
+  uniqueTokens,
 } = require("./thaiTextUtils");
 
 const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
@@ -45,6 +49,95 @@ function stripFollowUpLeadText(message) {
       "",
     ),
   );
+}
+
+function getLegalRewriteAliases(message) {
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalizedMessage) {
+    return [];
+  }
+
+  const aliases = [];
+
+  if (/(ได้ไหม|ได้หรือไม่|ทำได้ไหม|ทำได้หรือไม่)/.test(normalizedMessage)) {
+    aliases.push("ได้หรือไม่", "มีสิทธิ", "สามารถ");
+  }
+
+  if (/(มาตราไหน|ข้อไหน|วรรคไหน|อนุมาตราไหน)/.test(normalizedMessage)) {
+    aliases.push("มาตรา", "ข้อ", "วรรค", "อนุมาตรา");
+  }
+
+  if (/(หน้าที่|มีหน้าที่|อำนาจหน้าที่)/.test(normalizedMessage)) {
+    aliases.push("อำนาจหน้าที่", "หน้าที่ของ", "บทบาท");
+  }
+
+  if (/(คุณสมบัติ|ลักษณะต้องห้าม|ขาดจากการเป็น)/.test(normalizedMessage)) {
+    aliases.push("คุณสมบัติ", "ลักษณะต้องห้าม", "ขาดจากการเป็น");
+  }
+
+  if (/(ประชุมใหญ่|ประชุมคณะกรรมการ|ประชุมกรรมการ)/.test(normalizedMessage)) {
+    aliases.push("องค์ประชุม", "วาระการประชุม");
+  }
+
+  return uniqueTokens(
+    aliases
+      .map((alias) => normalizeRewriteQuery(alias))
+      .filter(Boolean),
+  ).slice(0, 6);
+}
+
+function rewriteSearchQuery(message, context = {}) {
+  const baseMessage = normalizeRewriteQuery(message);
+  const expandedQueryText = normalizeRewriteQuery(expandSearchConcepts(baseMessage)) || baseMessage;
+  const focusProfile = getQueryFocusProfile(expandedQueryText);
+  const topicAliases = uniqueTokens(
+    focusProfile.topics.flatMap((topic) => [topic.primary, ...(topic.aliases || [])]).filter(Boolean),
+  );
+  const contextSignals = uniqueTokens(
+    focusProfile.topics.flatMap((topic) => topic.contextSignals || []).filter(Boolean),
+  );
+  const legalAliases = uniqueTokens([
+    ...topicAliases,
+    ...getLegalRewriteAliases(expandedQueryText),
+  ])
+    .map((alias) => normalizeRewriteQuery(alias))
+    .filter((alias) => alias && alias.toLowerCase() !== expandedQueryText.toLowerCase())
+    .slice(0, 6);
+  const expandedKeywords = uniqueTokens([
+    ...(context.topicAnchor ? [context.topicAnchor] : []),
+    ...(context.sourceAnchors || []),
+    ...extractExplicitTopicHints(expandedQueryText),
+    ...segmentWords(stripFollowUpLeadText(expandedQueryText)).filter((token) => String(token || "").trim().length >= 3),
+    ...contextSignals,
+  ])
+    .map((keyword) => normalizeRewriteQuery(keyword))
+    .filter((keyword) => {
+      if (!keyword) {
+        return false;
+      }
+
+      const normalizedKeyword = keyword.toLowerCase();
+      if (normalizedKeyword === expandedQueryText.toLowerCase()) {
+        return false;
+      }
+
+      return !legalAliases.some((alias) => alias.toLowerCase() === normalizedKeyword);
+    })
+    .slice(0, 8);
+  const retrievalQuery = normalizeRewriteQuery(
+    [
+      expandedQueryText,
+      ...expandedKeywords.slice(0, 3),
+      ...legalAliases.slice(0, 2),
+    ].join(" "),
+  );
+
+  return {
+    effectiveQuery: expandedQueryText,
+    retrievalQuery: retrievalQuery || expandedQueryText,
+    expandedKeywords,
+    legalAliases,
+  };
 }
 
 function getRecentRewriteAnchors(session, target) {
@@ -98,15 +191,24 @@ function buildQueryRewriteCandidates(message, target, session, contextualCandida
   const candidates = [];
 
   const pushCandidate = (query, metadata = {}) => {
-    const normalizedQuery = normalizeRewriteQuery(query);
-    const normalizedKey = normalizedQuery.toLowerCase();
-    if (!normalizedQuery || seen.has(normalizedKey)) {
+    const rewritten = rewriteSearchQuery(query, {
+      topicAnchor,
+      sourceAnchors,
+      ambiguousFollowUp,
+      type: metadata.type,
+    });
+    const normalizedKey = String(rewritten.retrievalQuery || "").toLowerCase();
+    if (!rewritten.effectiveQuery || !normalizedKey || seen.has(normalizedKey)) {
       return;
     }
 
     seen.add(normalizedKey);
     candidates.push({
-      query: normalizedQuery,
+      query: rewritten.retrievalQuery,
+      effectiveQuery: rewritten.effectiveQuery,
+      retrievalQuery: rewritten.retrievalQuery,
+      expandedKeywords: rewritten.expandedKeywords,
+      legalAliases: rewritten.legalAliases,
       type: metadata.type || "original",
       reason: metadata.reason || "",
     });
@@ -145,25 +247,46 @@ function buildQueryRewriteCandidates(message, target, session, contextualCandida
 }
 
 function buildQueryRewriteTrace(baseMessage, candidateResults, selectedCandidate, options = {}) {
+  const selectedSummary = selectedCandidate
+    ? [
+        selectedCandidate.reason || "",
+        Array.isArray(selectedCandidate.expandedKeywords) && selectedCandidate.expandedKeywords.length > 0
+          ? `expanded with ${selectedCandidate.expandedKeywords.slice(0, 2).join(", ")}`
+          : "",
+        Array.isArray(selectedCandidate.legalAliases) && selectedCandidate.legalAliases.length > 0
+          ? `legal aliases ${selectedCandidate.legalAliases.slice(0, 2).join(", ")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" + ")
+    : "";
+
   return {
     originalQuery: baseMessage,
-    selectedQuery: selectedCandidate?.query || baseMessage,
+    effectiveQuery: selectedCandidate?.effectiveQuery || baseMessage,
+    selectedQuery: selectedCandidate?.retrievalQuery || selectedCandidate?.query || baseMessage,
     selectedType: selectedCandidate?.type || "original",
     decision: options.decision || "",
+    summary: selectedSummary,
     usedContext: Boolean(options.usedContext),
     ambiguousFollowUp: Boolean(options.ambiguousFollowUp),
     implicitFollowUpQuestion: Boolean(options.implicitFollowUpQuestion),
     shortFollowUpBias: Boolean(options.shortFollowUpBias),
+    expandedKeywords: Array.isArray(selectedCandidate?.expandedKeywords) ? selectedCandidate.expandedKeywords : [],
+    legalAliases: Array.isArray(selectedCandidate?.legalAliases) ? selectedCandidate.legalAliases : [],
     candidates: (Array.isArray(candidateResults) ? candidateResults : []).map((candidate) => ({
       type: candidate.type || "original",
-      query: candidate.query || "",
+      effectiveQuery: candidate.effectiveQuery || candidate.query || "",
+      query: candidate.retrievalQuery || candidate.query || "",
       reason: candidate.reason || "",
+      expandedKeywords: Array.isArray(candidate.expandedKeywords) ? candidate.expandedKeywords : [],
+      legalAliases: Array.isArray(candidate.legalAliases) ? candidate.legalAliases : [],
       matchCount: Number(candidate.matchCount || 0),
       topScore: Number(candidate.topScore || 0),
       aggregateScore: Number(candidate.score || 0),
       selected:
         candidate.type === selectedCandidate?.type &&
-        candidate.query === selectedCandidate?.query,
+        (candidate.retrievalQuery || candidate.query) === (selectedCandidate?.retrievalQuery || selectedCandidate?.query),
     })),
   };
 }
@@ -415,7 +538,7 @@ async function resolveSearchPlan(message, target, session, options = {}) {
   );
   const candidateResults = await Promise.all(
     candidates.map(async (candidate) => {
-      const matches = await searchDatabaseSources(candidate.query, target, {
+      const matches = await searchDatabaseSources(candidate.retrievalQuery || candidate.query, target, {
         ...options,
         originalMessage: baseMessage,
       });
@@ -432,6 +555,10 @@ async function resolveSearchPlan(message, target, session, options = {}) {
   const standaloneResult =
     candidateResults.find((candidate) => candidate.type === "original") || {
       query: baseMessage,
+      effectiveQuery: baseMessage,
+      retrievalQuery: baseMessage,
+      expandedKeywords: [],
+      legalAliases: [],
       type: "original",
       reason: "original user query",
       matches: [],
@@ -440,7 +567,7 @@ async function resolveSearchPlan(message, target, session, options = {}) {
       score: 0,
     };
   const buildSearchPlanResult = (candidate, resolvedContext, decision) => ({
-    effectiveMessage: candidate.query || baseMessage,
+    effectiveMessage: candidate.effectiveQuery || candidate.query || baseMessage,
     matches: Array.isArray(candidate.matches) ? candidate.matches : [],
     resolvedContext,
     queryRewriteTrace: buildQueryRewriteTrace(baseMessage, candidateResults, candidate, {
@@ -480,8 +607,8 @@ async function resolveSearchPlan(message, target, session, options = {}) {
         bestRewriteResult,
         {
           ...contextualCandidate,
-          effectiveMessage: bestRewriteResult.query || baseMessage,
-          usedContext: (bestRewriteResult.query || baseMessage) !== baseMessage,
+          effectiveMessage: bestRewriteResult.effectiveQuery || bestRewriteResult.query || baseMessage,
+          usedContext: (bestRewriteResult.effectiveQuery || bestRewriteResult.query || baseMessage) !== baseMessage,
         },
         `selected_${bestRewriteResult.type || "rewrite"}`,
       );
@@ -566,8 +693,8 @@ async function resolveSearchPlan(message, target, session, options = {}) {
     bestContextualResult,
     {
       ...contextualCandidate,
-      effectiveMessage: bestContextualResult.query || contextualCandidate.effectiveMessage,
-      usedContext: (bestContextualResult.query || baseMessage) !== baseMessage,
+      effectiveMessage: bestContextualResult.effectiveQuery || bestContextualResult.query || contextualCandidate.effectiveMessage,
+      usedContext: (bestContextualResult.effectiveQuery || bestContextualResult.query || baseMessage) !== baseMessage,
     },
     `selected_${bestContextualResult.type || "contextual"}`,
   );

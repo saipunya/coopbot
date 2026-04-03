@@ -267,6 +267,50 @@ function getFocusAlignmentTrace(item = {}, message = "") {
   };
 }
 
+function getFreshnessNormalizationProfile(sourceName = "", currentBias = false) {
+  switch (sourceName) {
+    case "documents":
+    case "pdf_chunks":
+      return {
+        label: currentBias ? "document_recency_high" : "document_recency_medium",
+        positiveScores: currentBias ? [10, 8, 6, 3] : [5, 4, 3, 1],
+        stalePenalty: currentBias ? -4 : -1,
+        missingDatePenalty: currentBias ? -1 : 0,
+      };
+    case "internet_search":
+      return {
+        label: currentBias ? "public_recency_medium" : "public_recency_light",
+        positiveScores: currentBias ? [8, 6, 4, 2] : [4, 3, 2, 1],
+        stalePenalty: currentBias ? -3 : -1,
+        missingDatePenalty: currentBias ? -1 : 0,
+      };
+    case "admin_knowledge":
+    case "knowledge_suggestion":
+      return {
+        label: currentBias ? "managed_content_medium" : "managed_content_light",
+        positiveScores: currentBias ? [6, 5, 3, 1] : [3, 2, 1, 0],
+        stalePenalty: currentBias ? -1 : 0,
+        missingDatePenalty: 0,
+      };
+    case "tbl_laws":
+    case "tbl_glaws":
+    case "tbl_vinichai":
+      return {
+        label: "authoritative_static",
+        positiveScores: [0, 0, 0, 0],
+        stalePenalty: 0,
+        missingDatePenalty: 0,
+      };
+    default:
+      return {
+        label: "generic_light",
+        positiveScores: currentBias ? [4, 3, 2, 1] : [2, 1, 1, 0],
+        stalePenalty: currentBias ? -1 : 0,
+        missingDatePenalty: 0,
+      };
+  }
+}
+
 function getFreshnessTrace(item = {}, message = "", intent = "general") {
   const sourceName = String(item.source || "").trim().toLowerCase();
   const timestamp = resolveSourceTimestamp(item);
@@ -274,36 +318,35 @@ function getFreshnessTrace(item = {}, message = "", intent = "general") {
     intent === "document" ||
     intent === "short_answer" ||
     isClearlyCurrentOrExternalQuestion(message);
+  const profile = getFreshnessNormalizationProfile(sourceName, currentBias);
 
   if (!Number.isFinite(timestamp)) {
     return {
-      score: 0,
+      score: Number(profile.missingDatePenalty || 0),
       sourceDate: "",
       ageDays: null,
+      normalization: profile.label,
     };
   }
 
   const ageDays = Math.max(0, Math.round((Date.now() - timestamp) / (24 * 60 * 60 * 1000)));
-  let score = 0;
+  let score = Number(profile.stalePenalty || 0);
 
-  if (sourceName === "documents" || sourceName === "pdf_chunks" || sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion") {
-    if (ageDays <= 30) {
-      score = currentBias ? 10 : 5;
-    } else if (ageDays <= 180) {
-      score = currentBias ? 8 : 4;
-    } else if (ageDays <= 365) {
-      score = currentBias ? 6 : 3;
-    } else if (ageDays <= 1095) {
-      score = currentBias ? 3 : 1;
-    } else if (currentBias) {
-      score = -2;
-    }
+  if (ageDays <= 30) {
+    score = Number(profile.positiveScores[0] || 0);
+  } else if (ageDays <= 180) {
+    score = Number(profile.positiveScores[1] || 0);
+  } else if (ageDays <= 365) {
+    score = Number(profile.positiveScores[2] || 0);
+  } else if (ageDays <= 1095) {
+    score = Number(profile.positiveScores[3] || 0);
   }
 
   return {
     score,
     sourceDate: new Date(timestamp).toISOString().slice(0, 10),
     ageDays,
+    normalization: profile.label,
   };
 }
 
@@ -348,6 +391,186 @@ function buildRerankReasons({
   return reasons.slice(0, 5);
 }
 
+function getReadableQuestionContext(message = "", intent = "general") {
+  const focusProfile = getQueryFocusProfile(message);
+  const primaryTopic = focusProfile.topics[0]?.primary || "";
+  if (primaryTopic) {
+    return `คำถามเกี่ยวกับ${primaryTopic}`;
+  }
+
+  switch (intent) {
+    case "law_section":
+      return "คำถามหามาตรากฎหมาย";
+    case "qa":
+      return "คำถามเชิงแนววินิจฉัย";
+    case "document":
+      return "คำถามเชิงเอกสาร";
+    case "explain":
+      return "คำถามเชิงอธิบาย";
+    default:
+      return "คำถามเกี่ยวกับสหกรณ์";
+  }
+}
+
+function getReadableAuthorityPhrase(item = {}, intent = "general") {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  switch (sourceName) {
+    case "tbl_laws":
+    case "tbl_glaws":
+      return intent === "law_section" ? "แหล่งกฎหมายหลัก" : "แหล่งกฎหมายที่น่าเชื่อถือ";
+    case "tbl_vinichai":
+      return "แหล่งแนววินิจฉัยที่ตรงประเด็น";
+    case "admin_knowledge":
+      return "ฐานความรู้ที่ผู้ดูแลคัดไว้";
+    case "knowledge_suggestion":
+      return "คำตอบที่ผ่านการอนุมัติแล้ว";
+    case "documents":
+    case "pdf_chunks":
+      return "เอกสารอ้างอิงที่เกี่ยวข้อง";
+    case "internet_search":
+      return "แหล่งข้อมูลสาธารณะที่ช่วยเสริม";
+    default:
+      return "คะแนนรวมเหมาะกับคำถาม";
+  }
+}
+
+function buildSourceCandidateKey(item = {}) {
+  return [
+    normalizeSourceIdentityText(item.source || ""),
+    normalizeSourceIdentityText(item.id || ""),
+    normalizeSourceIdentityText(item.reference || ""),
+    normalizeSourceIdentityText(item.title || ""),
+    normalizeSourceIdentityText(item.url || ""),
+  ].join("::");
+}
+
+function isSameCandidate(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+
+  const leftKey = buildSourceCandidateKey(left);
+  const rightKey = buildSourceCandidateKey(right);
+  if (leftKey && rightKey && leftKey === rightKey) {
+    return true;
+  }
+
+  return areNearDuplicateSources(left, right);
+}
+
+function buildSelectedBecauseText(item = {}, message = "", intent = "general") {
+  const rankingTrace = item.rankingTrace || {};
+  const reasons = [];
+
+  if (rankingTrace.matchedReference) {
+    reasons.push("ตรงมาตรา");
+  }
+
+  if (Number(rankingTrace.authorityScore || 0) > 0) {
+    reasons.push(getReadableAuthorityPhrase(item, intent));
+  }
+
+  if (Number(rankingTrace.focusAlignmentRaw || 0) >= 24) {
+    reasons.push(getReadableQuestionContext(message, intent));
+  }
+
+  if (Number(rankingTrace.freshnessScore || 0) >= 6) {
+    reasons.push("ข้อมูลค่อนข้างใหม่");
+  }
+
+  if (item.contextCarry) {
+    reasons.push("ต่อเนื่องจากคำถามก่อนหน้า");
+  }
+
+  if (reasons.length === 0) {
+    reasons.push("คะแนนรวมชนะ source อื่น");
+  }
+
+  return `selected because: "${reasons.slice(0, 3).join(" + ")}"`;
+}
+
+function buildRejectedBecauseText(item = {}, selectedSources = [], message = "", intent = "general") {
+  const rankingTrace = item.rankingTrace || {};
+  const reasons = [];
+  const strongerDuplicate = selectedSources.find((selected) => isSameCandidate(selected, item));
+  const strongerSameSource = selectedSources
+    .filter((selected) => String(selected?.source || "").trim().toLowerCase() === String(item.source || "").trim().toLowerCase())
+    .sort((left, right) => Number(right?.score || 0) - Number(left?.score || 0))[0];
+  const hasMoreAuthoritativeWinner = selectedSources.some((selected) =>
+    ["tbl_laws", "tbl_glaws", "tbl_vinichai", "admin_knowledge"].includes(String(selected?.source || "").trim().toLowerCase()),
+  );
+
+  if (strongerDuplicate) {
+    reasons.push("ซ้ำกับ source ที่ดีกว่า");
+  }
+
+  if (Number(rankingTrace.focusAlignmentRaw || 0) > 0 && Number(rankingTrace.focusAlignmentRaw || 0) < 18) {
+    reasons.push("focus score ต่ำ");
+  }
+
+  if (Number(rankingTrace.freshnessScore || 0) < 0) {
+    reasons.push("document เก่าเมื่อเทียบกับคำถาม");
+  }
+
+  if (
+    strongerSameSource &&
+    Number(strongerSameSource.score || 0) >= Number(item.score || 0) + 8 &&
+    !isSameCandidate(strongerSameSource, item)
+  ) {
+    reasons.push("คะแนนรวมสู้ source ที่ชนะในกลุ่มเดียวกันไม่ได้");
+  }
+
+  if (
+    reasons.length === 0 &&
+    hasMoreAuthoritativeWinner &&
+    ["documents", "pdf_chunks", "knowledge_base", "knowledge_suggestion"].includes(String(item.source || "").trim().toLowerCase())
+  ) {
+    reasons.push("มี source ที่น่าเชื่อถือกว่าชนะอยู่แล้ว");
+  }
+
+  if (reasons.length === 0) {
+    reasons.push("คะแนนรวมต่ำกว่า source ที่ถูกเลือก");
+  }
+
+  return `rejected because: "${reasons.slice(0, 3).join(" / ")}"`;
+}
+
+function buildSelectionDiagnostics(groups, selectedSources, intent = "general", options = {}) {
+  const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const allCandidates = sortByScore(
+    dedupeSourcesConservatively([
+      ...(groups.structured_laws || []),
+      ...(groups.admin_knowledge || []),
+      ...(groups.knowledge_suggestion || []),
+      ...(groups.vinichai || []),
+      ...(groups.documents || []),
+      ...(groups.pdf_chunks || []),
+      ...(groups.internet || []),
+      ...(groups.knowledge_base || []),
+    ]),
+  );
+  const selected = (Array.isArray(selectedSources) ? selectedSources : []).map((item) => ({
+    source: item.source || "",
+    reference: item.reference || item.title || "",
+    score: Number(item.score || 0),
+    selectedBecause: buildSelectedBecauseText(item, focusMessage, intent),
+  }));
+  const rejected = allCandidates
+    .filter((item) => !selectedSources.some((selectedItem) => isSameCandidate(selectedItem, item)))
+    .slice(0, 8)
+    .map((item) => ({
+      source: item.source || "",
+      reference: item.reference || item.title || "",
+      score: Number(item.score || 0),
+      rejectedBecause: buildRejectedBecauseText(item, selectedSources, focusMessage, intent),
+    }));
+
+  return {
+    selected,
+    rejected,
+  };
+}
+
 function rerankRetrievedMatches(matches, message, options = {}) {
   const intent = options.intent || "general";
 
@@ -389,6 +612,7 @@ function rerankRetrievedMatches(matches, message, options = {}) {
           matchedReference: sectionTrace.matchedReference || "",
           sourceDate: freshnessTrace.sourceDate || "",
           ageDays: freshnessTrace.ageDays,
+          freshnessNormalization: freshnessTrace.normalization || "",
           reasons: buildRerankReasons({
             retrievalWeight,
             authorityTrace,
@@ -1856,6 +2080,12 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
       ...selectionTrace,
       selectedCount: Math.min(selected.length, targetLimit || plan.totalLimit),
     },
+    selectionDiagnostics: buildSelectionDiagnostics(
+      groups,
+      selected.slice(0, targetLimit || plan.totalLimit),
+      intent,
+      options,
+    ),
   };
 }
 
@@ -1930,6 +2160,7 @@ function selectTieredSources(groups, intent = "general", options = {}) {
       ...selectionTrace,
       selectedCount: compactedSelected.length,
     },
+    selectionDiagnostics: buildSelectionDiagnostics(groups, compactedSelected, intent, options),
   };
 }
 
