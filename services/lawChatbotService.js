@@ -68,6 +68,7 @@ const {
   classifyQuestionIntent,
   selectTieredSources,
 } = require("./sourceSelectionService");
+const { evaluateRetrievalResult } = require("./retrievalEvaluationService");
 const { searchInternetSources } = require("./internetSearchService");
 const { canUseAiPreview } = require("./planService");
 
@@ -510,14 +511,23 @@ async function replyToChat(payload, session) {
   const effectiveMessage = evidence.effectiveMessage || message;
   const sources = evidence.sources;
   const highlightTerms = effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8);
+  const retrievalEvaluation = evaluateRetrievalResult({
+    message,
+    effectiveMessage,
+    questionIntent: evidence.questionIntent,
+    queryRewriteTrace: evidence.queryRewriteTrace,
+    databaseMatches: evidence.databaseMatches,
+    internetMatches: evidence.internetMatches,
+    selectedSources: sources,
+    usedInternetFallback: evidence.usedInternetFallback,
+    usedInternetSearch: evidence.usedInternetSearch,
+    resolvedContext,
+  });
 
   let answer = "";
 
-  if (sources.length === 0) {
-    answer =
-      evidence.usedInternetSearch
-        ? "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนทั้งในฐานข้อมูลและแหล่งข้อมูลสาธารณะ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร"
-        : "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนในฐานข้อมูลและเอกสารภายในระบบ\n\nกรุณาระบุคำสำคัญเพิ่มเติม เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร";
+  if (!retrievalEvaluation.shouldAnswer) {
+    answer = retrievalEvaluation.userFacingMessage;
   } else {
     const remainingBudgetBeforeAnswerMs = getRemainingBudgetMs(startedAt, CHAT_REPLY_BUDGET_MS);
     const answerSources = sources;
@@ -542,7 +552,9 @@ async function replyToChat(payload, session) {
   }
   const afterAnswerGenerationAt = nowMs();
 
-  storeConversationContext(session, target, message, effectiveMessage, sources, resolvedContext);
+  if (retrievalEvaluation.shouldAnswer) {
+    storeConversationContext(session, target, message, effectiveMessage, sources, resolvedContext);
+  }
 
   LawChatbotModel.create({
     message,
@@ -560,7 +572,7 @@ async function replyToChat(payload, session) {
   });
 
   const result = {
-    hasContext: sources.length > 0,
+    hasContext: retrievalEvaluation.shouldAnswer && sources.length > 0,
     answer,
     highlightTerms,
     usedFollowUpContext: resolvedContext.usedContext,
@@ -568,9 +580,9 @@ async function replyToChat(payload, session) {
     fromCache: false,
   };
 
-  if (canUseCache && !resolvedContext.usedContext) {
+  if (retrievalEvaluation.shouldAnswer && canUseCache && !resolvedContext.usedContext) {
     setCachedAnswer(cacheKey, {
-      hasContext: sources.length > 0,
+      hasContext: retrievalEvaluation.shouldAnswer && sources.length > 0,
       answer,
       highlightTerms,
       usedInternetFallback: evidence.usedInternetFallback,
@@ -584,7 +596,13 @@ async function replyToChat(payload, session) {
     });
   }
 
-  if (canUseCache && !resolvedContext.usedContext && questionHash && shouldPersistDbAnswerCache(answer, { debugMode })) {
+  if (
+    retrievalEvaluation.shouldAnswer &&
+    canUseCache &&
+    !resolvedContext.usedContext &&
+    questionHash &&
+    shouldPersistDbAnswerCache(answer, { debugMode })
+  ) {
     try {
       await LawChatbotAnswerCacheModel.upsert({
         questionHash,
@@ -593,7 +611,7 @@ async function replyToChat(payload, session) {
         target,
         answerText: answer,
         metadata: {
-          hasContext: sources.length > 0,
+          hasContext: retrievalEvaluation.shouldAnswer && sources.length > 0,
           highlightTerms,
           usedInternetFallback: evidence.usedInternetFallback,
           selectedSourceTier: evidence.selectedSourceTier || "none",
@@ -615,11 +633,15 @@ async function replyToChat(payload, session) {
       sourceCount: sources.length,
       databaseMatches: evidence.databaseMatches?.length || 0,
       internetMatches: evidence.internetMatches?.length || 0,
-      answerMode: planContext.answerMode || (planContext.useAI ? "ai" : "db_only"),
+      answerMode:
+        retrievalEvaluation.shouldAnswer
+          ? planContext.answerMode || (planContext.useAI ? "ai" : "db_only")
+          : retrievalEvaluation.policy,
       promptProfile: planContext.promptProfile?.code || "template",
       queryRewrite: evidence.queryRewriteTrace || null,
       selectionTrace: evidence.selectionTrace || null,
       diagnostics: evidence.selectionDiagnostics || null,
+      evaluation: retrievalEvaluation.trace,
       timing: {
         ...(evidence.timing || {}),
         answerGenerationMs: Math.round(afterAnswerGenerationAt - afterCollectSourcesAt),
@@ -649,7 +671,7 @@ async function replyToChat(payload, session) {
 
   return attachAiPreviewState(result, {
     previewMeta: freeAiPreviewMeta,
-    consumePreview: aiPreviewApproved && Boolean(answer),
+    consumePreview: aiPreviewApproved && retrievalEvaluation.shouldAnswer && Boolean(answer),
     userId,
     usageMonth,
   });
@@ -687,6 +709,24 @@ async function summarizeChat(payload, session) {
   });
   const resolvedContext = evidence.resolvedContext;
   const sources = evidence.sources;
+  const retrievalEvaluation = evaluateRetrievalResult({
+    message,
+    effectiveMessage: evidence.effectiveMessage || message,
+    questionIntent: evidence.questionIntent,
+    queryRewriteTrace: evidence.queryRewriteTrace,
+    databaseMatches: evidence.databaseMatches,
+    internetMatches: evidence.internetMatches,
+    selectedSources: sources,
+    usedInternetFallback: evidence.usedInternetFallback,
+    usedInternetSearch: evidence.usedInternetSearch,
+    resolvedContext,
+  });
+
+  if (!retrievalEvaluation.shouldAnswer) {
+    return {
+      summary: retrievalEvaluation.userFacingMessage,
+    };
+  }
 
   return {
     summary: await generateChatSummary(message, sources, {
