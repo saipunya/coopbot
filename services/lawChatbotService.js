@@ -2481,10 +2481,10 @@ async function collectAnswerSources(message, target, session, options = {}) {
     shouldSearchInternet && remainingBudgetBeforeInternetMs < MIN_INTERNET_SEARCH_BUDGET_MS;
 
   if (shouldSearchInternet && !shouldSkipInternetForBudget) {
-    const internetTimeoutMs = Math.min(
-      WEB_SEARCH_TIMEOUT_MS,
-      Math.max(1000, remainingBudgetBeforeInternetMs - MIN_AI_SUMMARY_BUDGET_MS),
-    );
+    const internetTimeoutMs = Math.max(
+  1000,
+  remainingBudgetBeforeInternetMs - MIN_AI_SUMMARY_BUDGET_MS,
+);
     internetMatches = await searchInternetSources(resolvedEffectiveMessage, target, {
       timeoutMs: internetTimeoutMs,
       limit: options.internetLimit,
