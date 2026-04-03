@@ -15,7 +15,7 @@ class UserMonthlyUsageModel {
     }
 
     const [rows] = await pool.query(
-      `SELECT id, user_id, usage_month, question_count, last_used_at, created_at, updated_at
+      `SELECT id, user_id, usage_month, question_count, ai_preview_count, last_used_at, created_at, updated_at
        FROM user_monthly_usage
        WHERE user_id = ? AND usage_month = ?
        LIMIT 1`,
@@ -36,13 +36,41 @@ class UserMonthlyUsageModel {
          user_id,
          usage_month,
          question_count,
+         ai_preview_count,
          last_used_at,
          created_at,
          updated_at
        )
-       VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       VALUES (?, ?, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        ON DUPLICATE KEY UPDATE
          question_count = question_count + 1,
+         last_used_at = CURRENT_TIMESTAMP,
+         updated_at = CURRENT_TIMESTAMP`,
+      [Number(userId || 0), String(usageMonth || "").trim()]
+    );
+
+    return this.findByUserAndMonth(userId, usageMonth);
+  }
+
+  static async incrementAiPreviewCount(userId, usageMonth) {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for monthly usage tracking.");
+    }
+
+    await pool.query(
+      `INSERT INTO user_monthly_usage (
+         user_id,
+         usage_month,
+         question_count,
+         ai_preview_count,
+         last_used_at,
+         created_at,
+         updated_at
+       )
+       VALUES (?, ?, 0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON DUPLICATE KEY UPDATE
+         ai_preview_count = ai_preview_count + 1,
          last_used_at = CURRENT_TIMESTAMP,
          updated_at = CURRENT_TIMESTAMP`,
       [Number(userId || 0), String(usageMonth || "").trim()]

@@ -61,6 +61,7 @@ async function ensureSchema() {
       user_id int(11) NOT NULL,
       usage_month char(7) NOT NULL,
       question_count int(11) NOT NULL DEFAULT 0,
+      ai_preview_count int(11) NOT NULL DEFAULT 0,
       last_used_at timestamp NULL DEFAULT current_timestamp(),
       created_at timestamp NULL DEFAULT current_timestamp(),
       updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -362,6 +363,10 @@ async function ensureSchema() {
 
   try {
     await pool.query("ALTER TABLE users ADD UNIQUE KEY uniq_users_email (email)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE user_monthly_usage ADD COLUMN ai_preview_count int(11) NOT NULL DEFAULT 0");
   } catch (_) {}
 
   try {

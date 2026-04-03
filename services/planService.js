@@ -41,6 +41,15 @@ function getSearchHistoryRetentionDays(planCode = DEFAULT_PLAN_CODE) {
   return Math.max(0, Number(getPlanConfig(planCode).searchHistoryRetentionDays || 0));
 }
 
+function getAiPreviewMonthlyLimit(planCode = DEFAULT_PLAN_CODE) {
+  return Math.max(0, Number(getPlanConfig(planCode).aiPreviewMonthlyLimit || 0));
+}
+
+function canUseAiPreview(planCode = DEFAULT_PLAN_CODE) {
+  const config = getPlanConfig(planCode);
+  return Boolean(config.allowAiPreview) && getAiPreviewMonthlyLimit(planCode) > 0;
+}
+
 function canUseSearchHistory(planCode = DEFAULT_PLAN_CODE) {
   const config = getPlanConfig(planCode);
   return Boolean(config.allowSearchHistory) && getSearchHistoryRetentionDays(planCode) > 0;
@@ -249,6 +258,8 @@ function listPlanComparisons() {
       allowSearchHistory: Boolean(config.allowSearchHistory),
       searchHistoryRetentionDays: getSearchHistoryRetentionDays(planCode),
       searchHistoryRetentionLabel: getSearchHistoryRetentionLabel(planCode),
+      allowAiPreview: canUseAiPreview(planCode),
+      aiPreviewMonthlyLimit: getAiPreviewMonthlyLimit(planCode),
       useAI: Boolean(config.useAI),
       useInternet: Boolean(config.useInternet),
       detailLevel: config.detailLevel || "template",
@@ -271,11 +282,13 @@ module.exports = {
   getMonthlyLimit,
   getPlanConfig,
   getPlanDurationDays,
+  getAiPreviewMonthlyLimit,
   getPlanLabel,
   getPlanPriceBaht,
   getSearchHistoryRetentionDays,
   getSearchHistoryRetentionLabel,
   getPromptProfile,
+  canUseAiPreview,
   canUseSearchHistory,
   isPaidPlan,
   isPlanAllowedToUseAI,

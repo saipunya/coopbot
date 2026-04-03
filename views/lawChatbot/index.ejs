@@ -834,6 +834,61 @@
       outline: none;
     }
 
+    .bot-ai-preview-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.55rem 0.92rem;
+      border: none;
+      border-radius: 999px;
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(135deg, #2f5f7a, #244d64);
+      box-shadow: 0 8px 18px rgba(36, 77, 100, 0.18);
+      transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+    }
+
+    .bot-ai-preview-cta:hover,
+    .bot-ai-preview-cta:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px rgba(36, 77, 100, 0.24);
+      opacity: 0.98;
+      outline: none;
+    }
+
+    .bot-upgrade-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.52rem 0.86rem;
+      border-radius: 999px;
+      text-decoration: none;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #244d64;
+      background: #eef5fb;
+      border: 1px solid #c6d8e4;
+      transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+    }
+
+    .bot-upgrade-cta:hover,
+    .bot-upgrade-cta:focus-visible {
+      background: #e3eef7;
+      border-color: #a9c3d4;
+      color: #16384a;
+      outline: none;
+    }
+
+    .bot-inline-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: #557083;
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
     .reference-modal-list {
       margin: 0;
       padding-left: 1.1rem;
@@ -2510,19 +2565,81 @@
         } catch (_) {}
       }
 
-      function buildInlineActionHtml(options = {}) {
-        if (isSignedInUser || !options || !options.guestLimitReached || !options.signInPath) {
+      function buildFreeAiPreviewActionHtml(options = {}) {
+        const preview = options && options.freeAiPreview ? options.freeAiPreview : null;
+        if (!isSignedInUser || botPackageVariant !== 'free' || !preview || !preview.enabled) {
           return '';
+        }
+
+        if (preview.usedThisAnswer) {
+          return '';
+        }
+
+        const question = String(options.question || '').trim();
+        const target = String(options.target || selectedTarget || 'all').trim();
+        if (!question) {
+          return '';
+        }
+
+        if (preview.canTryPreview) {
+          return `
+            <div class="bot-inline-actions">
+              <button
+                type="button"
+                class="bot-ai-preview-cta"
+                data-free-ai-preview="1"
+                data-question="${escapeHtml(question)}"
+                data-target="${escapeHtml(target)}"
+              >
+                <i class="bi bi-stars"></i>
+                <span>ลองคำตอบแบบ AI ฟรี</span>
+              </button>
+              <span class="bot-inline-note">
+                <i class="bi bi-lightbulb"></i>
+                <span>เหลือ ${escapeHtml(String(preview.remainingCount || 0))}/${escapeHtml(String(preview.limit || 0))} ครั้งเดือนนี้ เพื่อดูความต่างก่อนอัปเกรด</span>
+              </span>
+              <a href="/law-chatbot/payment-request" class="bot-upgrade-cta">
+                <i class="bi bi-arrow-up-circle"></i>
+                <span>ดูแพ็กเกจ</span>
+              </a>
+            </div>
+          `;
         }
 
         return `
           <div class="bot-inline-actions">
-            <a href="${escapeHtml(options.signInPath)}" class="bot-login-cta" title="เข้าสู่ระบบด้วย Google เพื่อใช้งานต่อ">
-              <i class="bi bi-google"></i>
-              <span>เข้าสู่ระบบด้วย Google เพื่อใช้งานต่อ</span>
+            <span class="bot-inline-note">
+              <i class="bi bi-stars"></i>
+              <span>คุณใช้ AI preview ฟรีครบ ${escapeHtml(String(preview.limit || 0))} ครั้งของเดือนนี้แล้ว หากต้องการสรุปแบบ AI ต่อเนื่อง แนะนำ Standard</span>
+            </span>
+            <a href="/law-chatbot/payment-request" class="bot-upgrade-cta">
+              <i class="bi bi-arrow-up-circle"></i>
+              <span>อัปเกรดแพ็กเกจ</span>
             </a>
           </div>
         `;
+      }
+
+      function buildInlineActionHtml(options = {}) {
+        const segments = [];
+
+        if (!isSignedInUser && options && options.guestLimitReached && options.signInPath) {
+          segments.push(`
+            <div class="bot-inline-actions">
+              <a href="${escapeHtml(options.signInPath)}" class="bot-login-cta" title="เข้าสู่ระบบด้วย Google เพื่อใช้งานต่อ">
+                <i class="bi bi-google"></i>
+                <span>เข้าสู่ระบบด้วย Google เพื่อใช้งานต่อ</span>
+              </a>
+            </div>
+          `);
+        }
+
+        const freeAiPreviewHtml = buildFreeAiPreviewActionHtml(options);
+        if (freeAiPreviewHtml) {
+          segments.push(freeAiPreviewHtml);
+        }
+
+        return segments.join('');
       }
 
       function formatBotMessageHtml(text, terms, options = {}) {
@@ -3174,7 +3291,9 @@
 
         isSubmitting = true;
         updateSendButtonState();
-        addBubble(trimmed, 'user');
+        if (!options.skipUserBubble) {
+          addBubble(trimmed, 'user');
+        }
         const loadingRow = addBubble('กำลังค้นฐานข้อมูล...', 'bot', true);
         const loadingController = createLoadingBubbleController(loadingRow, trimmed);
         let timeoutId = null;
@@ -3185,7 +3304,12 @@
           const response = await fetch('/law-chatbot/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: trimmed, target: selectedTarget, debug: Boolean(options.debug) }),
+            body: JSON.stringify({
+              message: trimmed,
+              target: options.target || selectedTarget,
+              debug: Boolean(options.debug),
+              aiPreview: Boolean(options.aiPreview)
+            }),
             signal: controller.signal
           });
           clearTimeout(timeoutId);
@@ -3206,13 +3330,14 @@
           if (answerText) {
             const botRow = addBubble(answerText, 'bot', false, dbHighlightTerms, {
               question: trimmed,
-              target: selectedTarget,
+              target: options.target || selectedTarget,
               variant: 'ai',
               debug: data && data.debug ? data.debug : null,
               usedFollowUpContext: Boolean(data && data.usedFollowUpContext),
               guestLimitReached: Boolean(data && data.guestLimitReached),
               monthlyUsageLimitReached: Boolean(data && data.monthlyUsageLimitReached),
-              signInPath: data && typeof data.signInPath === 'string' ? data.signInPath : ''
+              signInPath: data && typeof data.signInPath === 'string' ? data.signInPath : '',
+              freeAiPreview: data && data.freeAiPreview ? data.freeAiPreview : null
             });
             focusFirstAnswer(botRow);
           }
@@ -3226,7 +3351,7 @@
             : 'ขออภัยครับ ระบบไม่สามารถประมวลผลคำถามได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง';
           const botRow = addBubble(fallbackMessage, 'bot', false, [], {
             question: trimmed,
-            target: selectedTarget,
+            target: options.target || selectedTarget,
             variant: 'ai'
           });
           focusFirstAnswer(botRow);
@@ -3245,6 +3370,18 @@
       }
 
       chatMessages.addEventListener('click', async (event) => {
+        const freeAiPreviewButton = event.target.closest('[data-free-ai-preview="1"]');
+        if (freeAiPreviewButton) {
+          if (isSubmitting) return;
+          freeAiPreviewButton.disabled = true;
+          await submitMessage(freeAiPreviewButton.dataset.question || '', {
+            aiPreview: true,
+            skipUserBubble: true,
+            target: freeAiPreviewButton.dataset.target || selectedTarget
+          });
+          return;
+        }
+
         const feedbackButton = event.target.closest('[data-feedback-action="1"]');
         if (feedbackButton) {
           const wrap = feedbackButton.closest('.feedback-actions');

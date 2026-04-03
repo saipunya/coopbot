@@ -9,6 +9,11 @@
     <% if (data.currentPlanContext && Number.isFinite(data.currentPlanContext.monthlyLimit)) { %>
       <span style="color:#5d6a79;"> | Monthly limit <%= data.currentPlanContext.monthlyLimit %> questions</span>
     <% } %>
+    <% if (data.aiPreview && data.aiPreview.enabled) { %>
+      <div style="margin-top:0.45rem; color:#3f4e5e;">
+        ตอนนี้คุณยังลองคำตอบแบบ AI ได้ฟรีอีก <strong><%= data.aiPreview.remainingCount %></strong> จาก <strong><%= data.aiPreview.limit %></strong> ครั้งในเดือนนี้
+      </div>
+    <% } %>
   </div>
 
   <% if (Array.isArray(data.planComparison) && data.planComparison.length > 0) { %>
@@ -38,6 +43,9 @@
               <% (plan.highlights || []).forEach((item) => { %>
                 <li style="margin-bottom:0.25rem;"><%= item %></li>
               <% }) %>
+              <% if (plan.allowAiPreview && plan.aiPreviewMonthlyLimit > 0) { %>
+                <li style="margin-bottom:0.25rem;">AI preview: <strong><%= plan.aiPreviewMonthlyLimit %> ครั้ง/เดือน</strong></li>
+              <% } %>
               <li style="margin-bottom:0.25rem;">AI: <strong><%= plan.useAI ? 'มี' : 'ไม่มี' %></strong></li>
               <li style="margin-bottom:0.25rem;">Internet search: <strong><%= plan.useInternet ? 'มี' : 'ไม่มี' %></strong></li>
               <li>ประวัติการค้นหา: <strong><%= plan.searchHistoryRetentionLabel %></strong></li>

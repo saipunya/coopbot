@@ -17,7 +17,9 @@ const { buildQuestionCacheIdentity } = require("./lawChatbotAnswerCacheUtils");
 const { sendPaymentRequestNotification } = require("./telegramService");
 const { generateChatSummary, wantsExplanation } = require("./chatAnswerService");
 const {
+  canUseAiPreview,
   getPlanDurationDays,
+  getAiPreviewMonthlyLimit,
   getPlanConfig,
   getPlanLabel,
   getPlanPriceBaht,
@@ -234,6 +236,94 @@ function resolveChatPlanContext(session, options = {}) {
     useAI: effectiveUseAI,
     useInternet: effectiveUseInternet,
     promptProfile,
+  };
+}
+
+function isTruthyFlag(value) {
+  if (value === true) {
+    return true;
+  }
+
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+}
+
+function buildAiPreviewMeta(planContext = {}, usage = null) {
+  const planCode = normalizePlanCode(planContext.code || planContext.plan || "free");
+  const enabled = canUseAiPreview(planCode);
+  const limit = getAiPreviewMonthlyLimit(planCode);
+  const usedCount = Math.max(0, Number(usage?.ai_preview_count || 0));
+  const remainingCount = enabled ? Math.max(0, limit - usedCount) : 0;
+
+  return {
+    enabled,
+    limit,
+    usedCount,
+    remainingCount,
+    canTryPreview: enabled && remainingCount > 0,
+    exhausted: enabled && remainingCount <= 0,
+  };
+}
+
+function buildFreeAiPreviewPlanContext(basePlanContext = {}) {
+  const standardPlanContext = resolveUserPlanContext({ plan: "standard" });
+  const standardPromptProfile = standardPlanContext.promptProfile || {};
+
+  return {
+    ...basePlanContext,
+    detailLevel: standardPlanContext.detailLevel,
+    useAI: true,
+    useInternet: false,
+    maxInternetSources: 0,
+    sourceLimit: Math.max(1, Number(standardPlanContext.sourceLimit || 5)),
+    strictSourceFiltering: Boolean(standardPlanContext.strictSourceFiltering),
+    preferDatabaseOnlyForLawSections: Boolean(standardPlanContext.preferDatabaseOnlyForLawSections),
+    followUpStrength: standardPlanContext.followUpStrength || "basic",
+    promptProfile: {
+      ...standardPromptProfile,
+      code: "preview-standard",
+    },
+    answerMode: "ai_preview",
+  };
+}
+
+async function attachAiPreviewState(result = {}, options = {}) {
+  const previewMeta = options.previewMeta || { enabled: false };
+  if (!previewMeta.enabled) {
+    return {
+      ...result,
+      freeAiPreview: {
+        enabled: false,
+        limit: 0,
+        usedCount: 0,
+        remainingCount: 0,
+        canTryPreview: false,
+        exhausted: false,
+        usedThisAnswer: false,
+      },
+    };
+  }
+
+  let effectiveMeta = previewMeta;
+  let usedThisAnswer = false;
+
+  if (options.consumePreview === true && Number(options.userId || 0) > 0 && options.usageMonth) {
+    const updatedUsage = await UserMonthlyUsageModel.incrementAiPreviewCount(options.userId, options.usageMonth);
+    effectiveMeta = buildAiPreviewMeta({ code: "free" }, updatedUsage);
+    usedThisAnswer = true;
+  }
+
+  return {
+    ...result,
+    freeAiPreview: {
+      enabled: true,
+      limit: effectiveMeta.limit,
+      usedCount: effectiveMeta.usedCount,
+      remainingCount: effectiveMeta.remainingCount,
+      canTryPreview: effectiveMeta.canTryPreview,
+      exhausted: effectiveMeta.exhausted,
+      usedThisAnswer,
+    },
   };
 }
 
@@ -2591,8 +2681,40 @@ async function replyToChat(payload, session) {
   const basePlanContext = resolveChatPlanContext(session, {
     aiAvailable: aiFeatureAvailable,
   });
+  const sessionUser = session?.user || null;
+  const userId = Number(sessionUser?.userId || sessionUser?.id || 0);
+  const usageMonth = UserMonthlyUsageModel.getYearMonth();
+  const freeAiPreviewUsage =
+    userId && canUseAiPreview(basePlanContext.code)
+      ? await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth)
+      : null;
+  const freeAiPreviewMeta = buildAiPreviewMeta(basePlanContext, freeAiPreviewUsage);
+  const aiPreviewRequested = isTruthyFlag(payload.aiPreview);
+  const aiPreviewApproved = aiPreviewRequested && freeAiPreviewMeta.canTryPreview && aiFeatureAvailable;
+  const runtimeSearchPlanCode = aiPreviewApproved ? "standard" : basePlanContext.code;
 
-  const managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(message, target);
+  if (aiPreviewRequested && freeAiPreviewMeta.enabled && !aiPreviewApproved) {
+    const unavailableMessage = freeAiPreviewMeta.exhausted
+      ? `คุณใช้สิทธิ์ลองคำตอบแบบ AI ฟรีครบ ${freeAiPreviewMeta.limit} ครั้งของเดือนนี้แล้ว หากต้องการใช้ AI ต่อเนื่อง แนะนำอัปเกรดเป็นแพ็กเกจ Standard`
+      : "ขณะนี้ยังไม่สามารถใช้ AI preview ได้ กรุณาลองใหม่อีกครั้งในภายหลัง";
+    return attachAiPreviewState(
+      {
+        hasContext: false,
+        answer: unavailableMessage,
+        highlightTerms: [],
+        usedFollowUpContext: false,
+        usedInternetFallback: false,
+        fromCache: false,
+      },
+      {
+        previewMeta: freeAiPreviewMeta,
+      },
+    );
+  }
+
+  const managedSuggestedQuestionMatch = aiPreviewApproved
+    ? null
+    : await findManagedSuggestedQuestionMatch(message, target);
   if (managedSuggestedQuestionMatch) {
     const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
     const matchedSource = managedSuggestedQuestionMatch.source;
@@ -2664,7 +2786,12 @@ async function replyToChat(payload, session) {
       answerText: answer,
     });
 
-    return result;
+    return attachAiPreviewState(result, {
+      previewMeta: freeAiPreviewMeta,
+      consumePreview: aiPreviewApproved && Boolean(answer),
+      userId,
+      usageMonth,
+    });
   }
 
   if (runtimeFlags.useMockAI) {
@@ -2677,27 +2804,34 @@ async function replyToChat(payload, session) {
       answerText: answer,
     });
 
-    return {
+    return attachAiPreviewState({
       hasContext: true,
       answer,
       highlightTerms,
       usedFollowUpContext: false,
       usedInternetFallback: false,
       fromCache: false,
-    };
+    }, {
+      previewMeta: freeAiPreviewMeta,
+      consumePreview: aiPreviewApproved && Boolean(answer),
+      userId,
+      usageMonth,
+    });
   }
 
   const searchPlan = await resolveSearchPlan(message, target, session, {
     requestStartedAt: startedAt,
     totalBudgetMs: CHAT_REPLY_BUDGET_MS,
-    planCode: basePlanContext.code,
+    planCode: runtimeSearchPlanCode,
   });
-  const planContext = applyEconomyDatabaseOnlyMode(
-    basePlanContext,
-    searchPlan.effectiveMessage || message,
-    searchPlan.matches,
-    classifyQuestionIntent(message),
-  );
+  const planContext = aiPreviewApproved
+    ? buildFreeAiPreviewPlanContext(basePlanContext)
+    : applyEconomyDatabaseOnlyMode(
+        basePlanContext,
+        searchPlan.effectiveMessage || message,
+        searchPlan.matches,
+        classifyQuestionIntent(message),
+      );
   const cacheScope = buildAnswerCacheScope(planContext);
   const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target, cacheScope);
   const cacheKey = buildAnswerCacheKey(message, target, planContext);
@@ -2761,7 +2895,12 @@ async function replyToChat(payload, session) {
       answerText: cachedResult.answer,
     });
 
-    return cachedResult;
+    return attachAiPreviewState(cachedResult, {
+      previewMeta: freeAiPreviewMeta,
+      consumePreview: aiPreviewApproved && Boolean(cachedResult.answer),
+      userId,
+      usageMonth,
+    });
   }
 
   if (canUseCache && questionHash) {
@@ -2819,7 +2958,12 @@ async function replyToChat(payload, session) {
           answerText: cachedResult.answer,
         });
 
-        return cachedResult;
+        return attachAiPreviewState(cachedResult, {
+          previewMeta: freeAiPreviewMeta,
+          consumePreview: aiPreviewApproved && Boolean(cachedResult.answer),
+          userId,
+          usageMonth,
+        });
       }
     } catch (error) {
       console.error("[replyToChat] Answer cache lookup failed:", error.message || error);
@@ -2834,7 +2978,7 @@ async function replyToChat(payload, session) {
     databaseOnlyMode: !planContext.useAI,
     sourceLimit: planContext.sourceLimit,
     internetLimit: planContext.maxInternetSources,
-    planCode: planContext.code,
+    planCode: runtimeSearchPlanCode,
   });
   const afterCollectSourcesAt = nowMs();
   const resolvedContext = evidence.resolvedContext;
@@ -2867,7 +3011,7 @@ async function replyToChat(payload, session) {
       questionIntent: evidence.questionIntent,
       databaseOnlyMode: !planContext.useAI,
       promptProfile: planContext.promptProfile,
-      planCode: planContext.code,
+      planCode: runtimeSearchPlanCode,
       target,
     });
   }
@@ -2968,7 +3112,12 @@ async function replyToChat(payload, session) {
     answerText: answer,
   });
 
-  return result;
+  return attachAiPreviewState(result, {
+    previewMeta: freeAiPreviewMeta,
+    consumePreview: aiPreviewApproved && Boolean(answer),
+    userId,
+    usageMonth,
+  });
 }
 
 async function summarizeChat(payload, session) {
@@ -3224,6 +3373,7 @@ async function getUserDashboardData(user) {
   const profile = buildSignedInProfile(signedInUser, persistedUser);
   const planContext = resolveUserPlanContext(profile);
   const questionCount = Number(usage?.question_count || 0);
+  const aiPreview = buildAiPreviewMeta(planContext, usage);
   const questionLimit = Number.isFinite(planContext.monthlyLimit) ? planContext.monthlyLimit : null;
   const remainingQuestions =
     Number.isFinite(questionLimit) ? Math.max(0, questionLimit - questionCount) : null;
@@ -3239,6 +3389,7 @@ async function getUserDashboardData(user) {
       remainingQuestions,
       isUnlimited: planContext.isUnlimited,
     },
+    aiPreview,
     searchHistory: buildSearchHistoryMeta(planContext),
     recentRequests: recentRequests.map((item) => enrichPaymentRequestRecord(item)),
   };
@@ -3271,12 +3422,16 @@ async function getPaymentRequestPageData(user) {
   const signedInUser = user || {};
   const userId = Number(signedInUser.userId || signedInUser.id || 0);
   const currentPlanContext = resolveUserPlanContext(signedInUser);
+  const usageMonth = UserMonthlyUsageModel.getYearMonth();
+  const usage = userId ? await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth) : null;
+  const aiPreview = buildAiPreviewMeta(currentPlanContext, usage);
 
   return {
     appName: "Coopbot Law Chatbot",
     plans: listPurchasablePlans(),
     planComparison: listPlanComparisons(),
     currentPlanContext,
+    aiPreview,
     user: signedInUser,
     recentRequests: userId
       ? (await PaymentRequestModel.listByUserId(userId, 10)).map((item) => enrichPaymentRequestRecord(item))

@@ -142,8 +142,14 @@ async function enforceLawChatbotMonthlyUsageLimit(req, res, next) {
   const sessionUser = req.session?.user || null;
   const userId = Number(sessionUser?.userId || sessionUser?.id || 0);
   const planCode = normalizePlanCode(sessionUser?.plan || "free");
+  const aiPreviewRequested =
+    req.body?.aiPreview === true || String(req.body?.aiPreview || "").trim().toLowerCase() === "true";
   const planConfig = getPlanConfig(planCode);
   const questionLimit = Number(planConfig.monthlyLimit);
+
+  if (aiPreviewRequested && userId && planCode === "free") {
+    return next();
+  }
 
   if (!userId || !Number.isFinite(questionLimit) || questionLimit <= 0) {
     return next();

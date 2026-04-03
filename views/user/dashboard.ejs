@@ -194,6 +194,7 @@
   const profile = data.user || {};
   const planContext = data.planContext || {};
   const usage = data.usage || {};
+  const aiPreview = data.aiPreview || {};
   const searchHistory = data.searchHistory || {};
   const plan = String(profile.plan || planContext.code || "free").toLowerCase();
   const planLabel = planContext.label || String(plan || "free").charAt(0).toUpperCase() + String(plan || "free").slice(1);
@@ -306,6 +307,16 @@
       <% } %>
     </p>
   </article>
+
+  <% if (aiPreview.enabled) { %>
+    <article class="card stat-card">
+      <h2>AI Preview ฟรี</h2>
+      <p class="stat-value"><%= aiPreview.remainingCount || 0 %></p>
+      <p class="stat-note">
+        คุณยังลองคำตอบแบบ AI ได้อีก <strong><%= aiPreview.remainingCount || 0 %></strong> จาก <strong><%= aiPreview.limit || 0 %></strong> ครั้งของเดือน <strong><%= usage.usageMonth || "-" %></strong> เพื่อดูความต่างก่อนอัปเกรด
+      </p>
+    </article>
+  <% } %>
 </section>
 
 <section class="card">
