@@ -1454,9 +1454,46 @@ function normalizeProtectedLineBreaks(text) {
   return String(text || "")
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
     .replace(
-      /((?:พ\.ศ\.|ค\.ศ\.|(?:[\u0E01-\u0E2E]{1,2}\.){2,}))\s*[\r\n]+\s*(?=[0-9๐-๙]{4}(?:\b|$))/gu,
+      /((?:พ\.ศ\.?|ค\.ศ\.?|(?:[\u0E01-\u0E2E]{1,2}\.){2,}))\s*[\r\n]+\s*(?=[0-9๐-๙]{4}(?:\b|$))/gu,
       "$1 ",
     );
+}
+
+function shouldMergeProtectedYearLine(currentLine, nextLine) {
+  const current = cleanLine(currentLine);
+  const next = cleanLine(nextLine);
+
+  if (!current || !next) {
+    return false;
+  }
+
+  return (
+    /(?:พ\.ศ\.?|ค\.ศ\.?|(?:[\u0E01-\u0E2E]{1,2}\.){2,})$/u.test(current) &&
+    /^(?:[0-9๐-๙]{4})(?:\b|$)/u.test(next)
+  );
+}
+
+function mergeProtectedYearLines(lines = []) {
+  const merged = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const current = String(lines[index] || "").trim();
+    const next = String(lines[index + 1] || "").trim();
+
+    if (!current) {
+      continue;
+    }
+
+    if (next && shouldMergeProtectedYearLine(current, next)) {
+      merged.push(cleanLine(`${current} ${next}`));
+      index += 1;
+      continue;
+    }
+
+    merged.push(current);
+  }
+
+  return merged;
 }
 
 function isNoisyLine(text) {
@@ -1498,7 +1535,7 @@ function isSectionHeading(line) {
 function uniqueCleanLines(lines, limit) {
   const results = [];
 
-  for (const line of lines) {
+  for (const line of mergeProtectedYearLines(lines)) {
     const cleaned = cleanLine(line);
     if (!cleaned || isSectionHeading(cleaned) || isNoisyLine(cleaned)) {
       continue;
@@ -1971,7 +2008,7 @@ function splitExplainSections(lines, options = {}) {
   const detail = [];
   let current = "summary";
 
-  for (const rawLine of lines) {
+  for (const rawLine of mergeProtectedYearLines(lines)) {
     const line = cleanLine(rawLine);
     if (!line) {
       continue;
@@ -2004,7 +2041,7 @@ function splitExplainSections(lines, options = {}) {
 }
 
 function normalizeParagraph(text) {
-  return stripStandaloneDoubleSlash(text)
+  return normalizeProtectedLineBreaks(stripStandaloneDoubleSlash(text))
     .replace(/^#{1,6}\s*/gm, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -2206,26 +2243,7 @@ function splitContentSegments(text) {
     .map((segment) => cleanLine(segment))
     .filter(Boolean);
 
-  const mergedSegments = [];
-  for (let index = 0; index < rawSegments.length; index += 1) {
-    const current = cleanLine(rawSegments[index]);
-    const next = cleanLine(rawSegments[index + 1] || "");
-
-    if (
-      current &&
-      next &&
-      /(?:พ\.ศ\.|ค\.ศ\.|(?:[\u0E01-\u0E2E]{1,2}\.){2,})$/u.test(current) &&
-      /^(?:[0-9๐-๙]{4})(?:\b|$)/u.test(next)
-    ) {
-      mergedSegments.push(cleanLine(`${current} ${next}`));
-      index += 1;
-      continue;
-    }
-
-    if (current) {
-      mergedSegments.push(current);
-    }
-  }
+  const mergedSegments = mergeProtectedYearLines(rawSegments);
 
   return mergedSegments;
 }
@@ -3210,8 +3228,12 @@ function decorateConversationalAnswer(answerText, options = {}) {
 }
 
 function extractAnswerBodyLines(answerText) {
-  return normalizeParagraph(answerText)
-    .split("\n")
+  return mergeProtectedYearLines(
+    normalizeParagraph(answerText)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean),
+  )
     .map((line) => cleanLine(line))
     .filter(Boolean)
     .filter((line) => !/^แหล่งอ้างอิง:?$/i.test(line))
@@ -3279,10 +3301,12 @@ function normalizeModelSummary(text, explainMode, sources, options = {}) {
     return "";
   }
 
-  const lines = raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
+  const lines = mergeProtectedYearLines(
+    raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean),
+  )
     .filter((line) => !shouldDropModelOutputLine(line, sources, options));
   const structuredLawClauseLines = getPrimaryStructuredLawClauses(sources, options);
   const minimumSummaryLimit = Math.max(

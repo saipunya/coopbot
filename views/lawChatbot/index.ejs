@@ -2289,9 +2289,17 @@
         return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       }
 
-      function sanitizeDisplayText(text) {
+      function normalizeProtectedDisplayLineBreaks(text) {
         return String(text || '')
           .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+          .replace(
+            /((?:พ\.ศ\.?|ค\.ศ\.?|(?:[\u0E01-\u0E2E]{1,2}\.){2,}))\s*[\r\n]+\s*(?=[0-9๐-๙]{4}(?:\b|$))/gu,
+            '$1 '
+          );
+      }
+
+      function sanitizeDisplayText(text) {
+        return normalizeProtectedDisplayLineBreaks(text)
           .replace(/(^|\n)\s*ข้อมูลที่พบจากฐานข้อมูลกฎหมาย(?:\s*\([^)]*\))?:?\s*(?=\n|$)/gu, '$1')
           .replace(/(^|\n)\s*\/\/\s*/g, '$1')
           .replace(/(^|[\s(])\/\/(?=[\s)]|$)/g, '$1')
@@ -2309,7 +2317,7 @@
         }
 
         const endsWithProtectedAbbreviation =
-          /(?:พ\.ศ\.|ค\.ศ\.|(?:[\u0E01-\u0E2E]{1,2}\.){2,})$/u.test(current);
+          /(?:พ\.ศ\.?|ค\.ศ\.?|(?:[\u0E01-\u0E2E]{1,2}\.){2,})$/u.test(current);
         const nextStartsWithYear =
           /^(?:[0-9๐-๙]{4})(?:\b|$)/u.test(next);
 
