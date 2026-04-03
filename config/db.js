@@ -1,6 +1,105 @@
 const mysql = require("mysql2/promise");
+const {
+  extractExplicitTopicHints,
+  normalizeForSearch,
+  uniqueTokens,
+} = require("../services/thaiTextUtils");
 
 let pool = null;
+
+function buildGlawSearchKeywords(row = {}) {
+  const normalizedLawNumber = normalizeForSearch(row.glaw_number || "").toLowerCase();
+  const normalizedLawPart = normalizeForSearch(row.glaw_part || "").toLowerCase();
+  const sourceText = normalizeForSearch(
+    [
+      row.glaw_number,
+      row.glaw_part,
+      row.glaw_detail,
+      row.glaw_comment,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).toLowerCase();
+
+  if (!sourceText) {
+    return "";
+  }
+
+  const keywords = [
+    normalizedLawNumber,
+    normalizedLawPart.length <= 180 ? normalizedLawPart : "",
+    ...extractExplicitTopicHints(sourceText),
+  ];
+
+  const explicitLawNumberMatch = normalizedLawNumber.match(/([0-9]+(?:\/[0-9]+)?)/);
+  if (explicitLawNumberMatch?.[1]) {
+    const normalizedNumber = explicitLawNumberMatch[1];
+    keywords.push(`มาตรา ${normalizedNumber}`, `มาตรา${normalizedNumber}`, normalizedNumber);
+  }
+
+  if (/(เลิกกลุ่มเกษตรกร|การเลิกกลุ่มเกษตรกร|กลุ่มเกษตรกรย่อมเลิก|สั่งเลิกกลุ่มเกษตรกร|กลุ่มเกษตรกรที่เลิก)/.test(sourceText)) {
+    keywords.push("เลิกกลุ่มเกษตรกร", "การเลิกกลุ่มเกษตรกร", "เลิก", "การเลิก");
+  }
+
+  if (/(ชำระบัญชี|การชำระบัญชี|ผู้ชำระบัญชี)/.test(sourceText)) {
+    keywords.push(
+      "ชำระบัญชี",
+      "การชำระบัญชี",
+      "ชำระบัญชีกลุ่มเกษตรกร",
+      "การชำระบัญชีกลุ่มเกษตรกร",
+    );
+  }
+
+  if (/(จัดตั้งกลุ่มเกษตรกร|จดทะเบียนจัดตั้ง|ใบทะเบียนจัดตั้งกลุ่มเกษตรกร)/.test(sourceText)) {
+    keywords.push("จัดตั้งกลุ่มเกษตรกร", "การจัดตั้งกลุ่มเกษตรกร", "จดทะเบียนจัดตั้งกลุ่มเกษตรกร");
+  }
+
+  return uniqueTokens(
+    keywords
+      .map((keyword) => normalizeForSearch(keyword).toLowerCase())
+      .filter((keyword) => keyword && keyword.length >= 2),
+  )
+    .slice(0, 20)
+    .join(",");
+}
+
+async function backfillGlawSearchKeywords() {
+  if (!pool) {
+    return;
+  }
+
+  try {
+    while (true) {
+      const [rows] = await pool.query(`
+        SELECT glaw_id, glaw_number, glaw_part, glaw_detail, glaw_comment, glaw_search
+        FROM tbl_glaws
+        WHERE COALESCE(TRIM(glaw_search), '') = ''
+        LIMIT 500
+      `);
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        break;
+      }
+
+      for (const row of rows) {
+        const keywords = buildGlawSearchKeywords(row);
+        if (!keywords) {
+          continue;
+        }
+
+        await pool.query(
+          `
+            UPDATE tbl_glaws
+            SET glaw_search = ?
+            WHERE glaw_id = ?
+              AND COALESCE(TRIM(glaw_search), '') = ''
+          `,
+          [keywords, row.glaw_id],
+        );
+      }
+    }
+  } catch (_) {}
+}
 
 function hasDbConfig() {
   return Boolean(
@@ -468,6 +567,8 @@ async function ensureSchema() {
   try {
     await pool.query("ALTER TABLE tbl_glaws ADD COLUMN glaw_search text DEFAULT NULL");
   } catch (_) {}
+
+  await backfillGlawSearchKeywords();
 
   try {
     await pool.query(`

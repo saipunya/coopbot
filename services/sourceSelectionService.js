@@ -692,6 +692,10 @@ function classifyQuestionIntent(message) {
     return "law_section";
   }
 
+  if (isDissolutionPrioritySearch(text) || isLiquidationPrioritySearch(text)) {
+    return "law_section";
+  }
+
   if (isCompensationGovernanceQuestion(text) || asksQaStyle) {
     return "qa";
   }
@@ -721,7 +725,70 @@ function isDissolutionPrioritySearch(message) {
     return false;
   }
 
-  return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก)/.test(normalized);
+  return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก|การเลิกกลุ่มเกษตรกร|เลิกกลุ่มเกษตรกร|สั่งเลิกกลุ่มเกษตรกร|กลุ่มเกษตรกร(?:ย่อม)?(?:ต้อง)?เลิก|ยุบเลิกกลุ่มเกษตรกร)/.test(
+    normalized,
+  );
+}
+
+function isGroupStructuredLawSearch(message) {
+  const normalized = normalizeForSearch(message).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /กลุ่มเกษตรกร|พรฎ\.?\s*กลุ่มเกษตรกร|พระราชกฤษฎีกากลุ่มเกษตรกร|กฎหมายกลุ่มเกษตรกร/.test(
+    normalized,
+  );
+}
+
+function isCoopStructuredLawSearch(message) {
+  const normalized = normalizeForSearch(message).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /สหกรณ์|พรบ\.?\s*สหกรณ์|พระราชบัญญัติสหกรณ์|กฎหมายสหกรณ์/.test(normalized);
+}
+
+function getPreferredDissolutionLawNumberBonuses(message = "") {
+  const mentionsGroupLaw = isGroupStructuredLawSearch(message);
+  const mentionsCoopLaw = isCoopStructuredLawSearch(message);
+
+  if (mentionsGroupLaw && !mentionsCoopLaw) {
+    return {
+      "32": 150,
+      "33": 142,
+      "34": 126,
+    };
+  }
+
+  if (mentionsCoopLaw && !mentionsGroupLaw) {
+    return {
+      "70": 140,
+      "71": 132,
+      "89/3": 116,
+    };
+  }
+
+  return {
+    "70": 140,
+    "71": 132,
+    "89/3": 116,
+    "32": 138,
+    "33": 130,
+    "34": 114,
+  };
+}
+
+function hasExclusiveStructuredLawDomain(message = "", target = "all") {
+  const normalizedTarget = String(target || "all").trim().toLowerCase();
+  if (normalizedTarget === "group" || normalizedTarget === "coop") {
+    return true;
+  }
+
+  const mentionsGroupLaw = isGroupStructuredLawSearch(message);
+  const mentionsCoopLaw = isCoopStructuredLawSearch(message);
+  return mentionsGroupLaw !== mentionsCoopLaw;
 }
 
 function isVinichaiPrioritySearch(message) {
@@ -803,14 +870,14 @@ function getFreeSourcePriorityPlan(message, target = "all") {
 
   if (isDissolutionPrioritySearch(message)) {
     return {
-      [primaryLawSource]: 10,
-      admin_knowledge: 9,
-      vinichai: 8,
-      knowledge_suggestion: 6,
-      documents: 3,
-      [secondaryLawSource]: 2,
-      pdf_chunks: 1,
-      knowledge_base: 1,
+      [primaryLawSource]: 12,
+      admin_knowledge: 6,
+      vinichai: 0,
+      knowledge_suggestion: 2,
+      documents: 1,
+      [secondaryLawSource]: 0,
+      pdf_chunks: 0,
+      knowledge_base: 0,
     };
   }
 
@@ -953,7 +1020,10 @@ async function searchDatabaseSources(message, target, options = {}) {
   const freePlanSearch = isFreePlanSearch(options.planCode);
   const freeSourcePriorityPlan = freePlanSearch ? getFreeSourcePriorityPlan(retrievalMessage || focusMessage, target) : null;
   const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
-  const prioritizeStructuredLawSearch = isLawPrioritySearch(retrievalMessage || focusMessage);
+  const prioritizeStructuredLawSearch =
+    isLawPrioritySearch(retrievalMessage || focusMessage) ||
+    isLiquidationPrioritySearch(retrievalMessage || focusMessage) ||
+    isDissolutionPrioritySearch(retrievalMessage || focusMessage);
 
   if (prioritizeStructuredLawSearch && !freePlanSearch) {
     const structuredMatchesFirst = prioritizeMatches(
@@ -1316,8 +1386,26 @@ function scoreDissolutionSourceFocus(item = {}) {
     score += 42;
   }
 
+  if (/(มาตรา 32|มาตรา32)/.test(sourceText)) {
+    score += 62;
+  }
+  if (/(มาตรา 33|มาตรา33)/.test(sourceText)) {
+    score += 58;
+  }
+  if (/(มาตรา 34|มาตรา34)/.test(sourceText)) {
+    score += 38;
+  }
+
+  if (/(เลิกกลุ่มเกษตรกร|กลุ่มเกษตรกรย่อมเลิก|สั่งเลิกกลุ่มเกษตรกร|การเลิกกลุ่มเกษตรกร)/.test(sourceText)) {
+    score += 48;
+  }
+
   if (/(มีเหตุตามที่กำหนดในข้อบังคับ|สมาชิกน้อยกว่าสิบคน|ที่ประชุมใหญ่ลงมติให้เลิก|ล้มละลาย)/.test(sourceText)) {
     score += 24;
+  }
+
+  if (/(สมาชิกน้อยกว่าสามสิบคน|นายทะเบียนสหกรณ์มีอำนาจสั่งเลิกกลุ่มเกษตรกร|กลุ่มเกษตรกรที่เลิก|ปิดประกาศการเลิกกลุ่มเกษตรกร)/.test(sourceText)) {
+    score += 26;
   }
 
   if (/(ไม่เริ่มดำเนินกิจการภายในหนึ่งปี|หยุดดำเนินกิจการติดต่อกันเป็นเวลาสองปี|ไม่ส่งสำเนารายงานประจำปี|งบการเงินประจำปี|สามปีติดต่อกัน|ก่อให้เกิดความเสียหาย|ดำเนินกิจการไม่เป็นผลดี)/.test(sourceText)) {
@@ -1330,6 +1418,18 @@ function scoreDissolutionSourceFocus(item = {}) {
 
   if (sourceName === "tbl_laws") {
     score += 8;
+  }
+
+  if (sourceName === "tbl_glaws") {
+    score += 12;
+  }
+
+  if (sourceName === "tbl_vinichai") {
+    score -= 18;
+  }
+
+  if (sourceName === "documents" || sourceName === "pdf_chunks") {
+    score -= 22;
   }
 
   if (sourceName === "knowledge_base") {
@@ -1487,11 +1587,7 @@ function rankSourcesForMessageFocus(items, message = "") {
     return ranked;
   }
 
-  const preferredLawNumbers = {
-    "70": 140,
-    "71": 132,
-    "89/3": 116,
-  };
+  const preferredLawNumbers = getPreferredDissolutionLawNumberBonuses(message);
 
   return ranked
     .map((item) => {
@@ -1664,8 +1760,23 @@ function pruneFocusedQueryMatches(matches, message) {
 }
 
 function getFinalSourceCompactionPlan(intent = "general", options = {}) {
-  const compensationGovernanceQuestion = isCompensationGovernanceQuestion(options.originalMessage || options.message || "");
-  const compensationProfile = getCompensationGovernanceProfile(options.originalMessage || options.message || "");
+  const focusMessage = options.originalMessage || options.message || "";
+  const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
+  const compensationProfile = getCompensationGovernanceProfile(focusMessage);
+
+  if (isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage)) {
+    return {
+      totalLimit: 4,
+      quotas: {
+        vinichai: 0,
+        structured_laws: 4,
+        admin_knowledge: 1,
+        document_like: 0,
+        internet: 0,
+      },
+    };
+  }
+
   switch (intent) {
     case "qa":
       if (compensationGovernanceQuestion) {
@@ -1750,9 +1861,13 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
 
 function compactSourcesForSummarization(groups, intent = "general", options = {}) {
   const plan = getFinalSourceCompactionPlan(intent, options);
-  const targetLimit = Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const compacted = [];
   const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const strictStructuredLawFocus =
+    isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage);
+  const targetLimit = strictStructuredLawFocus
+    ? plan.totalLimit
+    : Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
   const pushUnique = (items, limit) => {
     rankSourcesForMessageFocus(items, focusMessage)
@@ -1771,7 +1886,7 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
   pushUnique([...(groups.documents || []), ...(groups.pdf_chunks || [])], plan.quotas.document_like || 0);
   pushUnique(groups.internet, plan.quotas.internet || 0);
 
-  if (compacted.length < targetLimit && !compensationGovernanceQuestion) {
+  if (compacted.length < targetLimit && !compensationGovernanceQuestion && !strictStructuredLawFocus) {
     const fallbackPool = [
       ...(groups.vinichai || []),
       ...(groups.knowledge_base || []),
@@ -1789,10 +1904,46 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
 }
 
 function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
+  const focusMessage = options.originalMessage || options.message || "";
+  const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(
+    focusMessage,
+    options.target || "all",
+  );
+  const exclusiveStructuredLawDomain = hasExclusiveStructuredLawDomain(
+    focusMessage,
+    options.target || "all",
+  );
   const freePlan = isFreePlanSearch(options.planCode);
-  const vinichaiPrioritySearch = isVinichaiPrioritySearch(options.originalMessage || options.message || "");
-  const compensationGovernanceQuestion = isCompensationGovernanceQuestion(options.originalMessage || options.message || "");
-  const compensationProfile = getCompensationGovernanceProfile(options.originalMessage || options.message || "");
+  const vinichaiPrioritySearch = isVinichaiPrioritySearch(focusMessage);
+  const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
+  const compensationProfile = getCompensationGovernanceProfile(focusMessage);
+
+  if (isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage)) {
+    return {
+      totalLimit: 5,
+      quotas: {
+        admin_knowledge: 1,
+        knowledge_suggestion: 0,
+        tbl_laws:
+          primaryLawSource === "tbl_laws"
+            ? 4
+            : secondaryLawSource === "tbl_laws" && !exclusiveStructuredLawDomain
+              ? 1
+              : 0,
+        tbl_glaws:
+          primaryLawSource === "tbl_glaws"
+            ? 4
+            : secondaryLawSource === "tbl_glaws" && !exclusiveStructuredLawDomain
+              ? 1
+              : 0,
+        pdf_chunks: 0,
+        tbl_vinichai: 0,
+        documents: 0,
+        knowledge_base: 0,
+      },
+    };
+  }
+
   switch (intent) {
     case "law_section":
       return {
@@ -1901,6 +2052,23 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
     options.originalMessage || options.message || "",
     options.target || "all",
   );
+
+  if (
+    isDissolutionPrioritySearch(options.originalMessage || options.message || "") ||
+    isLiquidationPrioritySearch(options.originalMessage || options.message || "")
+  ) {
+    return [
+      primaryLawSource,
+      "admin_knowledge",
+      "knowledge_suggestion",
+      secondaryLawSource,
+      "documents",
+      "pdf_chunks",
+      "tbl_vinichai",
+      "knowledge_base",
+    ];
+  }
+
   if (isVinichaiPrioritySearch(options.originalMessage || options.message || "")) {
     return [
       "tbl_vinichai",
@@ -1979,10 +2147,14 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
 
 function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   const plan = getDatabaseOnlySelectionPlan(intent, options);
-  const targetLimit = Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const selected = [];
   const usedTiers = [];
   const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const strictStructuredLawFocus =
+    isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage);
+  const targetLimit = strictStructuredLawFocus
+    ? plan.totalLimit
+    : Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
   const selectionTrace = {
     mode: "database_only",
@@ -2039,7 +2211,7 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
     );
   });
 
-  if (selected.length < targetLimit && !compensationGovernanceQuestion) {
+  if (selected.length < targetLimit && !compensationGovernanceQuestion && !strictStructuredLawFocus) {
     selectionTrace.fallbackUsed = true;
     const fallbackOrder = new Map(sourceOrder.map((sourceName, index) => [sourceName, index]));
     const fallbackPool = rankSourcesForMessageFocus([
