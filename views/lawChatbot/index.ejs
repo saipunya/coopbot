@@ -660,6 +660,7 @@
     }
 
     .bubble-message {
+      display: block;
       flex: 1 1 auto;
       min-width: 0;
       white-space: pre-wrap;
@@ -670,6 +671,7 @@
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
+      white-space: normal;
     }
 
     .context-chip-row {
@@ -710,6 +712,7 @@
       display: flex;
       flex-direction: column;
       gap: 0.14rem;
+      white-space: normal;
     }
 
     .bot-answer-summary strong {
@@ -720,6 +723,7 @@
       display: flex;
       flex-direction: column;
       gap: 0.08rem;
+      white-space: normal;
     }
 
     .bot-answer-section-title {
@@ -742,6 +746,7 @@
       display: flex;
       flex-direction: column;
       gap: 0;
+      white-space: normal;
     }
 
     .bot-answer-bullets li {
@@ -789,6 +794,7 @@
       padding-left: 0.78rem;
       line-height: 1.68;
       color: #18354a;
+      white-space: pre-wrap;
     }
 
     .bot-answer-bullet-card .answer-bullet-card-content {
@@ -968,6 +974,7 @@
 
     .ai-section {
       margin-bottom: 0.16rem;
+      white-space: normal;
     }
 
     .ai-section:last-child {
@@ -993,6 +1000,7 @@
       display: flex;
       flex-direction: column;
       gap: 0;
+      white-space: normal;
     }
 
     .ai-bullets li {
@@ -2584,13 +2592,7 @@
           ? 'answer-bullet-card ai-bullet-card'
           : 'answer-bullet-card bot-answer-bullet-card';
 
-        return `
-          <li>
-            <div class="${cardClass}">
-              <div class="answer-bullet-card-content">${applyHighlightHtml(line, terms)}</div>
-            </div>
-          </li>
-        `;
+        return `<li><div class="${cardClass}"><div class="answer-bullet-card-content">${applyHighlightHtml(line, terms)}</div></div></li>`;
       }
 
       function buildAnswerSectionHtml(title, icon, text, terms) {
@@ -2602,12 +2604,7 @@
           .map((line) => buildBulletCardItemHtml(line, terms, 'bot'))
           .join('');
 
-        return `
-          <div class="bot-answer-section">
-            <div class="bot-answer-section-title"><i class="bi ${icon}"></i>${escapeHtml(title)}</div>
-            <ul class="bot-answer-bullets">${items}</ul>
-          </div>
-        `;
+        return `<div class="bot-answer-section"><div class="bot-answer-section-title"><i class="bi ${icon}"></i>${escapeHtml(title)}</div><ul class="bot-answer-bullets">${items}</ul></div>`;
       }
 
       async function resetConversationContext() {
