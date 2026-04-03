@@ -5,6 +5,7 @@ const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const LawSearchModel = require("../models/lawSearchModel");
 const { wantsExplanation } = require("./chatAnswerService");
 const { isStandaloneLawLookup } = require("./contextService");
+const { parseThaiDateToIso } = require("./documentMetadataService");
 const { normalizePlanCode } = require("./planService");
 const {
   getQueryFocusProfile,
@@ -53,8 +54,360 @@ function prioritizeMatches(matches, options = {}) {
     ...item,
     source: sourceOverride || item.source,
     retrievalPriority,
-    score: Number(item.score || 0) + scoreBoost,
+    rawScore: Number(item.rawScore ?? item.baseScore ?? item.score ?? 0) + scoreBoost,
+    score: Number(item.rawScore ?? item.baseScore ?? item.score ?? 0) + scoreBoost,
   }));
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getMatchBaseScore(item = {}) {
+  return Number(item.rawScore ?? item.baseScore ?? item.score ?? 0);
+}
+
+function parseSourceTimestamp(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    const timestamp = value.getTime();
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+
+  const directTimestamp = Date.parse(text);
+  if (Number.isFinite(directTimestamp)) {
+    return directTimestamp;
+  }
+
+  const thaiIsoDate = parseThaiDateToIso(text);
+  if (thaiIsoDate) {
+    const thaiTimestamp = Date.parse(thaiIsoDate);
+    if (Number.isFinite(thaiTimestamp)) {
+      return thaiTimestamp;
+    }
+  }
+
+  const normalizedDigits = normalizeLawFocusDigits(text);
+  const yearMatch = normalizedDigits.match(/\b(25\d{2}|20\d{2}|19\d{2})\b/);
+  if (!yearMatch?.[1]) {
+    return null;
+  }
+
+  let year = Number(yearMatch[1]);
+  if (year > 2400) {
+    year -= 543;
+  }
+
+  return Number.isFinite(year) ? Date.UTC(year, 0, 1) : null;
+}
+
+function resolveSourceTimestamp(item = {}) {
+  const candidates = [
+    item.documentDate,
+    item.document_date,
+    item.updatedAt,
+    item.updated_at,
+    item.createdAt,
+    item.created_at,
+    item.reviewedAt,
+    item.reviewed_at,
+    item.documentDateText,
+    item.document_date_text,
+  ];
+
+  for (const candidate of candidates) {
+    const timestamp = parseSourceTimestamp(candidate);
+    if (Number.isFinite(timestamp)) {
+      return timestamp;
+    }
+  }
+
+  return null;
+}
+
+function extractRequestedLawReferences(message = "") {
+  const normalizedMessage = normalizeLawFocusDigits(normalizeForSearch(String(message || ""))).toLowerCase();
+  if (!normalizedMessage) {
+    return [];
+  }
+
+  const references = [];
+  const matcher = /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]+(?:\/[0-9]+)?)/g;
+  let match = matcher.exec(normalizedMessage);
+  while (match) {
+    if (match[1]) {
+      references.push(match[1]);
+    }
+    match = matcher.exec(normalizedMessage);
+  }
+
+  return uniqueTokens(references.filter(Boolean));
+}
+
+function getSourceAuthorityTrace(item = {}, intent = "general", message = "") {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  let score = 0;
+  let reason = "";
+
+  const baseWeights = {
+    tbl_laws: 12,
+    tbl_glaws: 12,
+    tbl_vinichai: 10,
+    admin_knowledge: 8,
+    knowledge_suggestion: 6,
+    documents: 5,
+    pdf_chunks: 4,
+    knowledge_base: 1,
+  };
+
+  score += Number(baseWeights[sourceName] || 0);
+
+  if (intent === "law_section") {
+    if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+      score += 8;
+      reason = "structured law source";
+    } else if (sourceName === "tbl_vinichai") {
+      score += 2;
+    } else if (sourceName === "documents" || sourceName === "pdf_chunks") {
+      score -= 1;
+    }
+  } else if (intent === "qa") {
+    if (sourceName === "tbl_vinichai") {
+      score += 8;
+      reason = "vinichai source";
+    } else if (sourceName === "admin_knowledge") {
+      score += 4;
+    }
+  } else if (intent === "document") {
+    if (sourceName === "documents" || sourceName === "pdf_chunks") {
+      score += 7;
+      reason = "document source";
+    } else if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+      score += 1;
+    }
+  } else if (intent === "explain") {
+    if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+      score += 5;
+      reason = "authoritative source";
+    } else if (sourceName === "admin_knowledge") {
+      score += 4;
+    } else if (sourceName === "documents" || sourceName === "pdf_chunks") {
+      score += 3;
+    }
+  }
+
+  if (!reason && (sourceName === "tbl_laws" || sourceName === "tbl_glaws")) {
+    reason = "authoritative source";
+  }
+
+  if (!reason && isClearlyCurrentOrExternalQuestion(message) && (sourceName === "documents" || sourceName === "pdf_chunks")) {
+    reason = "supports current reference";
+  }
+
+  return {
+    score,
+    reason,
+  };
+}
+
+function getSectionMatchTrace(item = {}, message = "", intent = "general") {
+  const requestedReferences = extractRequestedLawReferences(message);
+  const sourceText = normalizeLawFocusDigits(buildSourceFocusSearchText(item));
+  const sourceLawNumber = normalizeLawFocusDigits(extractPrimaryLawFocusNumber(item));
+  let score = 0;
+  let matchedReference = "";
+
+  if (requestedReferences.length > 0) {
+    const exactNumberMatch =
+      sourceLawNumber &&
+      requestedReferences.some((reference) => reference === sourceLawNumber);
+
+    if (exactNumberMatch) {
+      score += 18;
+      matchedReference = sourceLawNumber;
+    } else {
+      const textMatch = requestedReferences.find((reference) =>
+        sourceText.includes(`มาตรา ${reference}`) ||
+        sourceText.includes(`ข้อ ${reference}`) ||
+        sourceText.includes(`วรรค ${reference}`) ||
+        sourceText.includes(`อนุมาตรา ${reference}`),
+      );
+
+      if (textMatch) {
+        score += 12;
+        matchedReference = textMatch;
+      } else if (intent === "law_section" && sourceLawNumber) {
+        score -= 6;
+      }
+    }
+  } else if (intent === "law_section" && sourceLawNumber) {
+    score += 4;
+  }
+
+  return {
+    score,
+    matchedReference,
+    requestedReferences: requestedReferences.slice(0, 4),
+  };
+}
+
+function getFocusAlignmentTrace(item = {}, message = "") {
+  const rawFocusScore = Number(scoreQueryFocusAlignment(message, buildSourceFocusSearchText(item)) || 0);
+  return {
+    rawFocusScore,
+    score: Math.round(clamp(rawFocusScore, -20, 60) * 0.18),
+  };
+}
+
+function getFreshnessTrace(item = {}, message = "", intent = "general") {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  const timestamp = resolveSourceTimestamp(item);
+  const currentBias =
+    intent === "document" ||
+    intent === "short_answer" ||
+    isClearlyCurrentOrExternalQuestion(message);
+
+  if (!Number.isFinite(timestamp)) {
+    return {
+      score: 0,
+      sourceDate: "",
+      ageDays: null,
+    };
+  }
+
+  const ageDays = Math.max(0, Math.round((Date.now() - timestamp) / (24 * 60 * 60 * 1000)));
+  let score = 0;
+
+  if (sourceName === "documents" || sourceName === "pdf_chunks" || sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion") {
+    if (ageDays <= 30) {
+      score = currentBias ? 10 : 5;
+    } else if (ageDays <= 180) {
+      score = currentBias ? 8 : 4;
+    } else if (ageDays <= 365) {
+      score = currentBias ? 6 : 3;
+    } else if (ageDays <= 1095) {
+      score = currentBias ? 3 : 1;
+    } else if (currentBias) {
+      score = -2;
+    }
+  }
+
+  return {
+    score,
+    sourceDate: new Date(timestamp).toISOString().slice(0, 10),
+    ageDays,
+  };
+}
+
+function buildRerankReasons({
+  retrievalWeight,
+  authorityTrace,
+  sectionTrace,
+  focusTrace,
+  freshnessTrace,
+  item,
+}) {
+  const reasons = [];
+
+  if (Number(retrievalWeight || 0) >= 8) {
+    reasons.push("high-priority retrieval bucket");
+  } else if (Number(retrievalWeight || 0) >= 4) {
+    reasons.push("preferred source bucket");
+  }
+
+  if (authorityTrace?.reason) {
+    reasons.push(authorityTrace.reason);
+  }
+
+  if (sectionTrace?.matchedReference) {
+    reasons.push(`matched section ${sectionTrace.matchedReference}`);
+  }
+
+  if (Number(focusTrace?.rawFocusScore || 0) >= 44) {
+    reasons.push("strong topic alignment");
+  } else if (Number(focusTrace?.rawFocusScore || 0) >= 24) {
+    reasons.push("good topic alignment");
+  }
+
+  if (Number(freshnessTrace?.score || 0) > 0 && freshnessTrace?.sourceDate) {
+    reasons.push(`fresh source (${freshnessTrace.sourceDate})`);
+  }
+
+  if (item?.contextCarry) {
+    reasons.push("carried from follow-up context");
+  }
+
+  return reasons.slice(0, 5);
+}
+
+function rerankRetrievedMatches(matches, message, options = {}) {
+  const intent = options.intent || "general";
+
+  return (Array.isArray(matches) ? matches : [])
+    .filter(Boolean)
+    .map((item) => {
+      const baseScore = getMatchBaseScore(item);
+      const retrievalWeight = Math.round(Number(item.retrievalPriority || 0) * 1.2);
+      const authorityTrace = getSourceAuthorityTrace(item, intent, message);
+      const sectionTrace = getSectionMatchTrace(item, message, intent);
+      const focusTrace = getFocusAlignmentTrace(item, message);
+      const freshnessTrace = getFreshnessTrace(item, message, intent);
+      const contextWeight = item.contextCarry ? 6 : 0;
+      const finalScore = Math.round(
+        baseScore +
+        retrievalWeight +
+        Number(authorityTrace.score || 0) +
+        Number(sectionTrace.score || 0) +
+        Number(focusTrace.score || 0) +
+        Number(freshnessTrace.score || 0) +
+        contextWeight,
+      );
+
+      return {
+        ...item,
+        rawScore: baseScore,
+        score: finalScore,
+        rankingTrace: {
+          baseScore,
+          finalScore,
+          retrievalPriority: Number(item.retrievalPriority || 0),
+          retrievalWeight,
+          authorityScore: Number(authorityTrace.score || 0),
+          sectionScore: Number(sectionTrace.score || 0),
+          focusScore: Number(focusTrace.score || 0),
+          focusAlignmentRaw: Number(focusTrace.rawFocusScore || 0),
+          freshnessScore: Number(freshnessTrace.score || 0),
+          contextWeight,
+          matchedReference: sectionTrace.matchedReference || "",
+          sourceDate: freshnessTrace.sourceDate || "",
+          ageDays: freshnessTrace.ageDays,
+          reasons: buildRerankReasons({
+            retrievalWeight,
+            authorityTrace,
+            sectionTrace,
+            focusTrace,
+            freshnessTrace,
+            item,
+          }),
+        },
+      };
+    })
+    .sort((left, right) => {
+      const scoreDiff = Number(right.score || 0) - Number(left.score || 0);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      return Number(getMatchBaseScore(right) || 0) - Number(getMatchBaseScore(left) || 0);
+    });
 }
 
 function isCompensationGovernanceQuestion(message) {
@@ -368,23 +721,27 @@ function getSourceRoutingPlan(intent) {
 }
 
 async function searchDatabaseSources(message, target, options = {}) {
-  const intent = classifyQuestionIntent(message);
+  const retrievalMessage = String(message || "").trim();
+  const focusMessage = String(options.originalMessage || retrievalMessage).trim();
+  const intent = classifyQuestionIntent(retrievalMessage || focusMessage);
   const routingPlan = getSourceRoutingPlan(intent);
   const freePlanSearch = isFreePlanSearch(options.planCode);
-  const freeSourcePriorityPlan = freePlanSearch ? getFreeSourcePriorityPlan(message, target) : null;
+  const freeSourcePriorityPlan = freePlanSearch ? getFreeSourcePriorityPlan(retrievalMessage || focusMessage, target) : null;
   const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
-  const prioritizeStructuredLawSearch = isLawPrioritySearch(message);
+  const prioritizeStructuredLawSearch = isLawPrioritySearch(retrievalMessage || focusMessage);
 
   if (prioritizeStructuredLawSearch && !freePlanSearch) {
     const structuredMatchesFirst = prioritizeMatches(
-      await LawSearchModel.searchStructuredLaws(message, target, 8),
+      await LawSearchModel.searchStructuredLaws(retrievalMessage, target, 8),
       {
         retrievalPriority: routingPlan.priorities.structured_laws || 5,
       },
     );
 
     if (structuredMatchesFirst.length > 0) {
-      return structuredMatchesFirst;
+      return rerankRetrievedMatches(pruneFocusedQueryMatches(structuredMatchesFirst, focusMessage), focusMessage, {
+        intent,
+      });
     }
   }
 
@@ -397,15 +754,15 @@ async function searchDatabaseSources(message, target, options = {}) {
     rawStructuredMatches,
     rawVinichaiMatches,
   ] = await Promise.all([
-    LawChatbotKnowledgeModel.searchKnowledge(message, target, 5),
+    LawChatbotKnowledgeModel.searchKnowledge(retrievalMessage, target, 5),
     freePlanSearch
-      ? LawChatbotKnowledgeSuggestionModel.searchApproved(message, target, 5)
+      ? LawChatbotKnowledgeSuggestionModel.searchApproved(retrievalMessage, target, 5)
       : Promise.resolve([]),
-    LawChatbotPdfChunkModel.searchDocuments(message, 5),
-    withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(message, 6), hybridTimeoutMs, [], "hybrid-search"),
-    Promise.resolve(LawChatbotModel.searchKnowledge(message, target)),
-    LawSearchModel.searchStructuredLaws(message, target, 6),
-    LawSearchModel.searchVinichai(message, 5),
+    LawChatbotPdfChunkModel.searchDocuments(retrievalMessage, 5),
+    withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(retrievalMessage, 6), hybridTimeoutMs, [], "hybrid-search"),
+    Promise.resolve(LawChatbotModel.searchKnowledge(retrievalMessage, target)),
+    LawSearchModel.searchStructuredLaws(retrievalMessage, target, 6),
+    LawSearchModel.searchVinichai(retrievalMessage, 5),
   ]);
 
   const knowledgeMatches = prioritizeMatches(rawKnowledgeMatches, {
@@ -471,7 +828,9 @@ async function searchDatabaseSources(message, target, options = {}) {
     })
     .slice(0, 120);
 
-  return pruneFocusedQueryMatches(combinedMatches, message);
+  return rerankRetrievedMatches(pruneFocusedQueryMatches(combinedMatches, focusMessage), focusMessage, {
+    intent,
+  });
 }
 
 function scoreMatchSet(matches) {
@@ -629,7 +988,7 @@ function scoreUnionFeeSourceFocus(item = {}) {
     score -= 48;
   }
 
-  score += Number(item.score || 0) * 0.15;
+  score += getMatchBaseScore(item) * 0.15;
   return score;
 }
 
@@ -705,7 +1064,7 @@ function scoreCompensationGovernanceSourceFocus(item = {}, message = "") {
     score -= 64;
   }
 
-  score += Number(item.score || 0) * 0.12;
+  score += getMatchBaseScore(item) * 0.12;
   return score;
 }
 
@@ -760,7 +1119,7 @@ function scoreDissolutionSourceFocus(item = {}) {
     score -= 36;
   }
 
-  score += Number(item.score || 0) * 0.12;
+  score += getMatchBaseScore(item) * 0.12;
   return score;
 }
 
@@ -1400,9 +1759,23 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   const usedTiers = [];
   const focusMessage = String(options.originalMessage || options.message || "").trim();
   const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
+  const selectionTrace = {
+    mode: "database_only",
+    tiers: [],
+    fallbackUsed: false,
+  };
 
   const pushUnique = (items, limit, tierName) => {
     const ranked = rankSourcesForMessageFocus(items, focusMessage).slice(0, limit);
+    const tierTrace = {
+      tier: tierName,
+      requestedLimit: limit,
+      candidateCount: Array.isArray(items) ? items.length : 0,
+      topScore: Number(ranked[0]?.score || 0),
+      selectedCount: 0,
+    };
+    selectionTrace.tiers.push(tierTrace);
+
     if (ranked.length === 0) {
       return;
     }
@@ -1412,7 +1785,11 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
       if (selected.find((existing) => areNearDuplicateSources(existing, item))) {
         return;
       }
-      selected.push(item);
+      selected.push({
+        ...item,
+        selectionTier: item.selectionTier || tierName,
+      });
+      tierTrace.selectedCount += 1;
     });
   };
 
@@ -1438,6 +1815,7 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   });
 
   if (selected.length < targetLimit && !compensationGovernanceQuestion) {
+    selectionTrace.fallbackUsed = true;
     const fallbackOrder = new Map(sourceOrder.map((sourceName, index) => [sourceName, index]));
     const fallbackPool = rankSourcesForMessageFocus([
       ...(groups.admin_knowledge || []),
@@ -1474,6 +1852,10 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   return {
     selectedSourceTier: usedTiers.join(" > ") || "none",
     selectedSources: selected.slice(0, targetLimit || plan.totalLimit),
+    selectionTrace: {
+      ...selectionTrace,
+      selectedCount: Math.min(selected.length, targetLimit || plan.totalLimit),
+    },
   };
 }
 
@@ -1499,12 +1881,30 @@ function selectTieredSources(groups, intent = "general", options = {}) {
   const selected = [];
   const usedTiers = [];
   const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const selectionTrace = {
+    mode: "tiered",
+    tiers: [],
+  };
 
   plan.forEach(({ key, limit }) => {
     const ranked = rankSourcesForMessageFocus(groups[key], focusMessage).slice(0, limit);
+    const tierTrace = {
+      tier: key,
+      requestedLimit: limit,
+      candidateCount: Array.isArray(groups[key]) ? groups[key].length : 0,
+      topScore: Number(ranked[0]?.score || 0),
+      selectedCount: ranked.length,
+    };
+    selectionTrace.tiers.push(tierTrace);
+
     if (ranked.length > 0) {
       usedTiers.push(key);
-      selected.push(...ranked);
+      selected.push(
+        ...ranked.map((item) => ({
+          ...item,
+          selectionTier: item.selectionTier || key,
+        })),
+      );
     }
   });
 
@@ -1526,6 +1926,10 @@ function selectTieredSources(groups, intent = "general", options = {}) {
   return {
     selectedSourceTier: usedTiers.join(" > ") || "none",
     selectedSources: compactedSelected,
+    selectionTrace: {
+      ...selectionTrace,
+      selectedCount: compactedSelected.length,
+    },
   };
 }
 

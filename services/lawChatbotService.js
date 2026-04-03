@@ -143,7 +143,7 @@ async function collectAnswerSources(message, target, session, options = {}) {
     internet: internetMatches,
   };
 
-  const { selectedSourceTier, selectedSources } = selectTieredSources(grouped, questionIntent, {
+  const { selectedSourceTier, selectedSources, selectionTrace } = selectTieredSources(grouped, questionIntent, {
     databaseOnlyMode: options.databaseOnlyMode === true,
     sourceLimit: options.sourceLimit,
     planCode: options.planCode,
@@ -161,6 +161,7 @@ async function collectAnswerSources(message, target, session, options = {}) {
     internetMatches,
     sources: selectedSources,
     selectedSourceTier,
+    selectionTrace,
     usedInternetFallback,
     usedInternetSearch: shouldSearchInternet && !shouldSkipInternetForBudget,
     skippedInternetSearch: shouldSkipInternetForBudget,
@@ -610,6 +611,8 @@ async function replyToChat(payload, session) {
       internetMatches: evidence.internetMatches?.length || 0,
       answerMode: planContext.answerMode || (planContext.useAI ? "ai" : "db_only"),
       promptProfile: planContext.promptProfile?.code || "template",
+      queryRewrite: evidence.queryRewriteTrace || null,
+      selectionTrace: evidence.selectionTrace || null,
       timing: {
         ...(evidence.timing || {}),
         answerGenerationMs: Math.round(afterAnswerGenerationAt - afterCollectSourcesAt),
@@ -617,8 +620,11 @@ async function replyToChat(payload, session) {
       },
       sources: sources.map((item) => ({
         source: item.source || "",
+        selectionTier: item.selectionTier || "",
         reference: item.reference || item.title || "",
         score: Number(item.score || 0),
+        rawScore: Number(item.rawScore ?? item.score ?? 0),
+        rankingTrace: item.rankingTrace || null,
         preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
       })),
     };
