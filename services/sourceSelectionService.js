@@ -11,6 +11,7 @@ const {
   getQueryFocusProfile,
   normalizeForSearch,
   scoreQueryFocusAlignment,
+  uniqueTokens,
 } = require("./thaiTextUtils");
 
 const HYBRID_SEARCH_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_HYBRID_SEARCH_TIMEOUT_MS || 4000);
