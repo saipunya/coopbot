@@ -2,12 +2,15 @@ const LawChatbotSuggestedQuestionModel = require("../models/lawChatbotSuggestedQ
 const UserSearchHistoryModel = require("../models/userSearchHistoryModel");
 const { wantsExplanation } = require("./chatAnswerService");
 const {
-  getSessionContext,
   isStandaloneLawLookup,
   looksLikeFollowUpQuestion,
   resolveMessageWithContext,
   startsWithFollowUpLead,
 } = require("./contextService");
+const {
+  buildQueryRewriteCandidates,
+  buildQueryRewriteTrace,
+} = require("./queryRewriteService");
 const {
   computeDbConfidence,
   isClearlyCurrentOrExternalQuestion,
@@ -24,272 +27,12 @@ const {
   resolveUserPlanContext,
   shouldUseAIForPlan,
 } = require("./planService");
-const {
-  expandSearchConcepts,
-  extractExplicitTopicHints,
-  getQueryFocusProfile,
-  normalizeForSearch,
-  segmentWords,
-  uniqueTokens,
-} = require("./thaiTextUtils");
+const { extractExplicitTopicHints, normalizeForSearch } = require("./thaiTextUtils");
 
 const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
 const CHAT_BUDGET_BUFFER_MS = Number(process.env.CHAT_BUDGET_BUFFER_MS || 3000);
 const CHAT_REPLY_BUDGET_MS = Math.max(2000, CHAT_REQUEST_TIMEOUT_MS - CHAT_BUDGET_BUFFER_MS);
 const MIN_CONTEXT_RESEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_CONTEXT_RESEARCH_MIN_BUDGET_MS || 7000);
-
-function normalizeRewriteQuery(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function stripFollowUpLeadText(message) {
-  return normalizeRewriteQuery(
-    String(message || "").replace(
-      /^(ตกลง|แล้ว|แล้วถ้า|ส่วน|ประเด็นนี้|กรณีนี้|สรุปแล้ว|ท้ายที่สุด|เรื่องนี้|หัวข้อนี้)\s*/i,
-      "",
-    ),
-  );
-}
-
-function getLegalRewriteAliases(message) {
-  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
-  if (!normalizedMessage) {
-    return [];
-  }
-
-  const aliases = [];
-
-  if (/(ได้ไหม|ได้หรือไม่|ทำได้ไหม|ทำได้หรือไม่)/.test(normalizedMessage)) {
-    aliases.push("ได้หรือไม่", "มีสิทธิ", "สามารถ");
-  }
-
-  if (/(มาตราไหน|ข้อไหน|วรรคไหน|อนุมาตราไหน)/.test(normalizedMessage)) {
-    aliases.push("มาตรา", "ข้อ", "วรรค", "อนุมาตรา");
-  }
-
-  if (/(หน้าที่|มีหน้าที่|อำนาจหน้าที่)/.test(normalizedMessage)) {
-    aliases.push("อำนาจหน้าที่", "หน้าที่ของ", "บทบาท");
-  }
-
-  if (/(คุณสมบัติ|ลักษณะต้องห้าม|ขาดจากการเป็น)/.test(normalizedMessage)) {
-    aliases.push("คุณสมบัติ", "ลักษณะต้องห้าม", "ขาดจากการเป็น");
-  }
-
-  if (/(ประชุมใหญ่|ประชุมคณะกรรมการ|ประชุมกรรมการ)/.test(normalizedMessage)) {
-    aliases.push("องค์ประชุม", "วาระการประชุม");
-  }
-
-  return uniqueTokens(
-    aliases
-      .map((alias) => normalizeRewriteQuery(alias))
-      .filter(Boolean),
-  ).slice(0, 6);
-}
-
-function rewriteSearchQuery(message, context = {}) {
-  const baseMessage = normalizeRewriteQuery(message);
-  const expandedQueryText = normalizeRewriteQuery(expandSearchConcepts(baseMessage)) || baseMessage;
-  const focusProfile = getQueryFocusProfile(expandedQueryText);
-  const topicAliases = uniqueTokens(
-    focusProfile.topics.flatMap((topic) => [topic.primary, ...(topic.aliases || [])]).filter(Boolean),
-  );
-  const contextSignals = uniqueTokens(
-    focusProfile.topics.flatMap((topic) => topic.contextSignals || []).filter(Boolean),
-  );
-  const legalAliases = uniqueTokens([
-    ...topicAliases,
-    ...getLegalRewriteAliases(expandedQueryText),
-  ])
-    .map((alias) => normalizeRewriteQuery(alias))
-    .filter((alias) => alias && alias.toLowerCase() !== expandedQueryText.toLowerCase())
-    .slice(0, 6);
-  const expandedKeywords = uniqueTokens([
-    ...(context.topicAnchor ? [context.topicAnchor] : []),
-    ...(context.sourceAnchors || []),
-    ...extractExplicitTopicHints(expandedQueryText),
-    ...segmentWords(stripFollowUpLeadText(expandedQueryText)).filter((token) => String(token || "").trim().length >= 3),
-    ...contextSignals,
-  ])
-    .map((keyword) => normalizeRewriteQuery(keyword))
-    .filter((keyword) => {
-      if (!keyword) {
-        return false;
-      }
-
-      const normalizedKeyword = keyword.toLowerCase();
-      if (normalizedKeyword === expandedQueryText.toLowerCase()) {
-        return false;
-      }
-
-      return !legalAliases.some((alias) => alias.toLowerCase() === normalizedKeyword);
-    })
-    .slice(0, 8);
-  const retrievalQuery = normalizeRewriteQuery(
-    [
-      expandedQueryText,
-      ...expandedKeywords.slice(0, 3),
-      ...legalAliases.slice(0, 2),
-    ].join(" "),
-  );
-
-  return {
-    effectiveQuery: expandedQueryText,
-    retrievalQuery: retrievalQuery || expandedQueryText,
-    expandedKeywords,
-    legalAliases,
-  };
-}
-
-function getRecentRewriteAnchors(session, target) {
-  const recent = getSessionContext(session).find((item) => item && item.target === target);
-  const recentTopic = Array.isArray(recent?.topicHints) ? String(recent.topicHints[0] || "").trim() : "";
-  const sourceAnchors = (Array.isArray(recent?.focusSources) ? recent.focusSources : [])
-    .map((source) => String(source.reference || source.title || source.lawNumber || source.keyword || "").trim())
-    .filter((value) => value && value.length >= 4)
-    .slice(0, 2);
-
-  return {
-    recentTopic,
-    sourceAnchors,
-  };
-}
-
-function isAmbiguousFollowUpQuestion(message, contextualCandidate = {}) {
-  const text = normalizeRewriteQuery(message);
-  if (!text) {
-    return false;
-  }
-
-  if (contextualCandidate?.usedContext) {
-    return true;
-  }
-
-  if (text.length <= 18) {
-    return true;
-  }
-
-  if (startsWithFollowUpLead(text)) {
-    return true;
-  }
-
-  return (
-    extractExplicitTopicHints(text).length === 0 &&
-    /(มาตราไหน|ข้อไหน|วรรคไหน|อันไหน|แบบไหน|เรื่องนี้|กรณีนี้|อย่างไร|ยังไง|ได้ไหม|ได้หรือไม่|มีหน้าที่|คุณสมบัติ|ลักษณะต้องห้าม)/.test(
-      text,
-    )
-  );
-}
-
-function buildQueryRewriteCandidates(message, target, session, contextualCandidate = {}) {
-  const baseMessage = normalizeRewriteQuery(message);
-  const strippedMessage = stripFollowUpLeadText(baseMessage) || baseMessage;
-  const { recentTopic, sourceAnchors } = getRecentRewriteAnchors(session, target);
-  const topicAnchor = String(contextualCandidate?.topicHints?.[0] || recentTopic || "").trim();
-  const ambiguousFollowUp = isAmbiguousFollowUpQuestion(baseMessage, contextualCandidate);
-  const asksLawSection = /(มาตรา|ข้อ|วรรค|อนุมาตรา|มาตราไหน|ข้อไหน)/.test(baseMessage);
-  const seen = new Set();
-  const candidates = [];
-
-  const pushCandidate = (query, metadata = {}) => {
-    const rewritten = rewriteSearchQuery(query, {
-      topicAnchor,
-      sourceAnchors,
-      ambiguousFollowUp,
-      type: metadata.type,
-    });
-    const normalizedKey = String(rewritten.retrievalQuery || "").toLowerCase();
-    if (!rewritten.effectiveQuery || !normalizedKey || seen.has(normalizedKey)) {
-      return;
-    }
-
-    seen.add(normalizedKey);
-    candidates.push({
-      query: rewritten.retrievalQuery,
-      effectiveQuery: rewritten.effectiveQuery,
-      retrievalQuery: rewritten.retrievalQuery,
-      expandedKeywords: rewritten.expandedKeywords,
-      legalAliases: rewritten.legalAliases,
-      type: metadata.type || "original",
-      reason: metadata.reason || "",
-    });
-  };
-
-  pushCandidate(baseMessage, {
-    type: "original",
-    reason: "original user query",
-  });
-
-  if (contextualCandidate?.usedContext && contextualCandidate.effectiveMessage && contextualCandidate.effectiveMessage !== baseMessage) {
-    pushCandidate(contextualCandidate.effectiveMessage, {
-      type: "contextual",
-      reason: "session follow-up context",
-    });
-  }
-
-  if (ambiguousFollowUp && topicAnchor) {
-    pushCandidate(`${topicAnchor} ${strippedMessage}`, {
-      type: "topic_anchor",
-      reason: "recent topic anchor",
-    });
-  }
-
-  if (ambiguousFollowUp && sourceAnchors.length > 0 && (asksLawSection || strippedMessage.length <= 40)) {
-    pushCandidate(`${sourceAnchors[0]} ${strippedMessage}`, {
-      type: "source_anchor",
-      reason: "recent source anchor",
-    });
-  }
-
-  return {
-    ambiguousFollowUp,
-    candidates: candidates.slice(0, 4),
-  };
-}
-
-function buildQueryRewriteTrace(baseMessage, candidateResults, selectedCandidate, options = {}) {
-  const selectedSummary = selectedCandidate
-    ? [
-        selectedCandidate.reason || "",
-        Array.isArray(selectedCandidate.expandedKeywords) && selectedCandidate.expandedKeywords.length > 0
-          ? `expanded with ${selectedCandidate.expandedKeywords.slice(0, 2).join(", ")}`
-          : "",
-        Array.isArray(selectedCandidate.legalAliases) && selectedCandidate.legalAliases.length > 0
-          ? `legal aliases ${selectedCandidate.legalAliases.slice(0, 2).join(", ")}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" + ")
-    : "";
-
-  return {
-    originalQuery: baseMessage,
-    effectiveQuery: selectedCandidate?.effectiveQuery || baseMessage,
-    selectedQuery: selectedCandidate?.retrievalQuery || selectedCandidate?.query || baseMessage,
-    selectedType: selectedCandidate?.type || "original",
-    decision: options.decision || "",
-    summary: selectedSummary,
-    usedContext: Boolean(options.usedContext),
-    ambiguousFollowUp: Boolean(options.ambiguousFollowUp),
-    implicitFollowUpQuestion: Boolean(options.implicitFollowUpQuestion),
-    shortFollowUpBias: Boolean(options.shortFollowUpBias),
-    expandedKeywords: Array.isArray(selectedCandidate?.expandedKeywords) ? selectedCandidate.expandedKeywords : [],
-    legalAliases: Array.isArray(selectedCandidate?.legalAliases) ? selectedCandidate.legalAliases : [],
-    candidates: (Array.isArray(candidateResults) ? candidateResults : []).map((candidate) => ({
-      type: candidate.type || "original",
-      effectiveQuery: candidate.effectiveQuery || candidate.query || "",
-      query: candidate.retrievalQuery || candidate.query || "",
-      reason: candidate.reason || "",
-      expandedKeywords: Array.isArray(candidate.expandedKeywords) ? candidate.expandedKeywords : [],
-      legalAliases: Array.isArray(candidate.legalAliases) ? candidate.legalAliases : [],
-      matchCount: Number(candidate.matchCount || 0),
-      topScore: Number(candidate.topScore || 0),
-      aggregateScore: Number(candidate.score || 0),
-      selected:
-        candidate.type === selectedCandidate?.type &&
-        (candidate.retrievalQuery || candidate.query) === (selectedCandidate?.retrievalQuery || selectedCandidate?.query),
-    })),
-  };
-}
 
 function nowMs() {
   return Number(process.hrtime.bigint()) / 1e6;
@@ -530,7 +273,7 @@ async function resolveSearchPlan(message, target, session, options = {}) {
         baseTopicHints.length === 0
       )
     );
-  const { ambiguousFollowUp, candidates } = buildQueryRewriteCandidates(
+  const { ambiguousFollowUp, candidates } = await buildQueryRewriteCandidates(
     baseMessage,
     target,
     session,
