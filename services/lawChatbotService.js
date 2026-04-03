@@ -467,11 +467,7 @@ function cleanupSuggestionThrottle() {
     }
   }
 }
-async function searchInternetSources(message, target, options = {}) {
-  const query = String(message || "").trim();
-  if (!query) {
-    return [];
-  }
+
 
   const targetKeyword =
     target === "group" ? "กลุ่มเกษตรกร" : target === "coop" ? "สหกรณ์" : "สหกรณ์ กลุ่มเกษตรกร";
