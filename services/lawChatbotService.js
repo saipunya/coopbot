@@ -533,7 +533,7 @@ async function searchInternetSources(message, target, options = {}) {
         ...result,
         source: "internet_search",
         reference: result.title || result.domain || result.url || "ข้อมูลจากอินเทอร์เน็ต",
-        content: result.snippet || result.title || "",
+        content: result.snippet || "",
         score: baseScore,
       };
     });
@@ -621,58 +621,104 @@ function isDissolutionPrioritySearch(message) {
   return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก)/.test(normalized);
 }
 
+function isVinichaiPrioritySearch(message) {
+  const normalized = normalizeForSearch(message).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ|ถามตอบ|คำถามคำตอบ/.test(normalized);
+}
+
 function isFreePlanSearch(planCode = "") {
   return normalizePlanCode(planCode || "free") === "free";
 }
 
-function getFreeSourcePriorityPlan(message) {
+function resolvePreferredStructuredLawSources(message, target = "all") {
+  const normalizedMessage = normalizeForSearch(message).toLowerCase();
+  const normalizedTarget = String(target || "all").trim().toLowerCase();
+  const mentionsGroupLaw = /กลุ่มเกษตรกร|พรบ\.?\s*กลุ่มเกษตรกร|พระราชกฤษฎีกากลุ่มเกษตรกร|กฎหมายกลุ่มเกษตรกร/.test(
+    normalizedMessage,
+  );
+  const mentionsCoopLaw = /สหกรณ์|พรบ\.?\s*สหกรณ์|พระราชบัญญัติสหกรณ์|กฎหมายสหกรณ์/.test(
+    normalizedMessage,
+  );
+
+  if (normalizedTarget === "group" || (mentionsGroupLaw && !mentionsCoopLaw)) {
+    return {
+      primaryLawSource: "tbl_glaws",
+      secondaryLawSource: "tbl_laws",
+    };
+  }
+
+  return {
+    primaryLawSource: "tbl_laws",
+    secondaryLawSource: "tbl_glaws",
+  };
+}
+
+function getFreeSourcePriorityPlan(message, target = "all") {
+  const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(message, target);
+  if (isVinichaiPrioritySearch(message)) {
+    return {
+      vinichai: 10,
+      admin_knowledge: 9,
+      knowledge_suggestion: 6,
+      [primaryLawSource]: 4,
+      [secondaryLawSource]: 3,
+      documents: 2,
+      pdf_chunks: 1,
+      knowledge_base: 1,
+    };
+  }
+
   if (isLawPrioritySearch(message)) {
     return {
-      tbl_laws: 10,
-      tbl_glaws: 9,
+      [primaryLawSource]: 10,
       admin_knowledge: 8,
-      knowledge_suggestion: 7,
-      vinichai: 6,
-      documents: 4,
-      pdf_chunks: 3,
+      vinichai: 7,
+      knowledge_suggestion: 6,
+      [secondaryLawSource]: 5,
+      documents: 2,
+      pdf_chunks: 1,
       knowledge_base: 1,
     };
   }
 
   if (isLiquidationPrioritySearch(message)) {
     return {
-      tbl_laws: 10,
+      [primaryLawSource]: 10,
       admin_knowledge: 8,
-      knowledge_suggestion: 7,
-      documents: 5,
-      pdf_chunks: 4,
-      vinichai: 3,
-      tbl_glaws: 2,
+      vinichai: 7,
+      knowledge_suggestion: 6,
+      documents: 3,
+      [secondaryLawSource]: 2,
+      pdf_chunks: 1,
       knowledge_base: 1,
     };
   }
 
   if (isDissolutionPrioritySearch(message)) {
     return {
-      tbl_laws: 10,
+      [primaryLawSource]: 10,
       admin_knowledge: 9,
-      knowledge_suggestion: 7,
-      documents: 5,
-      pdf_chunks: 4,
-      vinichai: 3,
-      tbl_glaws: 2,
+      vinichai: 8,
+      knowledge_suggestion: 6,
+      documents: 3,
+      [secondaryLawSource]: 2,
+      pdf_chunks: 1,
       knowledge_base: 1,
     };
   }
 
   return {
     admin_knowledge: 10,
-    knowledge_suggestion: 9,
-    vinichai: 8,
-    tbl_laws: 7,
-    tbl_glaws: 6,
-    documents: 4,
-    pdf_chunks: 3,
+    vinichai: 9,
+    knowledge_suggestion: 7,
+    [primaryLawSource]: 6,
+    [secondaryLawSource]: 5,
+    documents: 3,
+    pdf_chunks: 1,
     knowledge_base: 1,
   };
 }
@@ -739,17 +785,17 @@ function getSourceRoutingPlan(intent) {
     case "qa":
       return {
         priorities: {
-          vinichai: 6,
-          admin_knowledge: 5,
+          vinichai: 8,
+          admin_knowledge: 6,
           structured_laws: 3,
-          documents: 2,
-          pdf_chunks: 2,
+          documents: 1,
+          pdf_chunks: 1,
           knowledge_base: 1,
         },
         limits: {
-          vinichai: 3,
+          vinichai: 4,
           admin_knowledge: 2,
-          structured_laws: 2,
+          structured_laws: 1,
           documents: 1,
           pdf_chunks: 1,
           knowledge_base: 1,
@@ -800,7 +846,7 @@ async function searchDatabaseSources(message, target, options = {}) {
   const intent = classifyQuestionIntent(message);
   const routingPlan = getSourceRoutingPlan(intent);
   const freePlanSearch = isFreePlanSearch(options.planCode);
-  const freeSourcePriorityPlan = freePlanSearch ? getFreeSourcePriorityPlan(message) : null;
+  const freeSourcePriorityPlan = freePlanSearch ? getFreeSourcePriorityPlan(message, target) : null;
   const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
   const prioritizeStructuredLawSearch = isLawPrioritySearch(message);
 
@@ -1292,6 +1338,17 @@ function isLowConfidenceDatabaseResult(matches, questionIntent = "general") {
 
 function getFollowUpResolutionProfile(planCode = "free") {
   const normalizedPlanCode = normalizePlanCode(planCode);
+
+  if (normalizedPlanCode === "free") {
+    return {
+      contextScoreBuffer: 5,
+      contextScoreMultiplier: 1.1,
+      shortFollowUpContextScoreBuffer: 1,
+      shortFollowUpContextScoreMultiplier: 1.02,
+      minimumContextTopScore: 44,
+      allowStrongerContextCarry: true,
+    };
+  }
 
   if (normalizedPlanCode === "premium") {
     return {
@@ -1946,7 +2003,9 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
   return rankSourcesForMessageFocus(compacted, focusMessage).slice(0, targetLimit || plan.totalLimit);
 }
 
-function getDatabaseOnlySelectionPlan(intent = "general") {
+function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
+  const freePlan = isFreePlanSearch(options.planCode);
+  const vinichaiPrioritySearch = isVinichaiPrioritySearch(options.originalMessage || options.message || "");
   switch (intent) {
     case "law_section":
       return {
@@ -1956,8 +2015,8 @@ function getDatabaseOnlySelectionPlan(intent = "general") {
           knowledge_suggestion: 1,
           tbl_laws: 4,
           tbl_glaws: 3,
-          pdf_chunks: 3,
-          tbl_vinichai: 1,
+          pdf_chunks: freePlan ? 1 : 3,
+          tbl_vinichai: freePlan ? 2 : 1,
           documents: 1,
           knowledge_base: 1,
         },
@@ -1966,12 +2025,12 @@ function getDatabaseOnlySelectionPlan(intent = "general") {
       return {
         totalLimit: 6,
         quotas: {
-          admin_knowledge: 2,
+          admin_knowledge: freePlan ? 3 : 2,
           knowledge_suggestion: 1,
           tbl_laws: 2,
           tbl_glaws: 1,
           pdf_chunks: 1,
-          tbl_vinichai: 1,
+          tbl_vinichai: freePlan ? 2 : 1,
           documents: 1,
           knowledge_base: 1,
         },
@@ -1980,13 +2039,13 @@ function getDatabaseOnlySelectionPlan(intent = "general") {
       return {
         totalLimit: 8,
         quotas: {
-          admin_knowledge: 2,
+          admin_knowledge: freePlan ? 3 : 2,
           knowledge_suggestion: 1,
           tbl_laws: 2,
           tbl_glaws: 1,
-          pdf_chunks: 2,
-          tbl_vinichai: 1,
-          documents: 2,
+          pdf_chunks: freePlan ? 1 : 2,
+          tbl_vinichai: freePlan ? 2 : 1,
+          documents: freePlan ? 1 : 2,
           knowledge_base: 1,
         },
       };
@@ -1996,10 +2055,10 @@ function getDatabaseOnlySelectionPlan(intent = "general") {
         quotas: {
           admin_knowledge: 2,
           knowledge_suggestion: 1,
-          tbl_laws: 2,
-          tbl_glaws: 1,
+          tbl_laws: vinichaiPrioritySearch ? 1 : 2,
+          tbl_glaws: vinichaiPrioritySearch ? 0 : 1,
           pdf_chunks: 1,
-          tbl_vinichai: 2,
+          tbl_vinichai: vinichaiPrioritySearch ? 4 : freePlan ? 3 : 2,
           documents: 1,
           knowledge_base: 1,
         },
@@ -2009,11 +2068,11 @@ function getDatabaseOnlySelectionPlan(intent = "general") {
         totalLimit: 14,
         quotas: {
           admin_knowledge: 3,
-          knowledge_suggestion: 2,
+          knowledge_suggestion: freePlan ? 1 : 2,
           tbl_laws: 3,
-          tbl_glaws: 3,
-          pdf_chunks: 4,
-          tbl_vinichai: 1,
+          tbl_glaws: freePlan ? 2 : 3,
+          pdf_chunks: freePlan ? 1 : 4,
+          tbl_vinichai: freePlan ? 3 : 1,
           documents: 1,
           knowledge_base: 1,
         },
@@ -2024,10 +2083,10 @@ function getDatabaseOnlySelectionPlan(intent = "general") {
         quotas: {
           admin_knowledge: 3,
           knowledge_suggestion: 1,
-          tbl_laws: 3,
-          tbl_glaws: 2,
-          pdf_chunks: 3,
-          tbl_vinichai: 1,
+          tbl_laws: freePlan ? 2 : 3,
+          tbl_glaws: 1,
+          pdf_chunks: freePlan ? 1 : 3,
+          tbl_vinichai: freePlan ? 3 : 1,
           documents: 1,
           knowledge_base: 1,
         },
@@ -2036,41 +2095,58 @@ function getDatabaseOnlySelectionPlan(intent = "general") {
 }
 
 function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
-  if (isFreePlanSearch(options.planCode) && isLawPrioritySearch(options.originalMessage || options.message || "")) {
+  const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(
+    options.originalMessage || options.message || "",
+    options.target || "all",
+  );
+  if (isVinichaiPrioritySearch(options.originalMessage || options.message || "")) {
     return [
-      "tbl_laws",
-      "tbl_glaws",
+      "tbl_vinichai",
       "admin_knowledge",
       "knowledge_suggestion",
-      "tbl_vinichai",
-      "pdf_chunks",
+      primaryLawSource,
+      secondaryLawSource,
       "documents",
+      "pdf_chunks",
+      "knowledge_base",
+    ];
+  }
+
+  if (isFreePlanSearch(options.planCode) && isLawPrioritySearch(options.originalMessage || options.message || "")) {
+    return [
+      primaryLawSource,
+      "admin_knowledge",
+      "tbl_vinichai",
+      "knowledge_suggestion",
+      secondaryLawSource,
+      "documents",
+      "pdf_chunks",
       "knowledge_base",
     ];
   }
 
   if (isFreePlanSearch(options.planCode) && isLiquidationPrioritySearch(options.originalMessage || options.message || "")) {
     return [
-      "tbl_laws",
+      primaryLawSource,
       "admin_knowledge",
+      "tbl_vinichai",
       "knowledge_suggestion",
       "documents",
+      secondaryLawSource,
       "pdf_chunks",
-      "tbl_vinichai",
-      "tbl_glaws",
       "knowledge_base",
     ];
   }
 
   if (isFreePlanSearch(options.planCode) && isDissolutionPrioritySearch(options.originalMessage || options.message || "")) {
     return [
-      "tbl_laws",
+      primaryLawSource,
       "admin_knowledge",
+      "tbl_vinichai",
       "knowledge_suggestion",
       "documents",
+      secondaryLawSource,
       "pdf_chunks",
-      "tbl_vinichai",
-      "tbl_glaws",
       "knowledge_base",
     ];
   }
@@ -2078,12 +2154,12 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
   if (isFreePlanSearch(options.planCode)) {
     return [
       "admin_knowledge",
-      "knowledge_suggestion",
       "tbl_vinichai",
-      "tbl_laws",
-      "tbl_glaws",
-      "pdf_chunks",
+      "knowledge_suggestion",
+      primaryLawSource,
+      secondaryLawSource,
       "documents",
+      "pdf_chunks",
       "knowledge_base",
     ];
   }
@@ -2100,7 +2176,7 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
 }
 
 function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
-  const plan = getDatabaseOnlySelectionPlan(intent);
+  const plan = getDatabaseOnlySelectionPlan(intent, options);
   const targetLimit = Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const selected = [];
   const usedTiers = [];
@@ -2143,16 +2219,26 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   });
 
   if (selected.length < targetLimit) {
+    const sourceOrder = getDatabaseOnlySourceOrder(intent, options);
+    const fallbackOrder = new Map(sourceOrder.map((sourceName, index) => [sourceName, index]));
     const fallbackPool = rankSourcesForMessageFocus([
       ...(groups.admin_knowledge || []),
       ...(groups.knowledge_suggestion || []),
       ...structuredLaws.filter((item) => item && item.source === "tbl_laws"),
       ...structuredLaws.filter((item) => item && item.source === "tbl_glaws"),
-      ...(groups.pdf_chunks || []),
       ...(groups.vinichai || []),
       ...(groups.documents || []),
+      ...(groups.pdf_chunks || []),
       ...(groups.knowledge_base || []),
-    ], focusMessage);
+    ], focusMessage).sort((left, right) => {
+      const leftOrder = fallbackOrder.get(String(left?.source || "").trim().toLowerCase());
+      const rightOrder = fallbackOrder.get(String(right?.source || "").trim().toLowerCase());
+      if (leftOrder !== rightOrder) {
+        return (leftOrder ?? Number.MAX_SAFE_INTEGER) - (rightOrder ?? Number.MAX_SAFE_INTEGER);
+      }
+
+      return Number(right?.score || 0) - Number(left?.score || 0);
+    });
 
     fallbackPool.forEach((item) => {
       if (selected.length >= targetLimit) {
@@ -2782,6 +2868,7 @@ async function replyToChat(payload, session) {
       databaseOnlyMode: !planContext.useAI,
       promptProfile: planContext.promptProfile,
       planCode: planContext.code,
+      target,
     });
   }
   const afterAnswerGenerationAt = nowMs();
@@ -2925,6 +3012,7 @@ async function summarizeChat(payload, session) {
       databaseOnlyMode: !planContext.useAI,
       promptProfile: planContext.promptProfile,
       planCode: planContext.code,
+      target,
     }),
   };
 }

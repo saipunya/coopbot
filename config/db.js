@@ -461,6 +461,10 @@ async function ensureSchema() {
   } catch (_) {}
 
   try {
+    await pool.query("ALTER TABLE tbl_glaws ADD COLUMN glaw_search text DEFAULT NULL");
+  } catch (_) {}
+
+  try {
     await pool.query(`
       UPDATE users
       SET plan_started_at = COALESCE(plan_started_at, created_at, CURRENT_TIMESTAMP),

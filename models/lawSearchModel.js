@@ -10,6 +10,8 @@ const {
   uniqueTokens,
 } = require("../services/thaiTextUtils");
 
+const STRUCTURED_LAW_SEARCH_FIELD_CACHE = new Map();
+
 function extractLawNumber(text) {
   const match = String(text || "").match(/\d+/);
   return match ? match[0] : null;
@@ -92,8 +94,47 @@ function getFocusedIntentTerms(intent = "general") {
   return [];
 }
 
+function buildStructuredSearchTerms(message, queryLawNumber = null) {
+  const normalizedMessage = normalizeForSearch(message).toLowerCase();
+  const explicitTopics = extractExplicitTopicHints(message);
+  const lawNumberPatterns = buildLawNumberPatterns(queryLawNumber);
+
+  return uniqueTokens([
+    normalizedMessage,
+    ...segmentWords(message),
+    ...explicitTopics,
+    ...lawNumberPatterns,
+  ]).filter(Boolean);
+}
+
+async function resolveStructuredLawSearchField(pool, tableName) {
+  if (!pool || !tableName) {
+    return null;
+  }
+
+  if (STRUCTURED_LAW_SEARCH_FIELD_CACHE.has(tableName)) {
+    return STRUCTURED_LAW_SEARCH_FIELD_CACHE.get(tableName);
+  }
+
+  const expectedField = tableName === "tbl_laws" ? "law_search" : tableName === "tbl_glaws" ? "glaw_search" : null;
+  if (!expectedField) {
+    STRUCTURED_LAW_SEARCH_FIELD_CACHE.set(tableName, null);
+    return null;
+  }
+
+  try {
+    const [rows] = await pool.query(`SHOW COLUMNS FROM ${tableName} LIKE ?`, [expectedField]);
+    const resolved = Array.isArray(rows) && rows.length > 0 ? expectedField : null;
+    STRUCTURED_LAW_SEARCH_FIELD_CACHE.set(tableName, resolved);
+    return resolved;
+  } catch (_) {
+    STRUCTURED_LAW_SEARCH_FIELD_CACHE.set(tableName, null);
+    return null;
+  }
+}
+
 async function findExactLawRows(pool, tableConfig, queryLawNumber) {
-  const [tableName, idField, numberField, partField, detailField, commentField, sourceName] = tableConfig;
+  const [tableName, idField, numberField, partField, detailField, commentField, sourceName, searchField] = tableConfig;
   const number = String(queryLawNumber || "").trim();
   if (!number) {
     return [];
@@ -109,7 +150,9 @@ async function findExactLawRows(pool, tableConfig, queryLawNumber) {
 
   const [rows] = await pool.query(
     `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
-            ${detailField} AS law_detail, ${commentField} AS law_comment
+            ${detailField} AS law_detail, ${commentField} AS law_comment${
+              searchField ? `, ${searchField} AS law_search` : ", NULL AS law_search"
+            }
        FROM ${tableName}
       WHERE TRIM(${numberField}) IN (?, ?, ?, ?, ?)
          OR REPLACE(TRIM(${numberField}), ' ', '') IN (?, ?, ?, ?, ?)
@@ -121,7 +164,7 @@ async function findExactLawRows(pool, tableConfig, queryLawNumber) {
 }
 
 async function findFocusedLawRows(pool, tableConfig, query) {
-  const [tableName, idField, numberField, partField, detailField, commentField, sourceName] = tableConfig;
+  const [tableName, idField, numberField, partField, detailField, commentField, sourceName, searchField] = tableConfig;
   const focusProfile = getQueryFocusProfile(query);
   if (!focusProfile.topics.length) {
     return [];
@@ -142,26 +185,36 @@ async function findFocusedLawRows(pool, tableConfig, query) {
   }
 
   const topicClause = topicTerms
-    .map(() => `(LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`)
+    .map(() =>
+      searchField
+        ? `(LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ? OR LOWER(${searchField}) LIKE ?)`
+        : `(LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`,
+    )
     .join(" OR ");
   const topicParams = topicTerms.flatMap((term) => {
     const like = `%${term}%`;
-    return [like, like, like];
+    return searchField ? [like, like, like, like] : [like, like, like];
   });
 
   const intentClause = intentTerms.length
     ? ` AND (${intentTerms
-        .map(() => `(LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`)
+        .map(() =>
+          searchField
+            ? `(LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ? OR LOWER(${searchField}) LIKE ?)`
+            : `(LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`,
+        )
         .join(" OR ")})`
     : "";
   const intentParams = intentTerms.flatMap((term) => {
     const like = `%${normalizeForSearch(term).toLowerCase()}%`;
-    return [like, like, like];
+    return searchField ? [like, like, like, like] : [like, like, like];
   });
 
   const [rows] = await pool.query(
     `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
-            ${detailField} AS law_detail, ${commentField} AS law_comment
+            ${detailField} AS law_detail, ${commentField} AS law_comment${
+              searchField ? `, ${searchField} AS law_search` : ", NULL AS law_search"
+            }
        FROM ${tableName}
       WHERE (${topicClause})${intentClause}
       LIMIT 20`,
@@ -169,6 +222,34 @@ async function findFocusedLawRows(pool, tableConfig, query) {
   );
 
   return rows.map((row) => ({ ...row, __sourceName: sourceName, __focusedMatch: true }));
+}
+
+async function findKeywordLawRows(pool, tableConfig, query) {
+  const [tableName, idField, numberField, partField, detailField, commentField, sourceName, searchField] = tableConfig;
+  if (!searchField) {
+    return [];
+  }
+
+  const searchTerms = buildStructuredSearchTerms(query).slice(0, 10);
+  if (searchTerms.length === 0) {
+    return [];
+  }
+
+  const whereClause = searchTerms.map(() => `LOWER(${searchField}) LIKE ?`).join(" OR ");
+  const params = searchTerms.map((term) => `%${term}%`);
+  const exactPhrase = `%${normalizeForSearch(query).toLowerCase()}%`;
+
+  const [rows] = await pool.query(
+    `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
+            ${detailField} AS law_detail, ${commentField} AS law_comment, ${searchField} AS law_search
+       FROM ${tableName}
+      WHERE ${whereClause}
+      ORDER BY CASE WHEN LOWER(${searchField}) LIKE ? THEN 0 ELSE 1 END, ${idField} ASC
+      LIMIT 40`,
+    [...params, exactPhrase],
+  );
+
+  return rows.map((row) => ({ ...row, __sourceName: sourceName, __keywordMatch: true }));
 }
 
 function scoreResult(query, text, primaryLabel) {
@@ -216,6 +297,189 @@ function scoreResult(query, text, primaryLabel) {
   return score;
 }
 
+function normalizeComparisonText(text) {
+  return normalizeForSearch(String(text || ""))
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitVinichaiKeyTerms(vinKey) {
+  return uniqueTokens(
+    String(vinKey || "")
+      .split(/[,\n|/]+/)
+      .map((term) => normalizeComparisonText(term))
+      .filter(Boolean),
+  );
+}
+
+function getVinichaiQueryTerms(message) {
+  const focusProfile = getQueryFocusProfile(message);
+  const topicTerms = focusProfile.topics.flatMap((topic) => [
+    topic.primary,
+    ...(topic.aliases || []),
+    ...(topic.contextSignals || []),
+  ]);
+
+  return uniqueTokens(
+    [
+      ...segmentWords(message),
+      ...extractExplicitTopicHints(message),
+      ...topicTerms,
+    ]
+      .map((term) => normalizeComparisonText(term))
+      .filter((term) => term && term.length >= 2),
+  );
+}
+
+function scoreVinichaiKeyMatch(message, vinKey, vinQuestion = "", vinGroup = "") {
+  const normalizedMessage = normalizeComparisonText(message);
+  if (!normalizedMessage) {
+    return 0;
+  }
+
+  const keyTerms = splitVinichaiKeyTerms(vinKey);
+  if (keyTerms.length === 0) {
+    return 0;
+  }
+
+  const queryTerms = getVinichaiQueryTerms(message);
+  const explicitTopics = extractExplicitTopicHints(message).map((topic) => normalizeComparisonText(topic));
+  const normalizedKey = normalizeComparisonText(vinKey);
+  const comparisonText = `${normalizeComparisonText(vinQuestion)} ${normalizeComparisonText(vinGroup)}`.trim();
+  let score = 0;
+  const matchedQueryTerms = new Set();
+  let matchedExplicitTopicCount = 0;
+
+  keyTerms.forEach((keyTerm) => {
+    if (normalizedMessage.includes(keyTerm)) {
+      score += keyTerm.length >= 6 ? 18 : 12;
+    }
+  });
+
+  queryTerms.forEach((queryTerm) => {
+    if (keyTerms.some((keyTerm) => keyTerm === queryTerm)) {
+      matchedQueryTerms.add(queryTerm);
+      score += queryTerm.length >= 6 ? 14 : 10;
+      return;
+    }
+
+    if (keyTerms.some((keyTerm) => keyTerm.includes(queryTerm) || queryTerm.includes(keyTerm))) {
+      matchedQueryTerms.add(queryTerm);
+      score += queryTerm.length >= 6 ? 8 : 5;
+    }
+  });
+
+  if (queryTerms.length > 0) {
+    score += (matchedQueryTerms.size / queryTerms.length) * 32;
+  }
+
+  if (matchedQueryTerms.size >= 2) {
+    score += 12;
+  }
+
+  if (
+    explicitTopics.length > 0 &&
+    explicitTopics.every((topic) =>
+      normalizedKey.includes(topic) ||
+      keyTerms.some((keyTerm) => keyTerm.includes(topic) || topic.includes(keyTerm)),
+    )
+  ) {
+    score += 20;
+  }
+
+  if (explicitTopics.length > 0) {
+    matchedExplicitTopicCount = explicitTopics.filter((topic) =>
+      normalizedKey.includes(topic) ||
+      keyTerms.some((keyTerm) => keyTerm.includes(topic) || topic.includes(keyTerm)),
+    ).length;
+
+    score += matchedExplicitTopicCount * 24;
+
+    if (matchedExplicitTopicCount === 0) {
+      score -= 40;
+    } else if (matchedExplicitTopicCount < explicitTopics.length) {
+      score -= (explicitTopics.length - matchedExplicitTopicCount) * 12;
+    }
+  }
+
+  if (
+    comparisonText &&
+    keyTerms.some((keyTerm) => comparisonText.includes(keyTerm)) &&
+    /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ/.test(normalizedMessage)
+  ) {
+    score += 6;
+  }
+
+  return score;
+}
+
+function splitKeywordTerms(keywordText) {
+  return uniqueTokens(
+    String(keywordText || "")
+      .split(/[,\n|/]+/)
+      .map((term) => normalizeComparisonText(term))
+      .filter(Boolean),
+  );
+}
+
+function scoreStructuredLawKeywordMatch(message, keywordText = "") {
+  const normalizedMessage = normalizeComparisonText(message);
+  if (!normalizedMessage || !keywordText) {
+    return 0;
+  }
+
+  const keywordTerms = splitKeywordTerms(keywordText);
+  if (keywordTerms.length === 0) {
+    return 0;
+  }
+
+  const queryTerms = uniqueTokens(
+    [
+      ...segmentWords(message),
+      ...extractExplicitTopicHints(message),
+      ...getQueryFocusProfile(message).topics.flatMap((topic) => [topic.primary, ...(topic.aliases || [])]),
+    ]
+      .map((term) => normalizeComparisonText(term))
+      .filter((term) => term && term.length >= 2),
+  );
+
+  let score = 0;
+  const matched = new Set();
+
+  keywordTerms.forEach((keyword) => {
+    if (normalizedMessage.includes(keyword)) {
+      score += keyword.length >= 6 ? 26 : 14;
+      matched.add(keyword);
+    }
+
+    if (keyword.includes(normalizedMessage)) {
+      score += normalizedMessage.length >= 6 ? 36 : 18;
+      matched.add(keyword);
+    }
+  });
+
+  queryTerms.forEach((queryTerm) => {
+    if (keywordTerms.some((keyword) => keyword === queryTerm)) {
+      score += queryTerm.length >= 6 ? 14 : 8;
+      matched.add(queryTerm);
+      return;
+    }
+
+    if (keywordTerms.some((keyword) => keyword.includes(queryTerm) || queryTerm.includes(keyword))) {
+      score += queryTerm.length >= 6 ? 8 : 4;
+      matched.add(queryTerm);
+    }
+  });
+
+  if (queryTerms.length > 0) {
+    score += (matched.size / queryTerms.length) * 24;
+  }
+
+  return score;
+}
+
 class LawSearchModel {
   static async searchVinichai(message, limit = 5) {
     const pool = getDbPool();
@@ -231,18 +495,18 @@ class LawSearchModel {
     const whereClause = terms
       .map(
         () =>
-          `(LOWER(vin_key) LIKE ? OR LOWER(vin_question) LIKE ? OR LOWER(vin_detail) LIKE ?)`
+          `(LOWER(vin_group) LIKE ? OR LOWER(vin_key) LIKE ? OR LOWER(vin_question) LIKE ? OR LOWER(vin_detail) LIKE ? OR LOWER(vin_maihed) LIKE ?)`
       )
       .join(" OR ");
     const params = terms.flatMap((term) => {
       const like = `%${term}%`;
-      return [like, like, like];
+      return [like, like, like, like, like];
     });
 
     let rows;
     try {
       [rows] = await pool.query(
-        `SELECT id, vin_key, vin_question, vin_detail
+        `SELECT vin_id, vin_group, vin_key, vin_question, vin_detail, vin_maihed
          FROM tbl_vinichai
          WHERE ${whereClause}
          LIMIT 50`,
@@ -254,15 +518,24 @@ class LawSearchModel {
 
     return rows
       .map((row) => {
-        const combinedText = [row.vin_key, row.vin_question, row.vin_detail].join(" ");
+        const combinedText = [
+          row.vin_group,
+          row.vin_key,
+          row.vin_question,
+          row.vin_detail,
+          row.vin_maihed,
+        ].join(" ");
         return {
-          id: row.id,
+          id: row.vin_id,
           source: "tbl_vinichai",
           title: row.vin_question || row.vin_key || "วินิจฉัยที่เกี่ยวข้อง",
           reference: row.vin_key || "tbl_vinichai",
           content: row.vin_detail || "",
-          comment: "",
-          score: scoreResult(message, combinedText, `${row.vin_key} ${row.vin_question}`),
+          comment: row.vin_maihed || "",
+          score:
+            scoreResult(message, combinedText, `${row.vin_key} ${row.vin_question}`) +
+            scoreQueryFocusAlignment(message, combinedText) +
+            scoreVinichaiKeyMatch(message, row.vin_key, row.vin_question, row.vin_group),
         };
       })
       .filter((row) => row.score > 0)
@@ -276,31 +549,36 @@ class LawSearchModel {
       return [];
     }
 
-    const terms = uniqueTokens(segmentWords(message)).slice(0, 8);
+    const queryLawNumber = extractLawNumber(message);
+    const terms = buildStructuredSearchTerms(message, queryLawNumber).slice(0, 12);
     if (terms.length === 0) {
       return [];
     }
-
-    const queryLawNumber = extractLawNumber(message);
     const inferredScope = target === "all" ? detectLawScope(message) : target;
+    const lawSearchField = await resolveStructuredLawSearchField(pool, "tbl_laws");
+    const glawSearchField = await resolveStructuredLawSearchField(pool, "tbl_glaws");
     const tableConfigs =
       inferredScope === "group"
         ? [
-            ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws"],
+            ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws", glawSearchField],
           ]
         : inferredScope === "coop"
           ? [
-              ["tbl_laws", "law_id", "law_number", "law_part", "law_detail", "law_comment", "tbl_laws"],
+              ["tbl_laws", "law_id", "law_number", "law_part", "law_detail", "law_comment", "tbl_laws", lawSearchField],
             ]
           : [
-              ["tbl_laws", "law_id", "law_number", "law_part", "law_detail", "law_comment", "tbl_laws"],
-              ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws"],
+              ["tbl_laws", "law_id", "law_number", "law_part", "law_detail", "law_comment", "tbl_laws", lawSearchField],
+              ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws", glawSearchField],
           ];
 
     const focusedRowGroups = await Promise.all(
       tableConfigs.map((tableConfig) => findFocusedLawRows(pool, tableConfig, message)),
     );
     const focusedRows = focusedRowGroups.flat();
+    const keywordRowGroups = await Promise.all(
+      tableConfigs.map((tableConfig) => findKeywordLawRows(pool, tableConfig, message)),
+    );
+    const keywordRows = keywordRowGroups.flat();
     const focusedResults = focusedRows
       .map((row) => {
         const combinedText = [
@@ -308,6 +586,7 @@ class LawSearchModel {
           row.law_part,
           row.law_detail,
           row.law_comment,
+          row.law_search,
         ].join(" ");
 
         return {
@@ -320,6 +599,7 @@ class LawSearchModel {
           score:
             scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`) +
             scoreQueryFocusAlignment(message, combinedText) +
+            scoreStructuredLawKeywordMatch(message, row.law_search) +
             80,
         };
       })
@@ -353,23 +633,26 @@ class LawSearchModel {
     }
 
     const rowGroups = await Promise.all(
-      tableConfigs.map(async ([tableName, idField, numberField, partField, detailField, commentField, sourceName]) => {
-        const lawNumberPatterns = buildLawNumberPatterns(queryLawNumber);
-        const searchTerms = uniqueTokens([...terms, ...lawNumberPatterns]).slice(0, 12);
+      tableConfigs.map(async ([tableName, idField, numberField, partField, detailField, commentField, sourceName, searchField]) => {
+        const searchTerms = terms;
         const whereClause = searchTerms
           .map(
             () =>
-              `(LOWER(${numberField}) LIKE ? OR LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`,
+              searchField
+                ? `(LOWER(${numberField}) LIKE ? OR LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ? OR LOWER(${searchField}) LIKE ?)`
+                : `(LOWER(${numberField}) LIKE ? OR LOWER(${partField}) LIKE ? OR LOWER(${detailField}) LIKE ? OR LOWER(${commentField}) LIKE ?)`,
           )
           .join(" OR ");
         const params = searchTerms.flatMap((term) => {
           const like = `%${term}%`;
-          return [like, like, like, like];
+          return searchField ? [like, like, like, like, like] : [like, like, like, like];
         });
 
         const [rows] = await pool.query(
           `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
-                  ${detailField} AS law_detail, ${commentField} AS law_comment
+                  ${detailField} AS law_detail, ${commentField} AS law_comment${
+                    searchField ? `, ${searchField} AS law_search` : ", NULL AS law_search"
+                  }
            FROM ${tableName}
            WHERE ${whereClause}
            LIMIT 50`,
@@ -380,16 +663,18 @@ class LawSearchModel {
       }),
     );
 
-    const rankedResults = [...focusedRows, ...rowGroups.flat()]
+    const rankedResults = [...keywordRows, ...focusedRows, ...rowGroups.flat()]
       .map((row) => {
         const combinedText = [
           row.law_number,
           row.law_part,
           row.law_detail,
           row.law_comment,
+          row.law_search,
         ].join(" ");
 
         let score = scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`);
+        score += scoreStructuredLawKeywordMatch(message, row.law_search);
 
         if (queryLawNumber && extractLawNumber(row.law_number) === queryLawNumber) {
           score += 90;
@@ -420,7 +705,7 @@ class LawSearchModel {
           reference: row.law_number || row.law_part || row.__sourceName,
           content: row.law_detail || "",
           comment: row.law_comment || "",
-          score: score + (row.__focusedMatch ? 60 : 0),
+          score: score + (row.__focusedMatch ? 60 : 0) + (row.__keywordMatch ? 100 : 0),
         };
       })
       .filter((row) => row.score > 0)

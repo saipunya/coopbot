@@ -56,6 +56,43 @@ const GENERIC_QUERY_TOKENS = new Set([
   "อย่าง",
   "ใด",
 ]);
+const VINICHAI_SUBTOPIC_RULES = [
+  {
+    key: "annual_150_days",
+    label: "150 วัน",
+    patterns: ["150 วัน", "วันสิ้นปี", "วันสิ้นปีบัญชี", "เกินกำหนด", "มาตรา 54"],
+  },
+  {
+    key: "quorum",
+    label: "องค์ประชุม",
+    patterns: ["องค์ประชุม", "ไม่ครบองค์ประชุม", "กึ่งหนึ่ง", "100 คน", "หนึ่งร้อยคน", "มาตรา 57", "มาตรา 58"],
+  },
+  {
+    key: "representative_members",
+    label: "ผู้แทนสมาชิก",
+    patterns: ["ผู้แทนสมาชิก", "โดยผู้แทน", "ประชุมโดยผู้แทน", "มาตรา 56"],
+  },
+  {
+    key: "agenda",
+    label: "วาระประชุม",
+    patterns: ["วาระเพิ่มเติม", "วาระอื่นๆ", "เสนอวาระ", "เพิ่มวาระ", "เรื่องพิจารณา"],
+  },
+  {
+    key: "election_units",
+    label: "เลือกตั้ง/หน่วยเลือกตั้ง",
+    patterns: ["หน่วยเลือกตั้ง", "เลือกตั้ง", "สรรหา", "ลงคะแนน", "เปิดหีบ", "ปิดหีบ", "กรรมการ"],
+  },
+  {
+    key: "meeting_pause",
+    label: "พักการประชุม",
+    patterns: ["พักการประชุม", "สั่งพักการประชุม", "มติที่ประชุมใหญ่"],
+  },
+  {
+    key: "meeting_compensation",
+    label: "เบี้ยประชุม",
+    patterns: ["เบี้ยประชุม", "ค่าตอบแทน", "ผู้จัดการ", "เจ้าหน้าที่"],
+  },
+];
 
 function normalizePlanCode(planCode) {
   return String(planCode || "").trim().toLowerCase();
@@ -69,42 +106,88 @@ function isLawPriorityQuestion(message) {
   return /(มาตรา|ข้อ|วรรค|อนุมาตรา)/.test(normalizeForSearch(message).toLowerCase());
 }
 
+function isVinichaiPriorityQuestion(message) {
+  const normalized = normalizeForSearch(message).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ|ถามตอบ|คำถามคำตอบ/.test(normalized);
+}
+
+function resolvePreferredStructuredLawSources(options = {}) {
+  const normalizedMessage = normalizeForSearch(options.originalMessage || options.message || "").toLowerCase();
+  const normalizedTarget = String(options.target || "all").trim().toLowerCase();
+  const mentionsGroupLaw = /กลุ่มเกษตรกร|พรบ\.?\s*กลุ่มเกษตรกร|พระราชกฤษฎีกากลุ่มเกษตรกร|กฎหมายกลุ่มเกษตรกร/.test(
+    normalizedMessage,
+  );
+  const mentionsCoopLaw = /สหกรณ์|พรบ\.?\s*สหกรณ์|พระราชบัญญัติสหกรณ์|กฎหมายสหกรณ์/.test(
+    normalizedMessage,
+  );
+
+  if (normalizedTarget === "group" || (mentionsGroupLaw && !mentionsCoopLaw)) {
+    return {
+      primaryLawSource: "tbl_glaws",
+      secondaryLawSource: "tbl_laws",
+    };
+  }
+
+  return {
+    primaryLawSource: "tbl_laws",
+    secondaryLawSource: "tbl_glaws",
+  };
+}
+
 function getDatabaseOnlySourceOrder(options = {}) {
-  if (isFreePlanDisplay(options) && isLawPriorityQuestion(options.originalMessage || options.message || "")) {
+  const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(options);
+  if (isVinichaiPriorityQuestion(options.originalMessage || options.message || "")) {
     return [
-      "tbl_laws",
-      "tbl_glaws",
+      "tbl_vinichai",
       "admin_knowledge",
       "knowledge_suggestion",
-      "tbl_vinichai",
-      "pdf_chunks",
+      primaryLawSource,
+      secondaryLawSource,
       "documents",
+      "pdf_chunks",
+      "knowledge_base",
+    ];
+  }
+
+  if (isFreePlanDisplay(options) && isLawPriorityQuestion(options.originalMessage || options.message || "")) {
+    return [
+      primaryLawSource,
+      "admin_knowledge",
+      "tbl_vinichai",
+      "knowledge_suggestion",
+      secondaryLawSource,
+      "documents",
+      "pdf_chunks",
       "knowledge_base",
     ];
   }
 
   if (isFreePlanDisplay(options) && isLiquidationQuestion(options.originalMessage || options.message || "")) {
     return [
-      "tbl_laws",
+      primaryLawSource,
       "admin_knowledge",
+      "tbl_vinichai",
       "knowledge_suggestion",
       "documents",
+      secondaryLawSource,
       "pdf_chunks",
-      "tbl_vinichai",
-      "tbl_glaws",
       "knowledge_base",
     ];
   }
 
   if (isFreePlanDisplay(options) && isCoopDissolutionQuestion(options.originalMessage || options.message || "")) {
     return [
-      "tbl_laws",
+      primaryLawSource,
       "admin_knowledge",
+      "tbl_vinichai",
       "knowledge_suggestion",
       "documents",
+      secondaryLawSource,
       "pdf_chunks",
-      "tbl_vinichai",
-      "tbl_glaws",
       "knowledge_base",
     ];
   }
@@ -112,12 +195,12 @@ function getDatabaseOnlySourceOrder(options = {}) {
   if (isFreePlanDisplay(options)) {
     return [
       "admin_knowledge",
-      "knowledge_suggestion",
       "tbl_vinichai",
-      "tbl_laws",
-      "tbl_glaws",
-      "pdf_chunks",
+      "knowledge_suggestion",
+      primaryLawSource,
+      secondaryLawSource,
       "documents",
+      "pdf_chunks",
       "knowledge_base",
     ];
   }
@@ -183,6 +266,19 @@ function isCoopDissolutionQuestion(message) {
   }
 
   return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก)/.test(text);
+}
+
+function isBroadVinichaiListingQuestion(message) {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!isVinichaiPriorityQuestion(normalized)) {
+    return false;
+  }
+
+  if (/^แนววินิจฉัย(?:เรื่อง)?\s*/.test(normalized) || /^ข้อหารือ(?:เรื่อง)?\s*/.test(normalized)) {
+    return !/(เท่าไร|เท่าไหร่|กี่|อย่างไร|ได้หรือไม่|ต้อง|ควร|มาตรา|ข้อ|วรรค|\d)/.test(normalized);
+  }
+
+  return /แนววินิจฉัย|ข้อหารือ|ตีความ/.test(normalized) && !/(มาตรา|ข้อ|วรรค|\d|เท่าไร|เท่าไหร่|กี่|อย่างไร)/.test(normalized);
 }
 
 function detectLegalEntityScope(message) {
@@ -1000,12 +1096,14 @@ function buildSourceContext(sources, options = {}) {
   const perSourceCharLimit = Math.max(280, Number(promptProfile.aiSourceContextCharLimit || 700));
   return dedupeSources(sources)
     .map((source, index) => {
-      const bodyText = truncateContextText(
-        [source.content, source.chunk_text, source.comment]
-          .filter(Boolean)
-          .join(" "),
-        perSourceCharLimit,
-      );
+      const bodyText = sourceHasSubstantiveContent(source)
+        ? truncateContextText(
+            [source.content, source.chunk_text, source.comment]
+              .filter(Boolean)
+              .join(" "),
+            perSourceCharLimit,
+          )
+        : "";
       const title = cleanLine(source.title || "");
       const reference = cleanLine(source.reference || "");
       return [
@@ -1126,6 +1224,169 @@ function buildReferenceSection(sources, limit = 5) {
   return ["แหล่งอ้างอิง:", ...lines].join("\n");
 }
 
+function normalizeVinichaiTopicText(text) {
+  return normalizeForSearch(String(text || "")).toLowerCase();
+}
+
+function buildVinichaiTopicSearchText(source = {}) {
+  return normalizeVinichaiTopicText([
+    source?.reference,
+    source?.title,
+  ].filter(Boolean).join(" "));
+}
+
+function getVinichaiSubtopicMatches(source = {}) {
+  const text = buildVinichaiTopicSearchText(source);
+  if (!text) {
+    return [];
+  }
+
+  return VINICHAI_SUBTOPIC_RULES.filter((rule) =>
+    (rule.patterns || []).some((pattern) => text.includes(normalizeVinichaiTopicText(pattern))),
+  );
+}
+
+function getPriorityVinichaiSubtopics(message) {
+  const normalizedMessage = normalizeVinichaiTopicText(message);
+  if (!normalizedMessage) {
+    return [];
+  }
+
+  return VINICHAI_SUBTOPIC_RULES.filter((rule) =>
+    (rule.patterns || []).some((pattern) => normalizedMessage.includes(normalizeVinichaiTopicText(pattern))),
+  );
+}
+
+function selectVinichaiOverviewSources(vinichaiSources, focusMessage, limit = 4) {
+  const dedupedSources = dedupeSources(vinichaiSources, Math.max(limit * 2, limit + 2));
+  const prioritySubtopics = getPriorityVinichaiSubtopics(focusMessage);
+  const selected = [];
+  const usedIdentity = new Set();
+  const usedSubtopics = new Set();
+
+  const pushSource = (source, preferredSubtopic = null) => {
+    if (!source) {
+      return;
+    }
+
+    const identity = `${String(source?.source || "").trim().toLowerCase()}::${String(source?.id || source?.reference || source?.title || "")}`;
+    if (usedIdentity.has(identity)) {
+      return;
+    }
+
+    usedIdentity.add(identity);
+    selected.push({
+      ...source,
+      __vinichaiSubtopics: getVinichaiSubtopicMatches(source),
+      __vinichaiPreferredSubtopic: preferredSubtopic,
+    });
+
+    if (preferredSubtopic?.key) {
+      usedSubtopics.add(preferredSubtopic.key);
+      return;
+    }
+
+    const primaryMatch = getVinichaiSubtopicMatches(source)[0];
+    if (primaryMatch?.key) {
+      usedSubtopics.add(primaryMatch.key);
+    }
+  };
+
+  prioritySubtopics.forEach((subtopic) => {
+    if (selected.length >= limit) {
+      return;
+    }
+
+    const match = dedupedSources.find((source) =>
+      getVinichaiSubtopicMatches(source).some((item) => item.key === subtopic.key),
+    );
+    pushSource(match, subtopic);
+  });
+
+  dedupedSources.forEach((source) => {
+    if (selected.length >= limit) {
+      return;
+    }
+
+    const matches = getVinichaiSubtopicMatches(source);
+    const unusedMatch = matches.find((item) => !usedSubtopics.has(item.key));
+    if (unusedMatch) {
+      pushSource(source, unusedMatch);
+    }
+  });
+
+  dedupedSources.forEach((source) => {
+    if (selected.length >= limit) {
+      return;
+    }
+
+    pushSource(source);
+  });
+
+  return selected.slice(0, limit);
+}
+
+function formatVinichaiOverviewLine(source = {}) {
+  const title = cleanLine(source?.title || source?.reference || "");
+  if (!title) {
+    return "";
+  }
+
+  const preferredSubtopic = source?.__vinichaiPreferredSubtopic || source?.__vinichaiSubtopics?.[0];
+  const label = cleanLine(preferredSubtopic?.label || "");
+  if (!label) {
+    return title;
+  }
+
+  const normalizedTitle = normalizeVinichaiTopicText(title);
+  const normalizedLabel = normalizeVinichaiTopicText(label);
+  if (normalizedLabel && normalizedTitle.includes(normalizedLabel)) {
+    return title;
+  }
+
+  return `${label}: ${title}`;
+}
+
+function buildVinichaiOverviewAnswer(sources, options = {}) {
+  const focusMessage = String(options.focusMessage || options.originalMessage || "").trim();
+  if (!isBroadVinichaiListingQuestion(focusMessage)) {
+    return "";
+  }
+
+  const vinichaiSources = dedupeSources(
+    sources.filter((source) => String(source?.source || "").trim().toLowerCase() === "tbl_vinichai"),
+    6,
+  );
+
+  if (vinichaiSources.length === 0) {
+    return "";
+  }
+
+  const overviewSources = selectVinichaiOverviewSources(vinichaiSources, focusMessage, 4);
+  const listingLines = buildSectionLines(
+    overviewSources
+      .map((source) => formatVinichaiOverviewLine(source))
+      .filter(Boolean),
+    Math.min(overviewSources.length, 4),
+  );
+
+  if (listingLines.length === 0) {
+    return "";
+  }
+
+  const heading = listingLines.length > 1 ? "แนววินิจฉัยที่เกี่ยวข้อง:" : "แนววินิจฉัยที่เกี่ยวข้อง";
+  return [
+    buildParagraphSummary(listingLines, [], false, {
+      orderedSummary: true,
+      summaryHeading: heading,
+      summaryLimit: Math.min(listingLines.length, 4),
+    }),
+    buildReferenceSection(overviewSources, Math.min(overviewSources.length, 4)),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function stripStandaloneDoubleSlash(text) {
   return String(text || "")
     .replace(/(^|\n)\s*\/\/\s*/g, "$1")
@@ -1142,6 +1403,36 @@ function buildSourceRawContentText(source = {}) {
     .join(" ");
 }
 
+function sourceHasSubstantiveContent(source = {}) {
+  const rawContent = cleanLine(buildSourceRawContentText(source));
+  const referenceText = cleanLine(source?.reference || source?.title || source?.keyword || "");
+  const normalizedRawContent = normalizeComparisonText(rawContent);
+  const normalizedReference = normalizeComparisonText(referenceText);
+
+  if (!rawContent) {
+    return false;
+  }
+
+  if (hasSubstantiveAnswerSignal(rawContent)) {
+    return true;
+  }
+
+  if (lineLooksLikeSourceMetadata(rawContent, [source])) {
+    return false;
+  }
+
+  if (
+    String(source?.source || "").trim().toLowerCase() === "internet_search" &&
+    normalizedRawContent &&
+    normalizedReference &&
+    normalizedRawContent === normalizedReference
+  ) {
+    return false;
+  }
+
+  return rawContent.length >= 40;
+}
+
 function cleanLine(text) {
   return stripStandaloneDoubleSlash(text)
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
@@ -1154,6 +1445,7 @@ function cleanLine(text) {
     .replace(/^สรุปคำตอบดังนี้:?\s*/i, "")
     .replace(/^คำตอบ(?:สรุป)?ดังนี้:?\s*/i, "")
     .replace(/^ข้อมูลที่พบจากฐานข้อมูลกฎหมาย(?:\s*\([^)]*\))?:?\s*/u, "")
+    .replace(/\s*แหล่งอ้างอิง\s*:.*$/iu, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -1204,7 +1496,6 @@ function isSectionHeading(line) {
 }
 
 function uniqueCleanLines(lines, limit) {
-  const seen = new Set();
   const results = [];
 
   for (const line of lines) {
@@ -1213,12 +1504,10 @@ function uniqueCleanLines(lines, limit) {
       continue;
     }
 
-    const key = cleaned.toLowerCase();
-    if (seen.has(key)) {
+    if (results.some((existingLine) => linesLookSemanticallyDuplicate(existingLine, cleaned))) {
       continue;
     }
 
-    seen.add(key);
     results.push(cleaned);
 
     if (results.length >= limit) {
@@ -1227,6 +1516,44 @@ function uniqueCleanLines(lines, limit) {
   }
 
   return results;
+}
+
+function tokenizeComparisonWords(text) {
+  const normalized = normalizeForSearch(cleanLine(text)).toLowerCase();
+  return Array.from(normalized.matchAll(/[\p{L}\p{N}]+/gu))
+    .map((match) => match[0])
+    .filter(Boolean);
+}
+
+function linesLookSemanticallyDuplicate(left, right) {
+  const normalizedLeft = normalizeComparisonText(left);
+  const normalizedRight = normalizeComparisonText(right);
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  if (normalizedLeft === normalizedRight) {
+    return true;
+  }
+
+  if (
+    normalizedLeft.length >= 18 &&
+    normalizedRight.length >= 18 &&
+    (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft))
+  ) {
+    return true;
+  }
+
+  const leftTokens = tokenizeComparisonWords(left);
+  const rightTokens = tokenizeComparisonWords(right);
+  if (leftTokens.length < 4 || rightTokens.length < 4) {
+    return false;
+  }
+
+  const rightSet = new Set(rightTokens);
+  const overlapCount = leftTokens.filter((token) => rightSet.has(token)).length;
+  const overlapRatio = overlapCount / Math.max(Math.min(leftTokens.length, rightTokens.length), 1);
+  return overlapRatio >= 0.88;
 }
 
 function getQueryTokens(message) {
@@ -1486,6 +1813,42 @@ function sourceMatchesCoopDissolutionFocus(source, message) {
   return scoreQueryFocusAlignment(message, sourceText) >= 24;
 }
 
+function isDefectCorrectionQuestion(message) {
+  const query = normalizeForSearch(message).toLowerCase();
+  return /แก้ไขข้อบกพร่อง|ข้อสังเกตข้อบกพร่อง|ขั้นตอนการแก้ไขข้อบกพร่อง|แนวทางการแก้ไขข้อบกพร่อง/.test(
+    query,
+  );
+}
+
+function sourceMatchesDefectCorrectionFocus(source, message) {
+  const query = normalizeForSearch(message).toLowerCase();
+  const sourceText = buildSourceSearchText(source);
+  const sourceName = String(source?.source || "").trim().toLowerCase();
+  if (!query || !sourceText || !isDefectCorrectionQuestion(query)) {
+    return false;
+  }
+
+  const hasDefectPhrase = /ข้อบกพร่อง|ข้อสังเกต/.test(sourceText);
+  const hasCorrectionSignal = /แก้ไข|แนวทาง|ตรวจการ|รายงานผล|กำหนดระยะเวลา|ติดตามผล|ปรับปรุง/.test(
+    sourceText,
+  );
+
+  if (hasDefectPhrase && hasCorrectionSignal) {
+    return true;
+  }
+
+  const focusScore = scoreQueryFocusAlignment(message, sourceText);
+  if (sourceName === "knowledge_base") {
+    return focusScore >= 20;
+  }
+
+  if (sourceName === "internet_search" || sourceName === "documents" || sourceName === "pdf_chunks") {
+    return focusScore >= 16;
+  }
+
+  return focusScore >= 18;
+}
+
 function sourceMatchesAmountFocus(source, message) {
   const query = normalizeForSearch(message).toLowerCase();
   const sourceText = buildSourceSearchText(source);
@@ -1547,6 +1910,15 @@ function filterSourcesByAnswerFocus(sources, options = {}) {
     const dissolutionFocused = normalizedSources.filter((source) => sourceMatchesCoopDissolutionFocus(source, message));
     if (dissolutionFocused.length > 0) {
       return dissolutionFocused;
+    }
+  }
+
+  if (isDefectCorrectionQuestion(message)) {
+    const defectCorrectionFocused = normalizedSources.filter((source) =>
+      sourceMatchesDefectCorrectionFocus(source, message),
+    );
+    if (defectCorrectionFocused.length > 0) {
+      return defectCorrectionFocused;
     }
   }
 
@@ -1676,6 +2048,10 @@ function buildSourceContentFallbackLines(sources, limit = 5, options = {}) {
   const unionFeeQuestion = options.amountMode === true && isUnionFeeQuestion(options.originalMessage || options.message || "");
 
   for (const source of dedupeSources(sources, Math.max(limit * 2, 8))) {
+    if (!sourceHasSubstantiveContent(source)) {
+      continue;
+    }
+
     const extractedSegments = extractRelevantSegmentsFromSource(
       source,
       options.originalMessage || options.message || "",
@@ -2247,14 +2623,16 @@ function compareDatabaseOnlySourceDisplayOrder(left, right) {
 
 function orderSourcesForDatabaseOnly(sources, options = {}) {
   const sourceLimit = Math.max(1, Number(options.sourceLimit || 8));
+  const freePlan = isFreePlanDisplay(options);
+  const vinichaiPriorityQuestion = isVinichaiPriorityQuestion(options.originalMessage || options.message || "");
   const quotaBySource = {
-    admin_knowledge: 3,
-    knowledge_suggestion: options.questionIntent === "law_section" ? 2 : 1,
-    tbl_laws: options.questionIntent === "law_section" ? 4 : 3,
-    tbl_glaws: options.questionIntent === "law_section" ? 4 : 3,
-    pdf_chunks: options.explainMode ? 4 : 3,
-    tbl_vinichai: 2,
-    documents: 2,
+    admin_knowledge: vinichaiPriorityQuestion ? 2 : freePlan ? 4 : 3,
+    knowledge_suggestion: options.questionIntent === "law_section" ? 1 : 1,
+    tbl_laws: vinichaiPriorityQuestion ? 1 : options.questionIntent === "law_section" ? 4 : freePlan ? 2 : 3,
+    tbl_glaws: vinichaiPriorityQuestion ? 1 : options.questionIntent === "law_section" ? 3 : freePlan ? 2 : 3,
+    pdf_chunks: vinichaiPriorityQuestion ? 1 : freePlan ? 1 : options.explainMode ? 4 : 3,
+    tbl_vinichai: vinichaiPriorityQuestion ? 4 : freePlan ? 3 : 2,
+    documents: vinichaiPriorityQuestion ? 1 : freePlan ? 2 : 2,
     knowledge_base: 1,
   };
   const deduped = dedupeSources(sources, sourceLimit * 5);
@@ -2362,6 +2740,9 @@ function scoreSourceSegment(segment, message, source, options = {}) {
 
 function extractRelevantSegmentsFromSource(source, message, options = {}) {
   const rawText = [source.content, source.chunk_text, source.comment].filter(Boolean).join("\n");
+  if (!sourceHasSubstantiveContent(source)) {
+    return [];
+  }
   const segments = splitContentSegments(rawText);
   const preserveMoreContent = options.preserveMoreContent === true;
   const focusTokens = getFocusQueryTokens(message);
@@ -2459,8 +2840,16 @@ function formatDatabaseOnlySourceBlock(source, message, options = {}) {
 function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
   const focusMessage = String(options.focusMessage || options.originalMessage || "").trim();
   const explainMode = Boolean(options.explainMode);
+  const freePlan = isFreePlanDisplay(options);
+  const vinichaiOverviewAnswer = buildVinichaiOverviewAnswer(sources, {
+    ...options,
+    focusMessage,
+  });
+  if (vinichaiOverviewAnswer) {
+    return vinichaiOverviewAnswer;
+  }
   const shortDecisionMode = options.questionIntent === "short_answer" && options.decisionMode;
-  const summaryLimit =
+  const baseSummaryLimit =
     shortDecisionMode
       ? 2
       : options.questionIntent === "short_answer"
@@ -2470,7 +2859,8 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
         : explainMode
           ? 6
           : 5;
-  const detailLimit = explainMode ? 5 : 0;
+  const summaryLimit = baseSummaryLimit + (freePlan && !shortDecisionMode ? 1 : 0);
+  const detailLimit = explainMode ? (freePlan ? 6 : 5) : 0;
   const substantiveLimit =
     shortDecisionMode
       ? 1
@@ -2479,6 +2869,7 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
         : explainMode
           ? 6
           : 4;
+  const effectiveSubstantiveLimit = substantiveLimit + (freePlan && !shortDecisionMode ? 1 : 0);
   const fallbackLimit =
     shortDecisionMode
       ? 1
@@ -2487,24 +2878,26 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
         : explainMode
           ? 6
           : 4;
+  const effectiveFallbackLimit = fallbackLimit + (freePlan && !shortDecisionMode ? 1 : 0);
+  const visibleSourceLimit = freePlan ? (explainMode ? 10 : 8) : explainMode ? 8 : 6;
   const visibleSources = dedupeSources(
     orderSourcesForDatabaseOnly(sources, {
       questionIntent: options.questionIntent,
       explainMode,
       originalMessage: focusMessage,
       planCode: options.planCode,
-      sourceLimit: explainMode ? 8 : 6,
+      sourceLimit: visibleSourceLimit,
     }),
-    explainMode ? 8 : 6,
+    visibleSourceLimit,
   );
 
   const decisionLead = options.decisionMode ? inferDecisionLead(focusMessage, visibleSources) : "";
-  const substantiveSegments = extractSubstantiveSegments(visibleSources, substantiveLimit, {
+  const substantiveSegments = extractSubstantiveSegments(visibleSources, effectiveSubstantiveLimit, {
     message: focusMessage,
     requireFocus: true,
   });
   const numericEvidence = options.amountMode ? extractNumericEvidence(visibleSources, explainMode ? 4 : 2, focusMessage) : [];
-  const fallbackLines = buildSourceContentFallbackLines(visibleSources, fallbackLimit, {
+  const fallbackLines = buildSourceContentFallbackLines(visibleSources, effectiveFallbackLimit, {
     ...options,
     amountMode: options.amountMode === true,
     explainMode,
@@ -2539,6 +2932,7 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
         : explainMode
           ? 5
           : 4;
+  const effectiveReferenceLimit = referenceLimit + (freePlan ? 1 : 0);
   const referenceSources = [...visibleSources].sort((left, right) => {
     const sourcePriorityDiff =
       getDatabaseOnlyDisplayPriority(right?.source, options) -
@@ -2560,7 +2954,7 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
       summaryLimit,
       detailLimit: Math.max(detailLimit, 1),
     }),
-    buildReferenceSection(referenceSources, Math.min(referenceSources.length, referenceLimit)),
+    buildReferenceSection(referenceSources, Math.min(referenceSources.length, effectiveReferenceLimit)),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -3014,7 +3408,10 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
     });
   }
 
-  const topSources = dedupeSources(sources, Math.max(referenceLimit + 1, 5));
+  const topSources = dedupeSources(
+    (Array.isArray(sources) ? sources : []).filter((source) => sourceHasSubstantiveContent(source)),
+    Math.max(referenceLimit + 1, 5),
+  );
   const amountHighlights = options.amountMode ? extractAmountHighlights(topSources, explainMode ? 5 : 3) : [];
   const numericEvidence = options.amountMode ? extractNumericEvidence(topSources, explainMode ? 5 : 3, focusMessage) : [];
   const decisionLead = options.decisionMode ? inferDecisionLead(focusMessage, topSources) : "";
@@ -3049,7 +3446,7 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
   );
 
   if (topSources.length === 0) {
-    return "ไม่ปรากฏข้อมูลที่เกี่ยวข้องอย่างชัดเจน กรุณาระบุคำค้นหรือประเด็นที่ต้องการสอบถามเพิ่มเติม";
+    return "พบหัวข้อหรือเอกสารที่เกี่ยวข้อง แต่ข้อความที่ดึงมาไม่เพียงพอสำหรับสรุปคำตอบอย่างถูกต้อง กรุณาระบุประเด็นให้เฉพาะเจาะจงขึ้น หรือสอบถามเป็นหัวข้อย่อยเพิ่มเติม";
   }
 
   const answerText = buildParagraphSummary(
@@ -3096,6 +3493,13 @@ function filterHighQualitySources(sources, topScore, limit = 4, options = {}) {
       looksLikeBareDocumentTitle(referenceText, [source]);
 
     if ((source.score || 0) < minScore && !hasAmountSubstance) {
+      return false;
+    }
+
+    if (
+      String(source?.source || "").trim().toLowerCase() === "internet_search" &&
+      !sourceHasSubstantiveContent(source)
+    ) {
       return false;
     }
     
