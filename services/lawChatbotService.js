@@ -469,45 +469,7 @@ function cleanupSuggestionThrottle() {
 }
 
 
-  const targetKeyword =
-    target === "group" ? "กลุ่มเกษตรกร" : target === "coop" ? "สหกรณ์" : "สหกรณ์ กลุ่มเกษตรกร";
-  const searchQuery = `${query} ${targetKeyword}`.trim();
-  const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}&kl=th-th&ia=web`;
-  const timeoutMs = Math.max(1000, Number(options.timeoutMs || WEB_SEARCH_TIMEOUT_MS));
-  const resultLimit = Math.max(1, Number(options.limit || WEB_SEARCH_LIMIT));
 
-  try {
-    const html = await fetchText(searchUrl, timeoutMs);
-    if (process.env.DEBUG_INTERNET_SEARCH === "true") {
-      console.log("[searchInternetSources] HTML length:", html?.length || 0);
-      console.log("[searchInternetSources] Has result__a:", html?.includes("result__a"));
-    }
-    const rawResults = extractWebSearchResults(html, resultLimit);
-    if (process.env.DEBUG_INTERNET_SEARCH === "true") {
-      console.log("[searchInternetSources] Raw results:", rawResults?.length || 0);
-    }
-    const scoredResults = rawResults.map((result, index) => {
-      const baseScore = scoreInternetSource(searchQuery, result);
-      return {
-        ...result,
-        source: "internet_search",
-        reference: result.title || result.domain || result.url || "ข้อมูลจากอินเทอร์เน็ต",
-        content: result.snippet || "",
-        score: baseScore,
-      };
-    });
-    if (process.env.DEBUG_INTERNET_SEARCH === "true") {
-      console.log("[searchInternetSources] Scores:", scoredResults.map(r => r.score));
-    }
-    return scoredResults
-      .filter((result) => result.score > 0)
-      .sort((a, b) => (b.score || 0) - (a.score || 0))
-      .slice(0, resultLimit);
-  } catch (err) {
-    console.error("[searchInternetSources] Error:", err?.message || err);
-    return [];
-  }
-}
 
 function prioritizeMatches(matches, options = {}) {
   const retrievalPriority = Number(options.retrievalPriority || 0);
