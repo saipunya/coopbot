@@ -582,18 +582,25 @@ function rerankRetrievedMatches(matches, message, options = {}) {
       const retrievalWeight = Math.round(Number(item.retrievalPriority || 0) * 1.2);
       const authorityTrace = getSourceAuthorityTrace(item, intent, message);
       const sectionTrace = getSectionMatchTrace(item, message, intent);
+      
       const focusTrace = getFocusAlignmentTrace(item, message);
       const freshnessTrace = getFreshnessTrace(item, message, intent);
       const contextWeight = item.contextCarry ? 6 : 0;
+      const offTopicPenalty =
+  ["documents", "pdf_chunks", "knowledge_base"].includes(String(item.source || "").trim().toLowerCase()) &&
+  Number(focusTrace.rawFocusScore || 0) < 18
+    ? -18
+    : 0;
       const finalScore = Math.round(
-        baseScore +
-        retrievalWeight +
-        Number(authorityTrace.score || 0) +
-        Number(sectionTrace.score || 0) +
-        Number(focusTrace.score || 0) +
-        Number(freshnessTrace.score || 0) +
-        contextWeight,
-      );
+  baseScore +
+  retrievalWeight +
+  Number(authorityTrace.score || 0) +
+  Number(sectionTrace.score || 0) +
+  Number(focusTrace.score || 0) +
+  Number(freshnessTrace.score || 0) +
+  contextWeight +
+  offTopicPenalty,
+);
 
       return {
         ...item,
@@ -602,6 +609,7 @@ function rerankRetrievedMatches(matches, message, options = {}) {
         rankingTrace: {
           baseScore,
           finalScore,
+          offTopicPenalty,
           retrievalPriority: Number(item.retrievalPriority || 0),
           retrievalWeight,
           authorityScore: Number(authorityTrace.score || 0),
@@ -683,6 +691,9 @@ function classifyQuestionIntent(message) {
     /คืออะไร|หมายถึง|เท่าไร|เท่าไหร่|กี่บาท|กี่เปอร์เซ็นต์|กี่ร้อยละ|เมื่อไร|เมื่อไหร่|ต้อง|ควร|ได้ไหม|ได้หรือไม่/.test(
       text,
     );
+  const asksAbbreviationDefinition =
+    text.length <= 40 &&
+    /[ก-๙]{2,8}\s*(คืออะไร|หมายถึง|คือ|หมายความว่าอะไร)/.test(text);
 
   if (asksExplanation) {
     return "explain";
@@ -704,7 +715,7 @@ function classifyQuestionIntent(message) {
     return "document";
   }
 
-  if (asksShortAnswer) {
+  if (asksAbbreviationDefinition || asksShortAnswer) {
     return "short_answer";
   }
 
@@ -1614,6 +1625,33 @@ function rankSourcesForMessageFocus(items, message = "") {
 
 function pruneFocusedQueryMatches(matches, message) {
   const ranked = sortByScore(matches);
+    const abbreviationDefinitionMatch =
+    normalizeForSearch(String(message || ""))
+      .toLowerCase()
+      .match(/([ก-๙]{2,8})\s*(?:คืออะไร|หมายถึง|คือ|หมายความว่าอะไร)/);
+
+    if (abbreviationDefinitionMatch?.[1]) {
+    const abbreviation = abbreviationDefinitionMatch[1];
+
+    const strictAbbreviationMatches = ranked.filter((item) => {
+      const sourceText = buildSourceFocusSearchText(item);
+      if (!sourceText) {
+        return false;
+      }
+
+      const normalizedSource = normalizeForSearch(sourceText).toLowerCase();
+      return (
+        normalizedSource.includes(abbreviation) &&
+        (
+          /คือ|หมายถึง|หมายความว่า|ย่อมาจาก|คณะกรรมการ|ประกอบด้วย/.test(normalizedSource)
+        )
+      );
+    });
+
+    if (strictAbbreviationMatches.length > 0) {
+      return strictAbbreviationMatches;
+    }
+  }
   if (isCompensationGovernanceQuestion(message)) {
     const focusedMeetingCompensationMatches = ranked
       .map((item) => ({
