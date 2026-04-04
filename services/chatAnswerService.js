@@ -3668,6 +3668,33 @@ async function generateChatSummary(message, sources, options = {}) {
     return coopDissolutionFocusedAnswer;
   }
 
+  // Add more specialized handlers for common legal topics
+  const meetingQuorumFocusedAnswer = buildMeetingQuorumFocusedAnswer(
+    focusedAnswerSources,
+    {
+      ...options,
+      originalMessage: focusMessage,
+      message,
+    },
+  );
+
+  if (meetingQuorumFocusedAnswer) {
+    return meetingQuorumFocusedAnswer;
+  }
+
+  const boardElectionFocusedAnswer = buildBoardElectionFocusedAnswer(
+    focusedAnswerSources,
+    {
+      ...options,
+      originalMessage: focusMessage,
+      message,
+    },
+  );
+
+  if (boardElectionFocusedAnswer) {
+    return boardElectionFocusedAnswer;
+  }
+
   if (
     promptProfile.preferDatabaseOnlyForLawSections === true &&
     options.questionIntent === "law_section" &&
@@ -3789,6 +3816,122 @@ async function generateChatSummary(message, sources, options = {}) {
       originalMessage: message,
     });
   }
+}
+
+function isMeetingQuorumQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return /(องค์ประชุม|ครบองค์ประชุม|ไม่ครบองค์ประชุม|กึ่งหนึ่ง|100 คน|หนึ่งร้อยคน|มาตรา 57|มาตรา 58)/.test(text);
+}
+
+function buildMeetingQuorumFocusedAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isMeetingQuorumQuestion(message)) {
+    return "";
+  }
+
+  const candidateSources = dedupeSources(sources, 10);
+  let selectedEvidence = null;
+
+  for (const source of candidateSources) {
+    const segments = splitContentSegments(buildSourceRawContentText(source));
+    
+    for (let index = 0; index < segments.length; index += 1) {
+      const first = cleanLine(segments[index]);
+      const second = cleanLine(segments[index + 1] || "");
+      
+      if (first && second) {
+        const combined = cleanLine(`${first} ${second}`);
+        if (/(องค์ประชุม|ครบองค์ประชุม|ไม่ครบองค์ประชุม|กึ่งหนึ่ง|100 คน|หนึ่งร้อยคน|มาตรา 57|มาตรา 58)/.test(combined)) {
+          selectedEvidence = {
+            text: combined,
+            source,
+            score: Number(source.score || 0) + 20,
+          };
+          break;
+        }
+      }
+    }
+    
+    if (selectedEvidence) break;
+  }
+
+  if (!selectedEvidence) {
+    return "";
+  }
+
+  return [
+    buildParagraphSummary(
+      ["การประชุมใหญ่ต้องมีองค์ประชุมครบกึ่งหนึ่งของสมาชิกที่มีสิทธิลงคะแนนเสียง แต่ไม่น้อยกว่าหนึ่งร้อยคน"],
+      [],
+      false,
+      { summaryLimit: 1 },
+    ),
+    buildReferenceSection([selectedEvidence.source], 1),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function isBoardElectionQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return /(เลือกตั้ง|สรรหา|คณะกรรมการ|กรรมการ|ลงคะแนน|เปิดหีบ|ปิดหีบ|มาตรา 56)/.test(text);
+}
+
+function buildBoardElectionFocusedAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isBoardElectionQuestion(message)) {
+    return "";
+  }
+
+  const candidateSources = dedupeSources(sources, 10);
+  let selectedEvidence = null;
+
+  for (const source of candidateSources) {
+    const segments = splitContentSegments(buildSourceRawContentText(source));
+    
+    for (let index = 0; index < segments.length; index += 1) {
+      const first = cleanLine(segments[index]);
+      const second = cleanLine(segments[index + 1] || "");
+      
+      if (first && second) {
+        const combined = cleanLine(`${first} ${second}`);
+        if (/(เลือกตั้ง|สรรหา|คณะกรรมการ|กรรมการ|ลงคะแนน|เปิดหีบ|ปิดหีบ|มาตรา 56)/.test(combined)) {
+          selectedEvidence = {
+            text: combined,
+            source,
+            score: Number(source.score || 0) + 20,
+          };
+          break;
+        }
+      }
+    }
+    
+    if (selectedEvidence) break;
+  }
+
+  if (!selectedEvidence) {
+    return "";
+  }
+
+  return [
+    buildParagraphSummary(
+      ["คณะกรรมการดำเนินการของสหกรณ์มาจากการเลือกตั้งโดยที่ประชุมใหญ่ ตามหลักเกณฑ์และวิธีการที่กฎหมายกำหนด"],
+      [],
+      false,
+      { summaryLimit: 1 },
+    ),
+    buildReferenceSection([selectedEvidence.source], 1),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 module.exports = {

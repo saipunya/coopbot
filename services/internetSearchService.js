@@ -5,6 +5,16 @@ const WEB_SEARCH_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_WEB_SEARCH_TIMEOUT_
 const WEB_SEARCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
 
+// Trusted domains for government/legal sources
+const TRUSTED_DOMAINS = [
+  'cpd.go.th',      // คปท.
+  'cad.go.th',      // คปช.
+  'ratchakitcha.soc.go.th', // ราชกิจจานุเบกษา
+  'law.go.th',      // ศูนย์บริการข้อมูลกฎหมาย
+  'coop.go.th',     // กระทรวงเกษตรและสหกรณ์
+  'moac.go.th',     // กระทรวงเกษตรและสหกรณ์
+];
+
 function decodeHtmlEntities(text) {
   return String(text || "")
     .replace(/&amp;/gi, "&")
@@ -97,6 +107,11 @@ function scoreInternetSource(query, source) {
 
   if (source.snippet) {
     score += 4;
+  }
+
+  // Bonus for trusted government/legal domains
+  if (source.domain && TRUSTED_DOMAINS.some(domain => source.domain.includes(domain))) {
+    score += 15;
   }
 
   return score;

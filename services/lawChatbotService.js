@@ -362,7 +362,7 @@ async function replyToChat(payload, session) {
   const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target, cacheScope);
   const cacheKey = buildAnswerCacheKey(message, target, planContext);
   const canUseCache = shouldUseAnswerCache(message) && !debugMode;
-  const cachedAnswer = canUseCache ? getCachedAnswer(cacheKey) : null;
+  const cachedAnswer = canUseCache ? getCachedAnswer(cacheKey, classifyQuestionIntent(message)) : null;
   if (cachedAnswer) {
     storeConversationContext(
       session,

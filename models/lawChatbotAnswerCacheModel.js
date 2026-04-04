@@ -13,7 +13,7 @@ function parseMetadataJson(value) {
 }
 
 class LawChatbotAnswerCacheModel {
-  static async findByQuestionHash(questionHash) {
+  static async findByQuestionHash(questionHash, maxAgeDays = 30) {
     const pool = getDbPool();
     if (!pool) {
       return null;
@@ -29,8 +29,9 @@ class LawChatbotAnswerCacheModel {
               answer_text, metadata_json, hit_count, created_at, updated_at
        FROM law_chatbot_answer_cache
        WHERE question_hash = ?
+       AND created_at > DATE_SUB(NOW(), INTERVAL ? DAY)
        LIMIT 1`,
-      [normalizedHash],
+      [normalizedHash, maxAgeDays],
     );
 
     if (!rows[0]) {

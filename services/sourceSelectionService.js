@@ -914,7 +914,7 @@ function getSourceRoutingPlan(intent) {
           vinichai: 3,
           documents: 2,
           pdf_chunks: 1,
-          knowledge_base: 1,
+          knowledge_base: 3,  // เพิ่ม priority ให้ knowledge_base
         },
         limits: {
           structured_laws: 4,
@@ -922,7 +922,7 @@ function getSourceRoutingPlan(intent) {
           vinichai: 2,
           documents: 1,
           pdf_chunks: 1,
-          knowledge_base: 1,
+          knowledge_base: 2,  // เพิ่ม limit
         },
       };
     case "law_section":
@@ -933,7 +933,7 @@ function getSourceRoutingPlan(intent) {
           vinichai: 2,
           documents: 1,
           pdf_chunks: 0,
-          knowledge_base: 1,
+          knowledge_base: 2,  // เพิ่ม priority สำหรับ context
         },
         limits: {
           structured_laws: 4,
@@ -952,7 +952,7 @@ function getSourceRoutingPlan(intent) {
           pdf_chunks: 3,
           structured_laws: 3,
           vinichai: 2,
-          knowledge_base: 1,
+          knowledge_base: 3,  // เพิ่ม priority
         },
         limits: {
           admin_knowledge: 2,
@@ -960,7 +960,7 @@ function getSourceRoutingPlan(intent) {
           pdf_chunks: 2,
           structured_laws: 2,
           vinichai: 1,
-          knowledge_base: 1,
+          knowledge_base: 2,  // เพิ่ม limit
         },
       };
     case "qa":
@@ -971,7 +971,7 @@ function getSourceRoutingPlan(intent) {
           structured_laws: 3,
           documents: 0,
           pdf_chunks: 0,
-          knowledge_base: 1,
+          knowledge_base: 4,  // เพิ่ม priority
         },
         limits: {
           vinichai: 4,
@@ -979,7 +979,7 @@ function getSourceRoutingPlan(intent) {
           structured_laws: 1,
           documents: 0,
           pdf_chunks: 0,
-          knowledge_base: 1,
+          knowledge_base: 2,  // เพิ่ม limit
         },
       };
     case "short_answer":
@@ -990,7 +990,7 @@ function getSourceRoutingPlan(intent) {
           vinichai: 2,
           documents: 0,
           pdf_chunks: 0,
-          knowledge_base: 1,
+          knowledge_base: 4,  // เพิ่ม priority
         },
         limits: {
           admin_knowledge: 3,
@@ -998,7 +998,7 @@ function getSourceRoutingPlan(intent) {
           vinichai: 1,
           documents: 0,
           pdf_chunks: 0,
-          knowledge_base: 1,
+          knowledge_base: 2,  // เพิ่ม limit
         },
       };
     default:
@@ -1009,7 +1009,7 @@ function getSourceRoutingPlan(intent) {
           vinichai: 4,
           documents: 1,
           pdf_chunks: 1,
-          knowledge_base: 1,
+          knowledge_base: 3,  // เพิ่ม priority จาก 1 เป็น 3
         },
         limits: {
           admin_knowledge: 2,
@@ -1017,7 +1017,7 @@ function getSourceRoutingPlan(intent) {
           vinichai: 2,
           documents: 1,
           pdf_chunks: 1,
-          knowledge_base: 1,
+          knowledge_base: 2,  // เพิ่ม limit จาก 1 เป็น 2
         },
       };
   }
@@ -1061,9 +1061,7 @@ async function searchDatabaseSources(message, target, options = {}) {
     rawVinichaiMatches,
   ] = await Promise.all([
     LawChatbotKnowledgeModel.searchKnowledge(retrievalMessage, target, 5),
-    freePlanSearch
-      ? LawChatbotKnowledgeSuggestionModel.searchApproved(retrievalMessage, target, 5)
-      : Promise.resolve([]),
+    LawChatbotKnowledgeSuggestionModel.searchApproved(retrievalMessage, target, 5),
     LawChatbotPdfChunkModel.searchDocuments(retrievalMessage, 5),
     withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(retrievalMessage, 6), hybridTimeoutMs, [], "hybrid-search"),
     Promise.resolve(LawChatbotModel.searchKnowledge(retrievalMessage, target)),
@@ -1077,7 +1075,7 @@ async function searchDatabaseSources(message, target, options = {}) {
     sourceOverride: "admin_knowledge",
   });
   const suggestionMatches = prioritizeMatches(rawSuggestionMatches, {
-    retrievalPriority: freeSourcePriorityPlan?.knowledge_suggestion || 0,
+    retrievalPriority: routingPlan.priorities.knowledge_suggestion || 0,
     sourceOverride: "knowledge_suggestion",
   });
   const documentMatches = prioritizeMatches(rawDocumentMatches, {
@@ -1087,7 +1085,7 @@ async function searchDatabaseSources(message, target, options = {}) {
     retrievalPriority: freeSourcePriorityPlan?.pdf_chunks || routingPlan.priorities.pdf_chunks || 2,
   });
   const fallbackKnowledge = prioritizeMatches(rawFallbackKnowledge, {
-    retrievalPriority: freeSourcePriorityPlan?.knowledge_base || routingPlan.priorities.knowledge_base || 1,
+    retrievalPriority: routingPlan.priorities.knowledge_base || 2,
     sourceOverride: "knowledge_base",
   });
   const vinichaiMatches = prioritizeMatches(rawVinichaiMatches, {

@@ -7,7 +7,18 @@ const {
 } = require("./planService");
 const { normalizeForSearch } = require("./thaiTextUtils");
 
-const ANSWER_CACHE_TTL_MS = Number(process.env.LAW_CHATBOT_ANSWER_CACHE_TTL_MS || 5 * 60 * 1000);
+const ANSWER_CACHE_TTL_MS = Number(process.env.LAW_CHATBOT_ANSWER_CACHE_TTL_MS || 5 * 60 * 1000); // 5 minutes base TTL
+
+// TTL based on question intent
+const CACHE_TTL_BY_INTENT = {
+  law_section: 30 * 60 * 1000, // 30 นาที - กฎหมายไม่เปลี่ยนบ่อย
+  short_answer: 15 * 60 * 1000, // 15 นาที - คำตอบสั้นค่อนข้างคงที่
+  qa: 10 * 60 * 1000,           // 10 นาที - คำถามทั่วไป
+  document: 5 * 60 * 1000,      // 5 นาที - เอกสารอาจอัปเดต
+  explain: 7 * 60 * 1000,       // 7 นาที - คำอธิบาย
+  general: 10 * 60 * 1000,      // 10 นาที - ค่าเริ่มต้น
+};
+
 const ANSWER_CACHE_SCOPE_VERSION = "v13";
 const answerCache = new Map();
 
@@ -26,13 +37,15 @@ function buildAnswerCacheKey(message, target, planContext = {}) {
   return `${target}::${buildAnswerCacheScope(planContext)}::${normalizeForSearch(message).toLowerCase()}`;
 }
 
-function getCachedAnswer(cacheKey) {
+function getCachedAnswer(cacheKey, questionIntent = "general") {
   const cached = answerCache.get(cacheKey);
   if (!cached) {
     return null;
   }
 
-  if (Date.now() - cached.createdAt > ANSWER_CACHE_TTL_MS) {
+  // Use intent-specific TTL
+  const ttlMs = CACHE_TTL_BY_INTENT[questionIntent] || ANSWER_CACHE_TTL_MS;
+  if (Date.now() - cached.createdAt > ttlMs) {
     answerCache.delete(cacheKey);
     return null;
   }

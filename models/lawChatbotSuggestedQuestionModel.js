@@ -417,6 +417,20 @@ class LawChatbotSuggestedQuestionModel {
       return found || null;
     }
 
+    // Try exact match first
+    const exactMatch = await this.findExactMatch(normalizedQuestion, normalizedTarget);
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    // Try fuzzy matching if no exact match
+    return await this.findFuzzyMatch(normalizedQuestion, normalizedTarget);
+  }
+
+  static async findExactMatch(normalizedQuestion, normalizedTarget) {
+    const pool = getDbPool();
+    if (!pool) return null;
+
     await ensureTable();
     const [rows] =
       normalizedTarget === "all"
@@ -441,6 +455,64 @@ class LawChatbotSuggestedQuestionModel {
           );
 
     return rows[0] ? mapRow(rows[0]) : null;
+  }
+
+  static async findFuzzyMatch(normalizedQuestion, normalizedTarget, minThreshold = 0.7) {
+    const pool = getDbPool();
+    if (!pool) return null;
+
+    await ensureTable();
+    const [rows] =
+      normalizedTarget === "all"
+        ? await pool.query(
+            `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
+               FROM chatbot_suggested_questions
+              WHERE is_active = 1
+              ORDER BY display_order ASC, id DESC
+              LIMIT 50`,
+          )
+        : await pool.query(
+            `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
+               FROM chatbot_suggested_questions
+              WHERE is_active = 1
+                AND target IN ('all', ?)
+              ORDER BY CASE WHEN target = ? THEN 0 ELSE 1 END, display_order ASC, id DESC
+              LIMIT 50`,
+            [normalizedTarget, normalizedTarget],
+          );
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const { segmentWords } = require("../services/thaiTextUtils");
+    const questionTokens = new Set(segmentWords(normalizedQuestion));
+
+    // Calculate token overlap for each candidate
+    const candidates = rows.map(row => {
+      const rowTokens = new Set(segmentWords(row.normalized_question));
+      
+      const intersection = new Set([...questionTokens].filter(x => rowTokens.has(x)));
+      const union = new Set([...questionTokens, ...rowTokens]);
+      
+      const jaccardSimilarity = intersection.size / union.size;
+      const tokenCoverage = intersection.size / questionTokens.size;
+      
+      // Combined score: 70% Jaccard, 30% coverage
+      const similarity = (jaccardSimilarity * 0.7) + (tokenCoverage * 0.3);
+      
+      return {
+        ...mapRow(row),
+        similarity
+      };
+    });
+
+    // Filter by threshold and sort by similarity
+    const matches = candidates
+      .filter(candidate => candidate.similarity >= minThreshold)
+      .sort((a, b) => b.similarity - a.similarity);
+
+    return matches[0] || null;
   }
 }
 
