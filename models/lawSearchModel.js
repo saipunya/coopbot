@@ -122,7 +122,6 @@ function buildStructuredSearchTerms(message, queryLawNumber = null) {
   ]).filter(Boolean);
 }
 
-
 async function resolveStructuredLawSearchField(pool, tableName) {
   if (!pool || !tableName) {
     return null;
