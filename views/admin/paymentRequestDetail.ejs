@@ -39,6 +39,12 @@
       .approve { background: linear-gradient(145deg, #1d7a52, #16613f); }
       .reject { background: linear-gradient(145deg, #b63d2f, #922f24); }
       @media (max-width: 720px) {
+        .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
+        .card, .topbar { padding: 1rem; }
+        .topbar { flex-direction: column; align-items: stretch; }
+        .meta-grid { grid-template-columns: 1fr; }
+        .chip-row { flex-direction: column; align-items: flex-start; }
+        .status-pill, .plan-chip { width: fit-content; }
         .plan-editor form { flex-direction:column; align-items:stretch; }
         .plan-editor select, .plan-editor button, .actions form, .actions button { width:100%; }
       }

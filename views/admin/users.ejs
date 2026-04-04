@@ -50,8 +50,15 @@
       .plan-form button { border:none; border-radius:12px; padding:0.82rem 1rem; background:#0f5f8f; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
       .plan-hint { color:#5d6a79; font-size:0.88rem; }
       @media (max-width: 820px) {
+        .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
+        .card, .topbar { padding: 1rem; }
+        .topbar { flex-direction: column; align-items: stretch; }
+        .search-form { flex-direction: column; align-items: stretch; }
+        .search-form input { flex-basis: auto; }
         .plan-controls { grid-template-columns: 1fr; }
         .plan-form button, .search-form button, .search-form a { width:100%; }
+        .user-head, .identity { flex-direction: column; align-items: flex-start; }
+        .status-chip { width: fit-content; }
       }
     </style>
   </head>

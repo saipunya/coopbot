@@ -51,6 +51,12 @@
       .status-chip.approved { background:#e8f7ee; color:#1f6a3a; }
       .status-chip.rejected { background:#fce9e7; color:#9b2c22; }
       @media (max-width: 720px) {
+        .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
+        .card, .topbar { padding: 1rem; }
+        .topbar { flex-direction: column; align-items: stretch; }
+        .request-head { flex-direction: column; }
+        .chip-row { width: 100%; }
+        .status-chip { width: fit-content; }
         .request-actions { flex-direction:column; align-items:stretch; }
         .request-actions button, .request-actions select { width:100%; }
       }

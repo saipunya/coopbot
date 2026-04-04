@@ -2,7 +2,7 @@
 
 Last updated: 2026-04-05
 
-This checklist covers the recent guest access, Google login persistence, monthly usage, three-plan package model, payment request, and admin payment review changes.
+This checklist covers the recent guest access, Google login persistence, monthly usage, three-plan package model, payment request, admin payment review changes, and responsive small-screen UI behavior.
 
 ## Preconditions
 
@@ -219,6 +219,79 @@ Expected:
 - User plan remains unchanged from before rejection.
 - Existing `plan_expires_at` remains unchanged.
 
+## 9. Responsive UI: Small Screen Regression Pass
+
+Goal: verify all main user and admin pages remain usable on small screens and narrow mobile viewports.
+
+Viewport matrix:
+
+1. `320 x 568` for older/smaller phones.
+2. `390 x 844` for common modern phones.
+3. `768 x 1024` for portrait tablet.
+
+Preparation:
+
+1. Start the app and sign in with one normal Google user and one admin account.
+2. Open browser DevTools device toolbar or use a real phone/tablet.
+3. Repeat the checks below on at least `320 x 568` and `390 x 844`.
+
+Pages to verify:
+
+1. `/law-chatbot`
+2. `/law-chatbot/payment-request`
+3. `/law-chatbot/upload`
+4. `/law-chatbot/feedback`
+5. `/admin/login`
+6. `/admin`
+7. `/admin/users`
+8. `/admin/payment-requests`
+9. `/admin/payment-requests/:id`
+10. `/user`
+11. `/user/search-history`
+
+Expected on all small screens:
+
+- No horizontal scrolling is required for core content.
+- Header, action buttons, and form controls stay fully visible.
+- Buttons are stacked or wrapped cleanly when width is limited.
+- Package cards, chips, and status badges do not overflow their containers.
+- Primary forms keep readable spacing and inputs remain full-width.
+- Lists and cards keep text readable without clipped labels.
+
+Expected page-specific checks:
+
+1. `/law-chatbot`
+  - The page header, plan ribbon, chat composer, and floating controls stay usable on a phone-sized screen.
+  - The send button, voice button, and clear/reset actions remain reachable without layout overlap.
+2. `/law-chatbot/payment-request`
+  - Plan comparison cards stack vertically on narrow screens.
+  - The current-plan panel, request form, and recent-request list remain readable.
+3. `/law-chatbot/upload`
+  - The hero area collapses to one column.
+  - Upload stats and accepted-type chips wrap cleanly.
+4. `/law-chatbot/feedback`
+  - The feedback form and summary metrics collapse to one column.
+  - Recent feedback items remain readable without text collision.
+5. `/admin/login`
+  - The login card fits within the viewport with comfortable padding.
+  - Google sign-in button and back link remain visible without clipping.
+6. `/admin`
+  - Metric cards become single-column where needed.
+  - Quick links, system actions, and suggestion-management forms remain usable on touch screens.
+7. `/admin/users`
+  - Search controls, plan controls, and per-user actions stack into a single column on narrow screens.
+  - User cards keep plan chips and account status visible without overflow.
+8. `/admin/payment-requests`
+  - Status, requested plan, and current plan remain visible together even when wrapped.
+  - Pending-request plan update controls become full-width on mobile.
+9. `/admin/payment-requests/:id`
+  - Detail summary panels collapse cleanly into one column.
+  - Approve/reject actions remain full-width and easy to tap on mobile.
+10. `/user`
+  - Profile card, plan spotlight, stat cards, and action buttons collapse to a single-column layout.
+11. `/user/search-history`
+  - History items stack correctly and action buttons become full-width on small screens.
+
 ## Quick Smoke SQL
 
 ```sql
@@ -233,8 +306,12 @@ SELECT plan, COUNT(*) AS total FROM users GROUP BY plan ORDER BY plan;
 
 - Use real `/law-chatbot/chat` requests for guest and monthly limit checks. Do not use summary/debug endpoints.
 - For quick UI smoke checks while the app is running, use `npm run verify:ui`.
+- For manual responsive review prep, use `npm run review:responsive` to print the viewport matrix and page list.
+- To open the responsive review page set in your default browser, use `npm run review:responsive:open`.
+- To test that command without opening browser tabs, use `npm run review:responsive:open -- --print-only`.
 - `npm run verify:ui` now fails if no active admin/user test accounts exist.
 - When `NODE_ENV=production`, the command only runs if both app/DB targets are local, or if `COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true` is set explicitly.
+- `npm run verify:ui` validates route availability and key phrases, but it does not replace manual responsive checks with real viewport resizing.
 - Payment review routes must stay behind admin auth:
   - `/admin/payment-requests`
   - `/admin/payment-requests/:id`

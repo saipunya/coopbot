@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node app.js",
     "dev": "node --watch app.js",
+    "review:responsive": "node scripts/responsive_review_helper.js",
+    "review:responsive:open": "node scripts/open_responsive_review_pages.js",
     "verify:ui": "node scripts/verify_ui_routes.js",
     "telegram:test": "node scripts/sendTelegramTest.js"
   },

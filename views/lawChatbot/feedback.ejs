@@ -1,27 +1,100 @@
 <%- include("../partials/header", { title, page }) %>
 
-<section class="card">
-  <h1>ข้อเสนอแนะ</h1>
-  <p>ส่งข้อเสนอแนะเพื่อช่วยปรับปรุงคุณภาพคำตอบของแชตบอทกฎหมาย</p>
-  <form action="/law-chatbot/feedback" method="post">
-    <label for="name">ชื่อ</label>
-    <input id="name" name="name" type="text" placeholder="ระบุชื่อของคุณ" />
+<style>
+  .feedback-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
 
-    <label for="email">อีเมล</label>
-    <input id="email" name="email" type="email" placeholder="you@example.com" />
+  .feedback-summary {
+    display: grid;
+    gap: 0.8rem;
+    align-content: start;
+  }
 
-    <label for="message">ข้อความ</label>
-    <textarea id="message" name="message" rows="5" placeholder="บอกสิ่งที่อยากให้ระบบปรับปรุง"></textarea>
+  .feedback-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
 
-    <button type="submit">ส่งข้อเสนอแนะ</button>
-  </form>
+  .feedback-metric {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 0.9rem;
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  .feedback-metric strong {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 1.35rem;
+    color: var(--accent-strong);
+  }
+
+  .feedback-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .feedback-list li {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 0.9rem 1rem;
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  @media (max-width: 900px) {
+    .feedback-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 620px) {
+    .feedback-metrics {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<section class="feedback-grid">
+  <section class="card">
+    <h1>ข้อเสนอแนะ</h1>
+    <p>ส่งข้อเสนอแนะเพื่อช่วยปรับปรุงคุณภาพคำตอบของแชตบอทกฎหมาย</p>
+    <form action="/law-chatbot/feedback" method="post">
+      <label for="name">ชื่อ</label>
+      <input id="name" name="name" type="text" placeholder="ระบุชื่อของคุณ" />
+
+      <label for="email">อีเมล</label>
+      <input id="email" name="email" type="email" placeholder="you@example.com" />
+
+      <label for="message">ข้อความ</label>
+      <textarea id="message" name="message" rows="5" placeholder="บอกสิ่งที่อยากให้ระบบปรับปรุง"></textarea>
+
+      <button type="submit">ส่งข้อเสนอแนะ</button>
+    </form>
+  </section>
+
+  <aside class="card feedback-summary">
+    <div>
+      <h2 style="margin-top: 0;">ภาพรวมข้อเสนอแนะ</h2>
+      <p style="margin-bottom: 0;">ดูจำนวน feedback ล่าสุดและแนวโน้มว่าคำตอบส่วนใหญ่มีประโยชน์หรือยังต้องปรับปรุงต่อ</p>
+    </div>
+    <div class="feedback-metrics">
+      <div class="feedback-metric">ทั้งหมด<strong><%= data.feedbackCount %></strong></div>
+      <div class="feedback-metric">มีประโยชน์<strong><%= data.helpfulCount %></strong></div>
+      <div class="feedback-metric">ควรปรับปรุง<strong><%= data.needsImprovementCount %></strong></div>
+    </div>
+  </aside>
 </section>
 
 <section class="card">
-  <p>ข้อเสนอแนะทั้งหมด: <strong><%= data.feedbackCount %></strong></p>
-  <p>มีประโยชน์: <strong><%= data.helpfulCount %></strong></p>
-  <p>ควรปรับปรุง: <strong><%= data.needsImprovementCount %></strong></p>
-  <ul>
+  <ul class="feedback-list">
     <% if (data.recentFeedback.length === 0) { %>
       <li>ยังไม่มีข้อเสนอแนะ</li>
     <% } %>
@@ -29,7 +102,7 @@
       <li>
         <strong><%= item.name %>:</strong> <%= item.message || "ไม่มีข้อความเพิ่มเติม" %>
         <% if (typeof item.isHelpful === "boolean") { %>
-          - <%= item.isHelpful ? "มีประโยชน์" : "ควรปรับปรุง" %>
+          <div style="margin-top: 0.45rem; color: var(--subtle);"><%= item.isHelpful ? "มีประโยชน์" : "ควรปรับปรุง" %></div>
         <% } %>
       </li>
     <% }) %>

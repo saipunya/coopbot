@@ -54,6 +54,21 @@
         gap: 1rem;
         padding: 1.1rem 1.25rem;
         margin-bottom: 1rem;
+        position: relative;
+        overflow: hidden;
+      }
+      .topbar::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at top left, rgba(255, 255, 255, 0.38), transparent 32%),
+          linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 42%);
+        pointer-events: none;
+      }
+      .topbar > * {
+        position: relative;
+        z-index: 1;
       }
       .hero-title {
         margin: 0;
@@ -87,8 +102,23 @@
         margin-bottom: 1rem;
       }
       .metric-card {
+        position: relative;
+        overflow: hidden;
         background:
           linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 247, 252, 0.92));
+      }
+      .metric-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 4px;
+        background: linear-gradient(90deg, #0f5f8f, transparent 85%);
+      }
+      .metric-card.payment::before {
+        background: linear-gradient(90deg, #8c5d1f, transparent 85%);
+      }
+      .metric-card.feedback::before {
+        background: linear-gradient(90deg, #0f695f, transparent 85%);
       }
       .metric-label {
         margin: 0;
@@ -291,8 +321,8 @@
         background: rgba(255, 255, 255, 0.76);
       }
       .quick-links {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         gap: 0.75rem;
         padding: 0;
         margin: 0;
@@ -304,11 +334,12 @@
         gap: 0.45rem;
         text-decoration: none;
         padding: 0.7rem 0.95rem;
-        border-radius: 999px;
+        border-radius: 18px;
         background: var(--primary-soft);
         color: var(--primary-strong);
         border: 1px solid rgba(21, 84, 122, 0.14);
         font-weight: 700;
+        min-height: 100%;
       }
       .section-note {
         margin-top: -0.15rem;
@@ -358,17 +389,70 @@
         line-height: 1.7;
       }
       @media (max-width: 760px) {
+        .shell {
+          width: min(100%, calc(100% - 1rem));
+          padding: 0.75rem 0 1.4rem;
+        }
+        .card,
         .topbar {
+          padding: 1rem;
           flex-direction: column;
           align-items: stretch;
         }
+        .topbar-badge {
+          margin-bottom: 0.55rem;
+        }
+        .hero-subtitle {
+          line-height: 1.5;
+        }
+        .grid,
+        .form-grid,
+        .quick-links {
+          grid-template-columns: 1fr;
+        }
+        .status-row,
+        .system-actions,
         .suggestion-actions {
           flex-direction: column;
           align-items: stretch;
         }
+        .status-pill,
+        .quick-links a {
+          width: 100%;
+          justify-content: center;
+        }
+        .knowledge-actions {
+          justify-content: stretch;
+        }
+        .knowledge-actions form,
         .suggestion-actions form,
         .suggestion-actions button {
           width: 100%;
+        }
+        .logout-btn,
+        .primary-btn,
+        .secondary-btn,
+        .danger-btn {
+          width: 100%;
+        }
+      }
+
+      @media (max-width: 420px) {
+        .hero-title {
+          font-size: 1.35rem;
+        }
+        .topbar-badge {
+          width: fit-content;
+          max-width: 100%;
+        }
+        .metric {
+          font-size: 1.7rem;
+        }
+        .soft-list li,
+        .suggestion-editor,
+        details.suggestion-editor {
+          padding-left: 0.85rem;
+          padding-right: 0.85rem;
         }
       }
     </style>
@@ -402,11 +486,11 @@
           <p class="metric-label">ชิ้นข้อมูลทั้งหมด</p>
           <p class="metric"><%= uploadData.uploadedChunkCount %></p>
         </article>
-        <article class="card metric-card">
+        <article class="card metric-card feedback">
           <p class="metric-label">ข้อเสนอแนะทั้งหมด</p>
           <p class="metric"><%= feedbackData.feedbackCount %></p>
         </article>
-        <article class="card metric-card">
+        <article class="card metric-card payment">
           <p class="metric-label">คำขอชำระเงินที่รอพิจารณา</p>
           <p class="metric"><%= paymentRequestData.pendingCount %></p>
           <p style="margin: 0.45rem 0 0;">

@@ -199,7 +199,12 @@
         padding-left: 1.2rem;
       }
       @media (max-width: 700px) {
+        .shell {
+          width: min(100%, calc(100% - 1rem));
+          padding: 0.75rem 0 1.4rem;
+        }
         .topbar {
+          padding: 1rem;
           flex-direction: column;
           align-items: stretch;
         }
@@ -208,6 +213,23 @@
         }
         .nav {
           overflow: auto;
+          gap: 0.45rem;
+          padding: 0.35rem;
+        }
+        .nav a {
+          white-space: nowrap;
+          padding: 0.68rem 0.9rem;
+          font-size: 0.92rem;
+        }
+      }
+
+      @media (max-width: 420px) {
+        .brand-subtle {
+          display: none;
+        }
+        .nav a {
+          padding: 0.64rem 0.82rem;
+          font-size: 0.88rem;
         }
       }
 

@@ -73,6 +73,67 @@
 			"type": "shell",
 			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
 			"isBackground": false
+		},
+		{
+			"label": "verify-ui-routes-mobile-pass",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
+		},
+		{
+			"label": "start-coopbot-mobile-pass",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"start"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "verify-ui-routes-mobile-pass-2",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
+		},
+		{
+			"label": "verify-ui-routes-small-screen-pass",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
+		},
+		{
+			"label": "review-responsive-helper-output",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"review:responsive"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-ui-routes-after-responsive-helper",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
+		},
+		{
+			"label": "review-responsive-open-print-only",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"review:responsive:open",
+				"--",
+				"--print-only"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-ui-after-responsive-open-script",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
 		}
 	]
 }

@@ -207,6 +207,46 @@
       grid-template-columns: 1fr;
     }
   }
+
+  @media (max-width: 640px) {
+    .plan-card-top {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .plan-card-price {
+      font-size: 1.55rem;
+    }
+
+    .mini-pill,
+    .plan-card-current,
+    .plan-hero-kicker {
+      width: fit-content;
+      max-width: 100%;
+    }
+
+    .current-plan-panel {
+      padding: 0.9rem;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .plan-hero-grid h1 {
+      font-size: 1.45rem;
+      line-height: 1.2;
+    }
+
+    .plan-card,
+    .current-plan-panel,
+    .helper-box {
+      padding-left: 0.9rem;
+      padding-right: 0.9rem;
+    }
+
+    .plan-card-price {
+      font-size: 1.4rem;
+    }
+  }
 </style>
 
 <%
