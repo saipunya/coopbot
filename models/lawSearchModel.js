@@ -94,18 +94,34 @@ function getFocusedIntentTerms(intent = "general") {
   return [];
 }
 
+function extractAbbreviationTerms(text) {
+  const normalized = normalizeComparisonText(text);
+  if (!normalized) {
+    return [];
+  }
+
+  const matches = normalized.match(/\b[ก-๙a-z0-9]{2,8}\b/gi) || [];
+  return uniqueTokens(
+    matches.filter((term) => term && term.length >= 2 && term.length <= 8),
+  );
+}
+
+
 function buildStructuredSearchTerms(message, queryLawNumber = null) {
   const normalizedMessage = normalizeForSearch(message).toLowerCase();
   const explicitTopics = extractExplicitTopicHints(message);
   const lawNumberPatterns = buildLawNumberPatterns(queryLawNumber);
+  const abbreviationTerms = extractAbbreviationTerms(message);
 
   return uniqueTokens([
     normalizedMessage,
     ...segmentWords(message),
     ...explicitTopics,
     ...lawNumberPatterns,
+    ...abbreviationTerms,
   ]).filter(Boolean);
 }
+
 
 async function resolveStructuredLawSearchField(pool, tableName) {
   if (!pool || !tableName) {
@@ -444,8 +460,19 @@ function scoreStructuredLawKeywordMatch(message, keywordText = "") {
       .map((term) => normalizeComparisonText(term))
       .filter((term) => term && term.length >= 2),
   );
+    const abbreviationTerms = extractAbbreviationTerms(message);
 
   let score = 0;
+    abbreviationTerms.forEach((abbr) => {
+    if (keywordTerms.some((keyword) => keyword === abbr)) {
+      score += 60;
+      return;
+    }
+
+    if (keywordTerms.some((keyword) => keyword.includes(abbr) || abbr.includes(keyword))) {
+      score += 30;
+    }
+  });
   const matched = new Set();
 
   keywordTerms.forEach((keyword) => {
