@@ -239,7 +239,7 @@ function listPurchasablePlans() {
       monthlyLimit: config.monthlyLimit,
       description:
         config.code === "pro"
-          ? "AI จากฐานข้อมูลภายในแบบต่อเนื่อง อ่านง่าย และละเอียดพอดี"
+          ? "AI แบบต่อเนื่อง คำตอบละเอียดขึ้น พร้อม internet fallback แบบจำกัด"
           : "AI เชิงลึก พร้อม internet fallback และการวิเคราะห์หลายแหล่งข้อมูล",
     };
   });

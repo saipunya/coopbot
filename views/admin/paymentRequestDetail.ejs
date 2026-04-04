@@ -9,12 +9,27 @@
       body { margin: 0; font-family: 'Sarabun', Arial, sans-serif; background: linear-gradient(160deg, #e6eef6, #f5f9fc); color: #1f2a37; }
       .shell { width: min(980px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; }
       .card { background: rgba(255,255,255,0.9); border: 1px solid #d8e2ea; border-radius: 20px; box-shadow: 0 18px 45px rgba(18,52,77,0.16); padding: 1.25rem; margin-bottom: 1rem; }
-      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; position:relative; overflow:hidden; }
+      .topbar::before { content:""; position:absolute; inset:0; background: radial-gradient(circle at top left, rgba(255,255,255,0.36), transparent 30%), linear-gradient(135deg, rgba(255,255,255,0.16), transparent 44%); pointer-events:none; }
+      .topbar > * { position:relative; z-index:1; }
       .topbar a { color: #0f4667; text-decoration:none; font-weight:700; }
       .alert { padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; }
       .alert.success { background:#e8f7ee; color:#1f6a3a; border:1px solid #b8e3c8; }
       .alert.error { background:#fce9e7; color:#9b2c22; border:1px solid #f1b8b1; }
+      .detail-card { position:relative; overflow:hidden; }
+      .detail-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, var(--tone), transparent 85%); }
+      .detail-card > * { position:relative; z-index:1; }
       .meta { display:grid; gap:0.7rem; color:#5d6a79; }
+      .meta-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:0.8rem; margin-bottom:1rem; }
+      .meta-panel { padding:0.9rem 1rem; border-radius:16px; background:rgba(255,255,255,0.6); border:1px solid rgba(255,255,255,0.7); }
+      .chip-row { display:flex; gap:0.45rem; flex-wrap:wrap; margin-bottom:1rem; }
+      .plan-chip, .status-pill { display:inline-flex; align-items:center; gap:0.35rem; border-radius:999px; padding:0.34rem 0.75rem; font-size:0.82rem; font-weight:700; }
+      .plan-chip.free { background:#deeffa; color:#214b69; }
+      .plan-chip.pro { background:#daf2ec; color:#145147; }
+      .plan-chip.premium { background:#f6e7c6; color:#6b4917; }
+      .status-pill.pending { background:#fff6dd; color:#946200; }
+      .status-pill.approved { background:#e8f7ee; color:#1f6a3a; }
+      .status-pill.rejected { background:#fce9e7; color:#9b2c22; }
       .actions { display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:1rem; }
       .plan-editor { margin-top:1.25rem; padding:1rem; border:1px solid #d8e2ea; border-radius:16px; background:rgba(245,249,252,0.85); }
       .plan-editor form { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; }
@@ -32,6 +47,10 @@
   <body>
     <div class="shell">
       <% const paymentStatusLabelMap = { pending: 'รอพิจารณา', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว' }; %>
+      <% const normalizePlanCode = (value) => ({ standard: 'pro', professional: 'pro', 'premium-monthly': 'premium', 'premium-yearly': 'premium' }[String(value || '').toLowerCase()] || String(value || 'free').toLowerCase()); %>
+      <% const requestPlanCode = normalizePlanCode(data.request.planCode || data.request.plan_name || 'free'); %>
+      <% const currentPlanCode = normalizePlanCode(data.request.user_plan || 'free'); %>
+      <% const requestTone = requestPlanCode === 'premium' ? '#8c5d1f' : requestPlanCode === 'pro' ? '#0f695f' : '#205f89'; %>
       <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
       <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
 
@@ -43,15 +62,19 @@
         <a href="/admin/payment-requests">กลับไปหน้ารายการ</a>
       </section>
 
-      <section class="card">
+      <section class="card detail-card" style="--tone:<%= requestTone %>; background:<%= requestPlanCode === 'premium' ? 'linear-gradient(150deg, #f8ead3, #fffaf2)' : requestPlanCode === 'pro' ? 'linear-gradient(150deg, #daf2ec, #f9fcfb)' : 'linear-gradient(150deg, #dff1fb, #fbfdff)' %>;">
+        <div class="chip-row">
+          <span class="plan-chip <%= requestPlanCode %>">แพ็กเกจที่ร้องขอ <%= data.request.planLabel || data.request.plan_name %></span>
+          <span class="plan-chip <%= currentPlanCode %>">ปัจจุบัน <%= data.request.userPlanLabel || data.request.user_plan || 'ฟรี' %></span>
+          <span class="status-pill <%= data.request.status %>"><%= paymentStatusLabelMap[data.request.status] || data.request.status %></span>
+        </div>
+        <div class="meta-grid">
+          <div class="meta-panel"><strong>ผู้ใช้</strong><div style="margin-top:0.35rem;"><%= data.request.user_name || '-' %><br /><span style="color:#5d6a79;"><%= data.request.user_email || '-' %></span></div></div>
+          <div class="meta-panel"><strong>ยอดชำระ</strong><div style="margin-top:0.35rem;"><%= Number(data.request.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท</div></div>
+          <div class="meta-panel"><strong>อายุแพ็กเกจปัจจุบัน</strong><div style="margin-top:0.35rem;"><%= data.request.userPlanExpiresAt ? new Date(data.request.userPlanExpiresAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : '-' %></div></div>
+        </div>
         <div class="meta">
-          <div><strong>ผู้ใช้:</strong> <%= data.request.user_name || "-" %></div>
-          <div><strong>อีเมล:</strong> <%= data.request.user_email || "-" %></div>
-          <div><strong>แพ็กเกจปัจจุบัน:</strong> <%= data.request.userPlanLabel || data.request.user_plan || "ฟรี" %></div>
-          <div><strong>วันหมดอายุแพ็กเกจปัจจุบัน:</strong> <%= data.request.userPlanExpiresAt ? new Date(data.request.userPlanExpiresAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
           <div><strong>แพ็กเกจที่ร้องขอ:</strong> <%= data.request.planLabel || data.request.plan_name %></div>
-          <div><strong>ยอดชำระ:</strong> <%= Number(data.request.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท</div>
-          <div><strong>สถานะ:</strong> <%= paymentStatusLabelMap[data.request.status] || data.request.status %></div>
           <div><strong>สร้างเมื่อ:</strong> <%= data.request.created_at ? new Date(data.request.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
           <div><strong>ตรวจสอบเมื่อ:</strong> <%= data.request.reviewed_at ? new Date(data.request.reviewed_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
           <div><strong>ตรวจสอบโดย:</strong> <%= data.request.reviewed_by || "-" %></div>

@@ -222,7 +222,7 @@ async function replyToChat(payload, session) {
   if (aiPreviewRequested && freeAiPreviewMeta.enabled && !aiPreviewApproved) {
     const unavailableMessage = freeAiPreviewMeta.exhausted
       ? `คุณใช้สิทธิ์ลองคำตอบแบบ AI ฟรีครบ ${freeAiPreviewMeta.limit} ครั้งของเดือนนี้แล้ว หากต้องการใช้ AI ต่อเนื่อง แนะนำอัปเกรดเป็นแพ็กเกจ Professional`
-      : "ขณะนี้ยังไม่สามารถใช้ AI preview ได้ กรุณาลองใหม่อีกครั้งในภายหลัง";
+      : "ขณะนี้ยังไม่สามารถใช้สิทธิ์ลอง AI ได้ กรุณาลองใหม่อีกครั้งในภายหลัง";
     return attachAiPreviewState(
       {
         hasContext: false,

@@ -9,12 +9,19 @@
       body { margin: 0; font-family: 'Sarabun', Arial, sans-serif; background: linear-gradient(160deg, #e6eef6, #f5f9fc); color: #1f2a37; }
       .shell { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; }
       .card { background: rgba(255,255,255,0.9); border: 1px solid #d8e2ea; border-radius: 20px; box-shadow: 0 18px 45px rgba(18,52,77,0.16); padding: 1.25rem; margin-bottom: 1rem; }
-      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; position:relative; overflow:hidden; }
+      .topbar::before { content:""; position:absolute; inset:0; background: radial-gradient(circle at top left, rgba(255,255,255,0.36), transparent 30%), linear-gradient(135deg, rgba(255,255,255,0.16), transparent 44%); pointer-events:none; }
+      .topbar > * { position:relative; z-index:1; }
       .topbar a { color: #0f4667; text-decoration:none; font-weight:700; }
       .alert { padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; }
       .alert.success { background:#e8f7ee; color:#1f6a3a; border:1px solid #b8e3c8; }
       .alert.error { background:#fce9e7; color:#9b2c22; border:1px solid #f1b8b1; }
       .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; }
+      .metric-card { position:relative; overflow:hidden; }
+      .metric-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, #0f5f8f, transparent 85%); }
+      .metric-card.free::before { background: linear-gradient(90deg, #205f89, transparent 85%); }
+      .metric-card.paid::before { background: linear-gradient(90deg, #0f695f, transparent 85%); }
+      .metric-card.active::before { background: linear-gradient(90deg, #1d7a52, transparent 85%); }
       .metric { font-size: 1.8rem; font-weight: 700; color: #0f4667; margin: 0.3rem 0 0; }
       .search-form { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; }
       .search-form input { flex:1 1 320px; border:1px solid #c8d6e2; border-radius:14px; padding:0.85rem 1rem; font:inherit; }
@@ -22,7 +29,8 @@
       .search-form button { background:#0f5f8f; color:#fff; }
       .search-form a { background:#eef4f8; color:#0f4667; border:1px solid #d8e2ea; }
       .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.9rem; }
-      .soft-list li { padding:1rem; border:1px solid #d8e2ea; border-radius:18px; background: rgba(255,255,255,0.82); }
+      .user-card { padding:1rem; border:1px solid #d8e2ea; border-radius:22px; background: rgba(255,255,255,0.82); position:relative; overflow:hidden; }
+      .user-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, var(--tone), transparent 85%); }
       .user-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; }
       .identity { display:flex; gap:0.85rem; align-items:center; }
       .avatar { width:48px; height:48px; border-radius:50%; object-fit:cover; border:1px solid #d8e2ea; background:#e7eef5; }
@@ -31,6 +39,11 @@
       .status-chip { display:inline-flex; align-items:center; gap:0.35rem; border-radius:999px; padding:0.32rem 0.75rem; font-size:0.84rem; font-weight:700; }
       .status-chip.active { background:#e8f7ee; color:#1f6a3a; }
       .status-chip.inactive { background:#fce9e7; color:#9b2c22; }
+      .plan-chip-row { display:flex; gap:0.45rem; flex-wrap:wrap; margin-top:0.7rem; }
+      .plan-chip { display:inline-flex; align-items:center; gap:0.35rem; border-radius:999px; padding:0.32rem 0.72rem; font-size:0.78rem; font-weight:700; }
+      .plan-chip.free { background:#deeffa; color:#214b69; }
+      .plan-chip.pro { background:#daf2ec; color:#145147; }
+      .plan-chip.premium { background:#f6e7c6; color:#6b4917; }
       .plan-form { margin-top:1rem; display:grid; gap:0.75rem; }
       .plan-controls { display:grid; grid-template-columns: minmax(180px, 220px) minmax(140px, 180px) auto; gap:0.75rem; align-items:center; }
       .plan-form select, .plan-form input { border:1px solid #c8d6e2; border-radius:12px; padding:0.78rem 0.9rem; font:inherit; background:#fff; color:#1f2a37; width:100%; box-sizing:border-box; }
@@ -44,6 +57,7 @@
   </head>
   <body>
     <div class="shell">
+      <% const normalizePlanCode = (value) => ({ standard: 'pro', professional: 'pro', 'premium-monthly': 'premium', 'premium-yearly': 'premium' }[String(value || '').toLowerCase()] || String(value || 'free').toLowerCase()); %>
       <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
       <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
 
@@ -66,19 +80,21 @@
       </section>
 
       <section class="grid">
-        <article class="card"><div>ผู้ใช้ทั้งหมด</div><div class="metric"><%= data.totalCount %></div></article>
-        <article class="card"><div>แพ็กเกจฟรี</div><div class="metric"><%= data.freeCount %></div></article>
-        <article class="card"><div>แพ็กเกจชำระเงิน</div><div class="metric"><%= data.paidCount %></div></article>
-        <article class="card"><div>สถานะใช้งาน</div><div class="metric"><%= data.activeCount %></div></article>
+        <article class="card metric-card"><div>ผู้ใช้ทั้งหมด</div><div class="metric"><%= data.totalCount %></div></article>
+        <article class="card metric-card free"><div>แพ็กเกจฟรี</div><div class="metric"><%= data.freeCount %></div></article>
+        <article class="card metric-card paid"><div>แพ็กเกจชำระเงิน</div><div class="metric"><%= data.paidCount %></div></article>
+        <article class="card metric-card active"><div>สถานะใช้งาน</div><div class="metric"><%= data.activeCount %></div></article>
       </section>
 
       <section class="card">
         <ul class="soft-list">
           <% if (!data.users.length) { %>
-            <li>ไม่พบผู้ใช้งานตามคำค้นนี้</li>
+            <li class="user-card">ไม่พบผู้ใช้งานตามคำค้นนี้</li>
           <% } %>
           <% data.users.forEach((account) => { %>
-            <li>
+            <% const accountPlanCode = normalizePlanCode(account.planCode || account.plan || 'free'); %>
+            <% const accountTone = accountPlanCode === 'premium' ? '#8c5d1f' : accountPlanCode === 'pro' ? '#0f695f' : '#205f89'; %>
+            <li class="user-card" style="--tone:<%= accountTone %>; background:<%= accountPlanCode === 'premium' ? 'linear-gradient(150deg, #f8ead3, #fffaf2)' : accountPlanCode === 'pro' ? 'linear-gradient(150deg, #daf2ec, #f9fcfb)' : 'linear-gradient(150deg, #dff1fb, #fbfdff)' %>;">
               <div class="user-head">
                 <div class="identity">
                   <% if (account.avatar_url) { %>
@@ -89,6 +105,10 @@
                   <div>
                     <strong style="display:block; color:#0f4667;"><%= account.name || "-" %></strong>
                     <div style="color:#5d6a79;"><%= account.email || "-" %></div>
+                    <div class="plan-chip-row">
+                      <span class="plan-chip <%= accountPlanCode %>"><%= account.planLabel %></span>
+                      <span class="plan-chip <%= accountPlanCode %>"><%= Number.isFinite(account.monthlyLimit) ? `${account.monthlyLimit} คำถาม/เดือน` : 'ไม่จำกัดจำนวนคำถาม' %></span>
+                    </div>
                   </div>
                 </div>
                 <span class="status-chip <%= account.status === 'active' ? 'active' : 'inactive' %>"><%= account.status === 'active' ? 'ใช้งานอยู่' : 'ไม่ใช้งาน' %></span>

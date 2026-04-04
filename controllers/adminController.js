@@ -35,7 +35,7 @@ function sanitizeAdminUsersReturnPath(value, fallbackPath = "/admin/users") {
 
 function renderLogin(req, res) {
   res.render("admin/login", {
-    title: "Admin Login",
+    title: "เข้าสู่ระบบผู้ดูแล",
     errorMessage: req.query.error || "",
     successMessage: req.query.success || "",
     googleLoginEnabled: getGoogleConfig().enabled,
@@ -280,7 +280,7 @@ async function updateUserPlan(req, res) {
   const displayName = result.user?.name || result.user?.email || `#${userId}`;
   const successMessage =
     result.planCode === "free"
-      ? `ปรับแพ็กเกจของ ${displayName} เป็น Free แล้ว และล้างวันหมดอายุแพ็กเกจเรียบร้อย`
+      ? `ปรับแพ็กเกจของ ${displayName} เป็นแพ็กเกจฟรีแล้ว และล้างวันหมดอายุแพ็กเกจเรียบร้อย`
       : `ปรับแพ็กเกจของ ${displayName} เป็น ${result.planLabel} ${result.durationDays} วัน เรียบร้อยแล้ว${
           result.user?.planExpiresAt
             ? ` (หมดอายุ ${new Date(result.user.planExpiresAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })})`
@@ -604,7 +604,7 @@ async function rejectPaymentRequest(req, res) {
   return res.redirect(
     `/admin/payment-requests/${id}?success=` +
       encodeURIComponent(
-        `ปฏิเสธคำขอชำระเงินแพ็กเกจ ${result.planLabel || "ที่ร้องขอ"} เรียบร้อยแล้ว สถานะแผนปัจจุบันของผู้ใช้ยังคงเดิม`
+        `ปฏิเสธคำขอชำระเงินแพ็กเกจ ${result.planLabel || "ที่ร้องขอ"} เรียบร้อยแล้ว สถานะแพ็กเกจปัจจุบันของผู้ใช้ยังคงเดิม`
       )
   );
 }

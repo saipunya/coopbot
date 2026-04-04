@@ -6,20 +6,42 @@
     <title><%= title %></title>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet" />
     <style>
+      :root {
+        --free-start: #dff1fb;
+        --free-end: #fbfdff;
+        --pro-start: #daf2ec;
+        --pro-end: #f9fcfb;
+        --premium-start: #f8ead3;
+        --premium-end: #fffaf2;
+      }
       body { margin: 0; font-family: 'Sarabun', Arial, sans-serif; background: linear-gradient(160deg, #e6eef6, #f5f9fc); color: #1f2a37; }
       .shell { width: min(1080px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; }
       .card { background: rgba(255,255,255,0.9); border: 1px solid #d8e2ea; border-radius: 20px; box-shadow: 0 18px 45px rgba(18,52,77,0.16); padding: 1.25rem; margin-bottom: 1rem; }
-      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; position:relative; overflow:hidden; }
+      .topbar::before { content:""; position:absolute; inset:0; background: radial-gradient(circle at top left, rgba(255,255,255,0.36), transparent 30%), linear-gradient(135deg, rgba(255,255,255,0.18), transparent 42%); pointer-events:none; }
+      .topbar > * { position:relative; z-index:1; }
       .topbar a { color: #0f4667; text-decoration:none; font-weight:700; }
       .alert { padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; }
       .alert.success { background:#e8f7ee; color:#1f6a3a; border:1px solid #b8e3c8; }
       .alert.error { background:#fce9e7; color:#9b2c22; border:1px solid #f1b8b1; }
       .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; }
+      .metric-card { position:relative; overflow:hidden; }
+      .metric-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, #0f5f8f, transparent 85%); }
+      .metric-card.pending::before { background: linear-gradient(90deg, #c88a00, transparent 85%); }
+      .metric-card.approved::before { background: linear-gradient(90deg, #1d7a52, transparent 85%); }
+      .metric-card.rejected::before { background: linear-gradient(90deg, #b63d2f, transparent 85%); }
       .metric { font-size: 1.8rem; font-weight: 700; color: #0f4667; margin: 0.3rem 0 0; }
       .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.8rem; }
-      .soft-list li { padding:1rem; border:1px solid #d8e2ea; border-radius:16px; background: rgba(255,255,255,0.82); }
+      .request-card { padding:1rem; border:1px solid #d8e2ea; border-radius:20px; background: rgba(255,255,255,0.82); position:relative; overflow:hidden; }
+      .request-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, var(--tone), transparent 85%); }
       .meta { color:#5d6a79; font-size:0.92rem; margin-top:0.4rem; }
       .request-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+      .request-title { display:grid; gap:0.45rem; }
+      .chip-row { display:flex; gap:0.45rem; flex-wrap:wrap; }
+      .plan-chip { display:inline-flex; align-items:center; gap:0.35rem; border-radius:999px; padding:0.32rem 0.72rem; font-size:0.78rem; font-weight:700; }
+      .plan-chip.free { background: #deeffa; color:#214b69; }
+      .plan-chip.pro { background: #daf2ec; color:#145147; }
+      .plan-chip.premium { background: #f6e7c6; color:#6b4917; }
       .request-actions { display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap; margin-top:0.9rem; }
       .request-actions select { min-width: 180px; border:1px solid #c8d6e2; border-radius:12px; padding:0.7rem 0.85rem; font:inherit; background:#fff; color:#1f2a37; }
       .request-actions button { border:none; border-radius:12px; padding:0.72rem 0.95rem; background:#0f5f8f; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
@@ -37,6 +59,7 @@
   <body>
     <div class="shell">
       <% const paymentStatusLabelMap = { pending: 'รอพิจารณา', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว' }; %>
+      <% const normalizePlanCode = (value) => ({ standard: 'pro', professional: 'pro', 'premium-monthly': 'premium', 'premium-yearly': 'premium' }[String(value || '').toLowerCase()] || String(value || 'free').toLowerCase()); %>
       <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
       <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
 
@@ -49,25 +72,34 @@
       </section>
 
       <section class="grid">
-        <article class="card"><div>ทั้งหมด</div><div class="metric"><%= data.totalCount %></div></article>
-        <article class="card"><div>รอพิจารณา</div><div class="metric"><%= data.pendingCount %></div></article>
-        <article class="card"><div>อนุมัติแล้ว</div><div class="metric"><%= data.approvedCount %></div></article>
-        <article class="card"><div>ปฏิเสธแล้ว</div><div class="metric"><%= data.rejectedCount %></div></article>
+        <article class="card metric-card"><div>ทั้งหมด</div><div class="metric"><%= data.totalCount %></div></article>
+        <article class="card metric-card pending"><div>รอพิจารณา</div><div class="metric"><%= data.pendingCount %></div></article>
+        <article class="card metric-card approved"><div>อนุมัติแล้ว</div><div class="metric"><%= data.approvedCount %></div></article>
+        <article class="card metric-card rejected"><div>ปฏิเสธแล้ว</div><div class="metric"><%= data.rejectedCount %></div></article>
       </section>
 
       <section class="card">
         <ul class="soft-list">
           <% if (!data.requests.length) { %>
-            <li>ยังไม่พบคำขอชำระเงิน</li>
+            <li class="request-card">ยังไม่พบคำขอชำระเงิน</li>
           <% } %>
           <% data.requests.forEach((item) => { %>
-            <li>
+            <% const requestPlanCode = normalizePlanCode(item.planCode || item.plan_name || 'free'); %>
+            <% const currentPlanCode = normalizePlanCode(item.user_plan || 'free'); %>
+            <% const requestTone = requestPlanCode === 'premium' ? '#8c5d1f' : requestPlanCode === 'pro' ? '#0f695f' : '#205f89'; %>
+            <li class="request-card" style="--tone:<%= requestTone %>; background:<%= requestPlanCode === 'premium' ? 'linear-gradient(150deg, var(--premium-start), var(--premium-end))' : requestPlanCode === 'pro' ? 'linear-gradient(150deg, var(--pro-start), var(--pro-end))' : 'linear-gradient(150deg, var(--free-start), var(--free-end))' %>;">
               <div class="request-head">
-                <strong><a href="/admin/payment-requests/<%= item.id %>">#<%= item.id %> - <%= item.planLabel || item.plan_name %></a></strong>
+                <div class="request-title">
+                  <strong><a href="/admin/payment-requests/<%= item.id %>">#<%= item.id %> - <%= item.planLabel || item.plan_name %></a></strong>
+                  <div class="chip-row">
+                    <span class="plan-chip <%= requestPlanCode %>">แพ็กเกจที่ร้องขอ <%= item.planLabel || item.plan_name %></span>
+                    <span class="plan-chip <%= currentPlanCode %>">ปัจจุบัน <%= item.userPlanLabel || item.user_plan || 'ฟรี' %></span>
+                  </div>
+                </div>
                 <span class="status-chip <%= item.status %>"><%= paymentStatusLabelMap[item.status] || item.status %></span>
               </div>
               <div class="meta">
-                ผู้ใช้: <%= item.user_name || "-" %> | อีเมล: <%= item.user_email || "-" %> | แพ็กเกจปัจจุบัน: <%= item.userPlanLabel || item.user_plan || "ฟรี" %> | ยอดชำระ: <%= Number(item.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท | สถานะ: <%= paymentStatusLabelMap[item.status] || item.status %>
+                ผู้ใช้: <%= item.user_name || "-" %> | อีเมล: <%= item.user_email || "-" %> | ยอดชำระ: <%= Number(item.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท | สถานะ: <%= paymentStatusLabelMap[item.status] || item.status %>
               </div>
               <% if (item.status === "pending") { %>
                 <form class="request-actions" action="/admin/payment-requests/update-plan" method="post">

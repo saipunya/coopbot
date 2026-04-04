@@ -2,54 +2,285 @@
 
 <% const paymentStatusLabelMap = { pending: "รอพิจารณา", approved: "อนุมัติแล้ว", rejected: "ปฏิเสธแล้ว" }; %>
 
-<section class="card">
-  <h1 style="margin-top: 0;">คำขออัปเกรดแพ็กเกจ</h1>
-  <p>เลือกแพ็กเกจที่ต้องการอัปเกรดและแนบสลิปได้หากต้องการ เพื่อช่วยให้ทีมงานตรวจสอบได้เร็วขึ้น</p>
+<style>
+  .upgrade-shell {
+    display: grid;
+    gap: 1rem;
+  }
 
-  <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #eef5fb; border: 1px solid #cdddea; color: #1f2a37;">
-    <strong>แพ็กเกจปัจจุบัน:</strong> <%= data.currentPlanContext ? data.currentPlanContext.label : "ฟรี" %>
-    <% if (data.currentPlanContext && Number.isFinite(data.currentPlanContext.monthlyLimit)) { %>
-      <span style="color:#5d6a79;"> | ใช้งานได้ <%= data.currentPlanContext.monthlyLimit %> คำถาม/เดือน</span>
-    <% } %>
-    <% if (data.aiPreview && data.aiPreview.enabled) { %>
-      <div style="margin-top:0.45rem; color:#3f4e5e;">
-        ตอนนี้คุณยังลองคำตอบแบบ AI ระดับ Professional ได้ฟรีอีก <strong><%= data.aiPreview.remainingCount %></strong> จาก <strong><%= data.aiPreview.limit %></strong> ครั้งในเดือนนี้
+  .upgrade-hero {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upgrade-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.42), transparent 32%),
+      linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 46%);
+    pointer-events: none;
+  }
+
+  .upgrade-hero > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .plan-hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .plan-hero-kicker,
+  .mini-pill,
+  .plan-card-current {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.38rem 0.78rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  .plan-hero-kicker {
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--accent-strong);
+    margin-bottom: 0.7rem;
+  }
+
+  .plan-hero-grid h1 {
+    margin: 0 0 0.45rem;
+    font-size: clamp(1.7rem, 3vw, 2.35rem);
+    color: var(--ink);
+  }
+
+  .plan-hero-grid p {
+    margin: 0;
+    max-width: 44rem;
+  }
+
+  .current-plan-panel {
+    border-radius: 22px;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.64);
+    border: 1px solid rgba(255, 255, 255, 0.72);
+  }
+
+  .current-plan-panel strong {
+    color: var(--accent-strong);
+  }
+
+  .mini-pill {
+    background: #eef5fb;
+    color: #234861;
+    margin: 0.3rem 0.35rem 0 0;
+  }
+
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+  }
+
+  .plan-card {
+    position: relative;
+    overflow: hidden;
+    padding: 1.1rem;
+    border-radius: 22px;
+    border: 1px solid var(--line);
+    min-height: 100%;
+    display: grid;
+    gap: 0.8rem;
+    align-content: start;
+    transition: transform 180ms ease, box-shadow 180ms ease;
+  }
+
+  .plan-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 18px 34px rgba(18, 52, 77, 0.14);
+  }
+
+  .plan-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.16), transparent 54%);
+    pointer-events: none;
+  }
+
+  .plan-card > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .plan-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+  }
+
+  .plan-card-name {
+    margin: 0;
+    font-size: 1.2rem;
+  }
+
+  .plan-card-price {
+    font-size: 1.8rem;
+    line-height: 1;
+    font-weight: 700;
+  }
+
+  .plan-card-price span {
+    font-size: 0.95rem;
+    font-weight: 600;
+    opacity: 0.8;
+  }
+
+  .plan-card ul {
+    margin: 0;
+    padding-left: 1.15rem;
+  }
+
+  .plan-card li {
+    margin-bottom: 0.32rem;
+  }
+
+  .plan-card-current {
+    background: rgba(255, 255, 255, 0.76);
+  }
+
+  .plan-card-free {
+    background: linear-gradient(150deg, #dff1fb, #fbfdff);
+    border-color: #c8dfef;
+    color: #224763;
+  }
+
+  .plan-card-pro {
+    background: linear-gradient(150deg, #d9f2eb, #f9fcfb);
+    border-color: #bde2d8;
+    color: #12493f;
+  }
+
+  .plan-card-premium {
+    background: linear-gradient(150deg, #f8ead3, #fffaf2);
+    border-color: #ead4a8;
+    color: #61431a;
+  }
+
+  .upgrade-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+    gap: 1rem;
+  }
+
+  .helper-box {
+    padding: 0.95rem 1rem;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid var(--line);
+  }
+
+  .history-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .history-item {
+    padding: 0.95rem 1rem;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  @media (max-width: 900px) {
+    .plan-hero-grid,
+    .upgrade-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<%
+  const currentPlanCode = String((data.currentPlanContext && data.currentPlanContext.code) || "free").toLowerCase();
+  const normalizedCurrentPlanCode = ["free", "pro", "premium"].includes(currentPlanCode) ? currentPlanCode : "free";
+  const heroAccentLabel = {
+    free: "เริ่มต้นอย่างคล่องตัว",
+    pro: "ทำงานประจำแบบมั่นใจ",
+    premium: "ใช้งานระดับวิเคราะห์เชิงลึก",
+  };
+%>
+
+<div class="upgrade-shell">
+  <section class="card upgrade-hero plan-card-<%= normalizedCurrentPlanCode %>">
+    <div class="plan-hero-grid">
+      <div>
+        <span class="plan-hero-kicker"><i class="bi bi-gem"></i> <%= heroAccentLabel[normalizedCurrentPlanCode] || heroAccentLabel.free %></span>
+        <h1>คำขออัปเกรดแพ็กเกจ</h1>
+        <p>เลือกแพ็กเกจที่เหมาะกับระดับการใช้งานของคุณ แต่ละแผนมีบุคลิกต่างกันชัดเจน ตั้งแต่เริ่มต้นแบบเบา ไปจนถึงงานวิเคราะห์ที่ต้องการความลึกและความต่อเนื่องสูงขึ้น</p>
       </div>
-    <% } %>
-  </div>
+      <aside class="current-plan-panel">
+        <div><strong>แพ็กเกจปัจจุบัน:</strong> <%= data.currentPlanContext ? data.currentPlanContext.label : "ฟรี" %></div>
+        <% if (data.currentPlanContext && Number.isFinite(data.currentPlanContext.monthlyLimit)) { %>
+          <div style="margin-top:0.45rem;">ใช้งานได้ <strong><%= data.currentPlanContext.monthlyLimit %></strong> คำถาม/เดือน</div>
+        <% } else { %>
+          <div style="margin-top:0.45rem;">ใช้งานได้แบบ <strong>ไม่จำกัดจำนวนคำถามรายเดือน</strong></div>
+        <% } %>
+        <% if (data.aiPreview && data.aiPreview.enabled) { %>
+          <div style="margin-top:0.7rem;">
+            คุณยังลองคำตอบแบบ AI ระดับ Professional ได้ฟรีอีก <strong><%= data.aiPreview.remainingCount %></strong> จาก <strong><%= data.aiPreview.limit %></strong> ครั้งในเดือนนี้
+          </div>
+        <% } %>
+        <div style="margin-top:0.85rem;">
+          <span class="mini-pill"><i class="bi bi-lightning-charge"></i> แยกความสามารถตามระดับแผน</span>
+          <span class="mini-pill"><i class="bi bi-shield-check"></i> ส่งคำขอและแนบสลิปได้ทันที</span>
+        </div>
+      </aside>
+    </div>
+  </section>
 
   <% if (Array.isArray(data.planComparison) && data.planComparison.length > 0) { %>
-    <section style="margin-bottom: 1.25rem;">
+    <section class="card">
       <h2 style="margin: 0 0 0.8rem;">เปรียบเทียบแพ็กเกจ</h2>
-      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.85rem;">
+      <div class="comparison-grid">
         <% data.planComparison.forEach((plan) => { %>
-          <article style="padding:1rem; border-radius:16px; border:1px solid <%= plan.code === data.currentPlanContext.code ? '#2f5f7a' : '#d8e2ea' %>; background:<%= plan.code === data.currentPlanContext.code ? 'linear-gradient(180deg, #edf6fb, #ffffff)' : '#ffffff' %>;">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; margin-bottom:0.5rem;">
-              <strong style="font-size:1.05rem; color:#0f4667;"><%= plan.label %></strong>
+          <article class="plan-card plan-card-<%= plan.code %>">
+            <div class="plan-card-top">
+              <div>
+                <h3 class="plan-card-name"><%= plan.label %></h3>
+                <div style="margin-top:0.35rem; opacity:0.85;">
+                  <% if (Number.isFinite(plan.monthlyLimit)) { %>
+                    ใช้งานได้ <strong><%= plan.monthlyLimit %></strong> คำถาม/เดือน
+                  <% } else { %>
+                    ไม่จำกัดจำนวนคำถามรายเดือน
+                  <% } %>
+                </div>
+              </div>
               <% if (plan.code === data.currentPlanContext.code) { %>
-                <span style="padding:0.15rem 0.55rem; border-radius:999px; background:#d5e8f5; color:#0f4667; font-size:0.75rem; font-weight:700;">ใช้งานอยู่</span>
+                <span class="plan-card-current"><i class="bi bi-check2-circle"></i> ใช้งานอยู่</span>
               <% } %>
             </div>
-            <div style="font-size:1.15rem; font-weight:700; color:#1f2a37;">
-              <%= Number(plan.priceBaht || 0).toLocaleString('th-TH') %> บาท
+            <div class="plan-card-price">
+              <%= Number(plan.priceBaht || 0).toLocaleString('th-TH') %> <span>บาท / 30 วัน</span>
             </div>
-            <div style="margin-top:0.15rem; color:#5d6a79; font-size:0.9rem;">
-              <% if (Number.isFinite(plan.monthlyLimit)) { %>
-                ใช้งานได้ <strong><%= plan.monthlyLimit %></strong> คำถาม/เดือน
-              <% } else { %>
-                ไม่จำกัดจำนวนคำถามรายเดือน
-              <% } %>
-            </div>
-            <p style="margin:0.75rem 0 0.65rem; color:#3f4e5e; min-height:2.6rem;"><%= plan.planSummary || '' %></p>
-            <ul style="margin:0; padding-left:1rem; color:#1f2a37;">
+            <p style="margin:0; min-height:3.1rem;"><%= plan.planSummary || '' %></p>
+            <ul>
               <% (plan.highlights || []).forEach((item) => { %>
-                <li style="margin-bottom:0.25rem;"><%= item %></li>
+                <li><%= item %></li>
               <% }) %>
               <% if (plan.allowAiPreview && plan.aiPreviewMonthlyLimit > 0) { %>
-                <li style="margin-bottom:0.25rem;">สิทธิ์ลอง AI: <strong><%= plan.aiPreviewMonthlyLimit %> ครั้ง/เดือน</strong></li>
+                <li>สิทธิ์ลอง AI: <strong><%= plan.aiPreviewMonthlyLimit %> ครั้ง/เดือน</strong></li>
               <% } %>
-              <li style="margin-bottom:0.25rem;">คำตอบ AI: <strong><%= plan.useAI ? 'มี' : 'ไม่มี' %></strong></li>
-              <li style="margin-bottom:0.25rem;">ค้นข้อมูลภายนอก: <strong><%= plan.useInternet ? 'มี' : 'ไม่มี' %></strong></li>
+              <li>คำตอบ AI: <strong><%= plan.useAI ? 'มี' : 'ไม่มี' %></strong></li>
+              <li>ค้นข้อมูลภายนอก: <strong><%= plan.useInternet ? 'มี' : 'ไม่มี' %></strong></li>
               <li>ประวัติการค้นหา: <strong><%= plan.searchHistoryRetentionLabel %></strong></li>
             </ul>
           </article>
@@ -58,57 +289,67 @@
     </section>
   <% } %>
 
-  <% if (errorMessage) { %>
-    <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #fce9e7; border: 1px solid #f1b8b1; color: #9b2c22; font-weight: 700;">
-      <%= errorMessage %>
-    </div>
-  <% } %>
+  <section class="upgrade-grid">
+    <section class="card">
+      <% if (errorMessage) { %>
+        <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #fce9e7; border: 1px solid #f1b8b1; color: #9b2c22; font-weight: 700;">
+          <%= errorMessage %>
+        </div>
+      <% } %>
 
-  <% if (successMessage) { %>
-    <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #e8f7ee; border: 1px solid #b8e3c8; color: #1f6a3a; font-weight: 700;">
-      <%= successMessage %>
-    </div>
-  <% } %>
+      <% if (successMessage) { %>
+        <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #e8f7ee; border: 1px solid #b8e3c8; color: #1f6a3a; font-weight: 700;">
+          <%= successMessage %>
+        </div>
+      <% } %>
 
-  <form action="/law-chatbot/payment-request" method="post" enctype="multipart/form-data">
-    <label for="planName">เลือกแพ็กเกจ</label>
-    <select id="planName" name="planName" required>
-      <option value="">กรุณาเลือกแพ็กเกจ</option>
-      <% data.plans.forEach((plan) => { %>
-        <option value="<%= plan.value %>">
-          <%= plan.label %> - <%= plan.priceBaht %> บาท / 30 วัน
-        </option>
-      <% }) %>
-    </select>
+      <h2 style="margin-top:0;">ส่งคำขออัปเกรด</h2>
+      <p>ระบุแพ็กเกจที่ต้องการและแนบสลิปถ้ามี ระบบจะส่งคำขอให้ทีมงานตรวจสอบตามลำดับ</p>
 
-    <label for="slipImage">สลิปโอนเงิน (ถ้ามี)</label>
-    <input id="slipImage" name="slipImage" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+      <form action="/law-chatbot/payment-request" method="post" enctype="multipart/form-data">
+        <label for="planName">เลือกแพ็กเกจ</label>
+        <select id="planName" name="planName" required>
+          <option value="">กรุณาเลือกแพ็กเกจ</option>
+          <% data.plans.forEach((plan) => { %>
+            <option value="<%= plan.value %>">
+              <%= plan.label %> - <%= plan.priceBaht %> บาท / 30 วัน
+            </option>
+          <% }) %>
+        </select>
 
-    <label for="note">หมายเหตุ</label>
-    <textarea id="note" name="note" rows="4" placeholder="ระบุหมายเหตุหรือข้อมูลอ้างอิงเพิ่มเติมได้ (ถ้ามี)"></textarea>
+        <label for="slipImage">สลิปโอนเงิน (ถ้ามี)</label>
+        <input id="slipImage" name="slipImage" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
 
-    <button type="submit">ส่งคำขออัปเกรด</button>
-  </form>
-</section>
+        <label for="note">หมายเหตุ</label>
+        <textarea id="note" name="note" rows="4" placeholder="ระบุหมายเหตุหรือข้อมูลอ้างอิงเพิ่มเติมได้ (ถ้ามี)"></textarea>
 
-<section class="card">
-  <h2 style="margin-top: 0;">คำขอล่าสุด</h2>
-  <ul>
-    <% if (!data.recentRequests.length) { %>
-      <li>ยังไม่มีคำขออัปเกรดแพ็กเกจ</li>
-    <% } %>
-    <% data.recentRequests.forEach((item) => { %>
-      <li style="margin-bottom: 0.9rem;">
-        <strong><%= item.planLabel || item.plan_name %></strong> - <%= Number(item.amount || item.planPriceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท - <%= paymentStatusLabelMap[item.status] || item.status %>
-        <% if (item.note) { %>
-          <div><%= item.note %></div>
+        <button type="submit">ส่งคำขออัปเกรด</button>
+      </form>
+    </section>
+
+    <aside class="card">
+      <h2 style="margin-top: 0;">คำขอล่าสุด</h2>
+      <div class="helper-box" style="margin-bottom:1rem;">
+        ตรวจสอบสถานะคำขอเดิมได้จากส่วนนี้ หากมีการแนบสลิปหรือหมายเหตุ ระบบจะแสดงรายละเอียดไว้ในแต่ละรายการ
+      </div>
+      <ul class="history-list">
+        <% if (!data.recentRequests.length) { %>
+          <li class="history-item">ยังไม่มีคำขออัปเกรดแพ็กเกจ</li>
         <% } %>
-        <% if (item.slip_image) { %>
-          <div><a href="<%= item.slip_image %>" target="_blank" rel="noopener">ดูสลิป</a></div>
-        <% } %>
-      </li>
-    <% }) %>
-  </ul>
-</section>
+        <% data.recentRequests.forEach((item) => { %>
+          <li class="history-item">
+            <strong><%= item.planLabel || item.plan_name %></strong> - <%= Number(item.amount || item.planPriceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท - <%= paymentStatusLabelMap[item.status] || item.status %>
+            <% if (item.note) { %>
+              <div style="margin-top:0.45rem;"><%= item.note %></div>
+            <% } %>
+            <% if (item.slip_image) { %>
+              <div style="margin-top:0.45rem;"><a href="<%= item.slip_image %>" target="_blank" rel="noopener">ดูสลิป</a></div>
+            <% } %>
+          </li>
+        <% }) %>
+      </ul>
+    </aside>
+  </section>
+</div>
 
 <%- include("../partials/footer") %>

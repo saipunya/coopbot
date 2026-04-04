@@ -153,7 +153,7 @@ function shouldPersistDbAnswerCache(answer, options = {}) {
     return false;
   }
 
-  return !/(เข้าสู่ระบบด้วย google|guest ครบ|ใช้สิทธิ์ถามคำถามครบ|อัปเกรดแพลน|mock ai|โหมดทดสอบ)/i.test(
+  return !/(เข้าสู่ระบบด้วย google|guest ครบ|ใช้สิทธิ์ถามคำถามครบ|อัปเกรดแพ็กเกจ|อัปเกรดแพลน|mock ai|โหมดทดสอบ)/i.test(
     text,
   );
 }

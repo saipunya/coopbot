@@ -69,7 +69,7 @@ router.get("/payment-request", attachCurrentUser, requireSignedInUser, controlle
 router.post("/payment-request", attachCurrentUser, requireSignedInUser, handlePaymentRequestUpload, controller.submitPaymentRequest);
 
 // Debug endpoint for detailed AI decision data
-router.post('/debug-decision', async (req, res) => {
+router.post('/debug-decision', requireAdminAuth, async (req, res) => {
   try {
     const { message, target } = req.body;
     if (!message || typeof message !== 'string') {

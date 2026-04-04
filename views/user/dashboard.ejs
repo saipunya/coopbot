@@ -1,6 +1,18 @@
 <%- include("../partials/header", { title, page }) %>
 
 <style>
+  :root {
+    --plan-free-start: #dff0fb;
+    --plan-free-end: #f9fcff;
+    --plan-pro-start: #dbf3ee;
+    --plan-pro-end: #f7fcfb;
+    --plan-premium-start: #f8ebd2;
+    --plan-premium-end: #fffaf2;
+    --plan-free-accent: #205f89;
+    --plan-pro-accent: #0f695f;
+    --plan-premium-accent: #8c5d1f;
+  }
+
   .user-hero,
   .user-grid,
   .request-list {
@@ -17,6 +29,23 @@
     display: flex;
     gap: 1rem;
     align-items: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .profile-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.5), transparent 30%),
+      linear-gradient(135deg, rgba(255, 255, 255, 0.14), transparent 48%);
+    pointer-events: none;
+  }
+
+  .profile-card > * {
+    position: relative;
+    z-index: 1;
   }
 
   .profile-avatar {
@@ -47,6 +76,65 @@
 
   .profile-meta p {
     margin: 0.2rem 0;
+  }
+
+  .profile-plan-banner {
+    margin-top: 1rem;
+    border-radius: 22px;
+    padding: 1rem 1.1rem;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+  }
+
+  .profile-plan-banner-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 0.55rem;
+  }
+
+  .profile-plan-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.72rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  .profile-plan-banner h2 {
+    margin: 0;
+    font-size: clamp(1.35rem, 2vw, 1.8rem);
+  }
+
+  .profile-plan-banner p {
+    margin: 0.3rem 0 0;
+    color: inherit;
+    max-width: 42rem;
+  }
+
+  .profile-plan-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.7rem;
+    margin-top: 0.9rem;
+  }
+
+  .profile-plan-metric {
+    border-radius: 16px;
+    padding: 0.85rem 0.9rem;
+    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+  }
+
+  .profile-plan-metric strong {
+    display: block;
+    font-size: 1.15rem;
+    margin-top: 0.2rem;
   }
 
   .chip-row {
@@ -82,6 +170,22 @@
     display: grid;
     gap: 0.8rem;
     align-content: start;
+  }
+
+  .hero-actions.card {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero-actions.card::before {
+    content: "";
+    position: absolute;
+    inset: auto -18% -28% auto;
+    width: 220px;
+    height: 220px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.26), transparent 68%);
+    pointer-events: none;
   }
 
   .action-stack {
@@ -125,6 +229,19 @@
     margin: 0 0 0.55rem;
     font-size: 1rem;
     color: var(--accent-strong);
+  }
+
+  .stat-card {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 4px;
+    background: linear-gradient(90deg, var(--plan-accent), transparent 90%);
   }
 
   .stat-value {
@@ -180,6 +297,10 @@
     .user-grid {
       grid-template-columns: 1fr;
     }
+
+    .profile-plan-metrics {
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 620px) {
@@ -187,6 +308,24 @@
       flex-direction: column;
       align-items: flex-start;
     }
+  }
+
+  .plan-surface-free {
+    --plan-accent: var(--plan-free-accent);
+    background: linear-gradient(145deg, var(--plan-free-start), var(--plan-free-end));
+    color: #1f4060;
+  }
+
+  .plan-surface-pro {
+    --plan-accent: var(--plan-pro-accent);
+    background: linear-gradient(145deg, var(--plan-pro-start), var(--plan-pro-end));
+    color: #16473f;
+  }
+
+  .plan-surface-premium {
+    --plan-accent: var(--plan-premium-accent);
+    background: linear-gradient(145deg, var(--plan-premium-start), var(--plan-premium-end));
+    color: #5e4218;
   }
 </style>
 
@@ -206,6 +345,18 @@
         timeStyle: "short",
       })
     : "";
+  const normalizedPlan = ["free", "pro", "premium"].includes(plan) ? plan : "free";
+  const planSurfaceClass = `plan-surface-${normalizedPlan}`;
+  const planSummaryMap = {
+    free: "เริ่มต้นใช้งานแบบเรียบง่าย เหมาะกับการทดลองค้นหาและดูรูปแบบคำตอบก่อนขยับไปแพ็กเกจที่ลึกขึ้น",
+    pro: "สมดุลระหว่างความเร็ว ความละเอียด และความต่อเนื่องของคำตอบ เหมาะกับการใช้งานจริงเป็นประจำ",
+    premium: "โหมดใช้งานเชิงลึกสำหรับงานที่ต้องการความครบถ้วนสูงสุดและมุมมองกว้างจากหลายแหล่งข้อมูล",
+  };
+  const planMoodMap = {
+    free: "ใช้งานคล่องตัว",
+    pro: "ทำงานต่อเนื่อง",
+    premium: "วิเคราะห์เชิงลึก",
+  };
 %>
 
 <% if (errorMessage) { %>
@@ -221,7 +372,7 @@
 <% } %>
 
 <section class="user-hero">
-  <article class="card profile-card">
+  <article class="card profile-card <%= planSurfaceClass %>">
     <div class="profile-avatar" aria-hidden="true">
       <% if (profile.picture || profile.avatarUrl) { %>
         <img src="<%= profile.picture || profile.avatarUrl %>" alt="User avatar" />
@@ -240,10 +391,34 @@
           <%= usage.isUnlimited ? 'ใช้งานแบบไม่จำกัดรายเดือน' : `โควต้ารายเดือน ${usage.questionLimit || 0} ครั้ง` %>
         </span>
       </div>
+      <div class="profile-plan-banner">
+        <div class="profile-plan-banner-top">
+          <span class="profile-plan-kicker"><i class="bi bi-stars"></i> <%= planMoodMap[normalizedPlan] || 'ใช้งานคล่องตัว' %></span>
+          <% if (plan !== "free" && planExpiresAt) { %>
+            <span class="profile-plan-kicker"><i class="bi bi-calendar-event"></i> ถึง <%= planExpiresAt %></span>
+          <% } %>
+        </div>
+        <h2><%= planLabel %></h2>
+        <p><%= planSummaryMap[normalizedPlan] || planSummaryMap.free %></p>
+        <div class="profile-plan-metrics">
+          <div class="profile-plan-metric">
+            โควต้า
+            <strong><%= usage.isUnlimited ? "ไม่จำกัด" : `${usage.questionLimit || 0} ครั้ง/เดือน` %></strong>
+          </div>
+          <div class="profile-plan-metric">
+            ใช้ไปแล้ว
+            <strong><%= usage.questionCount || 0 %> ครั้ง</strong>
+          </div>
+          <div class="profile-plan-metric">
+            ประวัติการค้นหา
+            <strong><%= searchHistory.enabled ? searchHistory.retentionLabel : "ยังไม่รองรับ" %></strong>
+          </div>
+        </div>
+      </div>
     </div>
   </article>
 
-  <aside class="card hero-actions">
+  <aside class="card hero-actions <%= planSurfaceClass %>">
     <div>
       <h2 style="margin: 0 0 0.35rem; color: var(--accent-strong);">ทางลัดสำหรับผู้ใช้</h2>
       <p style="margin: 0;">เข้าสู่หน้าใช้งานหลัก ดูสถานะแพ็กเกจ และส่งคำขออัปเกรดได้จากที่นี่</p>
@@ -260,7 +435,7 @@
 </section>
 
 <section class="user-grid">
-  <article class="card stat-card">
+  <article class="card stat-card <%= planSurfaceClass %>">
     <h2>แพ็กเกจปัจจุบัน</h2>
     <p class="stat-value"><%= planLabel %></p>
     <p class="stat-note">
@@ -274,7 +449,7 @@
     </p>
   </article>
 
-  <article class="card stat-card">
+  <article class="card stat-card <%= planSurfaceClass %>">
     <h2>การใช้งานเดือนนี้</h2>
     <p class="stat-value"><%= usage.questionCount || 0 %></p>
     <p class="stat-note">
@@ -286,7 +461,7 @@
     </p>
   </article>
 
-  <article class="card stat-card">
+  <article class="card stat-card <%= planSurfaceClass %>">
     <h2>คงเหลือใช้งาน</h2>
     <p class="stat-value"><%= usage.isUnlimited ? "ไม่จำกัด" : (usage.remainingQuestions || 0) %></p>
     <p class="stat-note">
@@ -298,7 +473,7 @@
     </p>
   </article>
 
-  <article class="card stat-card">
+  <article class="card stat-card <%= planSurfaceClass %>">
     <h2>ประวัติการค้นหา</h2>
     <p class="stat-value"><%= searchHistory.enabled ? searchHistory.retentionLabel : "ปิด" %></p>
     <p class="stat-note">
@@ -311,7 +486,7 @@
   </article>
 
   <% if (aiPreview.enabled) { %>
-    <article class="card stat-card">
+    <article class="card stat-card <%= planSurfaceClass %>">
       <h2>สิทธิ์ลอง AI ฟรี</h2>
       <p class="stat-value"><%= aiPreview.remainingCount || 0 %></p>
       <p class="stat-note">

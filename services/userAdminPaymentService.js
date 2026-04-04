@@ -1,6 +1,7 @@
 const LawChatbotModel = require("../models/lawChatbotModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const LawChatbotSuggestedQuestionModel = require("../models/lawChatbotSuggestedQuestionModel");
+const { getDbPool } = require("../config/db");
 const PaymentRequestModel = require("../models/paymentRequestModel");
 const UserModel = require("../models/userModel");
 const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
@@ -19,6 +20,95 @@ const {
   resolveUserPlanContext,
 } = require("./planService");
 const { sendPaymentRequestNotification } = require("./telegramService");
+
+async function findUserByIdForUpdate(connection, userId) {
+  const [rows] = await connection.query(
+    `SELECT id, google_id, email, name, avatar_url, plan, plan_started_at, plan_expires_at,
+            premium_expires_at, status, created_at, updated_at
+     FROM users
+     WHERE id = ?
+     LIMIT 1
+     FOR UPDATE`,
+    [Number(userId || 0)]
+  );
+
+  return rows[0] || null;
+}
+
+async function findPendingPaymentRequestByIdForUpdate(connection, id) {
+  const [rows] = await connection.query(
+    `SELECT id, user_id, plan_name, amount, slip_image, note, status,
+            reviewed_at, reviewed_by, created_at, updated_at
+     FROM payment_requests
+     WHERE id = ? AND status = 'pending'
+     LIMIT 1
+     FOR UPDATE`,
+    [Number(id || 0)]
+  );
+
+  return rows[0] || null;
+}
+
+function buildActivatedPlanState(currentUser = {}, planCode, durationDays) {
+  const normalizedPlanCode = normalizePlanCode(planCode);
+  const normalizedDays = Math.max(1, Number(durationDays || getPlanDurationDays()));
+  const now = new Date();
+  const currentPlanCode = normalizePlanCode(currentUser.plan || "free");
+  const currentExpiry = currentUser.plan_expires_at || currentUser.premium_expires_at || null;
+  const currentExpiryDate = currentExpiry ? new Date(currentExpiry) : null;
+  const isSameActivePlan =
+    normalizedPlanCode === currentPlanCode &&
+    currentExpiryDate instanceof Date &&
+    !Number.isNaN(currentExpiryDate.getTime()) &&
+    currentExpiryDate > now;
+
+  const planStartedAt =
+    normalizedPlanCode === "free"
+      ? now
+      : isSameActivePlan && currentUser.plan_started_at
+        ? new Date(currentUser.plan_started_at)
+        : now;
+  const planExpiresAt =
+    normalizedPlanCode === "free"
+      ? null
+      : isSameActivePlan
+        ? new Date(currentExpiryDate.getTime() + normalizedDays * 24 * 60 * 60 * 1000)
+        : new Date(now.getTime() + normalizedDays * 24 * 60 * 60 * 1000);
+
+  return {
+    planCode: normalizedPlanCode,
+    planStartedAt,
+    planExpiresAt,
+    premiumExpiresAt: normalizedPlanCode === "premium" ? planExpiresAt : null,
+  };
+}
+
+async function activatePlanWithConnection(connection, userId, planCode, options = {}) {
+  const currentUser = await findUserByIdForUpdate(connection, userId);
+  if (!currentUser) {
+    return false;
+  }
+
+  const nextPlanState = buildActivatedPlanState(currentUser, planCode, options.durationDays);
+  const [result] = await connection.query(
+    `UPDATE users
+     SET plan = ?,
+         plan_started_at = ?,
+         plan_expires_at = ?,
+         premium_expires_at = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      nextPlanState.planCode,
+      nextPlanState.planStartedAt,
+      nextPlanState.planExpiresAt,
+      nextPlanState.premiumExpiresAt,
+      Number(userId || 0),
+    ]
+  );
+
+  return result.affectedRows > 0;
+}
 
 function enrichPaymentRequestRecord(record = {}) {
   const planCode = normalizePlanCode(record.plan_name || record.planName || "free");
@@ -370,39 +460,65 @@ async function updatePaymentRequestPlan(id, nextPlanCode) {
 }
 
 async function approvePaymentRequest(id, reviewMeta = {}) {
-  const request = await PaymentRequestModel.findById(id);
-  if (!request || request.status !== "pending") {
-    return { ok: false, reason: "not_found" };
+  const pool = getDbPool();
+  if (!pool) {
+    throw new Error("Database connection is required for payment approval.");
   }
 
-  const planCode = normalizePlanCode(request.plan_name || "free");
-  if (!isPaidPlan(planCode)) {
-    return { ok: false, reason: "invalid_plan" };
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const request = await findPendingPaymentRequestByIdForUpdate(connection, id);
+    if (!request) {
+      await connection.rollback();
+      return { ok: false, reason: "not_found" };
+    }
+
+    const planCode = normalizePlanCode(request.plan_name || "free");
+    if (!isPaidPlan(planCode)) {
+      await connection.rollback();
+      return { ok: false, reason: "invalid_plan" };
+    }
+
+    const activated = await activatePlanWithConnection(connection, request.user_id, planCode, {
+      durationDays: getPlanDurationDays(),
+    });
+    if (!activated) {
+      await connection.rollback();
+      return { ok: false, reason: "user_not_updated" };
+    }
+
+    const [reviewResult] = await connection.query(
+      `UPDATE payment_requests
+       SET status = 'approved',
+           reviewed_at = CURRENT_TIMESTAMP,
+           reviewed_by = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'pending'`,
+      [String(reviewMeta.reviewedBy || "").trim() || null, Number(id || 0)]
+    );
+
+    if (reviewResult.affectedRows <= 0) {
+      await connection.rollback();
+      return { ok: false, reason: "review_not_updated" };
+    }
+
+    await connection.commit();
+
+    return {
+      ok: true,
+      requestId: id,
+      planCode,
+      planLabel: getPlanLabel(planCode),
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
-
-  const activated = await UserModel.activatePlan(request.user_id, planCode, {
-    durationDays: getPlanDurationDays(),
-  });
-  if (!activated) {
-    return { ok: false, reason: "user_not_updated" };
-  }
-
-  const reviewed = await PaymentRequestModel.updateReviewStatus(
-    id,
-    "approved",
-    reviewMeta.reviewedBy || "",
-  );
-
-  if (!reviewed) {
-    return { ok: false, reason: "review_not_updated" };
-  }
-
-  return {
-    ok: true,
-    requestId: id,
-    planCode,
-    planLabel: getPlanLabel(planCode),
-  };
 }
 
 async function rejectPaymentRequest(id, reviewMeta = {}) {

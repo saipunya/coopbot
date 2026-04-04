@@ -36,6 +36,48 @@
       --bubble-bot-border: #c6dff0;
       --shadow-soft: 0 18px 45px rgba(18, 52, 77, 0.16);
       --chat-watermark-image: url('/icon/coop-rope-watermark.svg');
+      --plan-shell-glow: rgba(43, 132, 187, 0.14);
+      --plan-band-start: rgba(210, 232, 247, 0.78);
+      --plan-band-end: rgba(255, 255, 255, 0.38);
+      --plan-chip-bg: rgba(255, 255, 255, 0.72);
+      --plan-chip-ink: #0f4667;
+    }
+
+    body[data-bot-plan="free"] {
+      --primary: #1e6f9d;
+      --primary-strong: #164d70;
+      --primary-soft: #d7edf9;
+      --bubble-user-start: #1f86bc;
+      --bubble-user-end: #14577e;
+      --plan-shell-glow: rgba(49, 128, 181, 0.16);
+      --plan-band-start: rgba(215, 237, 249, 0.82);
+      --plan-band-end: rgba(255, 255, 255, 0.4);
+    }
+
+    body[data-bot-plan="pro"] {
+      --primary: #0f6d64;
+      --primary-strong: #09483f;
+      --primary-soft: #d7f0ea;
+      --bubble-user-start: #188979;
+      --bubble-user-end: #0d6054;
+      --bubble-bot-border: #bfdfd8;
+      --plan-shell-glow: rgba(15, 109, 100, 0.16);
+      --plan-band-start: rgba(215, 240, 234, 0.86);
+      --plan-band-end: rgba(255, 255, 255, 0.42);
+      --plan-chip-ink: #09483f;
+    }
+
+    body[data-bot-plan="premium"] {
+      --primary: #8b5a17;
+      --primary-strong: #5e3810;
+      --primary-soft: #f7ead2;
+      --bubble-user-start: #bc8540;
+      --bubble-user-end: #8b5a17;
+      --bubble-bot-border: #ead6af;
+      --plan-shell-glow: rgba(183, 134, 47, 0.18);
+      --plan-band-start: rgba(247, 234, 210, 0.88);
+      --plan-band-end: rgba(255, 250, 242, 0.46);
+      --plan-chip-ink: #5e3810;
     }
 
     html, body {
@@ -151,9 +193,94 @@
       position: absolute;
       inset: 0;
       background:
-        linear-gradient(120deg, rgba(43, 132, 187, 0.07), transparent 34%),
+        linear-gradient(120deg, var(--plan-shell-glow), transparent 34%),
         linear-gradient(180deg, rgba(255, 255, 255, 0.46), transparent 48%);
       pointer-events: none;
+    }
+
+    .plan-ribbon {
+      width: min(1160px, 100%);
+      border-radius: 1rem;
+      padding: 0.9rem 1rem;
+      background: linear-gradient(135deg, var(--plan-band-start), var(--plan-band-end));
+      border: 1px solid rgba(255, 255, 255, 0.72);
+      box-shadow: 0 16px 34px rgba(18, 52, 77, 0.11);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.9rem;
+      align-items: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .plan-ribbon::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.36), transparent 32%);
+      pointer-events: none;
+    }
+
+    .plan-ribbon > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .plan-ribbon-copy {
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .plan-ribbon-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.42rem;
+      width: fit-content;
+      padding: 0.38rem 0.82rem;
+      border-radius: 999px;
+      background: var(--plan-chip-bg);
+      color: var(--plan-chip-ink);
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .plan-ribbon-title {
+      margin: 0;
+      font-size: clamp(1rem, 1.7vw, 1.2rem);
+      color: var(--primary-strong);
+    }
+
+    .plan-ribbon-text {
+      margin: 0;
+      color: var(--text-sub);
+    }
+
+    .plan-ribbon-stats {
+      display: flex;
+      gap: 0.7rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .plan-ribbon-stat {
+      min-width: 150px;
+      border-radius: 0.9rem;
+      padding: 0.75rem 0.85rem;
+      background: rgba(255, 255, 255, 0.62);
+      border: 1px solid rgba(255, 255, 255, 0.68);
+    }
+
+    .plan-ribbon-stat span {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--text-sub);
+    }
+
+    .plan-ribbon-stat strong {
+      display: block;
+      margin-top: 0.2rem;
+      font-size: 1rem;
+      color: var(--primary-strong);
     }
 
     .page-brand {
@@ -460,7 +587,7 @@
 
     .chat-header {
       padding: 1rem 1.15rem;
-      background: linear-gradient(145deg, #ecf5fd, #e1eef8);
+      background: linear-gradient(135deg, var(--plan-band-start), rgba(255, 255, 255, 0.86));
       border-bottom: 1px solid var(--border);
       position: sticky;
       top: 0;
@@ -1471,6 +1598,17 @@
         height: 100dvh;
         overflow: hidden;
       }
+      .plan-ribbon {
+        grid-template-columns: 1fr;
+        padding: 0.82rem 0.86rem;
+      }
+      .plan-ribbon-stats {
+        justify-content: flex-start;
+      }
+      .plan-ribbon-stat {
+        min-width: 0;
+        flex: 1 1 140px;
+      }
       .page-header {
         --header-icon-size: 1.8rem;
         --header-icon-radius: 0.56rem;
@@ -1683,7 +1821,7 @@
     }
   </style>
 </head>
-<body>
+<body data-bot-plan="free">
   <div class="lawbot-app">
     <div class="floating-controls">
       <button type="button" id="toggleHeaderBtn" data-toggle-header-control="1" class="btn btn-sm btn-outline-secondary header-toggle-btn" title="ซ่อนส่วนหัวของระบบ" aria-label="ซ่อนส่วนหัวของระบบ" aria-pressed="false">
@@ -1699,15 +1837,15 @@
     <%
       const headerUserVariant = currentUser ? "admin" : (isGoogleUser ? "google" : "guest");
       const headerUserName = currentUser
-        ? "Admin"
+        ? "ผู้ดูแลระบบ"
         : (signedInUser && (signedInUser.name || signedInUser.email))
           ? (signedInUser.name || signedInUser.email)
-          : "Guest";
+          : "ผู้เยี่ยมชม";
       const headerUserRole = currentUser
-        ? "Admin"
+        ? "ผู้ดูแลระบบ"
         : isGoogleUser
-          ? "Google"
-          : "Guest";
+          ? "ผู้ใช้ Google"
+          : "ผู้เยี่ยมชม";
       const headerUserMeta = currentUser
         ? "ผู้ดูแลระบบ"
         : isGoogleUser
@@ -1736,7 +1874,36 @@
         : (["free", "pro", "premium"].includes(rawBotPlanCode)
           ? rawBotPlanCode
           : (botPlanAliases[rawBotPlanCode] || "free"));
+      const botPlanTheme = ["free", "pro", "premium"].includes(botPackageVariant) ? botPackageVariant : "free";
+      const botPlanMeta = {
+        free: {
+          label: "แพ็กเกจฟรี",
+          title: "เริ่มใช้งานแบบเรียบง่าย",
+          description: "เหมาะกับการสำรวจระบบและดูรูปแบบคำตอบก่อนขยับไปแพ็กเกจที่ตอบได้ลึกและต่อเนื่องขึ้น",
+          quota: "โควต้าแบบเริ่มต้น",
+          depth: "คำตอบกระชับและตรงประเด็น"
+        },
+        pro: {
+          label: "Professional",
+          title: "ทำงานประจำได้ลื่นและมั่นใจ",
+          description: "โทนคำตอบและการค้นหาถูกยกระดับให้เหมาะกับการใช้งานต่อเนื่อง พร้อม internet fallback แบบจำกัดเมื่อจำเป็น",
+          quota: "โควต้ารายเดือนที่สูงขึ้น",
+          depth: "คำตอบละเอียดและต่อบทสนทนาได้ดี"
+        },
+        premium: {
+          label: "Premium",
+          title: "วิเคราะห์เชิงลึกในมุมที่กว้างกว่า",
+          description: "เหมาะกับงานที่ต้องการความครอบคลุมสูงสุด การเรียบเรียงแน่นขึ้น และการใช้หลายแหล่งข้อมูลมากกว่าเดิม",
+          quota: "ใช้งานระดับเข้มข้น",
+          depth: "คำตอบเชิงลึกและหลายแหล่งอ้างอิง"
+        }
+      };
+      const activeBotPlanMeta = botPlanMeta[botPlanTheme] || botPlanMeta.free;
     %>
+
+    <script>
+      document.body.dataset.botPlan = <%- JSON.stringify(botPlanTheme) %>;
+    </script>
 
     <div class="page-header">
       <div class="page-brand">
@@ -1755,7 +1922,7 @@
         <div class="page-identity page-identity-<%= headerUserVariant %>">
           <div class="page-identity-avatar" aria-hidden="true">
             <% if (headerUserImage) { %>
-              <img src="<%= headerUserImage %>" alt="User profile" />
+              <img src="<%= headerUserImage %>" alt="โปรไฟล์ผู้ใช้" />
             <% } else { %>
               <i class="bi <%= headerUserIcon %>"></i>
             <% } %>
@@ -1771,17 +1938,17 @@
               </a>
             <% } else { %>
               <a href="/auth/google?returnTo=%2Flaw-chatbot" class="page-identity-action primary" title="เข้าสู่ระบบด้วย Google">
-                <i class="bi bi-google"></i><span class="page-identity-action-text">Google</span>
+                <i class="bi bi-google"></i><span class="page-identity-action-text">เข้าสู่ระบบ</span>
               </a>
             <% } %>
 
             <% if (currentUser) { %>
               <a href="/admin" class="page-identity-action" title="ไปยังหน้าแอดมิน">
-                <i class="bi bi-speedometer2"></i><span class="page-identity-action-text">Admin</span>
+                <i class="bi bi-speedometer2"></i><span class="page-identity-action-text">แอดมิน</span>
               </a>
             <% } else if (!isGoogleUser) { %>
               <a href="/admin/login" class="page-identity-action" title="เข้าสู่ระบบผู้ดูแล">
-                <i class="bi bi-shield-lock"></i><span class="page-identity-action-text">Admin</span>
+                <i class="bi bi-shield-lock"></i><span class="page-identity-action-text">ผู้ดูแล</span>
               </a>
             <% } %>
           </div>
@@ -1804,6 +1971,24 @@
         </div>
       </div>
     </div>
+
+    <section class="plan-ribbon">
+      <div class="plan-ribbon-copy">
+        <span class="plan-ribbon-chip"><i class="bi bi-layers"></i> <%= activeBotPlanMeta.label %></span>
+        <h2 class="plan-ribbon-title"><%= activeBotPlanMeta.title %></h2>
+        <p class="plan-ribbon-text"><%= activeBotPlanMeta.description %></p>
+      </div>
+      <div class="plan-ribbon-stats">
+        <div class="plan-ribbon-stat">
+          <span>ระดับการใช้งาน</span>
+          <strong><%= activeBotPlanMeta.quota %></strong>
+        </div>
+        <div class="plan-ribbon-stat">
+          <span>ลักษณะคำตอบ</span>
+          <strong><%= activeBotPlanMeta.depth %></strong>
+        </div>
+      </div>
+    </section>
 
     <div class="modal fade" id="iosInstallModal" tabindex="-1" aria-labelledby="iosInstallModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
@@ -3162,7 +3347,7 @@
       }
 
       function isGuestLimitMessage(text) {
-        return /ใช้สิทธิ์ถามคำถามในโหมด Guest ครบ 2 ครั้งแล้ว/i.test(String(text || ''));
+        return /ใช้สิทธิ์ถามคำถามในโหมด (guest|ผู้เยี่ยมชม) ครบ 2 ครั้งแล้ว/i.test(String(text || ''));
       }
 
       function normalizeChatTarget(value) {

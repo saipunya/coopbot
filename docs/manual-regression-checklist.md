@@ -1,8 +1,8 @@
 # Coopbot Manual Regression Checklist
 
-Last updated: 2026-04-01
+Last updated: 2026-04-05
 
-This checklist covers the recent guest access, Google login persistence, monthly usage, payment request, and admin payment review changes.
+This checklist covers the recent guest access, Google login persistence, monthly usage, three-plan package model, payment request, and admin payment review changes.
 
 ## Preconditions
 
@@ -11,8 +11,17 @@ This checklist covers the recent guest access, Google login persistence, monthly
   - `users`
   - `user_monthly_usage`
   - `payment_requests`
+- If the environment previously used `standard`, run the migration in `scripts/sql/20260404_merge_standard_into_pro.sql` before testing package management flows.
 - Google login is configured and working.
 - Use one browser profile for guest tests and another incognito profile for clean user tests when possible.
+
+## Package Model Reference
+
+- Active packages are `free`, `pro`, and `premium`.
+- `pro` is presented to users as `Professional`.
+- Legacy `standard` input should resolve to `pro` and must not appear as a purchasable package in UI.
+- Existing `pro` customers must not lose prior entitlement level during the 3-package rollout.
+- Free users can try limited AI preview, described in UI as AI responses at the `Professional` level.
 
 ## 1. Guest Mode: 2 Questions Then Block
 
@@ -89,7 +98,24 @@ Expected:
 - The message indicates the free monthly quota has been reached.
 - Admin users are not blocked by customer-plan monthly usage limits.
 
-## 4. Payment Request Creation Works
+## 4. Package Selection UI Shows Only 3 Packages
+
+Goal: verify user-facing package selection and plan comparison are aligned with the current product structure.
+
+Steps:
+
+1. Sign in as a normal user with `plan = 'free'`.
+2. Open `/law-chatbot/payment-request`.
+3. Review the package comparison cards and the package dropdown.
+
+Expected:
+
+- Only `Free`, `Professional`, and `Premium` are represented in UI behavior.
+- `Standard` is not shown anywhere as a selectable package.
+- The current package label uses Thai wording such as `แพ็กเกจปัจจุบัน`.
+- Free AI preview messaging refers to `Professional`-level AI preview.
+
+## 5. Payment Request Creation Works
 
 Goal: verify logged-in users can submit a payment request with or without slip upload.
 
@@ -120,7 +146,7 @@ WHERE user_id = USER_ID_HERE
 ORDER BY id DESC;
 ```
 
-## 5. Telegram Notification Failure Does Not Break Payment Submission
+## 6. Telegram Notification Failure Does Not Break Payment Submission
 
 Goal: ensure payment submission still succeeds even if Telegram notification fails.
 
@@ -140,7 +166,7 @@ Expected:
 - User still sees success.
 - Notification failure is logged only as a non-blocking side effect.
 
-## 6. Admin Approve Activates the Requested Plan for 30 Days
+## 7. Admin Approve Activates the Requested Plan for 30 Days
 
 Goal: verify admin approval updates both payment request review fields and the user plan.
 
@@ -174,7 +200,7 @@ FROM payment_requests
 WHERE id = PAYMENT_REQUEST_ID_HERE;
 ```
 
-## 7. Admin Reject Keeps Current User Plan Unchanged
+## 8. Admin Reject Keeps Current User Plan Unchanged
 
 Goal: verify admin rejection does not change the user's active plan.
 
@@ -200,11 +226,15 @@ SELECT COUNT(*) AS user_count FROM users;
 SELECT COUNT(*) AS usage_rows FROM user_monthly_usage;
 SELECT COUNT(*) AS payment_request_count FROM payment_requests;
 SELECT status, COUNT(*) AS total FROM payment_requests GROUP BY status;
+SELECT plan, COUNT(*) AS total FROM users GROUP BY plan ORDER BY plan;
 ```
 
 ## Notes
 
 - Use real `/law-chatbot/chat` requests for guest and monthly limit checks. Do not use summary/debug endpoints.
+- For quick UI smoke checks while the app is running, use `npm run verify:ui`.
+- `npm run verify:ui` now fails if no active admin/user test accounts exist.
+- When `NODE_ENV=production`, the command only runs if both app/DB targets are local, or if `COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true` is set explicitly.
 - Payment review routes must stay behind admin auth:
   - `/admin/payment-requests`
   - `/admin/payment-requests/:id`

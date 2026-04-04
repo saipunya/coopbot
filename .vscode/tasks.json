@@ -1,0 +1,78 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "verify-ui-routes-direct",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"verify:ui"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-ui-routes-final",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"verify:ui"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-ui-routes-post-review-fixes",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"verify:ui"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-ui-routes-post-guard-fix",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"verify:ui"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-ui-routes-with-explicit-override",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
+		},
+		{
+			"label": "verify-ui-routes-after-security-fixes",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
+		},
+		{
+			"label": "verify-ui-routes-admin-theme-pass",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
+		},
+		{
+			"label": "start-coopbot-ui-theme-check",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"start"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "verify-ui-routes-admin-theme-pass-2",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
+		}
+	]
+}
