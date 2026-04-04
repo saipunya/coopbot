@@ -95,7 +95,9 @@ function getFocusedIntentTerms(intent = "general") {
 }
 
 function extractAbbreviationTerms(text) {
-  const normalized = normalizeComparisonText(text);
+  const normalized = normalizeForSearch(String(text || ""))
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ""); // เวอร์ชันที่ล้าง . แบบ explicit
   if (!normalized) {
     return [];
   }
@@ -464,12 +466,12 @@ function scoreStructuredLawKeywordMatch(message, keywordText = "") {
   let score = 0;
     abbreviationTerms.forEach((abbr) => {
     if (keywordTerms.some((keyword) => keyword === abbr)) {
-      score += 60;
+      score += 90;  // เปลี่ยนจาก 60 เป็น 90
       return;
     }
 
     if (keywordTerms.some((keyword) => keyword.includes(abbr) || abbr.includes(keyword))) {
-      score += 30;
+      score += 45;  // เปลี่ยนจาก 30 เป็น 45
     }
   });
   const matched = new Set();
