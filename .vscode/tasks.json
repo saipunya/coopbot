@@ -134,6 +134,27 @@
 			"type": "shell",
 			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
 			"isBackground": false
+		},
+		{
+			"label": "verify-ui-after-hide-mobile-plan-ribbon",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
+		},
+		{
+			"label": "start-coopbot-hide-mobile-plan-ribbon",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"start"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "verify-ui-after-hide-mobile-plan-ribbon-2",
+			"type": "shell",
+			"command": "COOPBOT_VERIFY_ALLOW_SESSION_WRITE=true npm run verify:ui",
+			"isBackground": false
 		}
 	]
 }
