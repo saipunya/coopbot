@@ -1037,6 +1037,33 @@
       line-height: 1.45;
     }
 
+    .answer-origin-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.38rem;
+      width: fit-content;
+      margin-bottom: 0.45rem;
+      padding: 0.32rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #1d5b43;
+      background: rgba(33, 128, 83, 0.1);
+      border: 1px solid rgba(33, 128, 83, 0.16);
+    }
+
+    .answer-origin-chip-ai {
+      color: #184d73;
+      background: rgba(47, 127, 184, 0.1);
+      border-color: rgba(47, 127, 184, 0.16);
+    }
+
+    .answer-origin-chip-db {
+      color: #705116;
+      background: rgba(191, 139, 38, 0.12);
+      border-color: rgba(191, 139, 38, 0.18);
+    }
+
     .reference-modal-list {
       margin: 0;
       padding-left: 1.1rem;
@@ -3181,13 +3208,23 @@
         if (typeof timing.answerGenerationMs === 'number') lines.push(`สรุปคำตอบ ${timing.answerGenerationMs} ms`);
         if (typeof timing.totalReplyMs === 'number') lines.push(`รวมทั้งหมด ${timing.totalReplyMs} ms`);
 
-        const sourceTier = debug && debug.selectedSourceTier ? `แหล่งที่ใช้: ${escapeHtml(debug.selectedSourceTier)}` : '';
+        const sourceTierValue = debug && (debug.selectedSourceTierLabel || debug.selectedSourceTier)
+          ? `แหล่งที่ใช้: ${escapeHtml(debug.selectedSourceTierLabel || debug.selectedSourceTier)}`
+          : '';
+        const sourceTablesValue = debug && Array.isArray(debug.sourceTables) && debug.sourceTables.length
+          ? `ตารางที่ใช้: ${escapeHtml(debug.sourceTables.join(' | '))}`
+          : '';
+        const consideredSourceTablesValue = debug && Array.isArray(debug.consideredSourceTables) && debug.consideredSourceTables.length
+          ? `ตารางที่พิจารณาแต่ไม่เลือก: ${escapeHtml(debug.consideredSourceTables.join(' | '))}`
+          : '';
         const summary = lines.length ? escapeHtml(lines.join(' | ')) : '';
-        if (!summary && !sourceTier) return '';
+        if (!summary && !sourceTierValue && !sourceTablesValue && !consideredSourceTablesValue) return '';
 
         return `
           <div class="timing-debug">
-            ${sourceTier ? `<div>${sourceTier}</div>` : ''}
+            ${sourceTierValue ? `<div>${sourceTierValue}</div>` : ''}
+            ${sourceTablesValue ? `<div>${sourceTablesValue}</div>` : ''}
+            ${consideredSourceTablesValue ? `<div>${consideredSourceTablesValue}</div>` : ''}
             ${summary ? `<div>${summary}</div>` : ''}
           </div>
         `;
@@ -3304,6 +3341,24 @@
           }
 
           content.insertBefore(contextRow, message);
+        }
+
+        if (role === 'bot' && !isLoading && feedbackContext && feedbackContext.responseMeta && feedbackContext.responseMeta.notice) {
+          const originChip = document.createElement('div');
+          const responseKind = feedbackContext.responseMeta.kind || 'generic';
+          const variantClass = responseKind === 'ai_summary'
+            ? ' answer-origin-chip-ai'
+            : responseKind === 'database_lookup'
+              ? ' answer-origin-chip-db'
+              : '';
+          const iconClass = responseKind === 'ai_summary'
+            ? 'bi-stars'
+            : responseKind === 'database_lookup'
+              ? 'bi-search'
+              : 'bi-database-check';
+          originChip.className = `answer-origin-chip${variantClass}`;
+          originChip.innerHTML = `<i class="bi ${iconClass}"></i><span>${escapeHtml(feedbackContext.responseMeta.notice)}</span>`;
+          content.insertBefore(originChip, message);
         }
 
         if (
@@ -3559,7 +3614,8 @@
               guestLimitReached: Boolean(data && data.guestLimitReached),
               monthlyUsageLimitReached: Boolean(data && data.monthlyUsageLimitReached),
               signInPath: data && typeof data.signInPath === 'string' ? data.signInPath : '',
-              freeAiPreview: data && data.freeAiPreview ? data.freeAiPreview : null
+              freeAiPreview: data && data.freeAiPreview ? data.freeAiPreview : null,
+              responseMeta: data && data.responseMeta ? data.responseMeta : null
             });
             focusFirstAnswer(botRow);
           }

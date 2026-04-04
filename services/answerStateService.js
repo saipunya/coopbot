@@ -19,7 +19,7 @@ const CACHE_TTL_BY_INTENT = {
   general: 10 * 60 * 1000,      // 10 นาที - ค่าเริ่มต้น
 };
 
-const ANSWER_CACHE_SCOPE_VERSION = "v13";
+const ANSWER_CACHE_SCOPE_VERSION = "v14";
 const answerCache = new Map();
 
 function buildAnswerCacheScope(planContext = {}) {
@@ -91,6 +91,7 @@ function buildAiPreviewMeta(planContext = {}, usage = null) {
 function buildFreeAiPreviewPlanContext(basePlanContext = {}) {
   const professionalPlanContext = resolveUserPlanContext({ plan: "pro" });
   const professionalPromptProfile = professionalPlanContext.promptProfile || {};
+  const compactSourceLimit = Math.max(2, Math.min(5, Number(professionalPlanContext.sourceLimit || 5)));
 
   return {
     ...basePlanContext,
@@ -98,15 +99,28 @@ function buildFreeAiPreviewPlanContext(basePlanContext = {}) {
     useAI: true,
     useInternet: false,
     maxInternetSources: 0,
-    sourceLimit: Math.max(1, Number(professionalPlanContext.sourceLimit || 5)),
+    sourceLimit: compactSourceLimit,
     strictSourceFiltering: Boolean(professionalPlanContext.strictSourceFiltering),
     preferDatabaseOnlyForLawSections: Boolean(professionalPlanContext.preferDatabaseOnlyForLawSections),
     followUpStrength: professionalPlanContext.followUpStrength || "enhanced",
     promptProfile: {
       ...professionalPromptProfile,
-      code: "preview-professional",
+      code: "preview-professional-compact",
+      instructionTone: "ตอบแบบสั้น กระชับ และคุ้มต้นทุน แต่ยังเก็บใจความสำคัญให้ครบก่อน",
+      summaryRange: "ไม่เกิน 4 บรรทัด",
+      summaryLineLimit: 4,
+      explainSummaryLineLimit: 5,
+      detailLineLimit: 4,
+      aiSourceLimit: Math.max(2, Math.min(3, Number(professionalPromptProfile.aiSourceLimit || 3))),
+      aiTimeoutMs: Math.max(2500, Math.min(4200, Number(professionalPromptProfile.aiTimeoutMs || 4200))),
+      aiMaxOutputTokens: Math.max(180, Math.min(260, Number(professionalPromptProfile.aiMaxOutputTokens || 260))),
+      conciseAiMaxOutputTokens: 140,
+      aiSourceContextCharLimit: Math.max(320, Math.min(420, Number(professionalPromptProfile.aiSourceContextCharLimit || 420))),
+      referenceLimit: Math.max(2, Math.min(3, Number(professionalPromptProfile.referenceLimit || 3))),
+      followUpPrompt:
+        "หากยังไม่ครบ พิมพ์: อธิบาย, แสดงรายละเอียด, รายละเอียด, ยังไม่ครบ หรือ แจ้งเพิ่มเติม",
     },
-    answerMode: "ai_preview",
+    answerMode: "ai_preview_compact",
   };
 }
 

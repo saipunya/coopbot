@@ -206,6 +206,23 @@ async function ensureSchema() {
     `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS guest_monthly_usage (
+      id int(11) NOT NULL AUTO_INCREMENT,
+      identity_type varchar(30) NOT NULL,
+      identity_hash char(64) NOT NULL,
+      usage_month char(7) NOT NULL,
+      question_count int(11) NOT NULL DEFAULT 0,
+      last_used_at timestamp NULL DEFAULT current_timestamp(),
+      created_at timestamp NULL DEFAULT current_timestamp(),
+      updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_guest_monthly_usage_identity_month (identity_type, identity_hash, usage_month),
+      KEY idx_guest_monthly_usage_month (usage_month),
+      KEY idx_guest_monthly_usage_last_used_at (last_used_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS sessions (
       sid varchar(255) NOT NULL,
       sess longtext NOT NULL,
@@ -418,6 +435,30 @@ async function ensureSchema() {
 
   try {
     await pool.query("ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_normalized (normalized_question)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE guest_monthly_usage ADD COLUMN last_used_at timestamp NULL DEFAULT current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE guest_monthly_usage ADD COLUMN created_at timestamp NULL DEFAULT current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE guest_monthly_usage ADD COLUMN updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE guest_monthly_usage ADD UNIQUE KEY uniq_guest_monthly_usage_identity_month (identity_type, identity_hash, usage_month)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE guest_monthly_usage ADD KEY idx_guest_monthly_usage_month (usage_month)");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE guest_monthly_usage ADD KEY idx_guest_monthly_usage_last_used_at (last_used_at)");
   } catch (_) {}
 
   try {

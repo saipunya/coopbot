@@ -181,11 +181,15 @@ function getSourceAuthorityTrace(item = {}, intent = "general", message = "") {
       score -= 1;
     }
   } else if (intent === "qa") {
-    if (sourceName === "tbl_vinichai") {
-      score += 8;
-      reason = "vinichai source";
-    } else if (sourceName === "admin_knowledge") {
+    if (sourceName === "admin_knowledge") {
+      score += 9;
+      reason = "prepared knowledge source";
+    } else if (sourceName === "knowledge_suggestion") {
+      score += 7;
+      reason = "approved suggested knowledge source";
+    } else if (sourceName === "tbl_vinichai") {
       score += 4;
+      reason = "vinichai support source";
     }
   } else if (intent === "document") {
     if (sourceName === "documents" || sourceName === "pdf_chunks") {
@@ -894,8 +898,8 @@ function getFreeSourcePriorityPlan(message, target = "all") {
 
   return {
     admin_knowledge: 10,
-    vinichai: 9,
-    knowledge_suggestion: 7,
+    knowledge_suggestion: 8,
+    vinichai: 7,
     [primaryLawSource]: 6,
     [secondaryLawSource]: 5,
     documents: 3,
@@ -966,16 +970,18 @@ function getSourceRoutingPlan(intent) {
     case "qa":
       return {
         priorities: {
-          vinichai: 9,
-          admin_knowledge: 6,
+          admin_knowledge: 9,
+          knowledge_suggestion: 8,
+          vinichai: 5,
           structured_laws: 3,
           documents: 0,
           pdf_chunks: 0,
           knowledge_base: 4,  // เพิ่ม priority
         },
         limits: {
-          vinichai: 4,
-          admin_knowledge: 2,
+          admin_knowledge: 3,
+          knowledge_suggestion: 2,
+          vinichai: 2,
           structured_laws: 1,
           documents: 0,
           pdf_chunks: 0,
@@ -1830,9 +1836,9 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
       return {
         totalLimit: 5,
         quotas: {
-          vinichai: 3,
+          vinichai: 2,
           structured_laws: 1,
-          admin_knowledge: 1,
+          admin_knowledge: 2,
           document_like: 1,
           internet: 0,
         },
@@ -2042,28 +2048,28 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
     return {
       totalLimit: 6,
       quotas: {
-        admin_knowledge: 2,
-        knowledge_suggestion: 1,
+        admin_knowledge: 3,
+        knowledge_suggestion: 2,
         tbl_laws: vinichaiPrioritySearch ? 1 : 1,
         tbl_glaws: 0,
         pdf_chunks: 0,
-        tbl_vinichai: vinichaiPrioritySearch ? 4 : 3,
+        tbl_vinichai: vinichaiPrioritySearch ? 2 : 1,
         documents: 0,
         knowledge_base: 1,
       },
     };
   case "explain":
     return {
-      totalLimit: 10,
+      totalLimit: freePlan ? 12 : 10,
       quotas: {
-        admin_knowledge: 3,
-        knowledge_suggestion: freePlan ? 1 : 2,
-        tbl_laws: 3,
+        admin_knowledge: freePlan ? 3 : 3,
+        knowledge_suggestion: freePlan ? 2 : 2,
+        tbl_laws: freePlan ? 3 : 3,
         tbl_glaws: freePlan ? 2 : 2,
-        pdf_chunks: freePlan ? 0 : 1,
+        pdf_chunks: freePlan ? 1 : 1,
         tbl_vinichai: freePlan ? 2 : 1,
-        documents: 1,
-        knowledge_base: 1,
+        documents: freePlan ? 2 : 1,
+        knowledge_base: freePlan ? 2 : 1,
       },
     };
   default:
@@ -2159,6 +2165,31 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
       "tbl_vinichai",
       "knowledge_base",
     ];
+  }
+
+  if (intent === "explain") {
+    const freePlan = isFreePlanSearch(options.planCode);
+    return freePlan
+      ? [
+          "admin_knowledge",
+          "knowledge_suggestion",
+          primaryLawSource,
+          secondaryLawSource,
+          "tbl_vinichai",
+          "documents",
+          "pdf_chunks",
+          "knowledge_base",
+        ]
+      : [
+          "admin_knowledge",
+          primaryLawSource,
+          secondaryLawSource,
+          "knowledge_suggestion",
+          "tbl_vinichai",
+          "documents",
+          "pdf_chunks",
+          "knowledge_base",
+        ];
   }
 
   return [

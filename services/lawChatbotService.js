@@ -7,7 +7,7 @@ const runtimeFlags = require("../config/runtimeFlags");
 const { isAiEnabled } = require("./runtimeSettingsService");
 const { getOpenAiConfig } = require("./openAiService");
 const { buildQuestionCacheIdentity } = require("./lawChatbotAnswerCacheUtils");
-const { generateChatSummary, wantsExplanation } = require("./chatAnswerService");
+const { generateChatSummary, wantsExplanation, SOURCE_LABELS } = require("./chatAnswerService");
 const {
   getFollowUpCarrySources,
   mergeUniqueSources,
@@ -77,6 +77,66 @@ const CHAT_BUDGET_BUFFER_MS = Number(process.env.CHAT_BUDGET_BUFFER_MS || 3000);
 const CHAT_REPLY_BUDGET_MS = Math.max(2000, CHAT_REQUEST_TIMEOUT_MS - CHAT_BUDGET_BUFFER_MS);
 const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SEARCH_MIN_BUDGET_MS || 5000);
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
+const PREPARED_QA_NOTICE = "คำตอบนี้มาจาก Q&A/ฐานข้อมูลในระบบ โดยไม่ได้เรียก AI";
+const AI_SUMMARY_NOTICE = "คำตอบนี้สรุปโดย AI จากข้อมูลที่ระบบค้นพบ";
+const DB_LOOKUP_NOTICE = "คำตอบนี้มาจากการค้นฐานข้อมูลโดยตรง";
+
+const SOURCE_TABLE_NAMES = {
+  managed_suggested_question: "chatbot_suggested_questions",
+  admin_knowledge: "chatbot_knowledge",
+  knowledge_suggestion: "chatbot_knowledge_suggestions",
+  knowledge_base: "law_chatbot",
+  documents: "law_chatbot_pdf_chunks",
+  pdf_chunks: "law_chatbot_pdf_chunks",
+  tbl_laws: "tbl_laws",
+  tbl_glaws: "tbl_glaws",
+  tbl_vinichai: "tbl_vinichai",
+  internet_search: "internet_search",
+};
+
+function getSourceDisplayLabel(sourceName = "") {
+  return SOURCE_LABELS[String(sourceName || "").trim()] || String(sourceName || "").trim();
+}
+
+function getSourceTableName(sourceName = "") {
+  const normalized = String(sourceName || "").trim();
+  return SOURCE_TABLE_NAMES[normalized] || normalized;
+}
+
+function getUniqueSourceTableNames(sources = []) {
+  return Array.from(
+    new Set(
+      (Array.isArray(sources) ? sources : [])
+        .map((item) => getSourceTableName(item?.source || ""))
+        .filter(Boolean),
+    ),
+  );
+}
+
+function buildResponseMeta(answerMode = "", sources = []) {
+  const sourceTables = getUniqueSourceTableNames(sources);
+  const preparedQaModes = new Set(["prepared_qa_db_only", "managed_answer"]);
+  const aiModes = new Set(["ai", "ai_preview", "ai_preview_compact", "mock_ai"]);
+  const databaseModes = new Set(["db_only", "economy_db_only"]);
+  const normalizedAnswerMode = String(answerMode || "").trim();
+  const usesPreparedQa = preparedQaModes.has(String(answerMode || "").trim());
+  const usesAiSummary = aiModes.has(normalizedAnswerMode);
+  const usesDatabaseLookup = !usesPreparedQa && !usesAiSummary && databaseModes.has(normalizedAnswerMode);
+
+  return {
+    answerMode: normalizedAnswerMode,
+    kind: usesPreparedQa ? "prepared_qa" : usesAiSummary ? "ai_summary" : usesDatabaseLookup ? "database_lookup" : "generic",
+    usesPreparedQa,
+    notice: usesPreparedQa
+      ? PREPARED_QA_NOTICE
+      : usesAiSummary
+        ? AI_SUMMARY_NOTICE
+        : usesDatabaseLookup
+          ? DB_LOOKUP_NOTICE
+          : "",
+    sourceTables,
+  };
+}
 
 async function collectAnswerSources(message, target, session, options = {}) {
   const startedAt = nowMs();
@@ -281,6 +341,7 @@ async function replyToChat(payload, session) {
       highlightTerms,
       usedFollowUpContext: false,
       usedInternetFallback: false,
+      responseMeta: buildResponseMeta("managed_answer", [matchedSource]),
       fromCache: false,
     };
 
@@ -292,12 +353,15 @@ async function replyToChat(payload, session) {
         internetMatches: 0,
         answerMode: "managed_answer",
         promptProfile: "managed",
+        sourceTables: getUniqueSourceTableNames([matchedSource]),
         timing: {
           totalReplyMs: Math.round(nowMs() - startedAt),
         },
         sources: [
           {
             source: matchedSource.source,
+            sourceLabel: getSourceDisplayLabel(matchedSource.source),
+            sourceTable: getSourceTableName(matchedSource.source),
             reference: matchedSource.reference,
             score: Number(matchedSource.score || 0),
             preview: String(answer || "").replace(/\s+/g, " ").slice(0, 180),
@@ -336,6 +400,7 @@ async function replyToChat(payload, session) {
       highlightTerms,
       usedFollowUpContext: false,
       usedInternetFallback: false,
+      responseMeta: buildResponseMeta("mock_ai", []),
       fromCache: false,
     }, {
       previewMeta: freeAiPreviewMeta,
@@ -394,6 +459,7 @@ async function replyToChat(payload, session) {
       highlightTerms: cachedAnswer.highlightTerms,
       usedFollowUpContext: false,
       usedInternetFallback: cachedAnswer.usedInternetFallback,
+      responseMeta: cachedAnswer.responseMeta || null,
       fromCache: true,
     };
 
@@ -402,12 +468,15 @@ async function replyToChat(payload, session) {
         selectedSourceTier: cachedAnswer.selectedSourceTier || "cache",
         sourceCount: Array.isArray(cachedAnswer.sources) ? cachedAnswer.sources.length : 0,
         answerMode: cachedAnswer.answerMode || "cache",
+        sourceTables: Array.isArray(cachedAnswer.responseMeta?.sourceTables) ? cachedAnswer.responseMeta.sourceTables : [],
         timing: {
           cacheHit: true,
           totalReplyMs: Math.round(nowMs() - startedAt),
         },
         sources: (cachedAnswer.sources || []).map((item) => ({
           source: item.source || "",
+          sourceLabel: getSourceDisplayLabel(item.source || ""),
+          sourceTable: getSourceTableName(item.source || ""),
           reference: item.reference || item.title || "",
           score: Number(item.score || 0),
           preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
@@ -441,6 +510,11 @@ async function replyToChat(payload, session) {
             selectedSourceTier: dbCachedAnswer?.metadata?.selectedSourceTier || "db_cache",
             sourceCount: Number(dbCachedAnswer?.metadata?.sourceCount || 0),
             answerMode: dbCachedAnswer?.metadata?.answerMode || "db_cache",
+            sourceTables: Array.isArray(dbCachedAnswer?.metadata?.responseMeta?.sourceTables)
+              ? dbCachedAnswer.metadata.responseMeta.sourceTables
+              : Array.isArray(dbCachedAnswer?.metadata?.sourceTables)
+                ? dbCachedAnswer.metadata.sourceTables
+                : [],
             timing: {
               cacheHit: true,
               totalReplyMs: Math.round(nowMs() - startedAt),
@@ -471,6 +545,7 @@ async function replyToChat(payload, session) {
           answer: cachedResult.answer,
           highlightTerms: cachedResult.highlightTerms,
           usedInternetFallback: cachedResult.usedInternetFallback,
+          responseMeta: cachedResult.responseMeta || null,
           selectedSourceTier: dbCachedAnswer?.metadata?.selectedSourceTier || "db_cache",
           answerMode: dbCachedAnswer?.metadata?.answerMode || "db_cache",
           effectiveMessage: dbCachedAnswer.normalized_question || message,
@@ -577,6 +652,12 @@ async function replyToChat(payload, session) {
     highlightTerms,
     usedFollowUpContext: resolvedContext.usedContext,
     usedInternetFallback: evidence.usedInternetFallback,
+    responseMeta: buildResponseMeta(
+      retrievalEvaluation.shouldAnswer
+        ? planContext.answerMode || (planContext.useAI ? "ai" : "db_only")
+        : retrievalEvaluation.policy,
+      sources,
+    ),
     fromCache: false,
   };
 
@@ -586,6 +667,7 @@ async function replyToChat(payload, session) {
       answer,
       highlightTerms,
       usedInternetFallback: evidence.usedInternetFallback,
+      responseMeta: result.responseMeta,
       selectedSourceTier: evidence.selectedSourceTier || "none",
       planCode: planContext.code,
       promptProfile: planContext.promptProfile?.code || "template",
@@ -617,6 +699,8 @@ async function replyToChat(payload, session) {
           selectedSourceTier: evidence.selectedSourceTier || "none",
           effectiveMessage,
           sourceCount: sources.length,
+          sourceTables: result.responseMeta?.sourceTables || [],
+          responseMeta: result.responseMeta || null,
           planCode: planContext.code,
           promptProfile: planContext.promptProfile?.code || "template",
           answerMode: planContext.answerMode || (planContext.useAI ? "ai" : "db_only"),
@@ -628,8 +712,18 @@ async function replyToChat(payload, session) {
   }
 
   if (debugMode) {
+    const consideredSourceTables = Array.from(
+      new Set(
+        (evidence.selectionDiagnostics?.rejected || [])
+          .map((item) => getSourceTableName(item?.source || ""))
+          .filter(Boolean),
+      ),
+    );
     result.debug = {
       selectedSourceTier: evidence.selectedSourceTier || "none",
+      selectedSourceTierLabel: getSourceDisplayLabel(evidence.selectedSourceTier || "none"),
+      sourceTables: result.responseMeta?.sourceTables || [],
+      consideredSourceTables,
       sourceCount: sources.length,
       databaseMatches: evidence.databaseMatches?.length || 0,
       internetMatches: evidence.internetMatches?.length || 0,
@@ -649,7 +743,10 @@ async function replyToChat(payload, session) {
       },
       sources: sources.map((item) => ({
         source: item.source || "",
+        sourceLabel: getSourceDisplayLabel(item.source || ""),
+        sourceTable: getSourceTableName(item.source || ""),
         selectionTier: item.selectionTier || "",
+        selectionTierLabel: getSourceDisplayLabel(item.selectionTier || ""),
         reference: item.reference || item.title || "",
         score: Number(item.score || 0),
         rawScore: Number(item.rawScore ?? item.score ?? 0),

@@ -1,6 +1,11 @@
+const crypto = require("crypto");
+
 const LAW_CHATBOT_GUEST_QUESTION_LIMIT = 2;
 const LAW_CHATBOT_GUEST_COUNT_KEY = "lawChatbotGuestQuestionCount";
+const LAW_CHATBOT_GUEST_ID_COOKIE = "lawbot_guest_id";
+const LAW_CHATBOT_GUEST_COOKIE_TTL_MS = 1000 * 60 * 60 * 24 * 180;
 const UserModel = require("../models/userModel");
+const GuestMonthlyUsageModel = require("../models/guestMonthlyUsageModel");
 const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
 const {
   getPlanLabel,
@@ -8,6 +13,88 @@ const {
   isPaidPlan,
   normalizePlanCode,
 } = require("../services/planService");
+
+function getYearMonth(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function parseCookieHeader(cookieHeader = "") {
+  return String(cookieHeader || "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((accumulator, part) => {
+      const separatorIndex = part.indexOf("=");
+      if (separatorIndex <= 0) {
+        return accumulator;
+      }
+
+      const key = part.slice(0, separatorIndex).trim();
+      const value = part.slice(separatorIndex + 1).trim();
+      if (!key) {
+        return accumulator;
+      }
+
+      accumulator[key] = decodeURIComponent(value || "");
+      return accumulator;
+    }, {});
+}
+
+function hashIdentity(value = "") {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex");
+}
+
+function getGuestCookieId(req) {
+  const cookies = parseCookieHeader(req?.headers?.cookie || "");
+  const guestCookieId = String(cookies[LAW_CHATBOT_GUEST_ID_COOKIE] || "").trim();
+  return /^[a-f0-9-]{16,}$/i.test(guestCookieId) ? guestCookieId : "";
+}
+
+function getClientIp(req) {
+  const forwardedFor = String(req?.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
+  const reqIp = String(req?.ip || req?.socket?.remoteAddress || "").trim();
+  return forwardedFor || reqIp || "unknown";
+}
+
+function getGuestNetworkFingerprint(req) {
+  const clientIp = getClientIp(req);
+  const forwardedProto = String(req?.headers?.["x-forwarded-proto"] || "").trim().toLowerCase();
+  const scheme = forwardedProto || (req?.secure ? "https" : "http");
+  return hashIdentity(`${clientIp}|${scheme}|lawbot-guest`);
+}
+
+function ensureGuestCookieId(req, res) {
+  const existingGuestId = getGuestCookieId(req);
+  if (existingGuestId) {
+    return existingGuestId;
+  }
+
+  const guestId = crypto.randomUUID();
+  res.cookie(LAW_CHATBOT_GUEST_ID_COOKIE, guestId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: LAW_CHATBOT_GUEST_COOKIE_TTL_MS,
+    path: "/",
+  });
+  return guestId;
+}
+
+function buildGuestUsageIdentities(req, res) {
+  const guestCookieId = ensureGuestCookieId(req, res);
+  const networkFingerprint = getGuestNetworkFingerprint(req);
+  return [
+    guestCookieId
+      ? { identityType: "cookie", identityHash: hashIdentity(guestCookieId) }
+      : null,
+    networkFingerprint
+      ? { identityType: "network", identityHash: networkFingerprint }
+      : null,
+  ].filter(Boolean);
+}
 
 function sanitizeReturnPath(value, fallbackPath = "/user") {
   const path = String(value || "").trim();
@@ -96,7 +183,7 @@ async function attachCurrentUser(req, res, next) {
   next();
 }
 
-function enforceLawChatbotGuestLimit(req, res, next) {
+async function enforceLawChatbotGuestLimit(req, res, next) {
   if (req.session?.adminUser || req.session?.user) {
     if (req.session && Object.prototype.hasOwnProperty.call(req.session, LAW_CHATBOT_GUEST_COUNT_KEY)) {
       delete req.session[LAW_CHATBOT_GUEST_COUNT_KEY];
@@ -109,24 +196,42 @@ function enforceLawChatbotGuestLimit(req, res, next) {
     return next();
   }
 
-  const guestQuestionCount = Number(req.session?.[LAW_CHATBOT_GUEST_COUNT_KEY] || 0);
-  if (guestQuestionCount >= LAW_CHATBOT_GUEST_QUESTION_LIMIT) {
-    return res.json({
-      hasContext: true,
-      answer:
-        "คุณใช้สิทธิ์ถามคำถามในโหมด Guest ครบ 2 ครั้งแล้ว กรุณาเข้าสู่ระบบด้วย Google เพื่อสนทนาต่อ",
-      highlightTerms: [],
-      usedFollowUpContext: false,
-      usedInternetFallback: false,
-      guestLimitReached: true,
-      guestQuestionCount,
-      guestQuestionLimit: LAW_CHATBOT_GUEST_QUESTION_LIMIT,
-      signInPath: "/auth/google?returnTo=%2Flaw-chatbot",
-    });
-  }
+  try {
+    const usageMonth = getYearMonth();
+    const identities = buildGuestUsageIdentities(req, res);
+    const usageRecords = await Promise.all(
+      identities.map((identity) =>
+        GuestMonthlyUsageModel.findByIdentity(identity.identityType, identity.identityHash, usageMonth),
+      ),
+    );
+    const guestQuestionCount = usageRecords.reduce(
+      (maxCount, usage) => Math.max(maxCount, Number(usage?.question_count || 0)),
+      Number(req.session?.[LAW_CHATBOT_GUEST_COUNT_KEY] || 0),
+    );
 
-  req.session[LAW_CHATBOT_GUEST_COUNT_KEY] = guestQuestionCount + 1;
-  return next();
+    if (guestQuestionCount >= LAW_CHATBOT_GUEST_QUESTION_LIMIT) {
+      req.session[LAW_CHATBOT_GUEST_COUNT_KEY] = guestQuestionCount;
+      return res.json({
+        hasContext: true,
+        answer:
+          "คุณใช้สิทธิ์ถามคำถามในโหมด Guest ครบ 2 ครั้งแล้ว กรุณาเข้าสู่ระบบด้วย Google เพื่อสนทนาต่อ",
+        highlightTerms: [],
+        usedFollowUpContext: false,
+        usedInternetFallback: false,
+        guestLimitReached: true,
+        guestQuestionCount,
+        guestQuestionLimit: LAW_CHATBOT_GUEST_QUESTION_LIMIT,
+        signInPath: "/auth/google?returnTo=%2Flaw-chatbot",
+      });
+    }
+
+    const nextGuestQuestionCount = guestQuestionCount + 1;
+    await GuestMonthlyUsageModel.syncQuestionCount(identities, usageMonth, nextGuestQuestionCount);
+    req.session[LAW_CHATBOT_GUEST_COUNT_KEY] = nextGuestQuestionCount;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 }
 
 async function enforceLawChatbotMonthlyUsageLimit(req, res, next) {

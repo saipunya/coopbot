@@ -88,6 +88,20 @@ function applyEconomyDatabaseOnlyMode(planContext, message, databaseMatches, que
     };
   }
 
+  if (questionIntent === "qa") {
+    return {
+      ...planContext,
+      useAI: false,
+      useInternet: false,
+      promptProfile: {
+        ...planContext.promptProfile,
+        code: `prepared-qa-${planContext.promptProfile?.code || planContext.code || "plan"}`,
+        aiSourceLimit: 0,
+      },
+      answerMode: "prepared_qa_db_only",
+    };
+  }
+
   const shouldUseAI = shouldUseAIForPlan(planContext.code, {
     dbConfidence: computeDbConfidence(databaseMatches, questionIntent),
     simpleQuestion: isSimpleQuestion(message, questionIntent),
@@ -173,6 +187,7 @@ function buildDbCachedChatResult(cacheEntry, message) {
     highlightTerms,
     usedFollowUpContext: false,
     usedInternetFallback: Boolean(metadata.usedInternetFallback),
+    responseMeta: metadata.responseMeta || null,
     fromCache: true,
   };
 }
