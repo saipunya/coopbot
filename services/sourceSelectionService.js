@@ -693,7 +693,7 @@ function classifyQuestionIntent(message) {
     );
   const asksAbbreviationDefinition =
     text.length <= 40 &&
-    /[ก-๙]{2,8}\s*(คืออะไร|หมายถึง|คือ|หมายความว่าอะไร)/.test(text);
+    /[ก-๙]{2,8}\.?\s*(คืออะไร|หมายถึง|คือ|หมายความว่าอะไร)/.test(text);
 
   if (asksExplanation) {
     return "explain";
