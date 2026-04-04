@@ -987,7 +987,7 @@ function getSourceRoutingPlan(intent) {
         priorities: {
           admin_knowledge: 8,
           structured_laws: 5,
-          vinichai: 2,
+          vinichai: 0,  // กด tbl_vinichai ลงสำหรับ short_answer
           documents: 0,
           pdf_chunks: 0,
           knowledge_base: 4,  // เพิ่ม priority
@@ -995,7 +995,7 @@ function getSourceRoutingPlan(intent) {
         limits: {
           admin_knowledge: 3,
           structured_laws: 2,
-          vinichai: 1,
+          vinichai: 0,  // กด tbl_vinichai ลงสำหรับ short_answer
           documents: 0,
           pdf_chunks: 0,
           knowledge_base: 2,  // เพิ่ม limit
@@ -2004,7 +2004,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
         tbl_laws: 2,
         tbl_glaws: 1,
         pdf_chunks: 0,
-        tbl_vinichai: 1,
+        tbl_vinichai: 0,  // ตัด tbl_vinichai ออกจาก short_answer
         documents: 0,
         knowledge_base: 1,
       },
@@ -2142,10 +2142,10 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
       primaryLawSource,
       secondaryLawSource,
       "knowledge_suggestion",
+      "knowledge_base",
       "tbl_vinichai",
       "documents",
       "pdf_chunks",
-      "knowledge_base",
     ];
   }
 
