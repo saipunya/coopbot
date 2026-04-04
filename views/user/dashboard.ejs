@@ -196,6 +196,8 @@
   const usage = data.usage || {};
   const aiPreview = data.aiPreview || {};
   const searchHistory = data.searchHistory || {};
+  const statusLabelMap = { pending: "รอพิจารณา", approved: "อนุมัติแล้ว", rejected: "ปฏิเสธแล้ว" };
+  const userStatusLabelMap = { active: "ใช้งานอยู่", inactive: "ไม่ใช้งาน" };
   const plan = String(profile.plan || planContext.code || "free").toLowerCase();
   const planLabel = planContext.label || String(plan || "free").charAt(0).toUpperCase() + String(plan || "free").slice(1);
   const planExpiresAt = (profile.planExpiresAt || profile.premiumExpiresAt)
@@ -228,12 +230,12 @@
       <% } %>
     </div>
     <div class="profile-meta">
-      <p style="margin: 0; font-weight: 700; color: var(--accent);">Google Account</p>
+      <p style="margin: 0; font-weight: 700; color: var(--accent);">บัญชี Google</p>
       <h1><%= profile.name || profile.email || "ผู้ใช้งาน" %></h1>
       <p><strong>อีเมล:</strong> <%= profile.email || "-" %></p>
-      <p><strong>สถานะ:</strong> <%= profile.status || "active" %></p>
+      <p><strong>สถานะ:</strong> <%= userStatusLabelMap[profile.status] || profile.status || "ใช้งานอยู่" %></p>
       <div class="chip-row">
-        <span class="chip"><%= planLabel %> Plan</span>
+        <span class="chip">แพ็กเกจ <%= planLabel %></span>
         <span class="chip <%= usage.isUnlimited ? 'ok' : 'warn' %>">
           <%= usage.isUnlimited ? 'ใช้งานแบบไม่จำกัดรายเดือน' : `โควต้ารายเดือน ${usage.questionLimit || 0} ครั้ง` %>
         </span>
@@ -267,7 +269,7 @@
       <% } else if (plan !== "free") { %>
         บัญชีนี้เปิดใช้งานแพ็กเกจ <strong><%= planLabel %></strong> อยู่ในขณะนี้
       <% } else { %>
-        บัญชีนี้ใช้งานในแพ็กเกจ Free
+        บัญชีนี้ใช้งานในแพ็กเกจฟรี
       <% } %>
     </p>
   </article>
@@ -310,10 +312,10 @@
 
   <% if (aiPreview.enabled) { %>
     <article class="card stat-card">
-      <h2>AI Preview ฟรี</h2>
+      <h2>สิทธิ์ลอง AI ฟรี</h2>
       <p class="stat-value"><%= aiPreview.remainingCount || 0 %></p>
       <p class="stat-note">
-        คุณยังลองคำตอบแบบ AI ได้อีก <strong><%= aiPreview.remainingCount || 0 %></strong> จาก <strong><%= aiPreview.limit || 0 %></strong> ครั้งของเดือน <strong><%= usage.usageMonth || "-" %></strong> เพื่อดูความต่างก่อนอัปเกรด
+        คุณยังลองคำตอบแบบ AI ระดับ Professional ได้อีก <strong><%= aiPreview.remainingCount || 0 %></strong> จาก <strong><%= aiPreview.limit || 0 %></strong> ครั้งของเดือน <strong><%= usage.usageMonth || "-" %></strong> เพื่อดูความต่างก่อนอัปเกรด
       </p>
     </article>
   <% } %>
@@ -341,7 +343,7 @@
         <div class="request-head">
           <strong><%= item.planLabel || item.plan_name %></strong>
           <span class="chip <%= item.status === 'approved' ? 'ok' : item.status === 'rejected' ? 'warn' : '' %>">
-            <%= item.status %>
+            <%= statusLabelMap[item.status] || item.status %>
           </span>
         </div>
         <div class="request-meta">

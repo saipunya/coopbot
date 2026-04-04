@@ -3,7 +3,7 @@
   const hasAdminUser = typeof currentUser !== "undefined" ? Boolean(currentUser) : false;
 %>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -145,14 +145,14 @@
       <header class="topbar">
         <a class="brand" href="/law-chatbot">Coopbot</a>
         <nav class="nav">
-          <a class="<%= page === 'index' ? 'active' : '' %>" href="/law-chatbot">Dashboard</a>
+          <a class="<%= page === 'index' ? 'active' : '' %>" href="/law-chatbot">หน้าแชต</a>
           <% if (hasGoogleUser) { %>
-            <a class="<%= page === 'user' ? 'active' : '' %>" href="/user">Account</a>
-            <a class="<%= page === 'payment-request' ? 'active' : '' %>" href="/law-chatbot/payment-request">Payment</a>
+            <a class="<%= page === 'user' ? 'active' : '' %>" href="/user">บัญชีผู้ใช้</a>
+            <a class="<%= page === 'payment-request' ? 'active' : '' %>" href="/law-chatbot/payment-request">อัปเกรดแพ็กเกจ</a>
           <% } %>
           <% if (hasAdminUser) { %>
-            <a class="<%= page === 'upload' ? 'active' : '' %>" href="/law-chatbot/upload">Upload</a>
-            <a class="<%= page === 'feedback' ? 'active' : '' %>" href="/law-chatbot/feedback">Feedback</a>
+            <a class="<%= page === 'upload' ? 'active' : '' %>" href="/law-chatbot/upload">อัปโหลดเอกสาร</a>
+            <a class="<%= page === 'feedback' ? 'active' : '' %>" href="/law-chatbot/feedback">ข้อเสนอแนะ</a>
           <% } %>
         </nav>
       </header>

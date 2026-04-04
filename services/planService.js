@@ -238,11 +238,9 @@ function listPurchasablePlans() {
       priceBaht: Number(config.priceBaht || 0),
       monthlyLimit: config.monthlyLimit,
       description:
-        config.code === "standard"
-          ? "สรุปด้วย AI แบบกระชับจากฐานข้อมูล"
-          : config.code === "pro"
-            ? "คำตอบละเอียดขึ้น พร้อม internet แบบจำกัด"
-            : "คำตอบเต็มรูปแบบ พร้อม internet และการวิเคราะห์เชิงลึก",
+        config.code === "pro"
+          ? "AI จากฐานข้อมูลภายในแบบต่อเนื่อง อ่านง่าย และละเอียดพอดี"
+          : "AI เชิงลึก พร้อม internet fallback และการวิเคราะห์หลายแหล่งข้อมูล",
     };
   });
 }

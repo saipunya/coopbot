@@ -192,9 +192,9 @@
             <span>ลงวันที่ <%= file.documentDateText %></span>
           <% } %>
           <span><%= file.mimetype %></span>
-          <span><%= file.size %> bytes</span>
-          <span><%= file.insertedChunkCount || 0 %> chunks</span>
-          <span>สถานะ <%= file.status || "queued" %></span>
+          <span><%= file.size %> ไบต์</span>
+          <span><%= file.insertedChunkCount || 0 %> ชิ้นข้อมูล</span>
+          <span>สถานะ <%= file.status === 'queued' ? 'รอประมวลผล' : (file.status || '-') %></span>
         </div>
         <% if (file.processingMessage) { %>
           <div class="upload-meta"><span><%= file.processingMessage %></span></div>

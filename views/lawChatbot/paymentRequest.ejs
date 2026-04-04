@@ -1,17 +1,19 @@
 <%- include("../partials/header", { title, page }) %>
 
+<% const paymentStatusLabelMap = { pending: "รอพิจารณา", approved: "อนุมัติแล้ว", rejected: "ปฏิเสธแล้ว" }; %>
+
 <section class="card">
-  <h1 style="margin-top: 0;">Payment Request</h1>
-  <p>Submit your payment request for plan upgrade. You can optionally attach a payment slip image for faster review.</p>
+  <h1 style="margin-top: 0;">คำขออัปเกรดแพ็กเกจ</h1>
+  <p>เลือกแพ็กเกจที่ต้องการอัปเกรดและแนบสลิปได้หากต้องการ เพื่อช่วยให้ทีมงานตรวจสอบได้เร็วขึ้น</p>
 
   <div style="padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; background: #eef5fb; border: 1px solid #cdddea; color: #1f2a37;">
-    <strong>Current plan:</strong> <%= data.currentPlanContext ? data.currentPlanContext.label : "Free" %>
+    <strong>แพ็กเกจปัจจุบัน:</strong> <%= data.currentPlanContext ? data.currentPlanContext.label : "ฟรี" %>
     <% if (data.currentPlanContext && Number.isFinite(data.currentPlanContext.monthlyLimit)) { %>
-      <span style="color:#5d6a79;"> | Monthly limit <%= data.currentPlanContext.monthlyLimit %> questions</span>
+      <span style="color:#5d6a79;"> | ใช้งานได้ <%= data.currentPlanContext.monthlyLimit %> คำถาม/เดือน</span>
     <% } %>
     <% if (data.aiPreview && data.aiPreview.enabled) { %>
       <div style="margin-top:0.45rem; color:#3f4e5e;">
-        ตอนนี้คุณยังลองคำตอบแบบ AI ได้ฟรีอีก <strong><%= data.aiPreview.remainingCount %></strong> จาก <strong><%= data.aiPreview.limit %></strong> ครั้งในเดือนนี้
+        ตอนนี้คุณยังลองคำตอบแบบ AI ระดับ Professional ได้ฟรีอีก <strong><%= data.aiPreview.remainingCount %></strong> จาก <strong><%= data.aiPreview.limit %></strong> ครั้งในเดือนนี้
       </div>
     <% } %>
   </div>
@@ -25,7 +27,7 @@
             <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; margin-bottom:0.5rem;">
               <strong style="font-size:1.05rem; color:#0f4667;"><%= plan.label %></strong>
               <% if (plan.code === data.currentPlanContext.code) { %>
-                <span style="padding:0.15rem 0.55rem; border-radius:999px; background:#d5e8f5; color:#0f4667; font-size:0.75rem; font-weight:700;">Current</span>
+                <span style="padding:0.15rem 0.55rem; border-radius:999px; background:#d5e8f5; color:#0f4667; font-size:0.75rem; font-weight:700;">ใช้งานอยู่</span>
               <% } %>
             </div>
             <div style="font-size:1.15rem; font-weight:700; color:#1f2a37;">
@@ -44,10 +46,10 @@
                 <li style="margin-bottom:0.25rem;"><%= item %></li>
               <% }) %>
               <% if (plan.allowAiPreview && plan.aiPreviewMonthlyLimit > 0) { %>
-                <li style="margin-bottom:0.25rem;">AI preview: <strong><%= plan.aiPreviewMonthlyLimit %> ครั้ง/เดือน</strong></li>
+                <li style="margin-bottom:0.25rem;">สิทธิ์ลอง AI: <strong><%= plan.aiPreviewMonthlyLimit %> ครั้ง/เดือน</strong></li>
               <% } %>
-              <li style="margin-bottom:0.25rem;">AI: <strong><%= plan.useAI ? 'มี' : 'ไม่มี' %></strong></li>
-              <li style="margin-bottom:0.25rem;">Internet search: <strong><%= plan.useInternet ? 'มี' : 'ไม่มี' %></strong></li>
+              <li style="margin-bottom:0.25rem;">คำตอบ AI: <strong><%= plan.useAI ? 'มี' : 'ไม่มี' %></strong></li>
+              <li style="margin-bottom:0.25rem;">ค้นข้อมูลภายนอก: <strong><%= plan.useInternet ? 'มี' : 'ไม่มี' %></strong></li>
               <li>ประวัติการค้นหา: <strong><%= plan.searchHistoryRetentionLabel %></strong></li>
             </ul>
           </article>
@@ -69,40 +71,40 @@
   <% } %>
 
   <form action="/law-chatbot/payment-request" method="post" enctype="multipart/form-data">
-    <label for="planName">Plan</label>
+    <label for="planName">เลือกแพ็กเกจ</label>
     <select id="planName" name="planName" required>
-      <option value="">Select a plan</option>
+      <option value="">กรุณาเลือกแพ็กเกจ</option>
       <% data.plans.forEach((plan) => { %>
         <option value="<%= plan.value %>">
-          <%= plan.label %> - <%= plan.priceBaht %> THB / 30 days
+          <%= plan.label %> - <%= plan.priceBaht %> บาท / 30 วัน
         </option>
       <% }) %>
     </select>
 
-    <label for="slipImage">Slip image (optional)</label>
+    <label for="slipImage">สลิปโอนเงิน (ถ้ามี)</label>
     <input id="slipImage" name="slipImage" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
 
-    <label for="note">Note</label>
-    <textarea id="note" name="note" rows="4" placeholder="Add payment note or reference (optional)"></textarea>
+    <label for="note">หมายเหตุ</label>
+    <textarea id="note" name="note" rows="4" placeholder="ระบุหมายเหตุหรือข้อมูลอ้างอิงเพิ่มเติมได้ (ถ้ามี)"></textarea>
 
-    <button type="submit">Submit payment request</button>
+    <button type="submit">ส่งคำขออัปเกรด</button>
   </form>
 </section>
 
 <section class="card">
-  <h2 style="margin-top: 0;">Recent Requests</h2>
+  <h2 style="margin-top: 0;">คำขอล่าสุด</h2>
   <ul>
     <% if (!data.recentRequests.length) { %>
-      <li>No payment requests yet.</li>
+      <li>ยังไม่มีคำขออัปเกรดแพ็กเกจ</li>
     <% } %>
     <% data.recentRequests.forEach((item) => { %>
       <li style="margin-bottom: 0.9rem;">
-        <strong><%= item.planLabel || item.plan_name %></strong> - <%= Number(item.amount || item.planPriceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB - <%= item.status %>
+        <strong><%= item.planLabel || item.plan_name %></strong> - <%= Number(item.amount || item.planPriceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท - <%= paymentStatusLabelMap[item.status] || item.status %>
         <% if (item.note) { %>
           <div><%= item.note %></div>
         <% } %>
         <% if (item.slip_image) { %>
-          <div><a href="<%= item.slip_image %>" target="_blank" rel="noopener">View slip</a></div>
+          <div><a href="<%= item.slip_image %>" target="_blank" rel="noopener">ดูสลิป</a></div>
         <% } %>
       </li>
     <% }) %>

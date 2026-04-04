@@ -120,7 +120,7 @@
   <body>
     <div class="wrap">
       <section class="card">
-        <p class="muted">Admin Area</p>
+        <p class="muted">พื้นที่ผู้ดูแลระบบ</p>
         <h1>เข้าสู่ระบบผู้ดูแล</h1>
         <% if (successMessage) { %>
           <p class="success"><%= successMessage %></p>
@@ -129,13 +129,13 @@
           <p class="error"><%= errorMessage %></p>
         <% } %>
         <form action="/admin/login" method="post">
-          <label for="username">Username</label>
+          <label for="username">ชื่อผู้ใช้</label>
           <input id="username" name="username" type="text" required />
 
-          <label for="password">Password</label>
+          <label for="password">รหัสผ่าน</label>
           <input id="password" name="password" type="password" required />
 
-          <button type="submit">Login</button>
+          <button type="submit">เข้าสู่ระบบ</button>
         </form>
         <% if (googleLoginEnabled) { %>
           <div class="divider">สำหรับผู้ใช้งานทั่วไป</div>

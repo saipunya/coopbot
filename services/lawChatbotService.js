@@ -217,11 +217,11 @@ async function replyToChat(payload, session) {
   const freeAiPreviewMeta = buildAiPreviewMeta(basePlanContext, freeAiPreviewUsage);
   const aiPreviewRequested = isTruthyFlag(payload.aiPreview);
   const aiPreviewApproved = aiPreviewRequested && freeAiPreviewMeta.canTryPreview && aiFeatureAvailable;
-  const runtimeSearchPlanCode = aiPreviewApproved ? "standard" : basePlanContext.code;
+  const runtimeSearchPlanCode = aiPreviewApproved ? "pro" : basePlanContext.code;
 
   if (aiPreviewRequested && freeAiPreviewMeta.enabled && !aiPreviewApproved) {
     const unavailableMessage = freeAiPreviewMeta.exhausted
-      ? `คุณใช้สิทธิ์ลองคำตอบแบบ AI ฟรีครบ ${freeAiPreviewMeta.limit} ครั้งของเดือนนี้แล้ว หากต้องการใช้ AI ต่อเนื่อง แนะนำอัปเกรดเป็นแพ็กเกจ Standard`
+      ? `คุณใช้สิทธิ์ลองคำตอบแบบ AI ฟรีครบ ${freeAiPreviewMeta.limit} ครั้งของเดือนนี้แล้ว หากต้องการใช้ AI ต่อเนื่อง แนะนำอัปเกรดเป็นแพ็กเกจ Professional`
       : "ขณะนี้ยังไม่สามารถใช้ AI preview ได้ กรุณาลองใหม่อีกครั้งในภายหลัง";
     return attachAiPreviewState(
       {

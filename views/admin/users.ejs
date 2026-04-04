@@ -49,10 +49,10 @@
 
       <section class="card topbar">
         <div>
-          <h1 style="margin:0; color:#0f4667;">Manage Users</h1>
+          <h1 style="margin:0; color:#0f4667;">จัดการผู้ใช้งาน</h1>
           <p style="margin:0.35rem 0 0; color:#5d6a79;">ปรับแพ็กเกจผู้ใช้งานและกำหนดระยะเวลาใช้งานได้จากหน้านี้</p>
         </div>
-        <a href="/admin">Back to dashboard</a>
+        <a href="/admin">กลับหน้าแดชบอร์ด</a>
       </section>
 
       <section class="card">
@@ -66,10 +66,10 @@
       </section>
 
       <section class="grid">
-        <article class="card"><div>Total users</div><div class="metric"><%= data.totalCount %></div></article>
-        <article class="card"><div>Free</div><div class="metric"><%= data.freeCount %></div></article>
-        <article class="card"><div>Paid</div><div class="metric"><%= data.paidCount %></div></article>
-        <article class="card"><div>Active</div><div class="metric"><%= data.activeCount %></div></article>
+        <article class="card"><div>ผู้ใช้ทั้งหมด</div><div class="metric"><%= data.totalCount %></div></article>
+        <article class="card"><div>แพ็กเกจฟรี</div><div class="metric"><%= data.freeCount %></div></article>
+        <article class="card"><div>แพ็กเกจชำระเงิน</div><div class="metric"><%= data.paidCount %></div></article>
+        <article class="card"><div>สถานะใช้งาน</div><div class="metric"><%= data.activeCount %></div></article>
       </section>
 
       <section class="card">
@@ -91,18 +91,18 @@
                     <div style="color:#5d6a79;"><%= account.email || "-" %></div>
                   </div>
                 </div>
-                <span class="status-chip <%= account.status === 'active' ? 'active' : 'inactive' %>"><%= account.status || 'active' %></span>
+                <span class="status-chip <%= account.status === 'active' ? 'active' : 'inactive' %>"><%= account.status === 'active' ? 'ใช้งานอยู่' : 'ไม่ใช้งาน' %></span>
               </div>
 
               <div class="meta">
-                Current plan: <strong><%= account.planLabel %></strong>
-                <% if (Number.isFinite(account.monthlyLimit)) { %> | Limit: <%= account.monthlyLimit %> คำถาม/เดือน<% } else { %> | Limit: ไม่จำกัด<% } %>
-                | Search history: <%= account.searchHistoryRetentionLabel %>
+                แพ็กเกจปัจจุบัน: <strong><%= account.planLabel %></strong>
+                <% if (Number.isFinite(account.monthlyLimit)) { %> | โควต้า: <%= account.monthlyLimit %> คำถาม/เดือน<% } else { %> | โควต้า: ไม่จำกัด<% } %>
+                | ประวัติการค้นหา: <%= account.searchHistoryRetentionLabel %>
                 <br />
-                Started: <%= account.plan_started_at ? new Date(account.plan_started_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %>
-                | Expires: <%= account.planExpiresAt ? new Date(account.planExpiresAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %>
+                เริ่มใช้: <%= account.plan_started_at ? new Date(account.plan_started_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %>
+                | หมดอายุ: <%= account.planExpiresAt ? new Date(account.planExpiresAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %>
                 <% if (account.remainingDays !== null) { %>
-                  | Remaining: <%= account.remainingDays > 0 ? `${account.remainingDays} วัน` : "หมดอายุแล้ว" %>
+                  | คงเหลือ: <%= account.remainingDays > 0 ? `${account.remainingDays} วัน` : "หมดอายุแล้ว" %>
                 <% } %>
               </div>
 
@@ -115,7 +115,7 @@
                       <option value="<%= plan.code %>" <%= plan.code === account.planCode ? "selected" : "" %>>
                         <%= plan.label %>
                         <% if (Number(plan.priceBaht || 0) > 0) { %>
-                          - <%= Number(plan.priceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB
+                          - <%= Number(plan.priceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท
                         <% } %>
                       </option>
                     <% }) %>
@@ -131,7 +131,7 @@
                   <button type="submit">บันทึกแพ็กเกจ</button>
                 </div>
                 <div class="plan-hint" data-plan-hint>
-                  ถ้าเลือก Free ระบบจะล้างวันหมดอายุแพ็กเกจอัตโนมัติ ส่วนแพ็กเกจแบบชำระเงินจะเริ่มนับจากเวลาที่บันทึก
+                  ถ้าเลือกแพ็กเกจฟรี ระบบจะล้างวันหมดอายุแพ็กเกจอัตโนมัติ ส่วนแพ็กเกจแบบชำระเงินจะเริ่มนับจากเวลาที่บันทึก
                 </div>
               </form>
             </li>
@@ -153,7 +153,7 @@
           }
           if (hint) {
             hint.textContent = isFree
-              ? "Free จะล้างวันหมดอายุแพ็กเกจและกลับเป็นสิทธิ์ใช้งานแบบฟรีทันที"
+              ? "แพ็กเกจฟรีจะล้างวันหมดอายุแพ็กเกจและกลับเป็นสิทธิ์ใช้งานแบบฟรีทันที"
               : "แพ็กเกจแบบชำระเงินจะตั้ง plan_started_at ใหม่ และคำนวณวันหมดอายุจากจำนวนวันที่กำหนด";
           }
         };

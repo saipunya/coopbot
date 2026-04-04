@@ -89,22 +89,22 @@ function buildAiPreviewMeta(planContext = {}, usage = null) {
 }
 
 function buildFreeAiPreviewPlanContext(basePlanContext = {}) {
-  const standardPlanContext = resolveUserPlanContext({ plan: "standard" });
-  const standardPromptProfile = standardPlanContext.promptProfile || {};
+  const professionalPlanContext = resolveUserPlanContext({ plan: "pro" });
+  const professionalPromptProfile = professionalPlanContext.promptProfile || {};
 
   return {
     ...basePlanContext,
-    detailLevel: standardPlanContext.detailLevel,
+    detailLevel: professionalPlanContext.detailLevel,
     useAI: true,
     useInternet: false,
     maxInternetSources: 0,
-    sourceLimit: Math.max(1, Number(standardPlanContext.sourceLimit || 5)),
-    strictSourceFiltering: Boolean(standardPlanContext.strictSourceFiltering),
-    preferDatabaseOnlyForLawSections: Boolean(standardPlanContext.preferDatabaseOnlyForLawSections),
-    followUpStrength: standardPlanContext.followUpStrength || "basic",
+    sourceLimit: Math.max(1, Number(professionalPlanContext.sourceLimit || 5)),
+    strictSourceFiltering: Boolean(professionalPlanContext.strictSourceFiltering),
+    preferDatabaseOnlyForLawSections: Boolean(professionalPlanContext.preferDatabaseOnlyForLawSections),
+    followUpStrength: professionalPlanContext.followUpStrength || "enhanced",
     promptProfile: {
-      ...standardPromptProfile,
-      code: "preview-standard",
+      ...professionalPromptProfile,
+      code: "preview-professional",
     },
     answerMode: "ai_preview",
   };

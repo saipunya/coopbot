@@ -142,17 +142,17 @@
       <h1 style="margin: 0 0 0.45rem; color: var(--accent-strong);"><%= profile.name || profile.email || "ผู้ใช้งาน" %></h1>
       <p style="margin: 0;">
         <% if (searchHistory.enabled) { %>
-          ระบบจะเก็บประวัติการค้นหาของบัญชีนี้ย้อนหลังได้ <strong><%= searchHistory.retentionLabel %></strong> ตามแพ็กเกจ <strong><%= planContext.label || "Free" %></strong> และจะลบรายการเก่าออกอัตโนมัติเมื่อครบกำหนด
+          ระบบจะเก็บประวัติการค้นหาของบัญชีนี้ย้อนหลังได้ <strong><%= searchHistory.retentionLabel %></strong> ตามแพ็กเกจ <strong><%= planContext.label || "ฟรี" %></strong> และจะลบรายการเก่าออกอัตโนมัติเมื่อครบกำหนด
         <% } else if (entries.length) { %>
-          แพ็กเกจ <strong><%= planContext.label || "Free" %></strong> จะไม่เก็บประวัติการค้นหาใหม่ แต่รายการเก่าที่ยังไม่หมดอายุยังเปิดดูได้จากหน้านี้จนกว่าจะครบกำหนดลบอัตโนมัติ
+          แพ็กเกจ <strong><%= planContext.label || "ฟรี" %></strong> จะไม่เก็บประวัติการค้นหาใหม่ แต่รายการเก่าที่ยังไม่หมดอายุยังเปิดดูได้จากหน้านี้จนกว่าจะครบกำหนดลบอัตโนมัติ
         <% } else { %>
-          แพ็กเกจ <strong><%= planContext.label || "Free" %></strong> ยังไม่รองรับการเก็บประวัติการค้นหา หากต้องการดูประวัติย้อนหลัง กรุณาอัปเกรดแพ็กเกจ
+          แพ็กเกจ <strong><%= planContext.label || "ฟรี" %></strong> ยังไม่รองรับการเก็บประวัติการค้นหา หากต้องการดูประวัติย้อนหลัง กรุณาอัปเกรดแพ็กเกจ
         <% } %>
       </p>
     </div>
 
     <div class="history-meta">
-      <span class="chip"><%= planContext.label || "Free" %> Plan</span>
+      <span class="chip">แพ็กเกจ <%= planContext.label || "ฟรี" %></span>
       <span class="chip <%= searchHistory.enabled ? 'ok' : '' %>">
         <%= searchHistory.enabled ? `เก็บย้อนหลัง ${searchHistory.retentionLabel}` : (entries.length ? 'ไม่เก็บรายการใหม่' : 'ไม่รองรับการเก็บประวัติ') %>
       </span>
@@ -186,7 +186,7 @@
       <li class="history-item">
         <strong>แพ็กเกจนี้ยังไม่รองรับประวัติการค้นหา</strong>
         <p class="history-preview" style="margin-top: 0.45rem;">
-          คุณยังใช้งานแผน <strong><%= planContext.label || "Free" %></strong> อยู่ จึงไม่สามารถเก็บหรือเปิดดูประวัติการค้นหาย้อนหลังได้
+          คุณยังใช้งานแพ็กเกจ <strong><%= planContext.label || "ฟรี" %></strong> อยู่ จึงไม่สามารถเก็บหรือเปิดดูประวัติการค้นหาย้อนหลังได้
         </p>
       </li>
     <% } else if (!entries.length) { %>

@@ -45,7 +45,7 @@ class UserModel {
       `SELECT
           COUNT(*) AS total_count,
           SUM(CASE WHEN plan = 'free' THEN 1 ELSE 0 END) AS free_count,
-          SUM(CASE WHEN plan IN ('standard', 'pro', 'premium') THEN 1 ELSE 0 END) AS paid_count,
+         SUM(CASE WHEN plan <> 'free' THEN 1 ELSE 0 END) AS paid_count,
           SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_count
        FROM users`
     );

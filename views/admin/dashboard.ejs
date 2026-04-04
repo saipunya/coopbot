@@ -384,30 +384,30 @@
 
       <section class="topbar">
         <div>
-          <div class="topbar-badge">Admin Dashboard</div>
+          <div class="topbar-badge">แดชบอร์ดผู้ดูแล</div>
           <h1 class="hero-title"><%= user.name %></h1>
           <p class="hero-subtitle"><%= user.position %> | <%= user.username %></p>
         </div>
         <form action="/admin/logout" method="post">
-          <button class="logout-btn" type="submit">Logout</button>
+          <button class="logout-btn" type="submit">ออกจากระบบ</button>
         </form>
       </section>
 
       <section class="grid">
         <article class="card metric-card">
-          <p class="metric-label">Total uploads</p>
+          <p class="metric-label">ไฟล์ที่อัปโหลดทั้งหมด</p>
           <p class="metric"><%= uploadData.uploadedPdfCount %></p>
         </article>
         <article class="card metric-card">
-          <p class="metric-label">Total chunks</p>
+          <p class="metric-label">ชิ้นข้อมูลทั้งหมด</p>
           <p class="metric"><%= uploadData.uploadedChunkCount %></p>
         </article>
         <article class="card metric-card">
-          <p class="metric-label">Total feedback</p>
+          <p class="metric-label">ข้อเสนอแนะทั้งหมด</p>
           <p class="metric"><%= feedbackData.feedbackCount %></p>
         </article>
         <article class="card metric-card">
-          <p class="metric-label">Pending payment requests</p>
+          <p class="metric-label">คำขอชำระเงินที่รอพิจารณา</p>
           <p class="metric"><%= paymentRequestData.pendingCount %></p>
           <p style="margin: 0.45rem 0 0;">
             <a href="/admin/payment-requests">เปิดหน้าตรวจคำขออัปเกรดแพ็กเกจ</a>
@@ -455,7 +455,7 @@
       </section>
 
       <section class="card">
-        <h2>Recent uploads</h2>
+        <h2>อัปโหลดล่าสุด</h2>
         <p class="section-note">เอกสารล่าสุดที่ถูกนำเข้าเพื่อใช้เป็นฐานความรู้ของแชตบอท</p>
         <ul class="soft-list">
           <% if (uploadData.uploadedFiles.length === 0) { %>
@@ -466,19 +466,19 @@
               <%= file.originalname %>
               <% if (file.documentNumber) { %> - เลขที่ <%= file.documentNumber %><% } %>
               <% if (file.documentDateText) { %> - ลงวันที่ <%= file.documentDateText %><% } %>
-              - <%= file.insertedChunkCount || 0 %> chunks
+              - <%= file.insertedChunkCount || 0 %> ชิ้นข้อมูล
             </li>
           <% }) %>
         </ul>
       </section>
 
       <section class="card">
-        <h2>Quick links</h2>
+        <h2>ลิงก์ด่วน</h2>
         <ul class="quick-links">
           <li><a href="/law-chatbot">หน้าแชตสาธารณะ</a></li>
           <li><a href="/admin/users">จัดการแพ็กเกจผู้ใช้งาน</a></li>
           <li><a href="/law-chatbot/upload">หน้าจัดการอัปโหลด</a></li>
-          <li><a href="/law-chatbot/feedback">หน้าดู feedback</a></li>
+          <li><a href="/law-chatbot/feedback">หน้าดูข้อเสนอแนะ</a></li>
           <li><a href="/admin/payment-requests">ตรวจคำขออัปเกรดแพ็กเกจ <% if (paymentRequestData.pendingCount > 0) { %>(<%= paymentRequestData.pendingCount %> รออนุมัติ)<% } %></a></li>
           <li><a href="#frequent-questions-management">จัดการคำถามแนะนำ / คำถามที่พบบ่อย</a></li>
           <li><a href="#knowledge-management">จัดการความรู้แชตบอท</a></li>

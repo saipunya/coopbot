@@ -586,11 +586,6 @@
       border-color: #17618d;
     }
 
-    .message-avatar-bot-standard {
-      background: linear-gradient(140deg, #1e9d83, #157664);
-      border-color: #146657;
-    }
-
     .message-avatar-bot-pro {
       background: linear-gradient(140deg, #3e76e0, #284fb0);
       border-color: #254697;
@@ -609,11 +604,6 @@
     .bot-avatar-badge-free {
       background: rgba(233, 246, 255, 0.96);
       color: #155a86;
-    }
-
-    .bot-avatar-badge-standard {
-      background: rgba(231, 252, 245, 0.96);
-      color: #0f6d5a;
     }
 
     .bot-avatar-badge-pro {
@@ -1732,6 +1722,7 @@
           ? "bi-person-badge-fill"
           : "bi-person-circle";
       const botPlanAliases = {
+        standard: "pro",
         "premium-monthly": "premium",
         "premium-yearly": "premium",
         professional: "pro",
@@ -1742,7 +1733,7 @@
         : String((signedInUser && signedInUser.plan) || "free").trim().toLowerCase();
       const botPackageVariant = currentUser
         ? "admin"
-        : (["free", "standard", "pro", "premium"].includes(rawBotPlanCode)
+        : (["free", "pro", "premium"].includes(rawBotPlanCode)
           ? rawBotPlanCode
           : (botPlanAliases[rawBotPlanCode] || "free"));
     %>
@@ -2045,12 +2036,6 @@
           avatarClass: 'message-avatar-bot-free',
           badgeText: 'FRE',
           badgeClass: 'bot-avatar-badge-free'
-        },
-        standard: {
-          iconClass: 'bi-robot',
-          avatarClass: 'message-avatar-bot-standard',
-          badgeText: 'STA',
-          badgeClass: 'bot-avatar-badge-standard'
         },
         pro: {
           iconClass: 'bi-robot',
@@ -2653,7 +2638,7 @@
           <div class="bot-inline-actions">
             <span class="bot-inline-note">
               <i class="bi bi-stars"></i>
-              <span>คุณใช้ AI preview ฟรีครบ ${escapeHtml(String(preview.limit || 0))} ครั้งของเดือนนี้แล้ว หากต้องการสรุปแบบ AI ต่อเนื่อง แนะนำ Standard</span>
+              <span>คุณใช้สิทธิ์ลอง AI ฟรีครบ ${escapeHtml(String(preview.limit || 0))} ครั้งของเดือนนี้แล้ว หากต้องการใช้งานคำตอบ AI ต่อเนื่อง แนะนำแพ็กเกจ Professional</span>
             </span>
             <a href="/law-chatbot/payment-request" class="bot-upgrade-cta">
               <i class="bi bi-arrow-up-circle"></i>

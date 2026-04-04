@@ -36,37 +36,38 @@
   </head>
   <body>
     <div class="shell">
+      <% const paymentStatusLabelMap = { pending: 'รอพิจารณา', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว' }; %>
       <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
       <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
 
       <section class="card topbar">
         <div>
-          <h1 style="margin:0; color:#0f4667;">Payment Requests</h1>
-          <p style="margin:0.35rem 0 0; color:#5d6a79;">Review pending and completed payment requests.</p>
+          <h1 style="margin:0; color:#0f4667;">คำขอชำระเงิน</h1>
+          <p style="margin:0.35rem 0 0; color:#5d6a79;">ตรวจสอบคำขอชำระเงินที่รอพิจารณาและรายการที่ดำเนินการแล้ว</p>
         </div>
-        <a href="/admin">Back to dashboard</a>
+        <a href="/admin">กลับหน้าแดชบอร์ด</a>
       </section>
 
       <section class="grid">
-        <article class="card"><div>Total</div><div class="metric"><%= data.totalCount %></div></article>
-        <article class="card"><div>Pending</div><div class="metric"><%= data.pendingCount %></div></article>
-        <article class="card"><div>Approved</div><div class="metric"><%= data.approvedCount %></div></article>
-        <article class="card"><div>Rejected</div><div class="metric"><%= data.rejectedCount %></div></article>
+        <article class="card"><div>ทั้งหมด</div><div class="metric"><%= data.totalCount %></div></article>
+        <article class="card"><div>รอพิจารณา</div><div class="metric"><%= data.pendingCount %></div></article>
+        <article class="card"><div>อนุมัติแล้ว</div><div class="metric"><%= data.approvedCount %></div></article>
+        <article class="card"><div>ปฏิเสธแล้ว</div><div class="metric"><%= data.rejectedCount %></div></article>
       </section>
 
       <section class="card">
         <ul class="soft-list">
           <% if (!data.requests.length) { %>
-            <li>No payment requests found.</li>
+            <li>ยังไม่พบคำขอชำระเงิน</li>
           <% } %>
           <% data.requests.forEach((item) => { %>
             <li>
               <div class="request-head">
                 <strong><a href="/admin/payment-requests/<%= item.id %>">#<%= item.id %> - <%= item.planLabel || item.plan_name %></a></strong>
-                <span class="status-chip <%= item.status %>"><%= item.status %></span>
+                <span class="status-chip <%= item.status %>"><%= paymentStatusLabelMap[item.status] || item.status %></span>
               </div>
               <div class="meta">
-                User: <%= item.user_name || "-" %> | Email: <%= item.user_email || "-" %> | Current plan: <%= item.userPlanLabel || item.user_plan || "Free" %> | Amount: <%= Number(item.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB | Status: <%= item.status %>
+                ผู้ใช้: <%= item.user_name || "-" %> | อีเมล: <%= item.user_email || "-" %> | แพ็กเกจปัจจุบัน: <%= item.userPlanLabel || item.user_plan || "ฟรี" %> | ยอดชำระ: <%= Number(item.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท | สถานะ: <%= paymentStatusLabelMap[item.status] || item.status %>
               </div>
               <% if (item.status === "pending") { %>
                 <form class="request-actions" action="/admin/payment-requests/update-plan" method="post">
@@ -75,7 +76,7 @@
                   <select name="planCode" aria-label="เลือกแพ็กเกจใหม่สำหรับคำขอนี้">
                     <% data.plans.forEach((plan) => { %>
                       <option value="<%= plan.code %>" <%= plan.code === item.planCode ? "selected" : "" %>>
-                        <%= plan.label %> - <%= Number(plan.priceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB
+                        <%= plan.label %> - <%= Number(plan.priceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท
                       </option>
                     <% }) %>
                   </select>

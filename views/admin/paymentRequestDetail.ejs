@@ -31,32 +31,33 @@
   </head>
   <body>
     <div class="shell">
+      <% const paymentStatusLabelMap = { pending: 'รอพิจารณา', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว' }; %>
       <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
       <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
 
       <section class="card topbar">
         <div>
-          <h1 style="margin:0; color:#0f4667;">Payment Request #<%= data.request.id %></h1>
-          <p style="margin:0.35rem 0 0; color:#5d6a79;">Review payment request details and update status.</p>
+          <h1 style="margin:0; color:#0f4667;">คำขอชำระเงิน #<%= data.request.id %></h1>
+          <p style="margin:0.35rem 0 0; color:#5d6a79;">ตรวจสอบรายละเอียดคำขอและอัปเดตสถานะได้จากหน้านี้</p>
         </div>
-        <a href="/admin/payment-requests">Back to list</a>
+        <a href="/admin/payment-requests">กลับไปหน้ารายการ</a>
       </section>
 
       <section class="card">
         <div class="meta">
-          <div><strong>User:</strong> <%= data.request.user_name || "-" %></div>
-          <div><strong>Email:</strong> <%= data.request.user_email || "-" %></div>
-          <div><strong>Current plan:</strong> <%= data.request.userPlanLabel || data.request.user_plan || "Free" %></div>
-          <div><strong>Current plan expires at:</strong> <%= data.request.userPlanExpiresAt ? new Date(data.request.userPlanExpiresAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
-          <div><strong>Requested plan:</strong> <%= data.request.planLabel || data.request.plan_name %></div>
-          <div><strong>Amount:</strong> <%= Number(data.request.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB</div>
-          <div><strong>Status:</strong> <%= data.request.status %></div>
-          <div><strong>Created:</strong> <%= data.request.created_at ? new Date(data.request.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
-          <div><strong>Reviewed at:</strong> <%= data.request.reviewed_at ? new Date(data.request.reviewed_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
-          <div><strong>Reviewed by:</strong> <%= data.request.reviewed_by || "-" %></div>
-          <div><strong>Note:</strong> <%= data.request.note || "-" %></div>
+          <div><strong>ผู้ใช้:</strong> <%= data.request.user_name || "-" %></div>
+          <div><strong>อีเมล:</strong> <%= data.request.user_email || "-" %></div>
+          <div><strong>แพ็กเกจปัจจุบัน:</strong> <%= data.request.userPlanLabel || data.request.user_plan || "ฟรี" %></div>
+          <div><strong>วันหมดอายุแพ็กเกจปัจจุบัน:</strong> <%= data.request.userPlanExpiresAt ? new Date(data.request.userPlanExpiresAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
+          <div><strong>แพ็กเกจที่ร้องขอ:</strong> <%= data.request.planLabel || data.request.plan_name %></div>
+          <div><strong>ยอดชำระ:</strong> <%= Number(data.request.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท</div>
+          <div><strong>สถานะ:</strong> <%= paymentStatusLabelMap[data.request.status] || data.request.status %></div>
+          <div><strong>สร้างเมื่อ:</strong> <%= data.request.created_at ? new Date(data.request.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
+          <div><strong>ตรวจสอบเมื่อ:</strong> <%= data.request.reviewed_at ? new Date(data.request.reviewed_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-" %></div>
+          <div><strong>ตรวจสอบโดย:</strong> <%= data.request.reviewed_by || "-" %></div>
+          <div><strong>หมายเหตุ:</strong> <%= data.request.note || "-" %></div>
           <% if (data.request.slip_image) { %>
-            <div><strong>Slip:</strong> <a href="<%= data.request.slip_image %>" target="_blank" rel="noopener">View slip image</a></div>
+            <div><strong>สลิป:</strong> <a href="<%= data.request.slip_image %>" target="_blank" rel="noopener">ดูภาพสลิป</a></div>
           <% } %>
         </div>
 
@@ -69,7 +70,7 @@
               <select name="planCode" aria-label="เลือกแพ็กเกจใหม่">
                 <% data.plans.forEach((plan) => { %>
                   <option value="<%= plan.code %>" <%= plan.code === data.request.planCode ? "selected" : "" %>>
-                    <%= plan.label %> - <%= Number(plan.priceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> THB
+                    <%= plan.label %> - <%= Number(plan.priceBaht || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> บาท
                   </option>
                 <% }) %>
               </select>
@@ -78,13 +79,13 @@
           </div>
 
           <div class="actions">
-            <form action="/admin/payment-requests/approve" method="post" onsubmit="return confirm('Approve this payment request and activate the requested plan for 30 days?');">
+            <form action="/admin/payment-requests/approve" method="post" onsubmit="return confirm('อนุมัติคำขอนี้และเปิดใช้งานแพ็กเกจที่ร้องขอเป็นเวลา 30 วันใช่หรือไม่');">
               <input type="hidden" name="id" value="<%= data.request.id %>" />
-              <button class="approve" type="submit">Approve</button>
+              <button class="approve" type="submit">อนุมัติ</button>
             </form>
-            <form action="/admin/payment-requests/reject" method="post" onsubmit="return confirm('Reject this payment request and keep the user current plan unchanged?');">
+            <form action="/admin/payment-requests/reject" method="post" onsubmit="return confirm('ปฏิเสธคำขอนี้และคงแพ็กเกจปัจจุบันของผู้ใช้ไว้ใช่หรือไม่');">
               <input type="hidden" name="id" value="<%= data.request.id %>" />
-              <button class="reject" type="submit">Reject</button>
+              <button class="reject" type="submit">ปฏิเสธ</button>
             </form>
           </div>
         <% } %>
