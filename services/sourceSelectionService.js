@@ -846,9 +846,9 @@ function getFreeSourcePriorityPlan(message, target = "all") {
   const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(message, target);
   if (isVinichaiPrioritySearch(message)) {
     return {
+      admin_knowledge: 12,
       vinichai: 10,
-      admin_knowledge: 9,
-      knowledge_suggestion: 6,
+      knowledge_suggestion: 8,
       [primaryLawSource]: 4,
       [secondaryLawSource]: 3,
       documents: 2,
@@ -872,10 +872,10 @@ function getFreeSourcePriorityPlan(message, target = "all") {
 
   if (isLiquidationPrioritySearch(message)) {
     return {
+      admin_knowledge: 12,
       [primaryLawSource]: 10,
-      admin_knowledge: 8,
+      knowledge_suggestion: 8,
       vinichai: 7,
-      knowledge_suggestion: 6,
       documents: 3,
       [secondaryLawSource]: 2,
       pdf_chunks: 1,

@@ -3656,24 +3656,6 @@
 
         content.appendChild(message);
 
-        if (role === 'bot' && !isLoading && feedbackContext && feedbackContext.responseMeta && feedbackContext.responseMeta.notice) {
-          const originChip = document.createElement('div');
-          const responseKind = feedbackContext.responseMeta.kind || 'generic';
-          const variantClass = responseKind === 'ai_summary'
-            ? ' answer-origin-chip-ai'
-            : responseKind === 'database_lookup'
-              ? ' answer-origin-chip-db'
-              : '';
-          const iconClass = responseKind === 'ai_summary'
-            ? 'bi-stars'
-            : responseKind === 'database_lookup'
-              ? 'bi-search'
-              : 'bi-database-check';
-          originChip.className = `answer-origin-chip${variantClass}`;
-          originChip.innerHTML = `<i class="bi ${iconClass}"></i><span>${escapeHtml(feedbackContext.responseMeta.notice)}</span>`;
-          content.insertBefore(originChip, message);
-        }
-
         if (
           role === 'bot' &&
           !isLoading &&
