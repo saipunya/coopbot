@@ -3887,7 +3887,9 @@ async function generateChatSummary(message, sources, options = {}) {
       ? `\nบริบทก่อนหน้า: คำถามนี้เป็นคำถามต่อเนื่องเกี่ยวกับหัวข้อ "${options.topicLabel || "เรื่องเดิม"}"`
       : "";
     const responseText = await generateOpenAiCompletion({
+      model: promptProfile.aiModel || undefined,
       systemInstruction: instruction,
+      conversationHistory: Array.isArray(options.conversationHistory) ? options.conversationHistory : [],
       contents: `คำถามผู้ใช้: ${message}${conversationNote}\n\nข้อมูลอ้างอิง:\n${buildSourceContext(effectiveSources, { promptProfile })}`,
       timeoutMs: options.aiTimeoutMs,
       maxTokens: Number(explainMode ? promptProfile.aiMaxOutputTokens || 0 : promptProfile.conciseAiMaxOutputTokens || promptProfile.aiMaxOutputTokens || 0),

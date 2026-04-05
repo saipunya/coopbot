@@ -9,6 +9,7 @@ const { getOpenAiConfig } = require("./openAiService");
 const { buildQuestionCacheIdentity } = require("./lawChatbotAnswerCacheUtils");
 const { generateChatSummary, wantsExplanation, SOURCE_LABELS } = require("./chatAnswerService");
 const {
+  getConversationHistory,
   getFollowUpCarrySources,
   mergeUniqueSources,
   storeConversationContext,
@@ -281,11 +282,13 @@ async function replyToChat(payload, session) {
   const freeAiPreviewMeta = buildAiPreviewMeta(basePlanContext, freeAiPreviewUsage);
   const aiPreviewRequested = isTruthyFlag(payload.aiPreview);
   const aiPreviewApproved = aiPreviewRequested && freeAiPreviewMeta.canTryPreview && aiFeatureAvailable;
+  const usePremiumPreview = aiPreviewApproved && freeAiPreviewMeta.canTryPremiumPreview &&
+    (wantsExplanation(message) || classifyQuestionIntent(message) === "explain");
   const runtimeSearchPlanCode = aiPreviewApproved ? "pro" : basePlanContext.code;
 
   if (aiPreviewRequested && freeAiPreviewMeta.enabled && !aiPreviewApproved) {
     const unavailableMessage = freeAiPreviewMeta.exhausted
-      ? `คุณใช้สิทธิ์ลองคำตอบแบบ AI ฟรีครบ ${freeAiPreviewMeta.limit} ครั้งของเดือนนี้แล้ว หากต้องการใช้ AI ต่อเนื่อง แนะนำอัปเกรดเป็นแพ็กเกจ Professional`
+      ? `คุณใช้สิทธิ์ลองคำตอบแบบ AI ฟรีครบแล้วของเดือนนี้ (AI ขั้นสูง ${freeAiPreviewMeta.premiumLimit} ครั้ง + AI มาตรฐาน ${freeAiPreviewMeta.limit} ครั้ง) หากต้องการใช้ AI ต่อเนื่อง แนะนำอัปเกรดเป็นแพ็กเกจ Professional`
       : "ขณะนี้ยังไม่สามารถใช้สิทธิ์ลอง AI ได้ กรุณาลองใหม่อีกครั้งในภายหลัง";
     return attachAiPreviewState(
       {
@@ -320,6 +323,7 @@ async function replyToChat(payload, session) {
         usedContext: false,
         topicHints: managedSuggestedQuestionMatch.topicHint ? [managedSuggestedQuestionMatch.topicHint] : [],
       },
+      { answerText: answer },
     );
 
     LawChatbotModel.create({
@@ -383,6 +387,7 @@ async function replyToChat(payload, session) {
     return attachAiPreviewState(result, {
       previewMeta: freeAiPreviewMeta,
       consumePreview: aiPreviewApproved && Boolean(answer),
+      consumePremiumPreview: usePremiumPreview,
       userId,
       usageMonth,
     });
@@ -409,6 +414,7 @@ async function replyToChat(payload, session) {
     }, {
       previewMeta: freeAiPreviewMeta,
       consumePreview: aiPreviewApproved && Boolean(answer),
+      consumePremiumPreview: usePremiumPreview,
       userId,
       usageMonth,
     });
@@ -420,7 +426,7 @@ async function replyToChat(payload, session) {
     planCode: runtimeSearchPlanCode,
   });
   const planContext = aiPreviewApproved
-    ? buildFreeAiPreviewPlanContext(basePlanContext)
+    ? buildFreeAiPreviewPlanContext(basePlanContext, usePremiumPreview)
     : applyEconomyDatabaseOnlyMode(
         basePlanContext,
         searchPlan.effectiveMessage || message,
@@ -440,6 +446,7 @@ async function replyToChat(payload, session) {
       cachedAnswer.effectiveMessage || message,
       cachedAnswer.sources || [],
       cachedAnswer.resolvedContext || { usedContext: false, topicHints: [] },
+      { answerText: cachedAnswer.answer },
     );
 
     LawChatbotModel.create({
@@ -497,6 +504,7 @@ async function replyToChat(payload, session) {
     return attachAiPreviewState(cachedResult, {
       previewMeta: freeAiPreviewMeta,
       consumePreview: aiPreviewApproved && Boolean(cachedResult.answer),
+      consumePremiumPreview: usePremiumPreview,
       userId,
       usageMonth,
     });
@@ -534,6 +542,7 @@ async function replyToChat(payload, session) {
           dbCachedAnswer.normalized_question || message,
           [],
           { usedContext: false, topicHints: [] },
+          { answerText: cachedResult.answer },
         );
 
         LawChatbotModel.create({
@@ -566,6 +575,7 @@ async function replyToChat(payload, session) {
         return attachAiPreviewState(cachedResult, {
           previewMeta: freeAiPreviewMeta,
           consumePreview: aiPreviewApproved && Boolean(cachedResult.answer),
+          consumePremiumPreview: usePremiumPreview,
           userId,
           usageMonth,
         });
@@ -612,6 +622,7 @@ async function replyToChat(payload, session) {
     const answerSources = sources;
     answer = await generateChatSummary(message, answerSources, {
       conversationalFollowUp: resolvedContext.usedContext,
+      conversationHistory: getConversationHistory(session, target),
       focusMessage: effectiveMessage,
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
       forceFallback: !planContext.useAI || remainingBudgetBeforeAnswerMs < MIN_AI_SUMMARY_BUDGET_MS,
@@ -632,7 +643,7 @@ async function replyToChat(payload, session) {
   const afterAnswerGenerationAt = nowMs();
 
   if (retrievalEvaluation.shouldAnswer) {
-    storeConversationContext(session, target, message, effectiveMessage, sources, resolvedContext);
+    storeConversationContext(session, target, message, effectiveMessage, sources, resolvedContext, { answerText: answer });
   }
 
   LawChatbotModel.create({
@@ -773,6 +784,7 @@ async function replyToChat(payload, session) {
   return attachAiPreviewState(result, {
     previewMeta: freeAiPreviewMeta,
     consumePreview: aiPreviewApproved && retrievalEvaluation.shouldAnswer && Boolean(answer),
+    consumePremiumPreview: usePremiumPreview && retrievalEvaluation.shouldAnswer && Boolean(answer),
     userId,
     usageMonth,
   });
@@ -832,6 +844,7 @@ async function summarizeChat(payload, session) {
   return {
     summary: await generateChatSummary(message, sources, {
       conversationalFollowUp: resolvedContext.usedContext,
+      conversationHistory: getConversationHistory(session, target),
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
       questionIntent: evidence.questionIntent,
       databaseOnlyMode: !planContext.useAI,

@@ -27,6 +27,12 @@ async function generateOpenAiCompletion(options = {}) {
 
   const timeoutMs = Math.max(1000, Number(options.timeoutMs || OPENAI_TIMEOUT_MS));
 
+  const historyMessages = Array.isArray(options.conversationHistory) && options.conversationHistory.length > 0
+    ? options.conversationHistory
+        .filter((m) => m && typeof m.content === "string" && m.content.trim() && ["user", "assistant"].includes(m.role))
+        .map((m) => ({ role: m.role, content: m.content.trim() }))
+    : [];
+
   const body = {
     model: options.model || config.model,
     temperature: typeof options.temperature === "number" ? options.temperature : 0.2,
@@ -35,6 +41,7 @@ async function generateOpenAiCompletion(options = {}) {
         role: "system",
         content: String(options.systemInstruction || options?.config?.systemInstruction || "").trim(),
       },
+      ...historyMessages,
       {
         role: "user",
         content: String(options.userContent || options.contents || "").trim(),

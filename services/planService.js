@@ -45,6 +45,10 @@ function getAiPreviewMonthlyLimit(planCode = DEFAULT_PLAN_CODE) {
   return Math.max(0, Number(getPlanConfig(planCode).aiPreviewMonthlyLimit || 0));
 }
 
+function getAiPreviewPremiumLimit(planCode = DEFAULT_PLAN_CODE) {
+  return Math.max(0, Number(getPlanConfig(planCode).aiPreviewPremiumLimit || 0));
+}
+
 function canUseAiPreview(planCode = DEFAULT_PLAN_CODE) {
   const config = getPlanConfig(planCode);
   return Boolean(config.allowAiPreview) && getAiPreviewMonthlyLimit(planCode) > 0;
@@ -143,6 +147,7 @@ function getPromptProfile(planCode = DEFAULT_PLAN_CODE) {
     case "brief":
       return {
         code: "brief",
+        aiModel: String(config.aiModel || "gpt-4o-mini"),
         instructionTone: "ตอบแบบสั้น ชัด และตรงประเด็น",
         summaryRange: config.summaryRange || "3 ถึง 5 ข้อ",
         detailRange: config.detailRange || "2 ถึง 4 ข้อ",
@@ -165,6 +170,7 @@ function getPromptProfile(planCode = DEFAULT_PLAN_CODE) {
     case "deep":
       return {
         code: "deep",
+        aiModel: String(config.aiModel || "gpt-4o-mini"),
         instructionTone: "ตอบแบบละเอียด เป็นระบบ และเชื่อมโยงหลายแหล่งข้อมูลเมื่อจำเป็น",
         summaryRange: config.summaryRange || "5 ถึง 8 ข้อ",
         detailRange: config.detailRange || "5 ถึง 8 ข้อ",
@@ -187,6 +193,7 @@ function getPromptProfile(planCode = DEFAULT_PLAN_CODE) {
     case "detailed":
       return {
         code: "detailed",
+        aiModel: String(config.aiModel || "gpt-4o-mini"),
         instructionTone: "ตอบแบบละเอียดพอสมควร พร้อมเหตุผลหรือเงื่อนไขที่เกี่ยวข้อง",
         summaryRange: config.summaryRange || "4 ถึง 6 ข้อ",
         detailRange: config.detailRange || "4 ถึง 6 ข้อ",
@@ -209,6 +216,7 @@ function getPromptProfile(planCode = DEFAULT_PLAN_CODE) {
     default:
       return {
         code: "template",
+        aiModel: String(config.aiModel || "gpt-4o-mini"),
         instructionTone: "ตอบตามข้อมูลจากฐานข้อมูลภายในระบบ",
         summaryRange: config.summaryRange || "4 ถึง 6 ข้อ",
         detailRange: config.detailRange || "3 ถึง 5 ข้อ",
@@ -301,6 +309,7 @@ module.exports = {
   getPlanConfig,
   getPlanDurationDays,
   getAiPreviewMonthlyLimit,
+  getAiPreviewPremiumLimit,
   getPlanLabel,
   getPlanPriceBaht,
   getSearchHistoryRetentionDays,
