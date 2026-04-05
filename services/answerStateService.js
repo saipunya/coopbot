@@ -19,7 +19,7 @@ const CACHE_TTL_BY_INTENT = {
   general: 10 * 60 * 1000,      // 10 นาที - ค่าเริ่มต้น
 };
 
-const ANSWER_CACHE_SCOPE_VERSION = "v14";
+const ANSWER_CACHE_SCOPE_VERSION = "v15";
 const answerCache = new Map();
 
 function buildAnswerCacheScope(planContext = {}) {
