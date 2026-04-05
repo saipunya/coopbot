@@ -2,6 +2,7 @@ const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
 const {
   canUseAiPreview,
   getAiPreviewMonthlyLimit,
+  getAiPreviewPremiumLimit,
   normalizePlanCode,
   resolveUserPlanContext,
 } = require("./planService");
@@ -19,7 +20,7 @@ const CACHE_TTL_BY_INTENT = {
   general: 10 * 60 * 1000,      // 10 นาที - ค่าเริ่มต้น
 };
 
-const ANSWER_CACHE_SCOPE_VERSION = "v14";
+const ANSWER_CACHE_SCOPE_VERSION = "v15";
 const answerCache = new Map();
 
 function buildAnswerCacheScope(planContext = {}) {
@@ -75,23 +76,34 @@ function buildAiPreviewMeta(planContext = {}, usage = null) {
   const planCode = normalizePlanCode(planContext.code || planContext.plan || "free");
   const enabled = canUseAiPreview(planCode);
   const limit = getAiPreviewMonthlyLimit(planCode);
+  const premiumLimit = getAiPreviewPremiumLimit(planCode);
   const usedCount = Math.max(0, Number(usage?.ai_preview_count || 0));
+  const premiumUsedCount = Math.max(0, Number(usage?.ai_preview_premium_count || 0));
   const remainingCount = enabled ? Math.max(0, limit - usedCount) : 0;
+  const premiumRemainingCount = enabled ? Math.max(0, premiumLimit - premiumUsedCount) : 0;
 
   return {
     enabled,
     limit,
+    premiumLimit,
     usedCount,
+    premiumUsedCount,
     remainingCount,
-    canTryPreview: enabled && remainingCount > 0,
-    exhausted: enabled && remainingCount <= 0,
+    premiumRemainingCount,
+    canTryPreview: enabled && (remainingCount > 0 || premiumRemainingCount > 0),
+    canTryPremiumPreview: enabled && premiumRemainingCount > 0,
+    exhausted: enabled && remainingCount <= 0 && premiumRemainingCount <= 0,
   };
 }
 
-function buildFreeAiPreviewPlanContext(basePlanContext = {}) {
+function buildFreeAiPreviewPlanContext(basePlanContext = {}, usePremiumModel = false) {
   const professionalPlanContext = resolveUserPlanContext({ plan: "pro" });
   const professionalPromptProfile = professionalPlanContext.promptProfile || {};
+  const freePlanConfig = require("../config/planConfig").PLAN_DEFINITIONS.free;
   const compactSourceLimit = Math.max(2, Math.min(5, Number(professionalPlanContext.sourceLimit || 5)));
+  const previewModel = usePremiumModel
+    ? String(freePlanConfig.aiPreviewPremiumModel || "gpt-4o")
+    : String(freePlanConfig.aiModel || "gpt-4o-mini");
 
   return {
     ...basePlanContext,
@@ -105,22 +117,25 @@ function buildFreeAiPreviewPlanContext(basePlanContext = {}) {
     followUpStrength: professionalPlanContext.followUpStrength || "enhanced",
     promptProfile: {
       ...professionalPromptProfile,
-      code: "preview-professional-compact",
-      instructionTone: "ตอบแบบสั้น กระชับ และคุ้มต้นทุน แต่ยังเก็บใจความสำคัญให้ครบก่อน",
-      summaryRange: "ไม่เกิน 4 บรรทัด",
-      summaryLineLimit: 4,
-      explainSummaryLineLimit: 5,
-      detailLineLimit: 4,
-      aiSourceLimit: Math.max(2, Math.min(3, Number(professionalPromptProfile.aiSourceLimit || 3))),
-      aiTimeoutMs: Math.max(2500, Math.min(4200, Number(professionalPromptProfile.aiTimeoutMs || 4200))),
-      aiMaxOutputTokens: Math.max(180, Math.min(260, Number(professionalPromptProfile.aiMaxOutputTokens || 260))),
-      conciseAiMaxOutputTokens: 140,
-      aiSourceContextCharLimit: Math.max(320, Math.min(420, Number(professionalPromptProfile.aiSourceContextCharLimit || 420))),
-      referenceLimit: Math.max(2, Math.min(3, Number(professionalPromptProfile.referenceLimit || 3))),
+      code: usePremiumModel ? "preview-premium-compact" : "preview-professional-compact",
+      aiModel: previewModel,
+      instructionTone: usePremiumModel
+        ? "ตอบแบบละเอียดพอสมควร พร้อมเหตุผลหรือเงื่อนไขที่เกี่ยวข้อง"
+        : "ตอบแบบสั้น กระชับ และคุ้มต้นทุน แต่ยังเก็บใจความสำคัญให้ครบก่อน",
+      summaryRange: usePremiumModel ? "ไม่เกิน 7 บรรทัด" : "ไม่เกิน 4 บรรทัด",
+      summaryLineLimit: usePremiumModel ? 8 : 4,
+      explainSummaryLineLimit: usePremiumModel ? 8 : 5,
+      detailLineLimit: usePremiumModel ? 5 : 4,
+      aiSourceLimit: Math.max(2, Math.min(usePremiumModel ? 4 : 3, Number(professionalPromptProfile.aiSourceLimit || 3))),
+      aiTimeoutMs: usePremiumModel ? 10000 : Math.max(2500, Math.min(4200, Number(professionalPromptProfile.aiTimeoutMs || 4200))),
+      aiMaxOutputTokens: usePremiumModel ? 450 : Math.max(180, Math.min(260, Number(professionalPromptProfile.aiMaxOutputTokens || 260))),
+      conciseAiMaxOutputTokens: usePremiumModel ? 320 : 140,
+      aiSourceContextCharLimit: usePremiumModel ? 700 : Math.max(320, Math.min(420, Number(professionalPromptProfile.aiSourceContextCharLimit || 420))),
+      referenceLimit: Math.max(2, Math.min(usePremiumModel ? 4 : 3, Number(professionalPromptProfile.referenceLimit || 3))),
       followUpPrompt:
         "หากยังไม่ครบ พิมพ์: อธิบาย, แสดงรายละเอียด, รายละเอียด, ยังไม่ครบ หรือ แจ้งเพิ่มเติม",
     },
-    answerMode: "ai_preview_compact",
+    answerMode: usePremiumModel ? "ai_preview_premium" : "ai_preview_compact",
   };
 }
 
@@ -132,22 +147,32 @@ async function attachAiPreviewState(result = {}, options = {}) {
       freeAiPreview: {
         enabled: false,
         limit: 0,
+        premiumLimit: 0,
         usedCount: 0,
+        premiumUsedCount: 0,
         remainingCount: 0,
+        premiumRemainingCount: 0,
         canTryPreview: false,
+        canTryPremiumPreview: false,
         exhausted: false,
         usedThisAnswer: false,
+        usedPremiumThisAnswer: false,
       },
     };
   }
 
   let effectiveMeta = previewMeta;
   let usedThisAnswer = false;
+  let usedPremiumThisAnswer = false;
 
   if (options.consumePreview === true && Number(options.userId || 0) > 0 && options.usageMonth) {
-    const updatedUsage = await UserMonthlyUsageModel.incrementAiPreviewCount(options.userId, options.usageMonth);
+    const incrementFn = options.consumePremiumPreview
+      ? UserMonthlyUsageModel.incrementAiPreviewPremiumCount.bind(UserMonthlyUsageModel)
+      : UserMonthlyUsageModel.incrementAiPreviewCount.bind(UserMonthlyUsageModel);
+    const updatedUsage = await incrementFn(options.userId, options.usageMonth);
     effectiveMeta = buildAiPreviewMeta({ code: "free" }, updatedUsage);
     usedThisAnswer = true;
+    usedPremiumThisAnswer = Boolean(options.consumePremiumPreview);
   }
 
   return {
@@ -155,11 +180,16 @@ async function attachAiPreviewState(result = {}, options = {}) {
     freeAiPreview: {
       enabled: true,
       limit: effectiveMeta.limit,
+      premiumLimit: effectiveMeta.premiumLimit,
       usedCount: effectiveMeta.usedCount,
+      premiumUsedCount: effectiveMeta.premiumUsedCount,
       remainingCount: effectiveMeta.remainingCount,
+      premiumRemainingCount: effectiveMeta.premiumRemainingCount,
       canTryPreview: effectiveMeta.canTryPreview,
+      canTryPremiumPreview: effectiveMeta.canTryPremiumPreview,
       exhausted: effectiveMeta.exhausted,
       usedThisAnswer,
+      usedPremiumThisAnswer,
     },
   };
 }

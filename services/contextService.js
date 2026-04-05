@@ -158,7 +158,7 @@ function looksLikeFollowUpQuestion(message, recentTopic = "") {
   }
 
   if (isStandaloneLawLookup(text)) {
-    return false;
+    return Boolean(recentTopic);
   }
 
   if (text.length <= 18) {
@@ -186,12 +186,15 @@ function looksLikeFollowUpQuestion(message, recentTopic = "") {
 }
 
 function extractTopicHints(message, matches) {
-  const hints = [...extractExplicitTopicHints(message)];
+  const explicitHints = extractExplicitTopicHints(message);
   const strippedMessage = stripQuestionTail(message);
+  const hints = [];
 
   if (strippedMessage && strippedMessage.length >= 6) {
     hints.push(strippedMessage);
   }
+
+  hints.push(...explicitHints);
 
   (Array.isArray(matches) ? matches : []).slice(0, 3).forEach((item) => {
     if (item.reference) {
@@ -270,7 +273,7 @@ function mergeTopicHints(...hintGroups) {
   return results.slice(0, 6);
 }
 
-function storeConversationContext(session, target, originalMessage, effectiveMessage, matches, resolvedContext) {
+function storeConversationContext(session, target, originalMessage, effectiveMessage, matches, resolvedContext, storeOptions) {
   if (!session) {
     return;
   }
@@ -282,20 +285,43 @@ function storeConversationContext(session, target, originalMessage, effectiveMes
     history[0] && Array.isArray(history[0].topicHints) ? history[0].topicHints : [],
   );
 
-  history.unshift({
+  const entry = {
     target,
     originalMessage,
     effectiveMessage,
     topicHints,
     focusSources: mergeUniqueSources(Array.isArray(matches) ? matches.slice(0, 6) : []).slice(0, 6),
     createdAt: new Date().toISOString(),
-  });
+  };
+
+  if (storeOptions && typeof storeOptions.answerText === "string" && storeOptions.answerText.trim()) {
+    entry.answerText = storeOptions.answerText.trim().slice(0, 500);
+  }
+
+  history.unshift(entry);
 
   session[CHAT_CONTEXT_KEY] = history.slice(0, CONTEXT_HISTORY_LIMIT);
 }
 
+const CONVERSATION_HISTORY_TURNS = 3;
+
+function getConversationHistory(session, target) {
+  const history = getSessionContext(session);
+  const turns = [];
+  const relevant = history.filter((item) => item && item.target === target).slice(0, CONVERSATION_HISTORY_TURNS);
+
+  for (let i = relevant.length - 1; i >= 0; i--) {
+    const entry = relevant[i];
+    turns.push({ role: "user", content: String(entry.originalMessage || "").trim() });
+    if (entry.answerText) {
+      turns.push({ role: "assistant", content: String(entry.answerText).trim() });
+    }
+  }
+  return turns;
+}
+
 function getFollowUpCarrySources(session, target, message, resolvedContext = {}) {
-  if (!resolvedContext?.usedContext || !wantsExplanation(message)) {
+  if (!wantsExplanation(message)) {
     return [];
   }
 
@@ -366,6 +392,7 @@ function getFollowUpCarrySources(session, target, message, resolvedContext = {})
 
 module.exports = {
   extractTopicHints,
+  getConversationHistory,
   getFollowUpCarrySources,
   getSessionContext,
   isStandaloneLawLookup,
