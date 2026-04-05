@@ -187,6 +187,52 @@
       flex: 1;
     }
 
+    @media (min-width: 768px) {
+      .plan-ribbon-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        grid-column: 1 / -1;
+      }
+
+      .plan-ribbon-toggle-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.42rem;
+        padding: 0.5rem 0.9rem;
+        border-radius: 999px;
+        border: 1px solid rgba(21, 84, 122, 0.12);
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--primary-strong);
+        box-shadow: 0 8px 18px rgba(34, 63, 87, 0.08);
+        font-size: 0.82rem;
+        font-weight: 700;
+        backdrop-filter: blur(8px);
+      }
+
+      .plan-ribbon-toggle-btn:hover,
+      .plan-ribbon-toggle-btn:focus-visible {
+        background: rgba(255, 255, 255, 0.9);
+        color: var(--primary-strong);
+        border-color: rgba(21, 84, 122, 0.18);
+      }
+
+      .plan-ribbon-body {
+        display: contents;
+      }
+
+      .lawbot-app.plan-ribbon-collapsed .plan-ribbon {
+        grid-template-columns: 1fr;
+        padding-top: 0.78rem;
+        padding-bottom: 0.78rem;
+      }
+
+      .lawbot-app.plan-ribbon-collapsed .plan-ribbon-body {
+        display: none;
+      }
+    }
+
     .page-header {
       width: min(1160px, 100%);
       --header-icon-size: 2rem;
@@ -2464,8 +2510,23 @@
     </div>
 
     <section class="plan-ribbon">
-      <div class="plan-ribbon-copy">
+      <div class="plan-ribbon-head d-none d-md-flex">
         <span class="plan-ribbon-chip"><i class="bi <%= activeBotPlanMeta.icon || 'bi-layers' %>"></i> <%= activeBotPlanMeta.label %></span>
+        <button
+          type="button"
+          id="togglePlanRibbonBtn"
+          data-toggle-plan-ribbon-control="1"
+          class="btn plan-ribbon-toggle-btn"
+          title="แสดงรายละเอียดแพ็กเกจ"
+          aria-label="แสดงรายละเอียดแพ็กเกจ"
+          aria-pressed="true"
+        >
+          <i class="bi bi-layout-sidebar-inset"></i>
+          <span>แสดงแพ็กเกจ</span>
+        </button>
+      </div>
+      <div class="plan-ribbon-body">
+      <div class="plan-ribbon-copy">
         <h2 class="plan-ribbon-title"><%= activeBotPlanMeta.title %></h2>
         <p class="plan-ribbon-text"><%= activeBotPlanMeta.description %></p>
 
@@ -2506,6 +2567,7 @@
           <span>ลักษณะคำตอบ</span>
           <strong><%= activeBotPlanMeta.depth %></strong>
         </div>
+      </div>
       </div>
     </section>
 
@@ -2658,15 +2720,7 @@
     </div>
 
     <div class="chat-shell">
-      <div class="chat-header d-none d-md-block">
-        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-          <div>
-
-            <h1 class="h5 mb-1">แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (v1.0)</h1>
-            <p class="mb-0 small text-muted">ระบบค้นหากฎหมายแบบหน้าเดียว ครอบคลุมสหกรณ์และกลุ่มเกษตรกร</p>
-          </div>
-        </div>
-      </div>
+      
 
       <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
 
@@ -2728,6 +2782,7 @@
       const CHAT_CACHE_KEY = 'lawbot-chat-cache-v2';
       const CHAT_CACHE_LIMIT = 20;
       const HEADER_COLLAPSE_KEY = 'lawbot-header-collapsed-v1';
+      const PLAN_RIBBON_COLLAPSE_KEY = 'lawbot-plan-ribbon-collapsed-v1';
       const POST_LOGIN_PENDING_CHAT_KEY = 'lawbot-post-login-pending-chat-v1';
       const POST_LOGIN_PENDING_CHAT_MAX_AGE_MS = 30 * 60 * 1000;
       const LEGACY_CHAT_CACHE_KEYS = ['lawbot-chat-cache-v1'];
@@ -2777,7 +2832,9 @@
       const debugBtn = document.getElementById('debugBtn');
       const clearChatButtons = Array.from(document.querySelectorAll('[data-clear-chat-control="1"]'));
       const toggleHeaderButtons = Array.from(document.querySelectorAll('[data-toggle-header-control="1"]'));
+      const togglePlanRibbonButtons = Array.from(document.querySelectorAll('[data-toggle-plan-ribbon-control="1"]'));
       const lawbotApp = document.querySelector('.lawbot-app');
+      const planRibbon = document.querySelector('.plan-ribbon');
       const quickButtons = document.querySelectorAll('.quick-btn');
       const installBtn = document.getElementById('installBtn');
       const iosInstallBtn = document.getElementById('iosInstallBtn');
@@ -2943,6 +3000,34 @@
         });
 
         localStorage.setItem(HEADER_COLLAPSE_KEY, collapsed ? '1' : '0');
+      }
+
+      function setPlanRibbonCollapsed(collapsed) {
+        if (!lawbotApp || !togglePlanRibbonButtons.length) return;
+        lawbotApp.classList.toggle('plan-ribbon-collapsed', collapsed);
+
+        togglePlanRibbonButtons.forEach((button) => {
+          button.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+
+          if (collapsed) {
+            button.innerHTML = '<i class="bi bi-layout-sidebar-inset"></i><span>แสดงแพ็กเกจ</span>';
+            button.title = 'แสดงรายละเอียดแพ็กเกจ';
+            button.setAttribute('aria-label', 'แสดงรายละเอียดแพ็กเกจ');
+          } else {
+            button.innerHTML = '<i class="bi bi-layout-sidebar-reverse"></i><span>ซ่อนแพ็กเกจ</span>';
+            button.title = 'ซ่อนรายละเอียดแพ็กเกจ';
+            button.setAttribute('aria-label', 'ซ่อนรายละเอียดแพ็กเกจ');
+          }
+        });
+
+        localStorage.setItem(PLAN_RIBBON_COLLAPSE_KEY, collapsed ? '1' : '0');
+      }
+
+      function getInitialPlanRibbonCollapsed() {
+        const storedValue = localStorage.getItem(PLAN_RIBBON_COLLAPSE_KEY);
+        if (storedValue === '1') return true;
+        if (storedValue === '0') return false;
+        return window.matchMedia('(min-width: 768px)').matches;
       }
 
       function isStandaloneMode() {
@@ -4524,6 +4609,12 @@
           setHeaderCollapsed(!collapsed);
         }));
 
+      togglePlanRibbonButtons.forEach((button) => button.addEventListener('click', () => {
+        if (!lawbotApp || !planRibbon) return;
+        const collapsed = lawbotApp.classList.contains('plan-ribbon-collapsed');
+        setPlanRibbonCollapsed(!collapsed);
+      }));
+
       window.addEventListener('beforeinstallprompt', (event) => {
         event.preventDefault();
         deferredInstallPrompt = event;
@@ -4551,6 +4642,7 @@
       updateVoiceButton();
       updateSendButtonState();
       setHeaderCollapsed(localStorage.getItem(HEADER_COLLAPSE_KEY) === '1');
+      setPlanRibbonCollapsed(getInitialPlanRibbonCollapsed());
       if (SpeechRecognition) {
         initVoiceRecognition();
       }
