@@ -255,6 +255,28 @@
       color: var(--text-sub);
     }
 
+    .plan-ribbon-note {
+      display: inline-flex;
+      align-items: flex-start;
+      gap: 0.55rem;
+      width: fit-content;
+      max-width: 100%;
+      margin-top: 0.15rem;
+      padding: 0.65rem 0.85rem;
+      border-radius: 0.9rem;
+      background: rgba(255, 255, 255, 0.66);
+      border: 1px solid rgba(255, 255, 255, 0.74);
+      color: var(--primary-strong);
+      font-size: 0.83rem;
+      line-height: 1.45;
+    }
+
+    .plan-ribbon-note i {
+      margin-top: 0.05rem;
+      font-size: 0.95rem;
+      flex: 0 0 auto;
+    }
+
     .plan-ribbon-stats {
       display: flex;
       gap: 0.7rem;
@@ -782,6 +804,7 @@
       min-width: 0;
       white-space: pre-wrap;
       word-break: break-word;
+      overflow-wrap: anywhere;
     }
 
     .bot-answer-main {
@@ -916,6 +939,7 @@
 
     .bot-reference-toggle {
       width: fit-content;
+      max-width: 100%;
       border: 1px solid rgba(47, 127, 184, 0.14);
       background: rgba(244, 249, 253, 0.92);
       color: #4c6f86;
@@ -943,6 +967,7 @@
       align-items: center;
       gap: 0.32rem;
       white-space: nowrap;
+      max-width: 100%;
     }
 
     .bot-reference-toggle-icon {
@@ -956,11 +981,14 @@
       flex-wrap: wrap;
       gap: 0.55rem;
       margin-top: 0.15rem;
+      width: 100%;
+      min-width: 0;
     }
 
     .bot-login-cta {
       display: inline-flex;
       align-items: center;
+      max-width: 100%;
       gap: 0.45rem;
       padding: 0.55rem 0.92rem;
       border-radius: 999px;
@@ -985,6 +1013,7 @@
     .bot-ai-preview-cta {
       display: inline-flex;
       align-items: center;
+      max-width: 100%;
       gap: 0.45rem;
       padding: 0.55rem 0.92rem;
       border: none;
@@ -1008,6 +1037,7 @@
     .bot-upgrade-cta {
       display: inline-flex;
       align-items: center;
+      max-width: 100%;
       gap: 0.4rem;
       padding: 0.52rem 0.86rem;
       border-radius: 999px;
@@ -1035,6 +1065,9 @@
       color: #557083;
       font-size: 0.82rem;
       line-height: 1.45;
+      max-width: 100%;
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
 
     .answer-origin-chip {
@@ -1042,6 +1075,7 @@
       align-items: center;
       gap: 0.38rem;
       width: fit-content;
+      max-width: 100%;
       margin-bottom: 0.45rem;
       padding: 0.32rem 0.65rem;
       border-radius: 999px;
@@ -1167,6 +1201,7 @@
 
     .bubble-loading .bubble-content {
       min-width: 16rem;
+      max-width: 100%;
     }
 
     .loading-status {
@@ -1318,6 +1353,9 @@
       color: #355166;
       font-size: 0.78rem;
       line-height: 1.5;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .admin-knowledge-form .form-label {
@@ -1513,6 +1551,7 @@
       border-color: #c8d9e7;
       min-height: 44px;
       box-shadow: none !important;
+      min-width: 0;
     }
 
     #sendBtn {
@@ -1801,6 +1840,55 @@
         opacity: 0.04;
       }
       .bubble { max-width: 100%; }
+      .bubble-content,
+      .bubble-message,
+      .bot-answer-main,
+      .bot-answer-summary,
+      .bot-answer-section,
+      .bot-answer-bullets,
+      .answer-bullet-card,
+      .answer-bullet-card-content,
+      .timing-debug,
+      .timing-debug div {
+        max-width: 100%;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .bot-reference-toggle,
+      .bot-login-cta,
+      .bot-ai-preview-cta,
+      .bot-upgrade-cta,
+      .answer-origin-chip,
+      .bot-inline-note {
+        width: 100%;
+        max-width: 100%;
+        justify-content: center;
+        white-space: normal;
+      }
+
+      .bot-reference-toggle-text,
+      .answer-origin-chip span,
+      .bot-inline-note span,
+      .bot-login-cta span,
+      .bot-ai-preview-cta span,
+      .bot-upgrade-cta span {
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .bot-inline-note {
+        align-items: flex-start;
+        justify-content: flex-start;
+      }
+
+      .bubble-loading .bubble-content {
+        min-width: 0;
+        width: 100%;
+      }
+
       .answer-bullet-card {
         padding: 0.44rem 0.58rem 0.46rem 0.64rem;
         border-radius: 0.68rem;
@@ -1814,6 +1902,29 @@
       }
       .chat-input-wrap {
         padding: 0.55rem;
+      }
+      .chat-input-wrap .input-group {
+        flex-wrap: wrap;
+        gap: 0.45rem;
+      }
+      .chat-input-wrap .input-group > .form-control {
+        flex: 1 1 100%;
+        width: 100%;
+        min-width: 0;
+        border-radius: 0.78rem !important;
+        font-size: 16px;
+      }
+      .chat-input-wrap .input-group > .btn {
+        border-radius: 0.78rem !important;
+        min-height: 2.9rem;
+        margin-left: 0 !important;
+      }
+      #voiceBtn,
+      #debugBtn {
+        min-width: 2.9rem;
+      }
+      #sendBtn {
+        min-width: 4.4rem;
       }
       .composer-suggestions {
         left: 0.55rem;
@@ -1848,7 +1959,7 @@
       }
       .input-group > .btn,
       .input-group > .form-control {
-        font-size: 0.92rem;
+        font-size: 16px;
       }
     }
 
@@ -1935,6 +2046,7 @@
         }
       };
       const activeBotPlanMeta = botPlanMeta[botPlanTheme] || botPlanMeta.free;
+      const showGuestProtectionNotice = !currentUser && !isGoogleUser;
     %>
 
     <script>
@@ -2013,6 +2125,12 @@
         <span class="plan-ribbon-chip"><i class="bi bi-layers"></i> <%= activeBotPlanMeta.label %></span>
         <h2 class="plan-ribbon-title"><%= activeBotPlanMeta.title %></h2>
         <p class="plan-ribbon-text"><%= activeBotPlanMeta.description %></p>
+        <% if (showGuestProtectionNotice) { %>
+          <div class="plan-ribbon-note">
+            <i class="bi bi-shield-check"></i>
+            <span>Guest ใช้ได้ 2 คำถามต่อเดือน และระบบจะจำสิทธิ์จากอุปกรณ์หรือเครือข่ายเดิม แม้เปลี่ยน browser หรือล้าง cache</span>
+          </div>
+        <% } %>
       </div>
       <div class="plan-ribbon-stats">
         <div class="plan-ribbon-stat">
@@ -2658,6 +2776,29 @@
           .filter((part) => part.length >= 2)
           .forEach((part) => terms.add(part));
         return Array.from(terms).sort((a, b) => b.length - a.length);
+      }
+
+      function buildGuestDeviceHint() {
+        const nav = window.navigator || {};
+        const screenInfo = window.screen || {};
+        const timezone = (() => {
+          try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+          } catch (_) {
+            return '';
+          }
+        })();
+
+        return [
+          nav.platform || '',
+          nav.language || '',
+          timezone,
+          String(nav.hardwareConcurrency || ''),
+          String(nav.maxTouchPoints || ''),
+          String(screenInfo.width || ''),
+          String(screenInfo.height || ''),
+          String(screenInfo.colorDepth || '')
+        ].join('|');
       }
 
       function applyHighlightHtml(text, terms) {
@@ -3325,24 +3466,6 @@
 
         content.appendChild(message);
 
-        if (feedbackContext && feedbackContext.usedFollowUpContext) {
-          const contextRow = document.createElement('div');
-          contextRow.className = 'context-chip-row';
-          contextRow.innerHTML = `
-            <span class="context-badge"><i class="bi bi-link-45deg"></i>โหมดถามต่อเรื่องเดิม: พิมพ์ถามต่อได้เลย ถ้าจะเริ่มเรื่องใหม่ให้กด <i class="bi bi-trash-fill"></i></span>
-          `;
-
-          const resetBtn = contextRow.querySelector('.context-reset-btn');
-          if (resetBtn) {
-            resetBtn.addEventListener('click', async () => {
-              await resetConversationContext();
-              contextRow.innerHTML = '<span class="context-badge"><i class="bi bi-check2-circle"></i>เริ่มหัวข้อใหม่แล้ว</span>';
-            });
-          }
-
-          content.insertBefore(contextRow, message);
-        }
-
         if (role === 'bot' && !isLoading && feedbackContext && feedbackContext.responseMeta && feedbackContext.responseMeta.notice) {
           const originChip = document.createElement('div');
           const responseKind = feedbackContext.responseMeta.kind || 'generic';
@@ -3585,7 +3708,8 @@
               message: trimmed,
               target: options.target || selectedTarget,
               debug: Boolean(options.debug),
-              aiPreview: Boolean(options.aiPreview)
+              aiPreview: Boolean(options.aiPreview),
+              guestDeviceHint: isSignedInUser ? '' : buildGuestDeviceHint()
             }),
             signal: controller.signal
           });

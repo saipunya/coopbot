@@ -120,6 +120,68 @@
     border: 1px solid rgba(21, 84, 122, 0.14);
     font-size: 0.83rem;
   }
+  .section-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+  .section-toolbar form {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+  }
+  .section-toolbar select {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0.7rem 0.82rem;
+    font: inherit;
+    background: #fff;
+    color: var(--text);
+  }
+  .pagination-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+  }
+  .pagination-summary {
+    color: var(--subtle);
+    font-size: 0.92rem;
+  }
+  .pagination-links {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+  .pagination-link,
+  .pagination-current,
+  .pagination-ellipsis {
+    min-width: 2.4rem;
+    padding: 0.58rem 0.82rem;
+    border-radius: 12px;
+    text-align: center;
+    font-weight: 700;
+  }
+  .pagination-link {
+    background: #eef4f8;
+    color: var(--accent-strong);
+    text-decoration: none;
+    border: 1px solid var(--line);
+  }
+  .pagination-current {
+    background: var(--accent-strong);
+    color: #fff;
+    border: 1px solid var(--accent-strong);
+  }
+  .pagination-ellipsis {
+    color: var(--subtle);
+  }
   @media (max-width: 820px) {
     .upload-hero {
       grid-template-columns: 1fr;
@@ -143,6 +205,25 @@
       width: fit-content;
       max-width: 100%;
     }
+
+    .section-toolbar {
+      justify-content: stretch;
+    }
+
+    .section-toolbar form,
+    .section-toolbar select,
+    .section-toolbar button {
+      width: 100%;
+    }
+
+    .pagination-bar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .pagination-links {
+      justify-content: center;
+    }
   }
 </style>
 
@@ -160,6 +241,7 @@
     <% } %>
 
     <form class="upload-form" action="<%= data.uploadPath %>" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="returnTo" value="<%= returnPath %>" />
       <label for="lawPdf">เลือกไฟล์เอกสาร</label>
       <input id="lawPdf" type="file" name="lawPdf" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
       <p style="margin-top: -0.2rem;">ขนาดไฟล์สูงสุด <strong><%= data.maxUploadMb %> MB</strong></p>
@@ -196,6 +278,18 @@
 
 <section class="card">
   <h2 style="margin-top: 0; color: var(--accent-strong);">รายการอัปโหลดล่าสุด</h2>
+  <div class="section-toolbar">
+    <form action="/law-chatbot/upload" method="get">
+      <input type="hidden" name="page" value="1" />
+      <label for="uploadPerPage">จำนวนรายการต่อหน้า</label>
+      <select id="uploadPerPage" name="perPage" aria-label="จำนวนรายการอัปโหลดต่อหน้า">
+        <% [10, 20, 50].forEach((size) => { %>
+          <option value="<%= size %>" <%= Number(data.pagination?.pageSize || 10) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
+        <% }) %>
+      </select>
+      <button type="submit">แสดงผล</button>
+    </form>
+  </div>
   <ul class="soft-list">
     <% if (data.uploadedFiles.length === 0) { %>
       <li>ยังไม่มีรายการอัปโหลด</li>
@@ -221,6 +315,7 @@
       </li>
     <% }) %>
   </ul>
+  <%- include("../admin/partials/pagination", { pagination: data.pagination, basePath: "/law-chatbot/upload", query: { perPage: data.pagination?.pageSize || 10 }, pageKey: "page", itemLabel: "รายการอัปโหลด" }) %>
 </section>
 
 <%- include("../partials/footer") %>

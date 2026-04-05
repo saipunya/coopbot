@@ -175,8 +175,9 @@ class LawChatbotSuggestedQuestionModel {
     return rows[0] ? mapRow(rows[0]) : null;
   }
 
-  static async listRecent(limit = 20) {
+  static async listRecent(limit = 20, offset = 0) {
     const normalizedLimit = Math.max(1, Number(limit || 20));
+    const normalizedOffset = Math.max(0, Number(offset || 0));
     const pool = getDbPool();
 
     if (!pool) {
@@ -195,7 +196,7 @@ class LawChatbotSuggestedQuestionModel {
 
           return Number(right.id || 0) - Number(left.id || 0);
         })
-        .slice(0, normalizedLimit)
+        .slice(normalizedOffset, normalizedOffset + normalizedLimit)
         .map(mapRow);
     }
 
@@ -204,8 +205,8 @@ class LawChatbotSuggestedQuestionModel {
       `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
          FROM chatbot_suggested_questions
         ORDER BY is_active DESC, display_order ASC, id DESC
-        LIMIT ?`,
-      [normalizedLimit],
+        LIMIT ? OFFSET ?`,
+      [normalizedLimit, normalizedOffset],
     );
 
     return rows.map(mapRow);

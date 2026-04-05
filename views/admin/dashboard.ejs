@@ -191,6 +191,13 @@
         background: var(--surface-strong);
         color: var(--text-main);
       }
+      .field input[type="checkbox"] {
+        width: auto;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+      }
       .field textarea {
         min-height: 130px;
         resize: vertical;
@@ -214,6 +221,31 @@
       }
       .knowledge-list li {
         margin-bottom: 0.8rem;
+        min-width: 0;
+      }
+      .knowledge-list strong,
+      .soft-list li,
+      .knowledge-meta,
+      .suggestion-meta,
+      .editor-summary,
+      .section-note,
+      .subtle-text,
+      .quick-links a {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+      .list-item-title {
+        display: block;
+        color: var(--primary-strong);
+        line-height: 1.5;
+      }
+      .list-item-body {
+        margin-top: 0.6rem;
+        color: var(--text-main);
+        white-space: pre-line;
+        line-height: 1.7;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
       .knowledge-actions {
         display: flex;
@@ -288,6 +320,7 @@
       }
       .editor-body {
         margin-top: 0.9rem;
+        min-width: 0;
       }
       .knowledge-meta {
         margin-top: 0.45rem;
@@ -319,6 +352,7 @@
         border: 1px solid var(--border);
         border-radius: 16px;
         background: rgba(255, 255, 255, 0.76);
+        min-width: 0;
       }
       .quick-links {
         display: grid;
@@ -388,6 +422,78 @@
         font-size: 0.95rem;
         line-height: 1.7;
       }
+      .pagination-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-top: 1rem;
+      }
+      .pagination-summary {
+        color: var(--text-sub);
+        font-size: 0.92rem;
+      }
+      .pagination-links {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+      }
+      .pagination-link,
+      .pagination-current,
+      .pagination-ellipsis {
+        min-width: 2.4rem;
+        padding: 0.58rem 0.82rem;
+        border-radius: 12px;
+        text-align: center;
+        font-weight: 700;
+      }
+      .pagination-link {
+        background: var(--surface-soft);
+        color: var(--primary-strong);
+        text-decoration: none;
+        border: 1px solid var(--border);
+      }
+      .pagination-current {
+        background: var(--primary);
+        color: #fff;
+        border: 1px solid var(--primary);
+      }
+      .pagination-ellipsis {
+        color: var(--text-sub);
+      }
+      .section-toolbar {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+      }
+      .section-toolbar form {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+      }
+      .section-toolbar select {
+        border: 1px solid #c9d8e4;
+        border-radius: 12px;
+        padding: 0.62rem 0.82rem;
+        font: inherit;
+        background: var(--surface-strong);
+        color: var(--text-main);
+      }
+      .section-toolbar button {
+        border: none;
+        border-radius: 12px;
+        padding: 0.66rem 0.9rem;
+        font: inherit;
+        font-weight: 700;
+        color: #fff;
+        background: linear-gradient(145deg, var(--primary), var(--primary-strong));
+        cursor: pointer;
+      }
       @media (max-width: 760px) {
         .shell {
           width: min(100%, calc(100% - 1rem));
@@ -410,9 +516,19 @@
         .quick-links {
           grid-template-columns: 1fr;
         }
+        .field input,
+        .field select,
+        .field textarea,
+        .logout-btn,
+        .primary-btn,
+        .secondary-btn,
+        .danger-btn {
+          font-size: 16px;
+        }
         .status-row,
         .system-actions,
-        .suggestion-actions {
+        .suggestion-actions,
+        .pagination-bar {
           flex-direction: column;
           align-items: stretch;
         }
@@ -435,6 +551,30 @@
         .danger-btn {
           width: 100%;
         }
+        .pagination-links {
+          justify-content: center;
+        }
+        .section-toolbar {
+          justify-content: stretch;
+        }
+        .section-toolbar form {
+          width: 100%;
+        }
+        .section-toolbar select,
+        .section-toolbar button {
+          width: 100%;
+        }
+        .list-item-title {
+          font-size: 0.96rem;
+        }
+        .list-item-body,
+        .knowledge-meta,
+        .suggestion-meta,
+        .editor-summary,
+        .section-note,
+        .subtle-text {
+          font-size: 0.9rem;
+        }
       }
 
       @media (max-width: 420px) {
@@ -454,11 +594,37 @@
           padding-left: 0.85rem;
           padding-right: 0.85rem;
         }
+        .list-item-title {
+          font-size: 0.92rem;
+        }
+        .list-item-body,
+        .knowledge-meta,
+        .suggestion-meta,
+        .editor-summary {
+          font-size: 0.86rem;
+        }
       }
     </style>
   </head>
   <body>
     <div class="shell">
+      <% 
+        const dashboardQuery = {
+          sqPage: knowledgeData.suggestedQuestionsPagination?.page || dashboardPages?.sqPage || 1,
+          knowledgePage: knowledgeData.knowledgePagination?.page || dashboardPages?.knowledgePage || 1,
+          pendingPage: knowledgeData.pendingSuggestionsPagination?.page || dashboardPages?.pendingPage || 1,
+          sqPerPage: knowledgeData.suggestedQuestionsPagination?.pageSize || dashboardPages?.sqPerPage || 8,
+          knowledgePerPage: knowledgeData.knowledgePagination?.pageSize || dashboardPages?.knowledgePerPage || 8,
+          pendingPerPage: knowledgeData.pendingSuggestionsPagination?.pageSize || dashboardPages?.pendingPerPage || 8,
+        };
+        const dashboardBaseQueryString = new URLSearchParams(dashboardQuery).toString();
+        const dashboardBasePath = `/admin${dashboardBaseQueryString ? `?${dashboardBaseQueryString}` : ''}`;
+        const suggestedManagementReturnTo = `${dashboardBasePath}#frequent-questions-management`;
+        const suggestedLibraryReturnTo = `${dashboardBasePath}#frequent-questions-library`;
+        const knowledgeManagementReturnTo = `${dashboardBasePath}#knowledge-management`;
+        const knowledgeLibraryReturnTo = `${dashboardBasePath}#knowledge-library`;
+        const knowledgeSuggestionsReturnTo = `${dashboardBasePath}#knowledge-suggestions`;
+      %>
       <% if (successMessage) { %>
         <div class="alert success"><%= successMessage %></div>
       <% } %>
@@ -561,6 +727,7 @@
         <ul class="quick-links">
           <li><a href="/law-chatbot">หน้าแชตสาธารณะ</a></li>
           <li><a href="/admin/users">จัดการแพ็กเกจผู้ใช้งาน</a></li>
+          <li><a href="/admin/guest-usage">ตรวจ guest usage และการกันรีเซ็ตสิทธิ์</a></li>
           <li><a href="/law-chatbot/upload">หน้าจัดการอัปโหลด</a></li>
           <li><a href="/law-chatbot/feedback">หน้าดูข้อเสนอแนะ</a></li>
           <li><a href="/admin/payment-requests">ตรวจคำขออัปเกรดแพ็กเกจ <% if (paymentRequestData.pendingCount > 0) { %>(<%= paymentRequestData.pendingCount %> รออนุมัติ)<% } %></a></li>
@@ -582,6 +749,7 @@
           <% } %>
         </p>
         <form action="/admin/suggested-questions" method="post">
+          <input type="hidden" name="returnTo" value="<%= suggestedManagementReturnTo %>" />
           <div class="form-grid">
             <div class="field">
               <label for="suggestedQuestionTarget">ประเภทข้อมูล</label>
@@ -630,13 +798,29 @@
 
       <section class="card" id="frequent-questions-library">
         <h2>รายการคำถามแนะนำที่ตั้งค่าไว้</h2>
+        <div class="section-toolbar">
+          <form action="/admin" method="get">
+            <input type="hidden" name="knowledgePage" value="<%= dashboardQuery.knowledgePage %>" />
+            <input type="hidden" name="pendingPage" value="<%= dashboardQuery.pendingPage %>" />
+            <input type="hidden" name="knowledgePerPage" value="<%= dashboardQuery.knowledgePerPage %>" />
+            <input type="hidden" name="pendingPerPage" value="<%= dashboardQuery.pendingPerPage %>" />
+            <input type="hidden" name="sqPage" value="1" />
+            <label for="sqPerPage" class="subtle-text">จำนวนรายการต่อหน้า</label>
+            <select id="sqPerPage" name="sqPerPage" aria-label="จำนวนรายการคำถามแนะนำต่อหน้า">
+              <% [8, 16, 24].forEach((size) => { %>
+                <option value="<%= size %>" <%= Number(dashboardQuery.sqPerPage || 8) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
+              <% }) %>
+            </select>
+            <button type="submit" formaction="/admin#frequent-questions-library">แสดงผล</button>
+          </form>
+        </div>
         <ul class="knowledge-list soft-list">
           <% if (!knowledgeData.suggestedQuestions || knowledgeData.suggestedQuestions.length === 0) { %>
             <li>ยังไม่มีคำถามแนะนำที่ผู้ดูแลสร้างไว้</li>
           <% } %>
           <% (knowledgeData.suggestedQuestions || []).forEach((item) => { %>
             <li>
-              <strong><%= item.questionText %></strong>
+              <strong class="list-item-title"><%= item.questionText %></strong>
               <div class="knowledge-meta">
                 ใช้กับ:
                 <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : item.target === 'coop' ? 'สหกรณ์' : 'ทุกประเภท' %>
@@ -645,12 +829,13 @@
                 | ลำดับ: <%= Number(item.displayOrder || 0) %>
                 <% if (item.updatedAt) { %> | แก้ไขล่าสุด: <%= item.updatedAt %><% } %>
               </div>
-              <div style="margin-top: 0.6rem; color: var(--text-main); white-space: pre-line;"><%= item.answerText %></div>
+              <div class="list-item-body"><%= item.answerText %></div>
               <details class="suggestion-editor">
                 <summary class="editor-summary">แก้ไขคำถามแนะนำนี้</summary>
                 <div class="editor-body">
                   <form action="/admin/suggested-questions/update" method="post">
                     <input type="hidden" name="id" value="<%= item.id %>" />
+                    <input type="hidden" name="returnTo" value="<%= suggestedLibraryReturnTo %>" />
                     <div class="form-grid">
                       <div class="field">
                         <label for="suggested-target-<%= item.id %>">ประเภทข้อมูล</label>
@@ -696,12 +881,14 @@
               <div class="knowledge-actions">
                 <form action="/admin/suggested-questions/delete" method="post" onsubmit="return confirm('ยืนยันการลบคำถามแนะนำนี้ใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />
+                  <input type="hidden" name="returnTo" value="<%= suggestedLibraryReturnTo %>" />
                   <button class="danger-btn" type="submit">ลบรายการนี้</button>
                 </form>
               </div>
             </li>
           <% }) %>
         </ul>
+        <%- include("partials/pagination", { pagination: knowledgeData.suggestedQuestionsPagination, basePath: "/admin", query: dashboardQuery, pageKey: "sqPage", anchor: "frequent-questions-library", itemLabel: "รายการคำถามแนะนำ" }) %>
       </section>
 
       <section class="card" id="knowledge-management">
@@ -710,6 +897,7 @@
           ใช้หน้านี้เพื่อเพิ่มข้อมูลที่ถูกต้องลงในฐานข้อมูล เมื่อ AI ตอบไม่ตรงข้อเท็จจริง ระบบจะนำข้อมูลชุดนี้ไปช่วยตอบในรอบถัดไป
         </p>
         <form action="/admin/knowledge" method="post">
+          <input type="hidden" name="returnTo" value="<%= knowledgeManagementReturnTo %>" />
           <div class="form-grid">
             <div class="field">
               <label for="target">ประเภทข้อมูล</label>
@@ -745,25 +933,42 @@
       <section class="card" id="knowledge-library">
         <h2>ความรู้ที่บันทึกล่าสุด</h2>
         <p>ทั้งหมด <strong><%= knowledgeData.knowledgeCount %></strong> รายการ</p>
+        <div class="section-toolbar">
+          <form action="/admin" method="get">
+            <input type="hidden" name="sqPage" value="<%= dashboardQuery.sqPage %>" />
+            <input type="hidden" name="pendingPage" value="<%= dashboardQuery.pendingPage %>" />
+            <input type="hidden" name="sqPerPage" value="<%= dashboardQuery.sqPerPage %>" />
+            <input type="hidden" name="pendingPerPage" value="<%= dashboardQuery.pendingPerPage %>" />
+            <input type="hidden" name="knowledgePage" value="1" />
+            <label for="knowledgePerPage" class="subtle-text">จำนวนรายการต่อหน้า</label>
+            <select id="knowledgePerPage" name="knowledgePerPage" aria-label="จำนวนรายการฐานความรู้ต่อหน้า">
+              <% [8, 16, 24].forEach((size) => { %>
+                <option value="<%= size %>" <%= Number(dashboardQuery.knowledgePerPage || 8) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
+              <% }) %>
+            </select>
+            <button type="submit" formaction="/admin#knowledge-library">แสดงผล</button>
+          </form>
+        </div>
         <ul class="knowledge-list soft-list">
           <% if (knowledgeData.recentKnowledge.length === 0) { %>
             <li>ยังไม่มีความรู้ที่เพิ่มเข้าฐานข้อมูล</li>
           <% } %>
           <% knowledgeData.recentKnowledge.forEach((item) => { %>
             <li>
-              <strong><%= item.title %></strong>
+              <strong class="list-item-title"><%= item.title %></strong>
               <% if (item.lawNumber) { %> - <%= item.lawNumber %><% } %>
               <div class="knowledge-meta">
                 ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : 'สหกรณ์' %>
                 <% if (item.sourceNote) { %> | แหล่งที่มา: <%= item.sourceNote %><% } %>
                 <% if (item.updatedAt) { %> | แก้ไขล่าสุด: <%= item.updatedAt %><% } %>
               </div>
-              <div style="margin-top: 0.6rem; color: var(--text-main); white-space: pre-line;"><%= item.content %></div>
+              <div class="list-item-body"><%= item.content %></div>
               <details class="suggestion-editor">
                 <summary class="editor-summary">แก้ไขข้อมูลฐานความรู้นี้</summary>
                 <div class="editor-body">
                   <form action="/admin/knowledge/update" method="post">
                     <input type="hidden" name="id" value="<%= item.id %>" />
+                    <input type="hidden" name="returnTo" value="<%= knowledgeLibraryReturnTo %>" />
                     <div class="form-grid">
                       <div class="field">
                         <label for="knowledge-target-<%= item.id %>">ประเภทข้อมูล</label>
@@ -810,35 +1015,54 @@
               <div class="knowledge-actions">
                 <form action="/admin/knowledge/delete" method="post" onsubmit="return confirm('ยืนยันการลบข้อมูลฐานความรู้นี้ใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />
+                  <input type="hidden" name="returnTo" value="<%= knowledgeLibraryReturnTo %>" />
                   <button class="danger-btn" type="submit">ลบรายการนี้</button>
                 </form>
               </div>
             </li>
           <% }) %>
         </ul>
+        <%- include("partials/pagination", { pagination: knowledgeData.knowledgePagination, basePath: "/admin", query: dashboardQuery, pageKey: "knowledgePage", anchor: "knowledge-library", itemLabel: "รายการฐานความรู้" }) %>
       </section>
 
       <section class="card" id="knowledge-suggestions">
         <h2>ข้อเสนอคำตอบจากผู้ใช้งาน</h2>
         <p>รอตรวจสอบ <strong><%= knowledgeData.pendingSuggestionCount %></strong> รายการ</p>
+        <div class="section-toolbar">
+          <form action="/admin" method="get">
+            <input type="hidden" name="sqPage" value="<%= dashboardQuery.sqPage %>" />
+            <input type="hidden" name="knowledgePage" value="<%= dashboardQuery.knowledgePage %>" />
+            <input type="hidden" name="sqPerPage" value="<%= dashboardQuery.sqPerPage %>" />
+            <input type="hidden" name="knowledgePerPage" value="<%= dashboardQuery.knowledgePerPage %>" />
+            <input type="hidden" name="pendingPage" value="1" />
+            <label for="pendingPerPage" class="subtle-text">จำนวนรายการต่อหน้า</label>
+            <select id="pendingPerPage" name="pendingPerPage" aria-label="จำนวนข้อเสนอที่รอตรวจสอบต่อหน้า">
+              <% [8, 16, 24].forEach((size) => { %>
+                <option value="<%= size %>" <%= Number(dashboardQuery.pendingPerPage || 8) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
+              <% }) %>
+            </select>
+            <button type="submit" formaction="/admin#knowledge-suggestions">แสดงผล</button>
+          </form>
+        </div>
         <ul class="knowledge-list soft-list">
           <% if (knowledgeData.pendingSuggestions.length === 0) { %>
             <li>ยังไม่มีข้อเสนอคำตอบที่รออนุมัติ</li>
           <% } %>
           <% knowledgeData.pendingSuggestions.forEach((item) => { %>
             <li>
-              <strong><%= item.title %></strong>
+              <strong class="list-item-title"><%= item.title %></strong>
               <div class="suggestion-meta">
                 ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : 'สหกรณ์' %>
                 <% if (item.sourceType) { %> | ช่องทาง: <%= item.sourceType === 'voice' ? 'เสียง' : 'ข้อความ' %><% } %>
                 <% if (item.createdAt) { %> | ส่งเมื่อ: <%= item.createdAt %><% } %>
               </div>
-              <div style="margin-top: 0.6rem; color: var(--text-main); white-space: pre-line;"><%= item.content %></div>
+              <div class="list-item-body"><%= item.content %></div>
               <details class="suggestion-editor" open>
                 <summary class="editor-summary">แก้ไขข้อเสนอก่อนอนุมัติ</summary>
                 <div class="editor-body">
                   <form action="/admin/knowledge-suggestions/update" method="post">
                     <input type="hidden" name="id" value="<%= item.id %>" />
+                    <input type="hidden" name="returnTo" value="<%= knowledgeSuggestionsReturnTo %>" />
                     <div class="form-grid">
                       <div class="field">
                         <label for="suggestion-target-<%= item.id %>">ประเภทข้อมูล</label>
@@ -875,16 +1099,19 @@
               <div class="knowledge-actions">
                 <form action="/admin/knowledge-suggestions/approve" method="post" onsubmit="return confirm('ยืนยันการอนุมัติและนำเข้าฐานความรู้จากข้อมูลฉบับล่าสุดใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />
+                  <input type="hidden" name="returnTo" value="<%= knowledgeSuggestionsReturnTo %>" />
                   <button class="primary-btn" type="submit">อนุมัติและนำเข้าจากฉบับล่าสุด</button>
                 </form>
                 <form action="/admin/knowledge-suggestions/reject" method="post" onsubmit="return confirm('ยืนยันการปฏิเสธข้อเสนอนี้ใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />
+                  <input type="hidden" name="returnTo" value="<%= knowledgeSuggestionsReturnTo %>" />
                   <button class="secondary-btn" type="submit">ปฏิเสธ</button>
                 </form>
               </div>
             </li>
           <% }) %>
         </ul>
+        <%- include("partials/pagination", { pagination: knowledgeData.pendingSuggestionsPagination, basePath: "/admin", query: dashboardQuery, pageKey: "pendingPage", anchor: "knowledge-suggestions", itemLabel: "ข้อเสนอที่รอตรวจสอบ" }) %>
       </section>
     </div>
   </body>

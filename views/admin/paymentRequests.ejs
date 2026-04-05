@@ -34,9 +34,10 @@
       .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.8rem; }
       .request-card { padding:1rem; border:1px solid #d8e2ea; border-radius:20px; background: rgba(255,255,255,0.82); position:relative; overflow:hidden; }
       .request-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, var(--tone), transparent 85%); }
-      .meta { color:#5d6a79; font-size:0.92rem; margin-top:0.4rem; }
+      .meta { color:#5d6a79; font-size:0.92rem; margin-top:0.4rem; overflow-wrap:anywhere; word-break:break-word; }
       .request-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
-      .request-title { display:grid; gap:0.45rem; }
+      .request-title { display:grid; gap:0.45rem; min-width:0; }
+      .request-title strong, .request-title a, .request-card, .chip-row { overflow-wrap:anywhere; word-break:break-word; }
       .chip-row { display:flex; gap:0.45rem; flex-wrap:wrap; }
       .plan-chip { display:inline-flex; align-items:center; gap:0.35rem; border-radius:999px; padding:0.32rem 0.72rem; font-size:0.78rem; font-weight:700; }
       .plan-chip.free { background: #deeffa; color:#214b69; }
@@ -50,6 +51,13 @@
       .status-chip.pending { background:#fff6dd; color:#946200; }
       .status-chip.approved { background:#e8f7ee; color:#1f6a3a; }
       .status-chip.rejected { background:#fce9e7; color:#9b2c22; }
+      .pagination-bar { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; margin-top:1rem; }
+      .pagination-summary { color:#5d6a79; font-size:0.92rem; }
+      .pagination-links { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; }
+      .pagination-link, .pagination-current, .pagination-ellipsis { min-width:2.4rem; padding:0.58rem 0.82rem; border-radius:12px; text-align:center; font-weight:700; }
+      .pagination-link { background:#eef4f8; color:#0f4667; text-decoration:none; border:1px solid #d8e2ea; }
+      .pagination-current { background:#0f5f8f; color:#fff; border:1px solid #0f5f8f; }
+      .pagination-ellipsis { color:#5d6a79; }
       @media (max-width: 720px) {
         .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
         .card, .topbar { padding: 1rem; }
@@ -58,7 +66,9 @@
         .chip-row { width: 100%; }
         .status-chip { width: fit-content; }
         .request-actions { flex-direction:column; align-items:stretch; }
-        .request-actions button, .request-actions select { width:100%; }
+        .request-actions button, .request-actions select { width:100%; font-size:16px; }
+        .pagination-bar { flex-direction:column; align-items:stretch; }
+        .pagination-links { justify-content:center; }
       }
     </style>
   </head>
@@ -85,6 +95,17 @@
       </section>
 
       <section class="card">
+        <form class="request-actions" action="/admin/payment-requests" method="get" style="margin-top:0; margin-bottom:1rem;">
+          <select name="perPage" aria-label="จำนวนรายการต่อหน้า">
+            <% [10, 20, 50].forEach((size) => { %>
+              <option value="<%= size %>" <%= Number(data.pagination?.pageSize || 12) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
+            <% }) %>
+          </select>
+          <button type="submit">แสดงผล</button>
+          <% if (Number(data.pagination?.pageSize || 12) !== 12) { %>
+            <a href="/admin/payment-requests">รีเซ็ต</a>
+          <% } %>
+        </form>
         <ul class="soft-list">
           <% if (!data.requests.length) { %>
             <li class="request-card">ยังไม่พบคำขอชำระเงิน</li>
@@ -110,7 +131,7 @@
               <% if (item.status === "pending") { %>
                 <form class="request-actions" action="/admin/payment-requests/update-plan" method="post">
                   <input type="hidden" name="id" value="<%= item.id %>" />
-                  <input type="hidden" name="returnTo" value="/admin/payment-requests" />
+                  <input type="hidden" name="returnTo" value="<%= returnPath %>" />
                   <select name="planCode" aria-label="เลือกแพ็กเกจใหม่สำหรับคำขอนี้">
                     <% data.plans.forEach((plan) => { %>
                       <option value="<%= plan.code %>" <%= plan.code === item.planCode ? "selected" : "" %>>
@@ -124,6 +145,7 @@
             </li>
           <% }) %>
         </ul>
+        <%- include("partials/pagination", { pagination: data.pagination, basePath: "/admin/payment-requests", query: { perPage: data.pagination?.pageSize || 12 }, pageKey: "page", itemLabel: "คำขอชำระเงิน" }) %>
       </section>
     </div>
   </body>

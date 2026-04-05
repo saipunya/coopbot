@@ -16,8 +16,10 @@ class LawChatbotFeedbackModel {
     return feedbackEntries.length;
   }
 
-  static list() {
-    return feedbackEntries.slice(0, 10);
+  static list(limit = 10, offset = 0) {
+    const normalizedLimit = Math.max(1, Number(limit || 10));
+    const normalizedOffset = Math.max(0, Number(offset || 0));
+    return feedbackEntries.slice(normalizedOffset, normalizedOffset + normalizedLimit);
   }
 
   static stats() {

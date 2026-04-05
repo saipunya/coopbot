@@ -33,6 +33,7 @@
       .user-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, var(--tone), transparent 85%); }
       .user-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; }
       .identity { display:flex; gap:0.85rem; align-items:center; }
+      .user-card, .user-head, .identity, .meta, .plan-chip-row, .plan-hint { min-width:0; overflow-wrap:anywhere; word-break:break-word; }
       .avatar { width:48px; height:48px; border-radius:50%; object-fit:cover; border:1px solid #d8e2ea; background:#e7eef5; }
       .avatar-fallback { width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#dbe9f4; color:#0f4667; font-weight:700; border:1px solid #d8e2ea; }
       .meta { color:#5d6a79; font-size:0.94rem; margin-top:0.6rem; line-height:1.6; }
@@ -49,16 +50,26 @@
       .plan-form select, .plan-form input { border:1px solid #c8d6e2; border-radius:12px; padding:0.78rem 0.9rem; font:inherit; background:#fff; color:#1f2a37; width:100%; box-sizing:border-box; }
       .plan-form button { border:none; border-radius:12px; padding:0.82rem 1rem; background:#0f5f8f; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
       .plan-hint { color:#5d6a79; font-size:0.88rem; }
+      .pagination-bar { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; margin-top:1rem; }
+      .pagination-summary { color:#5d6a79; font-size:0.92rem; }
+      .pagination-links { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; }
+      .pagination-link, .pagination-current, .pagination-ellipsis { min-width:2.4rem; padding:0.58rem 0.82rem; border-radius:12px; text-align:center; font-weight:700; }
+      .pagination-link { background:#eef4f8; color:#0f4667; text-decoration:none; border:1px solid #d8e2ea; }
+      .pagination-current { background:#0f5f8f; color:#fff; border:1px solid #0f5f8f; }
+      .pagination-ellipsis { color:#5d6a79; }
       @media (max-width: 820px) {
         .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
         .card, .topbar { padding: 1rem; }
         .topbar { flex-direction: column; align-items: stretch; }
         .search-form { flex-direction: column; align-items: stretch; }
         .search-form input { flex-basis: auto; }
+        .search-form input, .search-form button, .search-form a, .plan-form select, .plan-form input, .plan-form button { font-size:16px; }
         .plan-controls { grid-template-columns: 1fr; }
         .plan-form button, .search-form button, .search-form a { width:100%; }
         .user-head, .identity { flex-direction: column; align-items: flex-start; }
         .status-chip { width: fit-content; }
+        .pagination-bar { flex-direction:column; align-items:stretch; }
+        .pagination-links { justify-content:center; }
       }
     </style>
   </head>
@@ -79,8 +90,13 @@
       <section class="card">
         <form class="search-form" action="/admin/users" method="get">
           <input type="text" name="q" value="<%= data.query %>" placeholder="ค้นหาด้วยชื่อ, อีเมล หรือ Google ID" />
+          <select name="perPage" aria-label="จำนวนรายการต่อหน้า">
+            <% [10, 20, 50].forEach((size) => { %>
+              <option value="<%= size %>" <%= Number(data.pagination?.pageSize || 12) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
+            <% }) %>
+          </select>
           <button type="submit">ค้นหาผู้ใช้</button>
-          <% if (data.query) { %>
+          <% if (data.query || Number(data.pagination?.pageSize || 12) !== 12) { %>
             <a href="/admin/users">ล้างคำค้น</a>
           <% } %>
         </form>
@@ -164,6 +180,7 @@
             </li>
           <% }) %>
         </ul>
+        <%- include("partials/pagination", { pagination: data.pagination, basePath: "/admin/users", query: { q: data.query || "", perPage: data.pagination?.pageSize || 12 }, pageKey: "page", itemLabel: "ผู้ใช้งาน" }) %>
       </section>
     </div>
 

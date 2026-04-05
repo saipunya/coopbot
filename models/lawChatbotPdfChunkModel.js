@@ -241,8 +241,10 @@ class LawChatbotPdfChunkModel {
     return uploadedFiles.length;
   }
 
-  static list(limit = 10) {
-    return uploadedFiles.slice(0, limit);
+  static list(limit = 10, offset = 0) {
+    const normalizedLimit = Math.max(1, Number(limit || 10));
+    const normalizedOffset = Math.max(0, Number(offset || 0));
+    return uploadedFiles.slice(normalizedOffset, normalizedOffset + normalizedLimit);
   }
 
   static async createDocument(entry) {

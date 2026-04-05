@@ -4,9 +4,11 @@ const LawChatbotSuggestedQuestionModel = require("../models/lawChatbotSuggestedQ
 const { getDbPool } = require("../config/db");
 const PaymentRequestModel = require("../models/paymentRequestModel");
 const UserModel = require("../models/userModel");
+const GuestMonthlyUsageModel = require("../models/guestMonthlyUsageModel");
 const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
 const UserSearchHistoryModel = require("../models/userSearchHistoryModel");
 const { buildAiPreviewMeta } = require("./answerStateService");
+const { buildPaginationMeta, normalizePageNumber, normalizePageSize } = require("./paginationUtils");
 const {
   canUseSearchHistory,
   getPlanDurationDays,
@@ -333,12 +335,24 @@ async function submitPaymentRequest(payload, file, user) {
   return paymentRequest;
 }
 
-async function getAdminUsersData(query = "") {
+async function getAdminUsersData(query = "", options = {}) {
   const trimmedQuery = String(query || "").trim();
-  const [stats, users] = await Promise.all([
+  const requestedPage = normalizePageNumber(options.page || 1);
+  const pageSize = normalizePageSize(options.pageSize || 12, 12, 50);
+  const [stats, filteredTotalCount] = await Promise.all([
     UserModel.getAdminStats(),
-    UserModel.listForAdmin({ query: trimmedQuery, limit: 100 }),
+    UserModel.countForAdmin(trimmedQuery),
   ]);
+  const pagination = buildPaginationMeta({
+    page: requestedPage,
+    pageSize,
+    totalItems: filteredTotalCount,
+  });
+  const users = await UserModel.listForAdmin({
+    query: trimmedQuery,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+  });
 
   return {
     query: trimmedQuery,
@@ -348,8 +362,88 @@ async function getAdminUsersData(query = "") {
     activeCount: Number(stats.active_count || 0),
     defaultPlanDurationDays: getPlanDurationDays(),
     plans: listAdminManageablePlans(),
+    pagination,
     users: users.map((item) => enrichAdminUserRecord(item)),
   };
+}
+
+function maskIdentityHash(value = "") {
+  const text = String(value || "");
+  if (text.length <= 18) {
+    return text;
+  }
+
+  return `${text.slice(0, 8)}...${text.slice(-8)}`;
+}
+
+function getIdentityTypeLabel(identityType = "") {
+  switch (String(identityType || "").trim()) {
+    case "cookie":
+      return "Cookie ถาวร";
+    case "network":
+      return "เครือข่าย";
+    case "device_hint":
+      return "Device hint";
+    default:
+      return String(identityType || "-");
+  }
+}
+
+function listGuestUsageIdentityTypes() {
+  return [
+    { value: "", label: "ทุกประเภท" },
+    { value: "cookie", label: getIdentityTypeLabel("cookie") },
+    { value: "network", label: getIdentityTypeLabel("network") },
+    { value: "device_hint", label: getIdentityTypeLabel("device_hint") },
+  ];
+}
+
+async function getAdminGuestUsageData(options = {}) {
+  const usageMonth = String(options.usageMonth || GuestMonthlyUsageModel.getYearMonth()).trim();
+  const query = String(options.query || "").trim();
+  const identityType = String(options.identityType || "").trim().toLowerCase();
+  const requestedPage = normalizePageNumber(options.page || 1);
+  const pageSize = normalizePageSize(options.pageSize || 20, 20, 100);
+  const [stats, filteredTotalCount] = await Promise.all([
+    GuestMonthlyUsageModel.getAdminStats({ usageMonth, identityType, blockedThreshold: 2 }),
+    GuestMonthlyUsageModel.countForAdmin({ usageMonth, query, identityType }),
+  ]);
+  const pagination = buildPaginationMeta({
+    page: requestedPage,
+    pageSize,
+    totalItems: filteredTotalCount,
+  });
+  const records = await GuestMonthlyUsageModel.listForAdmin({
+    usageMonth,
+    query,
+    identityType,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+  });
+
+  return {
+    usageMonth,
+    query,
+    identityType,
+    identityTypes: listGuestUsageIdentityTypes(),
+    stats,
+    pagination,
+    records: records.map((item) => ({
+      ...item,
+      identityTypeLabel: getIdentityTypeLabel(item.identity_type),
+      maskedIdentityHash: maskIdentityHash(item.identity_hash),
+      isBlocked: Number(item.question_count || 0) >= 2,
+    })),
+  };
+}
+
+async function clearAdminGuestUsage(options = {}) {
+  return GuestMonthlyUsageModel.deleteForAdmin({
+    id: options.id,
+    usageMonth: options.usageMonth,
+    query: options.query,
+    identityType: options.identityType,
+  });
 }
 
 async function adminUpdateUserPlan(userId, planCode, options = {}) {
@@ -394,15 +488,27 @@ async function adminUpdateUserPlan(userId, planCode, options = {}) {
   };
 }
 
-async function getAdminPaymentRequestsData() {
-  const requests = (await PaymentRequestModel.listAll(100)).map((item) => enrichPaymentRequestRecord(item));
+async function getAdminPaymentRequestsData(options = {}) {
+  const requestedPage = normalizePageNumber(options.page || 1);
+  const pageSize = normalizePageSize(options.pageSize || 12, 12, 50);
+  const stats = await PaymentRequestModel.getAdminStats();
+  const pagination = buildPaginationMeta({
+    page: requestedPage,
+    pageSize,
+    totalItems: Number(stats.total_count || 0),
+  });
+  const requests = (await PaymentRequestModel.listAll({
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+  })).map((item) => enrichPaymentRequestRecord(item));
 
   return {
     plans: listPurchasablePlans(),
-    totalCount: requests.length,
-    pendingCount: requests.filter((item) => item.status === "pending").length,
-    approvedCount: requests.filter((item) => item.status === "approved").length,
-    rejectedCount: requests.filter((item) => item.status === "rejected").length,
+    totalCount: Number(stats.total_count || 0),
+    pendingCount: Number(stats.pending_count || 0),
+    approvedCount: Number(stats.approved_count || 0),
+    rejectedCount: Number(stats.rejected_count || 0),
+    pagination,
     requests,
   };
 }
@@ -549,6 +655,8 @@ async function rejectPaymentRequest(id, reviewMeta = {}) {
 module.exports = {
   adminUpdateUserPlan,
   approvePaymentRequest,
+  clearAdminGuestUsage,
+  getAdminGuestUsageData,
   getAdminPaymentRequestDetail,
   getAdminPaymentRequestsData,
   getAdminUsersData,

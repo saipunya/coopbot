@@ -1197,6 +1197,17 @@ function isSimpleQuestion(message, questionIntent = "general") {
   return text.length <= 60 && /คืออะไร|หมายถึง|เท่าไร|เท่าไหร่|กี่|เมื่อไร|เมื่อไหร่|ได้ไหม|ได้หรือไม่|ต้องไหม|ต้องหรือไม่/.test(text);
 }
 
+function isBroadFollowUpExplainMessage(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase().replace(/\s+/g, " ").trim();
+  if (!text || !wantsExplanation(text)) {
+    return false;
+  }
+
+  return /^(อธิบายเพิ่ม|อธิบายเพิ่มเติม|ช่วยอธิบายเพิ่ม|ช่วยอธิบายเพิ่มเติม|อธิบายอีกที|ขยายความ|ขยายความเพิ่ม|เพิ่มเติม|รายละเอียด|ขอรายละเอียด|ขอรายละเอียดเพิ่มเติม)$/.test(
+    text,
+  );
+}
+
 function isClearlyCurrentOrExternalQuestion(message) {
   const text = normalizeForSearch(String(message || "")).toLowerCase();
   if (!text) {
@@ -2209,8 +2220,19 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   const selected = [];
   const usedTiers = [];
   const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const broadFollowUpExplainMessage = isBroadFollowUpExplainMessage(focusMessage);
   const strictStructuredLawFocus =
     isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage);
+  const hasContextCarryCandidates = [
+    ...(groups.admin_knowledge || []),
+    ...(groups.knowledge_suggestion || []),
+    ...(groups.structured_laws || []),
+    ...(groups.vinichai || []),
+    ...(groups.documents || []),
+    ...(groups.pdf_chunks || []),
+    ...(groups.knowledge_base || []),
+  ].some((item) => item && item.contextCarry);
+  const strictFollowUpExplainMode = intent === "explain" && hasContextCarryCandidates;
   const targetLimit = strictStructuredLawFocus
     ? plan.totalLimit
     : Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
@@ -2222,11 +2244,34 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   };
 
   const pushUnique = (items, limit, tierName) => {
-    const ranked = rankSourcesForMessageFocus(items, focusMessage).slice(0, limit);
+    const normalizedItems = strictFollowUpExplainMode
+      ? (Array.isArray(items) ? items : []).filter((item) => {
+          if (!item) {
+            return false;
+          }
+
+          if (item.contextCarry) {
+            return true;
+          }
+
+          if (broadFollowUpExplainMessage) {
+            return false;
+          }
+
+          const sourceName = String(item.source || "").trim().toLowerCase();
+          const itemScore = Number(item.score || 0);
+          if (["documents", "pdf_chunks", "knowledge_base"].includes(sourceName)) {
+            return false;
+          }
+
+          return itemScore >= 84;
+        })
+      : items;
+    const ranked = rankSourcesForMessageFocus(normalizedItems, focusMessage).slice(0, limit);
     const tierTrace = {
       tier: tierName,
       requestedLimit: limit,
-      candidateCount: Array.isArray(items) ? items.length : 0,
+      candidateCount: Array.isArray(normalizedItems) ? normalizedItems.length : 0,
       topScore: Number(ranked[0]?.score || 0),
       selectedCount: 0,
     };
@@ -2270,7 +2315,12 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
     );
   });
 
-  if (selected.length < targetLimit && !compensationGovernanceQuestion && !strictStructuredLawFocus) {
+  if (
+    selected.length < targetLimit &&
+    !compensationGovernanceQuestion &&
+    !strictStructuredLawFocus &&
+    !strictFollowUpExplainMode
+  ) {
     selectionTrace.fallbackUsed = true;
     const fallbackOrder = new Map(sourceOrder.map((sourceName, index) => [sourceName, index]));
     const fallbackPool = rankSourcesForMessageFocus([

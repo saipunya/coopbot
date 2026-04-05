@@ -11,6 +11,7 @@ class UserModel {
 
     const query = String(options.query || "").trim().toLowerCase();
     const limit = Math.max(1, Math.min(200, Number(options.limit || 50)));
+    const offset = Math.max(0, Number(options.offset || 0));
     const where = [];
     const params = [];
 
@@ -28,11 +29,37 @@ class UserModel {
        FROM users
        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
        ORDER BY updated_at DESC, id DESC
-       LIMIT ?`,
-      [...params, limit]
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
     );
 
     return rows;
+  }
+
+  static async countForAdmin(query = "") {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for admin user count.");
+    }
+
+    const trimmedQuery = String(query || "").trim().toLowerCase();
+    const where = [];
+    const params = [];
+
+    if (trimmedQuery) {
+      const like = `%${trimmedQuery}%`;
+      where.push("(LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(google_id) LIKE ?)");
+      params.push(like, like, like);
+    }
+
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) AS total_count
+       FROM users
+       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`,
+      params,
+    );
+
+    return Number(rows[0]?.total_count || 0);
   }
 
   static async getAdminStats() {

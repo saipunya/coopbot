@@ -304,6 +304,21 @@ function getFollowUpCarrySources(session, target, message, resolvedContext = {})
     return [];
   }
 
+  const strippedMessage = stripQuestionTail(message);
+  const normalizedFollowUpText = normalizeForSearch(strippedMessage).toLowerCase();
+  const followUpTokens = uniqueTokens(segmentWords(normalizedFollowUpText)).filter(
+    (token) => String(token || "").trim().length >= 3,
+  );
+  const broadFollowUpOnly = followUpTokens.length === 0;
+  const highConfidenceCarrySources = new Set([
+    "managed_suggested_question",
+    "admin_knowledge",
+    "knowledge_suggestion",
+    "tbl_laws",
+    "tbl_glaws",
+    "tbl_vinichai",
+  ]);
+
   return recent.focusSources
     .map((source, index) => {
       const compacted = compactContextSource(source);
@@ -311,14 +326,42 @@ function getFollowUpCarrySources(session, target, message, resolvedContext = {})
         return null;
       }
 
+      const sourceName = String(compacted.source || "").trim().toLowerCase();
+      const sourceSearchText = normalizeForSearch(
+        [
+          compacted.reference,
+          compacted.title,
+          compacted.lawNumber,
+          compacted.keyword,
+          compacted.content,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      ).toLowerCase();
+      const tokenOverlapCount = followUpTokens.filter((token) => sourceSearchText.includes(token)).length;
+      const carryScore = Math.max(Number(compacted.score || 0), 92 - index * 3);
+
+      if (broadFollowUpOnly) {
+        if (!highConfidenceCarrySources.has(sourceName) || carryScore < 84) {
+          return null;
+        }
+      } else if (tokenOverlapCount === 0 && carryScore < 88) {
+        return null;
+      } else if (
+        ["documents", "pdf_chunks", "knowledge_base"].includes(sourceName) &&
+        tokenOverlapCount === 0
+      ) {
+        return null;
+      }
+
       return {
         ...compacted,
-        score: Math.max(Number(compacted.score || 0), 92 - index * 3),
+        score: carryScore,
         contextCarry: true,
       };
     })
     .filter(Boolean)
-    .slice(0, 6);
+    .slice(0, broadFollowUpOnly ? 2 : 3);
 }
 
 module.exports = {

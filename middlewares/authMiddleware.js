@@ -66,6 +66,15 @@ function getGuestNetworkFingerprint(req) {
   return hashIdentity(`${clientIp}|${scheme}|lawbot-guest`);
 }
 
+function getGuestDeviceHint(req) {
+  const rawHint = String(req?.body?.guestDeviceHint || req?.headers?.["x-lawbot-guest-device"] || "").trim();
+  if (!rawHint) {
+    return "";
+  }
+
+  return rawHint.slice(0, 300);
+}
+
 function ensureGuestCookieId(req, res) {
   const existingGuestId = getGuestCookieId(req);
   if (existingGuestId) {
@@ -86,12 +95,16 @@ function ensureGuestCookieId(req, res) {
 function buildGuestUsageIdentities(req, res) {
   const guestCookieId = ensureGuestCookieId(req, res);
   const networkFingerprint = getGuestNetworkFingerprint(req);
+  const guestDeviceHint = getGuestDeviceHint(req);
   return [
     guestCookieId
       ? { identityType: "cookie", identityHash: hashIdentity(guestCookieId) }
       : null,
     networkFingerprint
       ? { identityType: "network", identityHash: networkFingerprint }
+      : null,
+    guestDeviceHint
+      ? { identityType: "device_hint", identityHash: hashIdentity(guestDeviceHint) }
       : null,
   ].filter(Boolean);
 }
@@ -214,7 +227,7 @@ async function enforceLawChatbotGuestLimit(req, res, next) {
       return res.json({
         hasContext: true,
         answer:
-          "คุณใช้สิทธิ์ถามคำถามในโหมด Guest ครบ 2 ครั้งแล้ว กรุณาเข้าสู่ระบบด้วย Google เพื่อสนทนาต่อ",
+          "คุณใช้สิทธิ์ถามคำถามในโหมด Guest ครบ 2 ครั้งแล้ว ระบบจะจำสิทธิ์ตามอุปกรณ์และเครือข่าย กรุณาเข้าสู่ระบบด้วย Google เพื่อสนทนาต่อ",
         highlightTerms: [],
         usedFollowUpContext: false,
         usedInternetFallback: false,

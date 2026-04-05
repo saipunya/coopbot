@@ -2,6 +2,19 @@ const lawChatbotService = require("../services/lawChatbotService");
 const runtimeFlags = require("../config/runtimeFlags");
 const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
 
+function sanitizeLawChatbotReturnPath(value, fallbackPath, expectedPrefix) {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!path.startsWith(expectedPrefix)) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
 async function renderIndex(req, res) {
   const data = await lawChatbotService.getDashboardData();
 
@@ -108,7 +121,10 @@ async function resetContext(req, res) {
 }
 
 async function renderUpload(req, res) {
-  const data = await lawChatbotService.getUploadPageData();
+  const data = await lawChatbotService.getUploadPageData({
+    page: req.query.page || 1,
+    pageSize: req.query.perPage || 10,
+  });
 
   res.render("lawChatbot/upload", {
     title: "Upload Legal Documents",
@@ -116,37 +132,44 @@ async function renderUpload(req, res) {
     errorMessage: req.query.error || "",
     successMessage: req.query.success || "",
     data,
+    returnPath: req.originalUrl || "/law-chatbot/upload",
   });
 }
 
 async function handleUpload(req, res) {
+  const returnTo = sanitizeLawChatbotReturnPath(req.body.returnTo, "/law-chatbot/upload", "/law-chatbot/upload");
   if (!req.file) {
     return res.redirect(
-      "/law-chatbot/upload?error=" +
+      `${returnTo}${returnTo.includes("?") ? "&" : "?"}error=` +
         encodeURIComponent("กรุณาเลือกไฟล์ PDF, DOC หรือ DOCX ขนาดไม่เกิน 20 MB")
     );
   }
 
   await lawChatbotService.recordUpload(req.file);
   return res.redirect(
-    "/law-chatbot/upload?success=" +
+    `${returnTo}${returnTo.includes("?") ? "&" : "?"}success=` +
       encodeURIComponent("อัปโหลดไฟล์สำเร็จ ระบบกำลังประมวลผลเอกสารในพื้นหลัง")
   );
 }
 
 async function renderFeedback(req, res) {
-  const data = await lawChatbotService.getFeedbackPageData();
+  const data = await lawChatbotService.getFeedbackPageData({
+    page: req.query.page || 1,
+    pageSize: req.query.perPage || 10,
+  });
 
   res.render("lawChatbot/feedback", {
     title: "Feedback",
     page: "feedback",
     data,
+    returnPath: req.originalUrl || "/law-chatbot/feedback",
   });
 }
 
 async function submitFeedback(req, res) {
+  const returnTo = sanitizeLawChatbotReturnPath(req.body.returnTo, "/law-chatbot/feedback", "/law-chatbot/feedback");
   await lawChatbotService.saveFeedback(req.body);
-  res.redirect("/law-chatbot/feedback");
+  res.redirect(returnTo);
 }
 
 async function renderPaymentRequest(req, res) {

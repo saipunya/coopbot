@@ -53,11 +53,14 @@ class PaymentRequestModel {
     return rows;
   }
 
-  static async listAll(limit = 50) {
+  static async listAll(options = {}) {
     const pool = getDbPool();
     if (!pool) {
       throw new Error("Database connection is required for payment requests.");
     }
+
+    const limit = Math.max(1, Math.min(200, Number(options.limit || 50)));
+    const offset = Math.max(0, Number(options.offset || 0));
 
     const [rows] = await pool.query(
       `SELECT pr.id, pr.user_id, pr.plan_name, pr.amount, pr.slip_image, pr.note, pr.status,
@@ -67,11 +70,34 @@ class PaymentRequestModel {
        FROM payment_requests pr
        LEFT JOIN users u ON u.id = pr.user_id
        ORDER BY pr.id DESC
-       LIMIT ?`,
-      [Number(limit || 50)]
+       LIMIT ? OFFSET ?`,
+      [limit, offset]
     );
 
     return rows;
+  }
+
+  static async getAdminStats() {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for payment request stats.");
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         COUNT(*) AS total_count,
+         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+         SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+         SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+       FROM payment_requests`,
+    );
+
+    return rows[0] || {
+      total_count: 0,
+      pending_count: 0,
+      approved_count: 0,
+      rejected_count: 0,
+    };
   }
 
   static async findById(id) {

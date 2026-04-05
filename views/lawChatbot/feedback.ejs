@@ -48,6 +48,68 @@
     padding: 0.9rem 1rem;
     background: rgba(255, 255, 255, 0.72);
   }
+  .section-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+  .section-toolbar form {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+  }
+  .section-toolbar select {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0.7rem 0.82rem;
+    font: inherit;
+    background: #fff;
+    color: var(--text);
+  }
+  .pagination-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+  }
+  .pagination-summary {
+    color: var(--subtle);
+    font-size: 0.92rem;
+  }
+  .pagination-links {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+  .pagination-link,
+  .pagination-current,
+  .pagination-ellipsis {
+    min-width: 2.4rem;
+    padding: 0.58rem 0.82rem;
+    border-radius: 12px;
+    text-align: center;
+    font-weight: 700;
+  }
+  .pagination-link {
+    background: #eef4f8;
+    color: var(--accent-strong);
+    text-decoration: none;
+    border: 1px solid var(--line);
+  }
+  .pagination-current {
+    background: var(--accent-strong);
+    color: #fff;
+    border: 1px solid var(--accent-strong);
+  }
+  .pagination-ellipsis {
+    color: var(--subtle);
+  }
 
   @media (max-width: 900px) {
     .feedback-grid {
@@ -59,6 +121,25 @@
     .feedback-metrics {
       grid-template-columns: 1fr;
     }
+
+    .section-toolbar {
+      justify-content: stretch;
+    }
+
+    .section-toolbar form,
+    .section-toolbar select,
+    .section-toolbar button {
+      width: 100%;
+    }
+
+    .pagination-bar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .pagination-links {
+      justify-content: center;
+    }
   }
 </style>
 
@@ -67,6 +148,7 @@
     <h1>ข้อเสนอแนะ</h1>
     <p>ส่งข้อเสนอแนะเพื่อช่วยปรับปรุงคุณภาพคำตอบของแชตบอทกฎหมาย</p>
     <form action="/law-chatbot/feedback" method="post">
+      <input type="hidden" name="returnTo" value="<%= returnPath %>" />
       <label for="name">ชื่อ</label>
       <input id="name" name="name" type="text" placeholder="ระบุชื่อของคุณ" />
 
@@ -94,6 +176,18 @@
 </section>
 
 <section class="card">
+  <div class="section-toolbar">
+    <form action="/law-chatbot/feedback" method="get">
+      <input type="hidden" name="page" value="1" />
+      <label for="feedbackPerPage">จำนวนรายการต่อหน้า</label>
+      <select id="feedbackPerPage" name="perPage" aria-label="จำนวนข้อเสนอแนะต่อหน้า">
+        <% [10, 20, 50].forEach((size) => { %>
+          <option value="<%= size %>" <%= Number(data.pagination?.pageSize || 10) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
+        <% }) %>
+      </select>
+      <button type="submit">แสดงผล</button>
+    </form>
+  </div>
   <ul class="feedback-list">
     <% if (data.recentFeedback.length === 0) { %>
       <li>ยังไม่มีข้อเสนอแนะ</li>
@@ -107,6 +201,7 @@
       </li>
     <% }) %>
   </ul>
+  <%- include("../admin/partials/pagination", { pagination: data.pagination, basePath: "/law-chatbot/feedback", query: { perPage: data.pagination?.pageSize || 10 }, pageKey: "page", itemLabel: "ข้อเสนอแนะ" }) %>
 </section>
 
 <%- include("../partials/footer") %>

@@ -240,12 +240,14 @@ class LawChatbotKnowledgeSuggestionModel {
     return rows[0]?.total || 0;
   }
 
-  static async listPending(limit = 20) {
+  static async listPending(limit = 20, offset = 0) {
     const pool = getDbPool();
+    const normalizedLimit = Math.max(1, Number(limit || 20));
+    const normalizedOffset = Math.max(0, Number(offset || 0));
     if (!pool) {
       return memorySuggestions
         .filter((item) => item.status === "pending")
-        .slice(0, limit)
+        .slice(normalizedOffset, normalizedOffset + normalizedLimit)
         .map(mapRow);
     }
 
@@ -256,8 +258,8 @@ class LawChatbotKnowledgeSuggestionModel {
          FROM chatbot_knowledge_suggestions
         WHERE status = 'pending'
         ORDER BY id DESC
-        LIMIT ?`,
-      [Number(limit || 20)],
+        LIMIT ? OFFSET ?`,
+      [normalizedLimit, normalizedOffset],
     );
 
     return rows.map(mapRow);

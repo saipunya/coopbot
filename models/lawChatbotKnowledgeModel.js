@@ -322,11 +322,13 @@ class LawChatbotKnowledgeModel {
     return Number(result.affectedRows || 0) > 0;
   }
 
-  static async listRecent(limit = 10) {
+  static async listRecent(limit = 10, offset = 0) {
     const pool = getDbPool();
+    const normalizedLimit = Math.max(1, Number(limit || 10));
+    const normalizedOffset = Math.max(0, Number(offset || 0));
 
     if (!pool) {
-      return memoryKnowledgeEntries.slice(0, limit).map((row) => mapRow({
+      return memoryKnowledgeEntries.slice(normalizedOffset, normalizedOffset + normalizedLimit).map((row) => mapRow({
         id: row.id,
         target: row.target,
         title: row.title,
@@ -342,8 +344,8 @@ class LawChatbotKnowledgeModel {
       `SELECT id, target, title, law_number, content, source_note, created_at, updated_at
        FROM chatbot_knowledge
        ORDER BY id DESC
-       LIMIT ?`,
-      [Number(limit || 10)],
+       LIMIT ? OFFSET ?`,
+      [normalizedLimit, normalizedOffset],
     );
 
     return rows.map(mapRow);

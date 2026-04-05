@@ -5,7 +5,18 @@ const {
   getGoogleConfig,
   loginWithGoogleCallback,
 } = require("../services/adminGoogleAuthService");
+const { normalizePageNumber, normalizePageSize } = require("../services/paginationUtils");
 const runtimeSettingsService = require("../services/runtimeSettingsService");
+
+function appendQueryParam(path, key, value) {
+  const normalizedPath = String(path || "").trim();
+  const normalizedKey = String(key || "").trim();
+  const hashIndex = normalizedPath.indexOf("#");
+  const basePath = hashIndex >= 0 ? normalizedPath.slice(0, hashIndex) : normalizedPath;
+  const hash = hashIndex >= 0 ? normalizedPath.slice(hashIndex) : "";
+  const separator = basePath.includes("?") ? "&" : "?";
+  return `${basePath}${separator}${encodeURIComponent(normalizedKey)}=${encodeURIComponent(String(value || ""))}${hash}`;
+}
 
 function sanitizePaymentRequestReturnPath(value, fallbackPath = "/admin/payment-requests") {
   const path = String(value || "").trim();
@@ -27,6 +38,32 @@ function sanitizeAdminUsersReturnPath(value, fallbackPath = "/admin/users") {
   }
 
   if (!path.startsWith("/admin/users")) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
+function sanitizeGuestUsageReturnPath(value, fallbackPath = "/admin/guest-usage") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!path.startsWith("/admin/guest-usage")) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
+function sanitizeDashboardReturnPath(value, fallbackPath = "/admin") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!/^\/admin(?:[?#].*)?$/.test(path)) {
     return fallbackPath;
   }
 
@@ -133,11 +170,19 @@ async function handleGoogleCallback(req, res) {
 }
 
 async function renderDashboard(req, res) {
+  const dashboardPages = {
+    sqPage: normalizePageNumber(req.query.sqPage || 1),
+    knowledgePage: normalizePageNumber(req.query.knowledgePage || 1),
+    pendingPage: normalizePageNumber(req.query.pendingPage || 1),
+    sqPerPage: normalizePageSize(req.query.sqPerPage || 8, 8, 50),
+    knowledgePerPage: normalizePageSize(req.query.knowledgePerPage || 8, 8, 50),
+    pendingPerPage: normalizePageSize(req.query.pendingPerPage || 8, 8, 50),
+  };
   const [uploadData, feedbackData, knowledgeData, paymentRequestData, aiSettings] = await Promise.all([
     lawChatbotService.getUploadPageData(),
     lawChatbotService.getFeedbackPageData(),
-    lawChatbotService.getKnowledgeAdminData(),
-    lawChatbotService.getAdminPaymentRequestsData(),
+    lawChatbotService.getKnowledgeAdminData(dashboardPages),
+    lawChatbotService.getAdminPaymentRequestsData({ page: 1 }),
     runtimeSettingsService.getAiAdminState(),
   ]);
 
@@ -151,6 +196,8 @@ async function renderDashboard(req, res) {
     knowledgeData,
     paymentRequestData,
     aiSettings,
+    dashboardPages,
+    dashboardReturnPath: req.originalUrl || "/admin",
   });
 }
 
@@ -180,7 +227,10 @@ async function updateAiSetting(req, res) {
 }
 
 async function renderPaymentRequests(req, res) {
-  const data = await lawChatbotService.getAdminPaymentRequestsData();
+  const data = await lawChatbotService.getAdminPaymentRequestsData({
+    page: req.query.page || 1,
+    pageSize: req.query.perPage || 12,
+  });
 
   res.render("admin/paymentRequests", {
     title: "Payment Requests",
@@ -188,11 +238,15 @@ async function renderPaymentRequests(req, res) {
     errorMessage: req.query.error || "",
     successMessage: req.query.success || "",
     data,
+    returnPath: req.originalUrl || "/admin/payment-requests",
   });
 }
 
 async function renderUsers(req, res) {
-  const data = await lawChatbotService.getAdminUsersData(req.query.q || "");
+  const data = await lawChatbotService.getAdminUsersData(req.query.q || "", {
+    page: req.query.page || 1,
+    pageSize: req.query.perPage || 12,
+  });
 
   res.render("admin/users", {
     title: "Manage Users",
@@ -202,6 +256,76 @@ async function renderUsers(req, res) {
     data,
     returnPath: req.originalUrl || "/admin/users",
   });
+}
+
+async function renderGuestUsage(req, res) {
+  const data = await lawChatbotService.getAdminGuestUsageData({
+    query: req.query.q || "",
+    usageMonth: req.query.month || "",
+    identityType: req.query.identityType || "",
+    page: req.query.page || 1,
+    pageSize: req.query.perPage || 20,
+  });
+
+  res.render("admin/guestUsage", {
+    title: "Guest Usage Monitor",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data,
+    returnPath: req.originalUrl || "/admin/guest-usage",
+  });
+}
+
+async function exportGuestUsageCsv(req, res) {
+  const data = await lawChatbotService.getAdminGuestUsageData({
+    query: req.query.q || "",
+    usageMonth: req.query.month || "",
+    identityType: req.query.identityType || "",
+    page: 1,
+    pageSize: 5000,
+  });
+
+  const escapeCsv = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const rows = [
+    ["id", "identity_type", "identity_type_label", "identity_hash", "usage_month", "question_count", "is_blocked", "last_used_at", "created_at", "updated_at"],
+    ...data.records.map((record) => [
+      record.id,
+      record.identity_type,
+      record.identityTypeLabel,
+      record.identity_hash,
+      record.usage_month,
+      Number(record.question_count || 0),
+      record.isBlocked ? "true" : "false",
+      record.last_used_at || "",
+      record.created_at || "",
+      record.updated_at || "",
+    ]),
+  ];
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="guest-usage-${data.usageMonth || "all"}.csv"`);
+  return res.send(`\uFEFF${rows.map((row) => row.map(escapeCsv).join(",")).join("\n")}`);
+}
+
+async function clearGuestUsage(req, res) {
+  const returnTo = sanitizeGuestUsageReturnPath(req.body.returnTo, "/admin/guest-usage");
+  const deletedCount = await lawChatbotService.clearAdminGuestUsage({
+    id: req.body.id,
+    query: req.body.q || "",
+    usageMonth: req.body.month || "",
+    identityType: req.body.identityType || "",
+  });
+
+  if (!deletedCount) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่พบ guest usage ที่ตรงเงื่อนไขให้ล้าง")
+    );
+  }
+
+  return res.redirect(
+    appendQueryParam(returnTo, "success", `ล้าง guest usage เรียบร้อย ${deletedCount} รายการ`)
+  );
 }
 
 async function renderPaymentRequestDetail(req, res) {
@@ -232,22 +356,23 @@ async function updatePaymentRequestPlan(req, res) {
 
   if (!id) {
     return res.redirect(
-      `${returnTo}?error=` + encodeURIComponent("ไม่พบคำขอชำระเงินที่ต้องการแก้ไขแพ็กเกจ")
+      appendQueryParam(returnTo, "error", "ไม่พบคำขอชำระเงินที่ต้องการแก้ไขแพ็กเกจ")
     );
   }
 
   const result = await lawChatbotService.updatePaymentRequestPlan(id, planCode);
   if (!result.ok) {
     return res.redirect(
-      `${returnTo}?error=` + encodeURIComponent("ไม่สามารถอัปเดตแพ็กเกจของคำขอชำระเงินนี้ได้")
+      appendQueryParam(returnTo, "error", "ไม่สามารถอัปเดตแพ็กเกจของคำขอชำระเงินนี้ได้")
     );
   }
 
   return res.redirect(
-    `${returnTo}?success=` +
-      encodeURIComponent(
-        `อัปเดตแพ็กเกจเป็น ${result.planLabel || "ที่เลือก"} แล้ว ยอดชำระถูกปรับอัตโนมัติเป็น ${Number(result.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท`
-      )
+    appendQueryParam(
+      returnTo,
+      "success",
+      `อัปเดตแพ็กเกจเป็น ${result.planLabel || "ที่เลือก"} แล้ว ยอดชำระถูกปรับอัตโนมัติเป็น ${Number(result.amount || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท`,
+    )
   );
 }
 
@@ -260,7 +385,7 @@ async function updateUserPlan(req, res) {
 
   if (!userId) {
     return res.redirect(
-      `${returnTo}?error=` + encodeURIComponent("ไม่พบผู้ใช้ที่ต้องการอัปเดตแพ็กเกจ")
+      appendQueryParam(returnTo, "error", "ไม่พบผู้ใช้ที่ต้องการอัปเดตแพ็กเกจ")
     );
   }
 
@@ -273,7 +398,7 @@ async function updateUserPlan(req, res) {
 
   if (!result.ok) {
     return res.redirect(
-      `${returnTo}?error=` + encodeURIComponent("ไม่สามารถอัปเดตแพ็กเกจของผู้ใช้งานรายนี้ได้")
+      appendQueryParam(returnTo, "error", "ไม่สามารถอัปเดตแพ็กเกจของผู้ใช้งานรายนี้ได้")
     );
   }
 
@@ -288,187 +413,160 @@ async function updateUserPlan(req, res) {
         }`;
 
   return res.redirect(
-    `${returnTo}?success=` + encodeURIComponent(successMessage)
+    appendQueryParam(returnTo, "success", successMessage)
   );
 }
 
 async function submitKnowledge(req, res) {
+  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-management");
   const title = String(req.body.title || "").trim();
   const content = String(req.body.content || "").trim();
 
   if (!title || !content) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("กรุณากรอกหัวข้อและรายละเอียดความรู้ก่อนบันทึก")
+      appendQueryParam(returnTo, "error", "กรุณากรอกหัวข้อและรายละเอียดความรู้ก่อนบันทึก")
     );
   }
 
   await lawChatbotService.saveKnowledgeEntry(req.body);
   return res.redirect(
-    "/admin?success=" +
-      encodeURIComponent("บันทึกความรู้ใหม่เรียบร้อยแล้ว และพร้อมใช้ในการตอบคำถาม")
+    appendQueryParam(returnTo, "success", "บันทึกความรู้ใหม่เรียบร้อยแล้ว และพร้อมใช้ในการตอบคำถาม")
   );
 }
 
 async function submitSuggestedQuestion(req, res) {
+  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#frequent-questions-management");
   const questionText = String(req.body.questionText || req.body.question || "").trim();
   const answerText = String(req.body.answerText || req.body.answer || "").trim();
 
   if (!questionText || !answerText) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("กรุณากรอกคำถามแนะนำและคำตอบให้ครบก่อนบันทึก") +
-        "#frequent-questions-management"
+      appendQueryParam(returnTo, "error", "กรุณากรอกคำถามแนะนำและคำตอบให้ครบก่อนบันทึก")
     );
   }
 
   const result = await lawChatbotService.saveSuggestedQuestionEntry(req.body);
   if (!result.ok) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่สามารถบันทึกคำถามแนะนำรายการนี้ได้") +
-        "#frequent-questions-management"
+      appendQueryParam(returnTo, "error", "ไม่สามารถบันทึกคำถามแนะนำรายการนี้ได้")
     );
   }
 
   return res.redirect(
-    "/admin?success=" +
-      encodeURIComponent(`บันทึกคำถามแนะนำ "${result.entry?.questionText || questionText}" เรียบร้อยแล้ว`) +
-      "#frequent-questions-management"
+    appendQueryParam(returnTo, "success", `บันทึกคำถามแนะนำ "${result.entry?.questionText || questionText}" เรียบร้อยแล้ว`)
   );
 }
 
 async function updateKnowledge(req, res) {
+  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-library");
   const id = Number(req.body.id || 0);
   const title = String(req.body.title || "").trim();
   const content = String(req.body.content || "").trim();
 
   if (!id) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบรายการฐานความรู้ที่ต้องการแก้ไข") +
-        "#knowledge-library"
+      appendQueryParam(returnTo, "error", "ไม่พบรายการฐานความรู้ที่ต้องการแก้ไข")
     );
   }
 
   if (!title || !content) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("กรุณากรอกหัวข้อและรายละเอียดความรู้ก่อนบันทึกการแก้ไข") +
-        "#knowledge-library"
+      appendQueryParam(returnTo, "error", "กรุณากรอกหัวข้อและรายละเอียดความรู้ก่อนบันทึกการแก้ไข")
     );
   }
 
   const result = await lawChatbotService.updateKnowledgeEntry(id, req.body);
   if (!result.ok) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่สามารถบันทึกการแก้ไขข้อมูลฐานความรู้นี้ได้") +
-        "#knowledge-library"
+      appendQueryParam(returnTo, "error", "ไม่สามารถบันทึกการแก้ไขข้อมูลฐานความรู้นี้ได้")
     );
   }
 
   return res.redirect(
-    "/admin?success=" +
-      encodeURIComponent(`บันทึกการแก้ไขข้อมูลฐานความรู้ "${result.entry?.title || title}" เรียบร้อยแล้ว`) +
-      "#knowledge-library"
+    appendQueryParam(returnTo, "success", `บันทึกการแก้ไขข้อมูลฐานความรู้ "${result.entry?.title || title}" เรียบร้อยแล้ว`)
   );
 }
 
 async function updateSuggestedQuestion(req, res) {
+  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#frequent-questions-library");
   const id = Number(req.body.id || 0);
   const questionText = String(req.body.questionText || req.body.question || "").trim();
   const answerText = String(req.body.answerText || req.body.answer || "").trim();
 
   if (!id) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบรายการคำถามแนะนำที่ต้องการแก้ไข") +
-        "#frequent-questions-management"
+      appendQueryParam(returnTo, "error", "ไม่พบรายการคำถามแนะนำที่ต้องการแก้ไข")
     );
   }
 
   if (!questionText || !answerText) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("กรุณากรอกคำถามแนะนำและคำตอบให้ครบก่อนบันทึกการแก้ไข") +
-        "#frequent-questions-management"
+      appendQueryParam(returnTo, "error", "กรุณากรอกคำถามแนะนำและคำตอบให้ครบก่อนบันทึกการแก้ไข")
     );
   }
 
   const result = await lawChatbotService.updateSuggestedQuestionEntry(id, req.body);
   if (!result.ok) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่สามารถบันทึกการแก้ไขคำถามแนะนำรายการนี้ได้") +
-        "#frequent-questions-management"
+      appendQueryParam(returnTo, "error", "ไม่สามารถบันทึกการแก้ไขคำถามแนะนำรายการนี้ได้")
     );
   }
 
   return res.redirect(
-    "/admin?success=" +
-      encodeURIComponent(`บันทึกการแก้ไขคำถามแนะนำ "${result.entry?.questionText || questionText}" เรียบร้อยแล้ว`) +
-      "#frequent-questions-management"
+    appendQueryParam(returnTo, "success", `บันทึกการแก้ไขคำถามแนะนำ "${result.entry?.questionText || questionText}" เรียบร้อยแล้ว`)
   );
 }
 
 async function deleteKnowledge(req, res) {
+  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-library");
   const id = Number(req.body.id || 0);
 
   if (!id) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบรายการฐานความรู้ที่ต้องการลบ")
+      appendQueryParam(returnTo, "error", "ไม่พบรายการฐานความรู้ที่ต้องการลบ")
     );
   }
 
   const removed = await lawChatbotService.deleteKnowledgeEntry(id);
   if (!removed) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบข้อมูลฐานความรู้ที่ต้องการลบ หรืออาจถูกลบไปแล้ว")
+      appendQueryParam(returnTo, "error", "ไม่พบข้อมูลฐานความรู้ที่ต้องการลบ หรืออาจถูกลบไปแล้ว")
     );
   }
 
   return res.redirect(
-    "/admin?success=" +
-      encodeURIComponent("ลบข้อมูลฐานความรู้เรียบร้อยแล้ว")
+    appendQueryParam(returnTo, "success", "ลบข้อมูลฐานความรู้เรียบร้อยแล้ว")
   );
 }
 
 async function deleteSuggestedQuestion(req, res) {
+  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#frequent-questions-library");
   const id = Number(req.body.id || 0);
 
   if (!id) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบรายการคำถามแนะนำที่ต้องการลบ") +
-        "#frequent-questions-management"
+      appendQueryParam(returnTo, "error", "ไม่พบรายการคำถามแนะนำที่ต้องการลบ")
     );
   }
 
   const removed = await lawChatbotService.deleteSuggestedQuestionEntry(id);
   if (!removed) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบคำถามแนะนำที่ต้องการลบ หรืออาจถูกลบไปแล้ว") +
-        "#frequent-questions-management"
+      appendQueryParam(returnTo, "error", "ไม่พบคำถามแนะนำที่ต้องการลบ หรืออาจถูกลบไปแล้ว")
     );
   }
 
   return res.redirect(
-    "/admin?success=" +
-      encodeURIComponent("ลบคำถามแนะนำเรียบร้อยแล้ว") +
-      "#frequent-questions-management"
+    appendQueryParam(returnTo, "success", "ลบคำถามแนะนำเรียบร้อยแล้ว")
   );
 }
 
 async function approveKnowledgeSuggestion(req, res) {
+  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-suggestions");
   const id = Number(req.body.id || 0);
   if (!id) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบรายการข้อเสนอที่ต้องการอนุมัติ")
+      appendQueryParam(returnTo, "error", "ไม่พบรายการข้อเสนอที่ต้องการอนุมัติ")
     );
   }
 
@@ -480,23 +578,21 @@ async function approveKnowledgeSuggestion(req, res) {
 
   if (!result.ok) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบข้อเสนอที่ต้องการอนุมัติ หรือรายการนี้ถูกดำเนินการไปแล้ว")
+      appendQueryParam(returnTo, "error", "ไม่พบข้อเสนอที่ต้องการอนุมัติ หรือรายการนี้ถูกดำเนินการไปแล้ว")
     );
   }
 
   return res.redirect(
-    "/admin?success=" +
-      encodeURIComponent("อนุมัติข้อเสนอและนำเข้าฐานความรู้เรียบร้อยแล้ว")
+    appendQueryParam(returnTo, "success", "อนุมัติข้อเสนอและนำเข้าฐานความรู้เรียบร้อยแล้ว")
   );
 }
 
 async function updateKnowledgeSuggestion(req, res) {
+  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-suggestions");
   const id = Number(req.body.id || 0);
   if (!id) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบรายการข้อเสนอที่ต้องการแก้ไข")
+      appendQueryParam(returnTo, "error", "ไม่พบรายการข้อเสนอที่ต้องการแก้ไข")
     );
   }
 
@@ -509,24 +605,21 @@ async function updateKnowledgeSuggestion(req, res) {
 
   if (!result.ok) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่สามารถบันทึกการแก้ไขข้อเสนอรายการนี้ได้")
+      appendQueryParam(returnTo, "error", "ไม่สามารถบันทึกการแก้ไขข้อเสนอรายการนี้ได้")
     );
   }
 
   return res.redirect(
-    "/admin?success=" +
-      encodeURIComponent("บันทึกการแก้ไขข้อเสนอเรียบร้อยแล้ว") +
-      "#knowledge-suggestions"
+    appendQueryParam(returnTo, "success", "บันทึกการแก้ไขข้อเสนอเรียบร้อยแล้ว")
   );
 }
 
 async function rejectKnowledgeSuggestion(req, res) {
+  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-suggestions");
   const id = Number(req.body.id || 0);
   if (!id) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบรายการข้อเสนอที่ต้องการปฏิเสธ")
+      appendQueryParam(returnTo, "error", "ไม่พบรายการข้อเสนอที่ต้องการปฏิเสธ")
     );
   }
 
@@ -538,14 +631,12 @@ async function rejectKnowledgeSuggestion(req, res) {
 
   if (!rejected) {
     return res.redirect(
-      "/admin?error=" +
-        encodeURIComponent("ไม่พบข้อเสนอที่ต้องการปฏิเสธ หรือรายการนี้ถูกดำเนินการไปแล้ว")
+      appendQueryParam(returnTo, "error", "ไม่พบข้อเสนอที่ต้องการปฏิเสธ หรือรายการนี้ถูกดำเนินการไปแล้ว")
     );
   }
 
   return res.redirect(
-    "/admin?success=" +
-      encodeURIComponent("ปฏิเสธข้อเสนอเรียบร้อยแล้ว")
+    appendQueryParam(returnTo, "success", "ปฏิเสธข้อเสนอเรียบร้อยแล้ว")
   );
 }
 
@@ -621,6 +712,9 @@ module.exports = {
   redirectToGoogleLogin,
   handleGoogleCallback,
   renderDashboard,
+  renderGuestUsage,
+  exportGuestUsageCsv,
+  clearGuestUsage,
   renderUsers,
   renderPaymentRequests,
   renderPaymentRequestDetail,

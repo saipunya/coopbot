@@ -2,6 +2,7 @@ const LawChatbotKnowledgeModel = require("../models/lawChatbotKnowledgeModel");
 const LawChatbotKnowledgeSuggestionModel = require("../models/lawChatbotKnowledgeSuggestionModel");
 const LawChatbotSuggestedQuestionModel = require("../models/lawChatbotSuggestedQuestionModel");
 const { clearAnswerCache } = require("./answerStateService");
+const { buildPaginationMeta, normalizePageNumber, normalizePageSize } = require("./paginationUtils");
 const { normalizeForSearch } = require("./thaiTextUtils");
 
 const suggestionThrottleMap = new Map();
@@ -18,23 +19,52 @@ function cleanupSuggestionThrottle() {
   }
 }
 
-async function getKnowledgeAdminData() {
+async function getKnowledgeAdminData(options = {}) {
+  const suggestedQuestionsPage = normalizePageNumber(options.suggestedQuestionsPage || options.sqPage || 1);
+  const knowledgePage = normalizePageNumber(options.knowledgePage || 1);
+  const pendingSuggestionsPage = normalizePageNumber(options.pendingSuggestionsPage || options.pendingPage || 1);
+  const suggestedQuestionsPageSize = normalizePageSize(options.suggestedQuestionsPageSize || options.sqPerPage || 8, 8, 50);
+  const knowledgePageSize = normalizePageSize(options.knowledgePageSize || options.knowledgePerPage || 8, 8, 50);
+  const pendingSuggestionsPageSize = normalizePageSize(options.pendingSuggestionsPageSize || options.pendingPerPage || 8, 8, 50);
+
   const [
     knowledgeCount,
-    recentKnowledge,
     pendingSuggestionCount,
-    pendingSuggestions,
     suggestedQuestionCount,
     activeSuggestedQuestionCount,
-    suggestedQuestions,
   ] = await Promise.all([
     LawChatbotKnowledgeModel.count(),
-    LawChatbotKnowledgeModel.listRecent(10),
     LawChatbotKnowledgeSuggestionModel.countPending(),
-    LawChatbotKnowledgeSuggestionModel.listPending(12),
     LawChatbotSuggestedQuestionModel.countAll(),
     LawChatbotSuggestedQuestionModel.countActive(),
-    LawChatbotSuggestedQuestionModel.listRecent(20),
+  ]);
+
+  const suggestedQuestionsPagination = buildPaginationMeta({
+    page: suggestedQuestionsPage,
+    pageSize: suggestedQuestionsPageSize,
+    totalItems: suggestedQuestionCount,
+  });
+  const knowledgePagination = buildPaginationMeta({
+    page: knowledgePage,
+    pageSize: knowledgePageSize,
+    totalItems: knowledgeCount,
+  });
+  const pendingSuggestionsPagination = buildPaginationMeta({
+    page: pendingSuggestionsPage,
+    pageSize: pendingSuggestionsPageSize,
+    totalItems: pendingSuggestionCount,
+  });
+
+  const [recentKnowledge, pendingSuggestions, suggestedQuestions] = await Promise.all([
+    LawChatbotKnowledgeModel.listRecent(knowledgePagination.pageSize, knowledgePagination.offset),
+    LawChatbotKnowledgeSuggestionModel.listPending(
+      pendingSuggestionsPagination.pageSize,
+      pendingSuggestionsPagination.offset,
+    ),
+    LawChatbotSuggestedQuestionModel.listRecent(
+      suggestedQuestionsPagination.pageSize,
+      suggestedQuestionsPagination.offset,
+    ),
   ]);
 
   return {
@@ -46,6 +76,9 @@ async function getKnowledgeAdminData() {
     suggestedQuestionCount,
     activeSuggestedQuestionCount,
     suggestedQuestions,
+    suggestedQuestionsPagination,
+    knowledgePagination,
+    pendingSuggestionsPagination,
     targets: [
       { value: "coop", label: "สหกรณ์" },
       { value: "group", label: "กลุ่มเกษตรกร" },

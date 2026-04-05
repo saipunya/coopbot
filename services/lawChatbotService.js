@@ -53,6 +53,8 @@ const { recordUpload } = require("./uploadIngestionService");
 const {
   adminUpdateUserPlan,
   approvePaymentRequest,
+  clearAdminGuestUsage,
+  getAdminGuestUsageData,
   getAdminPaymentRequestDetail,
   getAdminPaymentRequestsData,
   getAdminUsersData,
@@ -71,6 +73,7 @@ const {
 const { evaluateRetrievalResult } = require("./retrievalEvaluationService");
 const { searchInternetSources } = require("./internetSearchService");
 const { canUseAiPreview } = require("./planService");
+const { buildPaginationMeta, normalizePageNumber, normalizePageSize } = require("./paginationUtils");
 
 const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
 const CHAT_BUDGET_BUFFER_MS = Number(process.env.CHAT_BUDGET_BUFFER_MS || 3000);
@@ -851,9 +854,17 @@ async function saveChatFeedback(payload) {
   });
 }
 
-async function getUploadPageData() {
+async function getUploadPageData(options = {}) {
   const uploadedChunkCount = await LawChatbotPdfChunkModel.countChunks();
   const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES || 20 * 1024 * 1024);
+  const uploadedPdfCount = LawChatbotPdfChunkModel.countDocuments();
+  const page = normalizePageNumber(options.page || 1);
+  const pageSize = normalizePageSize(options.pageSize || 10, 10, 100);
+  const pagination = buildPaginationMeta({
+    page,
+    pageSize,
+    totalItems: uploadedPdfCount,
+  });
 
   return {
     appName: "Coopbot Law Chatbot",
@@ -865,21 +876,31 @@ async function getUploadPageData() {
     ],
     maxUploadBytes,
     maxUploadMb: Math.floor(maxUploadBytes / (1024 * 1024)),
-    uploadedPdfCount: LawChatbotPdfChunkModel.countDocuments(),
+    uploadedPdfCount,
     uploadedChunkCount,
-    uploadedFiles: LawChatbotPdfChunkModel.list(10),
+    pagination,
+    uploadedFiles: LawChatbotPdfChunkModel.list(pagination.pageSize, pagination.offset),
   };
 }
 
-async function getFeedbackPageData() {
+async function getFeedbackPageData(options = {}) {
   const stats = LawChatbotFeedbackModel.stats();
+  const feedbackCount = LawChatbotFeedbackModel.count();
+  const page = normalizePageNumber(options.page || 1);
+  const pageSize = normalizePageSize(options.pageSize || 10, 10, 100);
+  const pagination = buildPaginationMeta({
+    page,
+    pageSize,
+    totalItems: feedbackCount,
+  });
 
   return {
     appName: "Coopbot Law Chatbot",
-    feedbackCount: LawChatbotFeedbackModel.count(),
+    feedbackCount,
     helpfulCount: stats.helpful,
     needsImprovementCount: stats.needsImprovement,
-    recentFeedback: LawChatbotFeedbackModel.list(),
+    pagination,
+    recentFeedback: LawChatbotFeedbackModel.list(pagination.pageSize, pagination.offset),
   };
 }
 
@@ -903,6 +924,8 @@ module.exports = {
   getUserDashboardData,
   getUserSearchHistoryData,
   getPaymentRequestPageData,
+  getAdminGuestUsageData,
+  clearAdminGuestUsage,
   getAdminUsersData,
   adminUpdateUserPlan,
   getAdminPaymentRequestsData,

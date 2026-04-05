@@ -1,0 +1,56 @@
+<%
+  const paginationData = pagination || {};
+  const currentPage = Number(paginationData.page || 1);
+  const totalPages = Number(paginationData.totalPages || 1);
+  const queryEntries = Object.entries(query || {}).filter(([, value]) => value !== undefined && value !== null && String(value) !== "");
+  const baseParams = new URLSearchParams(queryEntries.map(([key, value]) => [key, String(value)]));
+  const resolvedPageKey = pageKey || "page";
+  const resolvedAnchor = anchor ? `#${anchor}` : "";
+  const buildHref = (pageNumber) => {
+    const params = new URLSearchParams(baseParams.toString());
+    params.set(resolvedPageKey, String(pageNumber));
+    const queryString = params.toString();
+    return `${basePath || ""}${queryString ? `?${queryString}` : ""}${resolvedAnchor}`;
+  };
+  const visiblePages = [];
+  for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+    const isEdgePage = pageNumber === 1 || pageNumber === totalPages;
+    const isNearCurrent = Math.abs(pageNumber - currentPage) <= 1;
+    if (isEdgePage || isNearCurrent) {
+      visiblePages.push(pageNumber);
+    }
+  }
+  const pageTokens = [];
+  visiblePages.forEach((pageNumber, index) => {
+    if (index > 0 && visiblePages[index - 1] !== pageNumber - 1) {
+      pageTokens.push("ellipsis");
+    }
+    pageTokens.push(pageNumber);
+  });
+%>
+<% if (totalPages > 1) { %>
+  <nav class="pagination-bar" aria-label="Pagination navigation">
+    <div class="pagination-summary">
+      แสดง <strong><%= paginationData.startItem %>-<%= paginationData.endItem %></strong>
+      จาก <strong><%= paginationData.totalItems %></strong>
+      <%= itemLabel || "รายการ" %>
+    </div>
+    <div class="pagination-links">
+      <% if (paginationData.hasPrev) { %>
+        <a class="pagination-link" href="<%= buildHref(paginationData.prevPage) %>">ก่อนหน้า</a>
+      <% } %>
+      <% pageTokens.forEach((token) => { %>
+        <% if (token === "ellipsis") { %>
+          <span class="pagination-ellipsis">...</span>
+        <% } else if (Number(token) === currentPage) { %>
+          <span class="pagination-current"><%= token %></span>
+        <% } else { %>
+          <a class="pagination-link" href="<%= buildHref(token) %>"><%= token %></a>
+        <% } %>
+      <% }) %>
+      <% if (paginationData.hasNext) { %>
+        <a class="pagination-link" href="<%= buildHref(paginationData.nextPage) %>">ถัดไป</a>
+      <% } %>
+    </div>
+  </nav>
+<% } %>
