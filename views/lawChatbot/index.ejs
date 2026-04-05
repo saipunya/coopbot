@@ -3656,7 +3656,25 @@
         suggestionRecognition.onresult = (event) => {
           let interimTranscript = '';
           for (let i = event.resultIndex; i < event.results.length; i += 1) {
-            
+            const result = event.results[i];
+            const text = result[0] && result[0].transcript ? result[0].transcript : '';
+            if (result.isFinal) finalTranscript += `${text} `;
+            else interimTranscript += text;
+          }
+
+          const combined = `${finalTranscript}${interimTranscript}`.trim();
+          knowledgeSuggestionContentInput.value = combined;
+          knowledgeSuggestionSourceTypeInput.value = 'voice';
+        };
+
+        suggestionRecognition.onerror = () => {
+          isSuggestionListening = false;
+          if (knowledgeSuggestionVoiceBtn) {
+            knowledgeSuggestionVoiceBtn.innerHTML = '<i class="bi bi-mic-fill"></i> พูดเพื่อกรอกข้อความ';
+          }
+          setKnowledgeSuggestionAlert('ไม่สามารถรับข้อความเสียงได้ ลองพิมพ์แทนหรือกดใหม่อีกครั้ง');
+        };
+
         suggestionRecognition.onend = () => {
           isSuggestionListening = false;
           if (knowledgeSuggestionVoiceBtn) {
