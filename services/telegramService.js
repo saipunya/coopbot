@@ -80,6 +80,7 @@ function buildTelegramPaymentRequestMessage(paymentRequest = {}, user = {}) {
     `Plan: ${planLabel} (${planCode || "-"})`,
     `Amount: ${paymentRequest.amount || "-"}`,
     `Slip: ${paymentRequest.slipImage || "-"}`,
+    `CTA Source: ${paymentRequest.ctaSourceLabel || paymentRequest.ctaSource || "payment-request-direct"}`,
     `Note: ${paymentRequest.note || "-"}`,
     `Status: ${paymentRequest.status || "pending"}`,
     `Time: ${new Date().toISOString()}`,

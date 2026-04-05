@@ -105,6 +105,29 @@
     box-shadow: 0 18px 34px rgba(18, 52, 77, 0.14);
   }
 
+  .plan-card-recommended {
+    border-width: 2px;
+    box-shadow: 0 20px 38px rgba(140, 84, 16, 0.14);
+  }
+
+  .plan-card-recommended::after {
+    content: "แพ็กเกจแนะนำ";
+    position: absolute;
+    top: 0.9rem;
+    right: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.35rem 0.72rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #b06a14, #8c5410);
+    color: #fff;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    box-shadow: 0 10px 20px rgba(140, 84, 16, 0.18);
+  }
+
   .plan-card::before {
     content: "";
     position: absolute;
@@ -186,6 +209,29 @@
     border: 1px solid var(--line);
   }
 
+  .upgrade-focus-banner {
+    display: grid;
+    gap: 0.7rem;
+    margin-bottom: 1rem;
+    padding: 1rem 1.05rem;
+    border-radius: 20px;
+    border: 1px solid #f0d7a6;
+    background: linear-gradient(145deg, #fff8ea, #fffef8);
+    color: #6d4310;
+    box-shadow: 0 16px 32px rgba(140, 93, 31, 0.08);
+  }
+
+  .upgrade-focus-banner strong {
+    font-size: 1rem;
+    color: #5d390d;
+  }
+
+  .upgrade-focus-banner p {
+    margin: 0;
+    color: #7b4c17;
+    line-height: 1.55;
+  }
+
   .history-list {
     list-style: none;
     padding: 0;
@@ -252,6 +298,10 @@
 <%
   const currentPlanCode = String((data.currentPlanContext && data.currentPlanContext.code) || "free").toLowerCase();
   const normalizedCurrentPlanCode = ["free", "pro", "premium"].includes(currentPlanCode) ? currentPlanCode : "free";
+  const upgradeRecommendation = data.upgradeRecommendation || {};
+  const recommendedPlanCode = String(upgradeRecommendation.recommendedPlanCode || "").toLowerCase();
+  const ctaSource = data.ctaSource || {};
+  const usage = data.usage || {};
   const heroAccentLabel = {
     free: "เริ่มต้นอย่างคล่องตัว",
     pro: "ทำงานประจำแบบมั่นใจ",
@@ -266,6 +316,14 @@
         <span class="plan-hero-kicker"><i class="bi bi-gem"></i> <%= heroAccentLabel[normalizedCurrentPlanCode] || heroAccentLabel.free %></span>
         <h1>คำขออัปเกรดแพ็กเกจ</h1>
         <p>เลือกแพ็กเกจที่เหมาะกับระดับการใช้งานของคุณ แต่ละแผนมีบุคลิกต่างกันชัดเจน ตั้งแต่เริ่มต้นแบบเบา ไปจนถึงงานวิเคราะห์ที่ต้องการความลึกและความต่อเนื่องสูงขึ้น</p>
+        <% if (ctaSource && ctaSource.code && ctaSource.code !== 'payment-request-direct') { %>
+          <div class="upgrade-focus-banner" style="margin-top: 1rem; margin-bottom: 0;">
+            <strong><%= ctaSource.title || 'คุณมาจากปุ่มแนะนำอัปเกรด' %></strong>
+            <p>
+              <%= upgradeRecommendation.body || 'ระบบนำคุณมายังหน้าคำขออัปเกรดเพื่อให้เลือกแพ็กเกจที่เหมาะกับระดับการใช้งานปัจจุบัน' %>
+            </p>
+          </div>
+        <% } %>
       </div>
       <aside class="current-plan-panel">
         <div><strong>แพ็กเกจปัจจุบัน:</strong> <%= data.currentPlanContext ? data.currentPlanContext.label : "ฟรี" %></div>
@@ -273,6 +331,9 @@
           <div style="margin-top:0.45rem;">ใช้งานได้ <strong><%= data.currentPlanContext.monthlyLimit %></strong> คำถาม/เดือน</div>
         <% } else { %>
           <div style="margin-top:0.45rem;">ใช้งานได้แบบ <strong>ไม่จำกัดจำนวนคำถามรายเดือน</strong></div>
+        <% } %>
+        <% if (!usage.isUnlimited && Number.isFinite(usage.remainingQuestions)) { %>
+          <div style="margin-top:0.45rem;">คงเหลือ <strong><%= usage.remainingQuestions %></strong> จาก <strong><%= usage.questionLimit || 0 %></strong> ครั้งในเดือน <strong><%= usage.usageMonth || '-' %></strong></div>
         <% } %>
         <% if (data.aiPreview && data.aiPreview.enabled) { %>
           <div style="margin-top:0.7rem;">
@@ -289,10 +350,20 @@
 
   <% if (Array.isArray(data.planComparison) && data.planComparison.length > 0) { %>
     <section class="card">
+      <% if (upgradeRecommendation.shouldPromoteUpgrade && recommendedPlanCode) { %>
+        <div class="upgrade-focus-banner">
+          <strong><%= upgradeRecommendation.isQuotaExhausted ? 'ใช้งานครบโควต้าแล้ว' : 'ใกล้ถึงขีดจำกัดการใช้งานแล้ว' %></strong>
+          <p>
+            <%= upgradeRecommendation.isQuotaExhausted
+              ? `คุณใช้ครบ ${usage.questionLimit || 0} ครั้งของเดือน ${usage.usageMonth || '-'} แล้ว ระบบแนะนำให้ขยับเป็นแพ็กเกจ ${recommendedPlanCode === 'premium' ? 'Premium' : 'Professional'} เพื่อใช้งานต่อได้ลื่นกว่าเดิม`
+              : `เหลือใช้อีก ${usage.remainingQuestions || 0} ครั้งในเดือนนี้ หากใช้งานต่อเนื่อง แนะนำแพ็กเกจ ${recommendedPlanCode === 'premium' ? 'Premium' : 'Professional'} ไว้ล่วงหน้า` %>
+          </p>
+        </div>
+      <% } %>
       <h2 style="margin: 0 0 0.8rem;">เปรียบเทียบแพ็กเกจ</h2>
       <div class="comparison-grid">
         <% data.planComparison.forEach((plan) => { %>
-          <article class="plan-card plan-card-<%= plan.code %>">
+          <article class="plan-card plan-card-<%= plan.code %><%= plan.code === recommendedPlanCode ? ' plan-card-recommended' : '' %>">
             <div class="plan-card-top">
               <div>
                 <h3 class="plan-card-name"><%= plan.label %></h3>
@@ -347,11 +418,12 @@
       <p>ระบุแพ็กเกจที่ต้องการและแนบสลิปถ้ามี ระบบจะส่งคำขอให้ทีมงานตรวจสอบตามลำดับ</p>
 
       <form action="/law-chatbot/payment-request" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="ctaSource" value="<%= ctaSource.code || 'payment-request-direct' %>" />
         <label for="planName">เลือกแพ็กเกจ</label>
         <select id="planName" name="planName" required>
           <option value="">กรุณาเลือกแพ็กเกจ</option>
           <% data.plans.forEach((plan) => { %>
-            <option value="<%= plan.value %>">
+            <option value="<%= plan.value %>" <%= plan.value === recommendedPlanCode ? 'selected' : '' %>>
               <%= plan.label %> - <%= plan.priceBaht %> บาท / 30 วัน
             </option>
           <% }) %>
@@ -362,6 +434,12 @@
 
         <label for="note">หมายเหตุ</label>
         <textarea id="note" name="note" rows="4" placeholder="ระบุหมายเหตุหรือข้อมูลอ้างอิงเพิ่มเติมได้ (ถ้ามี)"></textarea>
+
+        <% if (ctaSource && ctaSource.code && ctaSource.code !== 'payment-request-direct') { %>
+          <div class="helper-box" style="margin: 0 0 1rem;">
+            <strong>ที่มาของคำขอ:</strong> <%= ctaSource.label %>
+          </div>
+        <% } %>
 
         <button type="submit">ส่งคำขออัปเกรด</button>
       </form>

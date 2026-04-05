@@ -209,11 +209,37 @@ function buildSearchHistoryMeta(planContext = {}) {
   };
 }
 
-async function getDashboardData() {
+async function getDashboardData(user = null) {
   const [uploadedChunkCount, suggestedQuestions] = await Promise.all([
     LawChatbotPdfChunkModel.countChunks(),
     LawChatbotSuggestedQuestionModel.listActive(18, "all"),
   ]);
+
+  let signedInSummary = null;
+  const signedInUser = user || {};
+  const userId = Number(signedInUser.userId || signedInUser.id || 0);
+
+  if (userId) {
+    const usageMonth = UserMonthlyUsageModel.getYearMonth();
+    const [persistedUser, usage] = await Promise.all([
+      UserModel.findById(userId),
+      UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth),
+    ]);
+    const profile = buildSignedInProfile(signedInUser, persistedUser);
+    const planContext = resolveUserPlanContext(profile);
+    const rewardSummary = await getContributionRewardSummary(profile);
+    const usageSummary = buildUserUsageSummary(profile, planContext, usage, rewardSummary);
+
+    signedInSummary = {
+      user: profile,
+      planContext,
+      usage: {
+        ...usageSummary,
+        usageMonth,
+      },
+      upgradeRecommendation: buildUpgradeRecommendation(planContext, usageSummary),
+    };
+  }
 
   return {
     appName: "Coopbot Law Chatbot",
@@ -224,7 +250,116 @@ async function getDashboardData() {
     uploadedChunkCount,
     recentConversations: LawChatbotModel.listRecent(6),
     suggestedQuestions,
+    signedInSummary,
   };
+}
+
+function buildUserUsageSummary(profile = {}, planContext = {}, usage = null, rewardSummary = {}) {
+  const questionCount = Number(usage?.question_count || 0);
+  const baseQuestionLimit = Number.isFinite(planContext.monthlyLimit) ? planContext.monthlyLimit : null;
+  const bonusQuestionLimit = Number(rewardSummary.bonusQuestionLimit || 0);
+  const questionLimit = Number.isFinite(baseQuestionLimit) ? baseQuestionLimit + bonusQuestionLimit : null;
+  const remainingQuestions =
+    Number.isFinite(questionLimit) ? Math.max(0, questionLimit - questionCount) : null;
+
+  return {
+    usageMonth: UserMonthlyUsageModel.getYearMonth(),
+    questionCount,
+    baseQuestionLimit,
+    bonusQuestionLimit,
+    approvedContributionCount: Number(rewardSummary.approvedContributionCount || 0),
+    questionLimit,
+    remainingQuestions,
+    isUnlimited: Boolean(planContext.isUnlimited),
+  };
+}
+
+function buildUpgradeRecommendation(planContext = {}, usageSummary = {}) {
+  const currentPlanCode = normalizePlanCode(planContext.code || "free");
+  const isQuotaExhausted =
+    !usageSummary.isUnlimited && Number(usageSummary.remainingQuestions || 0) <= 0;
+  const isNearQuota =
+    !usageSummary.isUnlimited && Number(usageSummary.remainingQuestions || 0) > 0 && Number(usageSummary.remainingQuestions || 0) <= 2;
+  const recommendedPlanCode = currentPlanCode === "free" ? "pro" : currentPlanCode === "pro" ? "premium" : "";
+
+  return {
+    currentPlanCode,
+    recommendedPlanCode,
+    isQuotaExhausted,
+    isNearQuota,
+    shouldPromoteUpgrade: Boolean(recommendedPlanCode) && (isQuotaExhausted || isNearQuota),
+    title:
+      currentPlanCode === "pro"
+        ? isQuotaExhausted
+          ? "โควต้าระดับ Professional ของคุณเต็มแล้ว"
+          : "โควต้าระดับ Professional ของคุณใกล้เต็มแล้ว"
+        : isQuotaExhausted
+          ? "โควต้าแพ็กเกจฟรีของคุณเต็มแล้ว"
+          : "โควต้าแพ็กเกจฟรีของคุณใกล้เต็มแล้ว",
+    body:
+      currentPlanCode === "pro"
+        ? isQuotaExhausted
+          ? "หากต้องการใช้งานเชิงลึกต่อเนื่องโดยไม่สะดุด ระบบแนะนำให้ขยับเป็น Premium"
+          : "หากใช้งานระดับวิเคราะห์ต่อเนื่อง แนะนำขยับเป็น Premium ไว้ล่วงหน้า"
+        : isQuotaExhausted
+          ? "หากต้องการถามต่อทันทีและได้คำตอบละเอียดขึ้น ระบบแนะนำให้ขยับเป็น Professional"
+          : "หากใช้งานต่อเนื่องและต้องการคำตอบลึกขึ้น แนะนำขยับเป็น Professional ไว้ล่วงหน้า",
+  };
+}
+
+function sanitizeUpgradeCtaSource(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  const allowedSources = new Set([
+    "quota-banner",
+    "chat-limit-panel",
+    "chat-ai-preview-upsell",
+    "user-dashboard-shortcut",
+    "user-dashboard-limit-card",
+    "payment-request-direct",
+  ]);
+
+  return allowedSources.has(normalized) ? normalized : "payment-request-direct";
+}
+
+function getUpgradeCtaSourceMeta(source = "") {
+  switch (sanitizeUpgradeCtaSource(source)) {
+    case "quota-banner":
+      return {
+        code: "quota-banner",
+        label: "แบนเนอร์เตือนโควต้าในหน้าแชต",
+        title: "คุณมาจากแบนเนอร์เตือนโควต้าในหน้าแชต",
+      };
+    case "chat-limit-panel":
+      return {
+        code: "chat-limit-panel",
+        label: "แผงแจ้งเตือนโควต้าหมดในคำตอบแชต",
+        title: "คุณมาจากแผงแจ้งเตือนเมื่อโควต้าหมดในหน้าแชต",
+      };
+    case "chat-ai-preview-upsell":
+      return {
+        code: "chat-ai-preview-upsell",
+        label: "ปุ่มอัปเกรดจากส่วนลอง AI ฟรี",
+        title: "คุณมาจากปุ่มอัปเกรดในส่วนลอง AI ฟรี",
+      };
+    case "user-dashboard-shortcut":
+      return {
+        code: "user-dashboard-shortcut",
+        label: "ทางลัดอัปเกรดในแดชบอร์ดผู้ใช้",
+        title: "คุณมาจากทางลัดอัปเกรดในแดชบอร์ดผู้ใช้",
+      };
+    case "user-dashboard-limit-card":
+      return {
+        code: "user-dashboard-limit-card",
+        label: "การ์ดเตือนโควต้าหมดในแดชบอร์ดผู้ใช้",
+        title: "คุณมาจากการ์ดเตือนโควต้าหมดในแดชบอร์ดผู้ใช้",
+      };
+    default:
+      return {
+        code: "payment-request-direct",
+        label: "เปิดหน้าอัปเกรดโดยตรง",
+        title: "คุณเปิดหน้าอัปเกรดแพ็กเกจโดยตรง",
+      };
+  }
 }
 
 async function getUserDashboardData(user) {
@@ -243,28 +378,17 @@ async function getUserDashboardData(user) {
 
   const profile = buildSignedInProfile(signedInUser, persistedUser);
   const planContext = resolveUserPlanContext(profile);
-  const questionCount = Number(usage?.question_count || 0);
   const aiPreview = buildAiPreviewMeta(planContext, usage);
   const rewardSummary = await getContributionRewardSummary(profile);
-  const baseQuestionLimit = Number.isFinite(planContext.monthlyLimit) ? planContext.monthlyLimit : null;
-  const bonusQuestionLimit = Number(rewardSummary.bonusQuestionLimit || 0);
-  const questionLimit = Number.isFinite(baseQuestionLimit) ? baseQuestionLimit + bonusQuestionLimit : null;
-  const remainingQuestions =
-    Number.isFinite(questionLimit) ? Math.max(0, questionLimit - questionCount) : null;
+  const usageSummary = buildUserUsageSummary(profile, planContext, usage, rewardSummary);
 
   return {
     appName: "Coopbot Law Chatbot",
     user: profile,
     planContext,
     usage: {
+      ...usageSummary,
       usageMonth,
-      questionCount,
-      baseQuestionLimit,
-      bonusQuestionLimit,
-      approvedContributionCount: Number(rewardSummary.approvedContributionCount || 0),
-      questionLimit,
-      remainingQuestions,
-      isUnlimited: planContext.isUnlimited,
     },
     aiPreview,
     searchHistory: buildSearchHistoryMeta(planContext),
@@ -295,21 +419,35 @@ async function getUserSearchHistoryData(user) {
   };
 }
 
-async function getPaymentRequestPageData(user) {
+async function getPaymentRequestPageData(user, options = {}) {
   const signedInUser = user || {};
   const userId = Number(signedInUser.userId || signedInUser.id || 0);
-  const currentPlanContext = resolveUserPlanContext(signedInUser);
   const usageMonth = UserMonthlyUsageModel.getYearMonth();
-  const usage = userId ? await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth) : null;
+  const [persistedUser, usage] = await Promise.all([
+    userId ? UserModel.findById(userId) : null,
+    userId ? UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth) : null,
+  ]);
+  const profile = buildSignedInProfile(signedInUser, persistedUser);
+  const currentPlanContext = resolveUserPlanContext(profile);
   const aiPreview = buildAiPreviewMeta(currentPlanContext, usage);
+  const rewardSummary = await getContributionRewardSummary(profile);
+  const usageSummary = buildUserUsageSummary(profile, currentPlanContext, usage, rewardSummary);
+  const upgradeRecommendation = buildUpgradeRecommendation(currentPlanContext, usageSummary);
+  const ctaSource = getUpgradeCtaSourceMeta(options.source || "payment-request-direct");
 
   return {
     appName: "Coopbot Law Chatbot",
     plans: listPurchasablePlans(),
     planComparison: listPlanComparisons(),
     currentPlanContext,
+    usage: {
+      ...usageSummary,
+      usageMonth,
+    },
+    upgradeRecommendation,
+    ctaSource,
     aiPreview,
-    user: signedInUser,
+    user: profile,
     recentRequests: userId
       ? (await PaymentRequestModel.listByUserId(userId, 10)).map((item) => enrichPaymentRequestRecord(item))
       : [],
@@ -321,6 +459,7 @@ async function submitPaymentRequest(payload, file, user) {
   const userId = Number(signedInUser.userId || signedInUser.id || 0);
   const planCode = normalizePlanCode(payload.planName || "");
   const note = String(payload.note || "").trim();
+  const ctaSource = getUpgradeCtaSourceMeta(payload.ctaSource || "payment-request-direct");
 
   if (!userId) {
     throw new Error("Please sign in before submitting a payment request.");
@@ -340,6 +479,9 @@ async function submitPaymentRequest(payload, file, user) {
     note,
     status: "pending",
   });
+
+  paymentRequest.ctaSource = ctaSource.code;
+  paymentRequest.ctaSourceLabel = ctaSource.label;
 
   try {
     await sendPaymentRequestNotification(paymentRequest, signedInUser);

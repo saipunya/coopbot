@@ -544,6 +544,82 @@
       flex-wrap: wrap;
     }
 
+    .quota-sticky-cta {
+      width: min(1160px, 100%);
+      position: sticky;
+      top: calc(env(safe-area-inset-top) + 0.55rem);
+      z-index: 70;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.8rem;
+      align-items: center;
+      padding: 0.9rem 1rem;
+      border-radius: 1rem;
+      border: 1px solid #f0d7a6;
+      background: linear-gradient(135deg, rgba(255, 248, 234, 0.96), rgba(255, 255, 248, 0.98));
+      box-shadow: 0 18px 34px rgba(140, 84, 16, 0.14);
+      backdrop-filter: blur(16px);
+    }
+
+    .quota-sticky-cta-copy {
+      display: grid;
+      gap: 0.18rem;
+      min-width: 0;
+    }
+
+    .quota-sticky-cta-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      width: fit-content;
+      max-width: 100%;
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.78);
+      color: #7a4b12;
+      font-size: 0.76rem;
+      font-weight: 800;
+    }
+
+    .quota-sticky-cta-title {
+      margin: 0;
+      color: #5f390d;
+      font-size: 1.02rem;
+      line-height: 1.25;
+    }
+
+    .quota-sticky-cta-text {
+      margin: 0;
+      color: #7e511b;
+      line-height: 1.5;
+      font-size: 0.86rem;
+    }
+
+    .quota-sticky-cta-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      min-height: 3rem;
+      padding: 0.9rem 1.05rem;
+      border-radius: 0.95rem;
+      text-decoration: none;
+      background: linear-gradient(135deg, #b06a14, #8c5410);
+      color: #fff;
+      font-size: 0.88rem;
+      font-weight: 800;
+      box-shadow: 0 12px 24px rgba(140, 84, 16, 0.18);
+      white-space: nowrap;
+    }
+
+    .quota-sticky-cta-action:hover,
+    .quota-sticky-cta-action:focus-visible {
+      color: #fff;
+      opacity: 0.98;
+      transform: translateY(-1px);
+      outline: none;
+    }
+
     .status-chip {
       background: rgba(21, 84, 122, 0.06);
       border: 1px solid rgba(21, 84, 122, 0.08);
@@ -1055,6 +1131,62 @@
       background: #e3eef7;
       border-color: #a9c3d4;
       color: #16384a;
+      outline: none;
+    }
+
+    .bot-limit-cta-panel {
+      display: grid;
+      gap: 0.7rem;
+      width: 100%;
+      max-width: 100%;
+      padding: 0.9rem 1rem;
+      border-radius: 1rem;
+      border: 1px solid #f0d7a6;
+      background: linear-gradient(145deg, #fff8ea, #fffef8);
+      box-shadow: 0 10px 24px rgba(140, 93, 31, 0.08);
+    }
+
+    .bot-limit-cta-copy {
+      display: grid;
+      gap: 0.22rem;
+      color: #714711;
+    }
+
+    .bot-limit-cta-copy strong {
+      font-size: 0.95rem;
+      color: #5f3a0d;
+    }
+
+    .bot-limit-cta-copy span {
+      font-size: 0.83rem;
+      line-height: 1.5;
+      color: #80511a;
+    }
+
+    .bot-upgrade-cta-prominent {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.48rem;
+      width: fit-content;
+      max-width: 100%;
+      padding: 0.82rem 1.08rem;
+      border-radius: 0.95rem;
+      text-decoration: none;
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: #fff;
+      background: linear-gradient(135deg, #b06a14, #8c5410);
+      box-shadow: 0 12px 26px rgba(140, 84, 16, 0.18);
+      transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+    }
+
+    .bot-upgrade-cta-prominent:hover,
+    .bot-upgrade-cta-prominent:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(140, 84, 16, 0.24);
+      color: #fff;
+      opacity: 0.98;
       outline: none;
     }
 
@@ -1667,6 +1799,15 @@
       .plan-ribbon {
         display: none;
       }
+      .quota-sticky-cta {
+        grid-template-columns: 1fr;
+        padding: 0.82rem 0.88rem;
+        top: calc(env(safe-area-inset-top) + 0.35rem);
+      }
+      .quota-sticky-cta-action {
+        width: 100%;
+        white-space: normal;
+      }
       .page-header {
         --header-icon-size: 1.8rem;
         --header-icon-radius: 0.56rem;
@@ -2046,6 +2187,25 @@
         }
       };
       const activeBotPlanMeta = botPlanMeta[botPlanTheme] || botPlanMeta.free;
+      const signedInSummary = data && data.signedInSummary ? data.signedInSummary : null;
+      const signedInUsage = signedInSummary && signedInSummary.usage ? signedInSummary.usage : null;
+      const signedInUpgradeRecommendation = signedInSummary && signedInSummary.upgradeRecommendation
+        ? signedInSummary.upgradeRecommendation
+        : null;
+      const shouldShowQuotaStickyCta = Boolean(
+        isGoogleUser &&
+        signedInUsage &&
+        !signedInUsage.isUnlimited &&
+        signedInUpgradeRecommendation &&
+        signedInUpgradeRecommendation.shouldPromoteUpgrade &&
+        signedInUpgradeRecommendation.currentPlanCode === 'free'
+      );
+      const quotaStickyTitle = signedInUpgradeRecommendation && signedInUpgradeRecommendation.isQuotaExhausted
+        ? 'คุณใช้สิทธิ์ถามครบกำหนดแล้ว'
+        : 'สิทธิ์ถามของคุณใกล้หมดแล้ว';
+      const quotaStickyText = signedInUpgradeRecommendation && signedInUpgradeRecommendation.isQuotaExhausted
+        ? `ใช้ไป ${signedInUsage && signedInUsage.questionCount ? signedInUsage.questionCount : 0} จาก ${signedInUsage && signedInUsage.questionLimit ? signedInUsage.questionLimit : 0} ครั้งของเดือนนี้ อัปเกรดแพ็กเกจเพื่อถามต่อได้ทันที`
+        : `เหลือใช้อีก ${signedInUsage && typeof signedInUsage.remainingQuestions !== 'undefined' ? signedInUsage.remainingQuestions : 0} จาก ${signedInUsage && signedInUsage.questionLimit ? signedInUsage.questionLimit : 0} ครั้งของเดือนนี้ หากใช้งานต่อเนื่อง แนะนำให้อัปเกรดไว้ล่วงหน้า`;
     %>
 
     <script>
@@ -2289,6 +2449,20 @@
       <div class="chat-header d-none d-md-block">
         <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
           <div>
+
+          <% if (shouldShowQuotaStickyCta) { %>
+            <section class="quota-sticky-cta" aria-label="คำแนะนำอัปเกรดแพ็กเกจ">
+              <div class="quota-sticky-cta-copy">
+                <span class="quota-sticky-cta-kicker"><i class="bi bi-lightning-charge-fill"></i> แพ็กเกจฟรี</span>
+                <h2 class="quota-sticky-cta-title"><%= quotaStickyTitle %></h2>
+                <p class="quota-sticky-cta-text"><%= quotaStickyText %></p>
+              </div>
+              <a href="/law-chatbot/payment-request?source=quota-banner" class="quota-sticky-cta-action">
+                <i class="bi bi-arrow-up-circle-fill"></i>
+                <span>อัปเกรดแพ็กเกจ</span>
+              </a>
+            </section>
+          <% } %>
             <h1 class="h5 mb-1">แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร (v1.0)</h1>
             <p class="mb-0 small text-muted">ระบบค้นหากฎหมายแบบหน้าเดียว ครอบคลุมสหกรณ์และกลุ่มเกษตรกร</p>
           </div>
@@ -2981,7 +3155,7 @@
                 <i class="bi bi-lightbulb"></i>
                 <span>เหลือ ${escapeHtml(String(preview.remainingCount || 0))}/${escapeHtml(String(preview.limit || 0))} ครั้งเดือนนี้ เพื่อดูความต่างก่อนอัปเกรด</span>
               </span>
-              <a href="/law-chatbot/payment-request" class="bot-upgrade-cta">
+              <a href="/law-chatbot/payment-request?source=chat-ai-preview-upsell" class="bot-upgrade-cta">
                 <i class="bi bi-arrow-up-circle"></i>
                 <span>ดูแพ็กเกจ</span>
               </a>
@@ -2995,7 +3169,7 @@
               <i class="bi bi-stars"></i>
               <span>คุณใช้สิทธิ์ลอง AI ฟรีครบ ${escapeHtml(String(preview.limit || 0))} ครั้งของเดือนนี้แล้ว หากต้องการใช้งานคำตอบ AI ต่อเนื่อง แนะนำแพ็กเกจ Professional</span>
             </span>
-            <a href="/law-chatbot/payment-request" class="bot-upgrade-cta">
+            <a href="/law-chatbot/payment-request?source=chat-ai-preview-upsell" class="bot-upgrade-cta">
               <i class="bi bi-arrow-up-circle"></i>
               <span>อัปเกรดแพ็กเกจ</span>
             </a>
@@ -3013,6 +3187,29 @@
                 <i class="bi bi-google"></i>
                 <span>เข้าสู่ระบบด้วย Google เพื่อใช้งานต่อ</span>
               </a>
+            </div>
+          `);
+        }
+
+        if (isSignedInUser && options && options.monthlyUsageLimitReached) {
+          const questionLimit = Number.isFinite(Number(options.questionLimit)) ? Number(options.questionLimit) : null;
+          const questionCount = Number.isFinite(Number(options.questionCount)) ? Number(options.questionCount) : null;
+          const usageLabel = questionLimit && questionCount !== null
+            ? `ใช้ไป ${questionCount} จาก ${questionLimit} ครั้งของเดือนนี้แล้ว`
+            : 'คุณใช้สิทธิ์รายเดือนครบแล้ว';
+
+          segments.push(`
+            <div class="bot-inline-actions">
+              <div class="bot-limit-cta-panel">
+                <div class="bot-limit-cta-copy">
+                  <strong><i class="bi bi-exclamation-circle"></i> ใช้งานครบโควต้ารายเดือนแล้ว</strong>
+                  <span>${escapeHtml(usageLabel)} อัปเกรดแพ็กเกจเพื่อถามต่อได้ทันทีโดยไม่ต้องรอรอบเดือนถัดไป</span>
+                </div>
+                <a href="/law-chatbot/payment-request?source=chat-limit-panel" class="bot-upgrade-cta-prominent">
+                  <i class="bi bi-arrow-up-circle-fill"></i>
+                  <span>อัปเกรดแพ็กเกจตอนนี้</span>
+                </a>
+              </div>
             </div>
           `);
         }
@@ -3735,6 +3932,8 @@
               usedFollowUpContext: Boolean(data && data.usedFollowUpContext),
               guestLimitReached: Boolean(data && data.guestLimitReached),
               monthlyUsageLimitReached: Boolean(data && data.monthlyUsageLimitReached),
+              questionCount: data && typeof data.questionCount !== 'undefined' ? data.questionCount : null,
+              questionLimit: data && typeof data.questionLimit !== 'undefined' ? data.questionLimit : null,
               signInPath: data && typeof data.signInPath === 'string' ? data.signInPath : '',
               freeAiPreview: data && data.freeAiPreview ? data.freeAiPreview : null,
               responseMeta: data && data.responseMeta ? data.responseMeta : null

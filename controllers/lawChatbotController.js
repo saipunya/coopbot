@@ -51,7 +51,7 @@ async function renderIndex(req, res) {
     });
   }
 
-  const data = await lawChatbotService.getDashboardData();
+  const data = await lawChatbotService.getDashboardData(req.signedInUser);
 
   res.render("lawChatbot/index", {
     title: "แชตบอทกฎหมายสหกรณ์",
@@ -250,7 +250,9 @@ async function submitFeedback(req, res) {
 }
 
 async function renderPaymentRequest(req, res) {
-  const data = await lawChatbotService.getPaymentRequestPageData(req.signedInUser);
+  const data = await lawChatbotService.getPaymentRequestPageData(req.signedInUser, {
+    source: req.query.source || "payment-request-direct",
+  });
 
   res.render("lawChatbot/paymentRequest", {
     title: "Payment Request",

@@ -219,6 +219,48 @@
     width: 100%;
   }
 
+  .upgrade-alert-card {
+    display: grid;
+    gap: 0.8rem;
+    padding: 1rem 1.05rem;
+    border-radius: 18px;
+    border: 1px solid #f0d7a6;
+    background: linear-gradient(145deg, #fff7e7, #fffdf7);
+    color: #6c4310;
+    box-shadow: 0 14px 28px rgba(140, 93, 31, 0.08);
+  }
+
+  .upgrade-alert-card strong {
+    font-size: 1rem;
+    color: #5d390d;
+  }
+
+  .upgrade-alert-card p {
+    margin: 0;
+    color: #7a4c17;
+    line-height: 1.55;
+  }
+
+  .upgrade-alert-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    width: 100%;
+    text-decoration: none;
+    border-radius: 14px;
+    padding: 0.95rem 1rem;
+    background: linear-gradient(135deg, #b06a14, #8c5410);
+    color: #fff;
+    font-weight: 800;
+    box-shadow: 0 12px 24px rgba(140, 84, 16, 0.16);
+  }
+
+  .upgrade-alert-button:hover {
+    color: #fff;
+    opacity: 0.98;
+  }
+
   .user-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -455,6 +497,16 @@
   </article>
 
   <aside class="card hero-actions <%= planSurfaceClass %>">
+    <% if (!usage.isUnlimited && (usage.remainingQuestions || 0) <= 0) { %>
+      <div class="upgrade-alert-card">
+        <strong>ใช้สิทธิ์ถามครบกำหนดแล้ว</strong>
+        <p>คุณใช้ครบ <%= usage.questionLimit || 0 %> ครั้งของเดือน <%= usage.usageMonth || "-" %> แล้ว หากต้องการใช้งานต่อทันที สามารถอัปเกรดแพ็กเกจได้จากปุ่มด้านล่าง</p>
+        <a class="upgrade-alert-button" href="/law-chatbot/payment-request?source=user-dashboard-limit-card">
+          <i class="bi bi-arrow-up-circle-fill"></i>
+          <span>อัปเกรดแพ็กเกจทันที</span>
+        </a>
+      </div>
+    <% } %>
     <div>
       <h2 style="margin: 0 0 0.35rem; color: var(--accent-strong);">ทางลัดสำหรับผู้ใช้</h2>
       <p style="margin: 0;">เข้าสู่หน้าใช้งานหลัก ดูสถานะแพ็กเกจ และส่งคำขออัปเกรดได้จากที่นี่</p>
@@ -462,7 +514,7 @@
     <div class="action-stack">
       <a class="button action-link" href="/law-chatbot">ไปหน้าแชตบอท</a>
       <a class="button action-link ghost-button" href="/user/search-history">ดูประวัติการค้นหา</a>
-      <a class="button action-link ghost-button" href="/law-chatbot/payment-request">ส่งคำขออัปเกรดแพ็กเกจ</a>
+      <a class="button action-link ghost-button" href="/law-chatbot/payment-request?source=user-dashboard-shortcut">ส่งคำขออัปเกรดแพ็กเกจ</a>
       <form class="logout-form" action="/user/logout" method="post">
         <button type="submit" class="ghost-button">ออกจากระบบ</button>
       </form>
@@ -555,7 +607,7 @@
       <h2 style="margin: 0 0 0.35rem; color: var(--accent-strong);">ประวัติคำขอชำระเงิน</h2>
       <p style="margin: 0;">ติดตามสถานะคำขออัปเกรดแพ็กเกจล่าสุดของบัญชีนี้</p>
     </div>
-    <a class="button action-link ghost-button" href="/law-chatbot/payment-request">สร้างคำขอใหม่</a>
+    <a class="button action-link ghost-button" href="/law-chatbot/payment-request?source=user-dashboard-shortcut">สร้างคำขอใหม่</a>
   </div>
 
   <ul class="request-list" style="margin-top: 1rem;">
