@@ -243,7 +243,7 @@ function getGeminiClient() {
 
 function wantsExplanation(message) {
   const text = String(message || "").trim();
-  return /อธิบาย|แสดงรายละเอียด|รายละเอียด|ขยายความ|ยกตัวอย่าง|ยังไม่ครบ|แจ้งเพิ่มเติม/.test(text);
+  return /อธิบาย|แสดงรายละเอียด|รายละเอียด|ขยายความ|ยกตัวอย่าง|ใจความทั้งหมด|ฉันไม่เข้าใจ|ไม่เข้าใจ|ยังไม่ครบ|แจ้งเพิ่มเติม/.test(text);
 }
 
 function wantsStepAnswer(message) {
@@ -1112,6 +1112,83 @@ function truncateContextText(text, limit = 0) {
   return `${normalized.slice(0, safeLimit).trim()}...`;
 }
 
+function buildSourceBodyText(source = {}) {
+  return cleanLine(
+    [source.content, source.chunk_text, source.comment]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+function captureContinuationDiagnostics(answerDiagnostics, sources, promptProfile = {}) {
+  if (!answerDiagnostics || typeof answerDiagnostics !== "object") {
+    return;
+  }
+
+  const perSourceCharLimit = Math.max(280, Number(promptProfile.aiSourceContextCharLimit || 700));
+  answerDiagnostics.usedSources = dedupeSources(Array.isArray(sources) ? sources : [])
+    .map((source) => {
+      const sourceName = String(source?.source || "").trim().toLowerCase();
+      const bodyText = buildSourceBodyText(source);
+      const documentId = Number(
+        source?.documentId || source?.document_id || (sourceName === "documents" ? source?.id || 0 : 0),
+      );
+
+      if (sourceName === "documents" || sourceName === "pdf_chunks") {
+        const chunkId = Number(source?.continuationChunkId || (sourceName === "pdf_chunks" ? source?.id || 0 : 0));
+        const chunkOffset = Math.max(0, Number(source?.continuationChunkOffset || 0));
+        const totalLength = Math.max(0, Number(source?.continuationTotalLength || bodyText.length));
+        const consumedChars = Math.max(0, Math.min(perSourceCharLimit, Math.max(0, totalLength - chunkOffset)));
+        const nextChunkOffset = Math.min(totalLength, chunkOffset + consumedChars);
+
+        return {
+          id: source?.id || null,
+          source: source?.source || "",
+          title: source?.title || "",
+          reference: source?.reference || source?.title || "",
+          lawNumber: source?.lawNumber || "",
+          url: source?.url || "",
+          score: Number(source?.score || 0),
+          keyword: source?.keyword || "",
+          documentId: documentId || null,
+          content: bodyText,
+          continuationMode: "document_chunks",
+          continuationChunkId: chunkId || null,
+          continuationChunkOffset: nextChunkOffset,
+          continuationTotalLength: totalLength,
+          continuationHasMore:
+            source?.continuationHasMore === true ||
+            nextChunkOffset < totalLength ||
+            documentId > 0,
+        };
+      }
+
+      const currentOffset = Math.max(0, Number(source?.continuationNextOffset || source?.continuationCursor || 0));
+      const totalLength = Math.max(0, Number(source?.continuationTotalLength || bodyText.length));
+      const consumedChars = Math.max(0, Math.min(perSourceCharLimit, Math.max(0, totalLength - currentOffset)));
+      const nextOffset = Math.min(totalLength, currentOffset + consumedChars);
+
+      return {
+        id: source?.id || null,
+        source: source?.source || "",
+        title: source?.title || "",
+        reference: source?.reference || source?.title || "",
+        lawNumber: source?.lawNumber || "",
+        url: source?.url || "",
+        score: Number(source?.score || 0),
+        keyword: source?.keyword || "",
+        documentId: documentId || null,
+        content: bodyText,
+        continuationMode: source?.continuationMode || "text",
+        continuationCursor: currentOffset,
+        continuationNextOffset: nextOffset,
+        continuationTotalLength: totalLength,
+        continuationHasMore: source?.continuationHasMore === true || nextOffset < totalLength,
+      };
+    })
+    .slice(0, 6);
+}
+
 function buildSourceContext(sources, options = {}) {
   const promptProfile = options.promptProfile || {};
   const perSourceCharLimit = Math.max(280, Number(promptProfile.aiSourceContextCharLimit || 700));
@@ -1119,9 +1196,7 @@ function buildSourceContext(sources, options = {}) {
     .map((source, index) => {
       const bodyText = sourceHasSubstantiveContent(source)
         ? truncateContextText(
-            [source.content, source.chunk_text, source.comment]
-              .filter(Boolean)
-              .join(" "),
+            buildSourceBodyText(source),
             perSourceCharLimit,
           )
         : "";
@@ -2232,10 +2307,10 @@ function getSummaryShapeOptions(options = {}, explainMode = false) {
     ? cleanLine(
         promptProfile.followUpPrompt ||
           (promptProfile.followUpStrength === "deep"
-            ? "หากต้องการเจาะลึกต่อ พิมพ์: อธิบาย, แสดงรายละเอียด, รายละเอียด, ยังไม่ครบ หรือ แจ้งเพิ่มเติม"
-            : "หากยังไม่ครบ พิมพ์: อธิบาย, แสดงรายละเอียด, รายละเอียด, ยังไม่ครบ หรือ แจ้งเพิ่มเติม"),
-      )
-    : "";
+            ? "หากต้องการเจาะลึกต่อ พิมพ์: อธิบาย, แสดงรายละเอียด, รายละเอียด, ใจความทั้งหมด, ฉันไม่เข้าใจ หรือ แจ้งเพิ่มเติม"
+            : "หากต้องการเพิ่มเติม พิมพ์: อธิบาย, แสดงรายละเอียด, รายละเอียด, ใจความทั้งหมด, ฉันไม่เข้าใจ หรือ แจ้งเพิ่มเติม"),
+        )
+      : "";
 
   return {
     summaryLimit,
@@ -2590,12 +2665,29 @@ function buildStructuredLawSectionDisplayLines(source, options = {}) {
     return uniqueCleanLines([...leadLines.slice(0, 1), ...clauses], Math.max(clauses.length + 1, 8));
   }
 
-  return extractRelevantSegmentsFromSource(source, options.originalMessage || options.message || "", {
-    explainMode: options.explainMode,
-    amountMode: options.amountMode === true,
-    questionIntent: options.questionIntent,
-    preserveMoreContent: true,
-  });
+  const completeSegments = uniqueCleanLines(
+    [...leadLines, ...segments],
+    Math.max(leadLines.length + segments.length, 12),
+  );
+  if (completeSegments.length > 0) {
+    return completeSegments;
+  }
+
+  const fallbackText = cleanLine(normalizeProtectedLineBreaks(rawText));
+  return fallbackText ? [fallbackText] : [];
+}
+
+function shouldUseDirectStructuredLawDatabaseAnswer(sources, options = {}) {
+  if (options.questionIntent !== "law_section") {
+    return false;
+  }
+
+  const lookupText = String(options.originalMessage || options.message || "").trim();
+  if (!/((มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+)/i.test(lookupText)) {
+    return false;
+  }
+
+  return getScopedLawSectionSources(sources, options).some((source) => isStructuredLawSource(source));
 }
 
 function ensureStructuredLawSummaryCompleteness(lines, sources, options = {}) {
@@ -3719,6 +3811,7 @@ async function generateChatSummary(message, sources, options = {}) {
     filteredSources.length > 0
       ? filteredSources
       : answerInputSources.slice(0, aiSourceLimit);
+  captureContinuationDiagnostics(options.answerDiagnostics, effectiveSources, promptProfile);
   const focusedAnswerSources =
     answerInputSources.length > 0 ? answerInputSources : effectiveSources;
   const unionFeeFocusedAnswer = buildUnionFeeFocusedAnswer(
@@ -3812,6 +3905,26 @@ async function generateChatSummary(message, sources, options = {}) {
 
   if (boardElectionFocusedAnswer) {
     return finalizeSummary(boardElectionFocusedAnswer);
+  }
+
+  if (shouldUseDirectStructuredLawDatabaseAnswer(answerInputSources, {
+    ...options,
+    originalMessage: message,
+    message: focusMessage,
+  })) {
+    if (options.answerDiagnostics && typeof options.answerDiagnostics === "object") {
+      options.answerDiagnostics.answerMode = "db_only";
+    }
+    return buildFallbackSummary(answerInputSources, explainMode, {
+      ...options,
+      amountMode,
+      decisionMode,
+      stepMode,
+      databaseOnlyMode: true,
+      promptProfile,
+      originalMessage: message,
+      focusMessage,
+    });
   }
 
   if (

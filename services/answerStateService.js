@@ -17,21 +17,22 @@ const CACHE_TTL_BY_INTENT = {
   qa: 10 * 60 * 1000,           // 10 นาที - คำถามทั่วไป
   document: 5 * 60 * 1000,      // 5 นาที - เอกสารอาจอัปเดต
   explain: 7 * 60 * 1000,       // 7 นาที - คำอธิบาย
-  general: 10 * 60 * 1000,      // 10 นาที - ค่าเริ่มต้น
+  general: 10 * 60 * 1000,      // ค่าเริ่มต้น
 };
 
-const ANSWER_CACHE_SCOPE_VERSION = "v15";
+const ANSWER_CACHE_SCOPE_VERSION = "v16";
 const answerCache = new Map();
 
 function buildAnswerCacheScope(planContext = {}) {
   const planCode = normalizePlanCode(planContext.code || planContext.plan || "free");
   const promptProfileCode =
     String(planContext.promptProfile?.code || "").trim().toLowerCase() || "template";
+  const aiModel = String(planContext.promptProfile?.aiModel || planContext.aiModel || "").trim().toLowerCase() || "none";
   const internetMode = planContext.useInternet
     ? String(planContext.internetMode || "full").trim().toLowerCase()
     : "none";
 
-  return [ANSWER_CACHE_SCOPE_VERSION, planCode, promptProfileCode, internetMode].join("::");
+  return [ANSWER_CACHE_SCOPE_VERSION, planCode, promptProfileCode, aiModel, internetMode].join("::");
 }
 
 function buildAnswerCacheKey(message, target, planContext = {}) {
@@ -133,7 +134,7 @@ function buildFreeAiPreviewPlanContext(basePlanContext = {}, usePremiumModel = f
       aiSourceContextCharLimit: usePremiumModel ? 700 : Math.max(320, Math.min(420, Number(professionalPromptProfile.aiSourceContextCharLimit || 420))),
       referenceLimit: Math.max(2, Math.min(usePremiumModel ? 4 : 3, Number(professionalPromptProfile.referenceLimit || 3))),
       followUpPrompt:
-        "หากยังไม่ครบ พิมพ์: อธิบาย, แสดงรายละเอียด, รายละเอียด, ยังไม่ครบ หรือ แจ้งเพิ่มเติม",
+        "หากต้องการเพิ่มเติม พิมพ์: อธิบาย, แสดงรายละเอียด, รายละเอียด, ใจความทั้งหมด, ฉันไม่เข้าใจ หรือ แจ้งเพิ่มเติม",
     },
     answerMode: usePremiumModel ? "ai_preview_premium" : "ai_preview_compact",
   };

@@ -699,12 +699,12 @@ function classifyQuestionIntent(message) {
     text.length <= 40 &&
     /[ก-๙]{2,8}\.?\s*(คืออะไร|หมายถึง|คือ|หมายความว่าอะไร)/.test(text);
 
-  if (asksExplanation) {
-    return "explain";
-  }
-
   if (asksLawSection) {
     return "law_section";
+  }
+
+  if (asksExplanation) {
+    return "explain";
   }
 
   if (isDissolutionPrioritySearch(text) || isLiquidationPrioritySearch(text)) {

@@ -55,9 +55,18 @@ function compactContextSource(source = {}) {
     url: source.url || "",
     score: Number(source.score || 0),
     keyword: source.keyword || "",
+    documentId: source.documentId || source.document_id || null,
     content: content.slice(0, 900),
     chunk_text: content.slice(0, 900),
     comment: content.slice(0, 900),
+    continuationMode: source.continuationMode || "",
+    continuationCursor: Number(source.continuationCursor || 0),
+    continuationNextOffset: Number(source.continuationNextOffset || 0),
+    continuationChunkId: source.continuationChunkId || null,
+    continuationChunkOffset: Number(source.continuationChunkOffset || 0),
+    continuationTotalLength: Number(source.continuationTotalLength || 0),
+    continuationHasMore: source.continuationHasMore === true,
+    contextCarry: source.contextCarry === true,
   };
 }
 
@@ -80,12 +89,12 @@ function mergeUniqueSources(...groups) {
     results.push(compacted);
   });
 
-  return results;
+  return results.slice(0, 6);
 }
 
 function stripQuestionTail(message) {
   return String(message || "")
-    .replace(/^(อธิบาย|แสดงรายละเอียด|รายละเอียด|ขยายความ|ยกตัวอย่าง|ยังไม่ครบ|แจ้งเพิ่มเติม)\s*/i, "")
+    .replace(/^(อธิบาย|แสดงรายละเอียด|รายละเอียด|ขยายความ|ยกตัวอย่าง|ใจความทั้งหมด|ฉันไม่เข้าใจ|ไม่เข้าใจ|ยังไม่ครบ|แจ้งเพิ่มเติม)\s*/i, "")
     .replace(/(คืออะไร|คืออะไรครับ|คืออะไรคะ|คืออะไร\?|คือ|หมายถึงอะไร|หมายถึง|จะจัดขึ้นเมื่อไร|จะจัดขึ้นเมื่อไหร่|จัดขึ้นเมื่อไร|จัดขึ้นเมื่อไหร่|เมื่อไร|เมื่อไหร่|ทำอย่างไร|อย่างไร|ยังไง|ได้หรือไม่|ได้ไหม|ได้หรือเปล่า|หรือไม่|หรือเปล่า|กี่วัน|กี่ครั้ง|เท่าไร|ไหม|มั้ย)\s*[\?？]*$/i, "")
     .trim();
 }
@@ -180,7 +189,7 @@ function looksLikeFollowUpQuestion(message, recentTopic = "") {
     return true;
   }
 
-  return /^(คืออะไร|คือ|เมื่อไร|เมื่อไหร่|อย่างไร|ยังไง|ได้หรือไม่|ได้ไหม|ได้หรือเปล่า|หรือไม่|สมาชิก|คณะกรรมการ|จะ|ต้อง|ควร|หาก)/.test(
+  return /^(คืออะไร|คือ|เมื่อไร|เมื่อไหร่|อย่างไร|ยังไง|ได้หรือไม่|ได้ไหม|ได้หรือเปล่า|หรือไม่|หรือเปล่า|กี่วัน|กี่ครั้ง|เท่าไร|ไหม|มั้ย)\s*[\?？]*$/.test(
     text,
   );
 }
@@ -279,6 +288,10 @@ function storeConversationContext(session, target, originalMessage, effectiveMes
   }
 
   const history = getSessionContext(session);
+  const storedFocusSources =
+    storeOptions && Array.isArray(storeOptions.usedSourcesForContinuation) && storeOptions.usedSourcesForContinuation.length > 0
+      ? mergeUniqueSources(storeOptions.usedSourcesForContinuation).slice(0, 6)
+      : mergeUniqueSources(Array.isArray(matches) ? matches.slice(0, 6) : []).slice(0, 6);
   const topicHints = mergeTopicHints(
     resolvedContext && Array.isArray(resolvedContext.topicHints) ? resolvedContext.topicHints : [],
     extractTopicHints(originalMessage, matches),
@@ -290,7 +303,7 @@ function storeConversationContext(session, target, originalMessage, effectiveMes
     originalMessage,
     effectiveMessage,
     topicHints,
-    focusSources: mergeUniqueSources(Array.isArray(matches) ? matches.slice(0, 6) : []).slice(0, 6),
+    focusSources: storedFocusSources,
     createdAt: new Date().toISOString(),
   };
 
@@ -366,16 +379,22 @@ function getFollowUpCarrySources(session, target, message, resolvedContext = {})
       ).toLowerCase();
       const tokenOverlapCount = followUpTokens.filter((token) => sourceSearchText.includes(token)).length;
       const carryScore = Math.max(Number(compacted.score || 0), 92 - index * 3);
+      const continuationReady =
+        compacted.continuationHasMore === true ||
+        Number(compacted.continuationTotalLength || 0) >
+          Number(compacted.continuationNextOffset || compacted.continuationCursor || 0) ||
+        (["documents", "pdf_chunks"].includes(sourceName) && Number(compacted.documentId || 0) > 0);
 
       if (broadFollowUpOnly) {
-        if (!highConfidenceCarrySources.has(sourceName) || carryScore < 84) {
+        if ((!highConfidenceCarrySources.has(sourceName) && !continuationReady) || carryScore < 84) {
           return null;
         }
-      } else if (tokenOverlapCount === 0 && carryScore < 88) {
+      } else if (tokenOverlapCount === 0 && carryScore < 88 && !continuationReady) {
         return null;
       } else if (
         ["documents", "pdf_chunks", "knowledge_base"].includes(sourceName) &&
-        tokenOverlapCount === 0
+        tokenOverlapCount === 0 &&
+        !continuationReady
       ) {
         return null;
       }

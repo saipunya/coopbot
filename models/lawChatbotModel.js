@@ -64,6 +64,16 @@ class LawChatbotModel {
     return conversations.slice(0, limit);
   }
 
+  static findKnowledgeById(id) {
+    const normalizedId = Number(id || 0);
+    if (!normalizedId) {
+      return null;
+    }
+
+    const found = knowledgeBase.find((item) => Number(item.id) === normalizedId);
+    return found ? { ...found } : null;
+  }
+
   static searchKnowledge(message, target = "all") {
     const terms = segmentWords(message);
 

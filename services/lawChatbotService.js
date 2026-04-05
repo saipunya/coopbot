@@ -1,7 +1,10 @@
 const LawChatbotModel = require("../models/lawChatbotModel");
 const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
+const LawChatbotKnowledgeModel = require("../models/lawChatbotKnowledgeModel");
+const LawChatbotKnowledgeSuggestionModel = require("../models/lawChatbotKnowledgeSuggestionModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const LawChatbotAnswerCacheModel = require("../models/lawChatbotAnswerCacheModel");
+const LawSearchModel = require("../models/lawSearchModel");
 const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
 const runtimeFlags = require("../config/runtimeFlags");
 const { isAiEnabled } = require("./runtimeSettingsService");
@@ -143,6 +146,230 @@ function buildResponseMeta(answerMode = "", sources = []) {
   };
 }
 
+function resolveRuntimeAiPlanContext(planContext = {}, usage = null) {
+  if (!planContext || typeof planContext !== "object") {
+    return planContext;
+  }
+
+  const planCode = String(planContext.code || planContext.plan || "").trim().toLowerCase();
+  if (planCode !== "premium" || planContext.useAI !== true) {
+    return planContext;
+  }
+
+  const promptProfile = planContext.promptProfile || {};
+  const primaryModel = String(planContext.aiModel || promptProfile.aiModel || "").trim();
+  const secondaryModel = String(planContext.secondaryAiModel || "").trim();
+  const primaryLimit = Math.max(0, Number(planContext.primaryAiModelQuestionLimit || 0));
+  if (!primaryModel || !secondaryModel || primaryLimit <= 0) {
+    return planContext;
+  }
+
+  const questionCount = Math.max(0, Number(usage?.question_count || 0));
+  const activeAiModel = questionCount <= primaryLimit ? primaryModel : secondaryModel;
+
+  return {
+    ...planContext,
+    activeAiModel,
+    promptProfile: {
+      ...promptProfile,
+      aiModel: activeAiModel,
+    },
+  };
+}
+
+function normalizeContinuationText(text = "") {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function getContinuationCharBudget(promptProfile = {}) {
+  return Math.max(280, Number(promptProfile.aiSourceContextCharLimit || 700));
+}
+
+async function hydrateContinuationRecord(source = {}) {
+  const sourceName = String(source.source || "").trim().toLowerCase();
+  const normalizedId = Number(source.id || 0);
+
+  if (sourceName === "admin_knowledge" && normalizedId) {
+    return LawChatbotKnowledgeModel.findById(normalizedId);
+  }
+
+  if (sourceName === "knowledge_suggestion" && normalizedId) {
+    return LawChatbotKnowledgeSuggestionModel.findById(normalizedId);
+  }
+
+  if (sourceName === "knowledge_base" && normalizedId) {
+    return LawChatbotModel.findKnowledgeById(normalizedId);
+  }
+
+  if (["tbl_laws", "tbl_glaws", "tbl_vinichai"].includes(sourceName) && normalizedId) {
+    return LawSearchModel.findBySourceId(sourceName, normalizedId);
+  }
+
+  if (sourceName === "pdf_chunks" && normalizedId) {
+    return LawChatbotPdfChunkModel.findChunkById(normalizedId);
+  }
+
+  return null;
+}
+
+function buildTextContinuationSource(source = {}, record = {}, promptProfile = {}) {
+  const charBudget = getContinuationCharBudget(promptProfile);
+  const mergedRecord = record && typeof record === "object" ? record : {};
+  const fullText = normalizeContinuationText(
+    [mergedRecord.content, mergedRecord.chunk_text, mergedRecord.comment]
+      .filter(Boolean)
+      .join(" ") || [source.content, source.chunk_text, source.comment].filter(Boolean).join(" "),
+  );
+  const currentOffset = Math.max(0, Number(source.continuationNextOffset || source.continuationCursor || 0));
+  if (!fullText || currentOffset >= fullText.length) {
+    return null;
+  }
+
+  const rawSlice = fullText.slice(currentOffset, currentOffset + charBudget);
+  const continuationText = normalizeContinuationText(rawSlice);
+  if (!continuationText) {
+    return null;
+  }
+
+  const nextOffset = Math.min(fullText.length, currentOffset + rawSlice.length);
+  return {
+    ...source,
+    ...mergedRecord,
+    id: mergedRecord.id || source.id || null,
+    source: source.source || mergedRecord.source || "",
+    title: mergedRecord.title || source.title || "",
+    reference: mergedRecord.reference || source.reference || source.title || "",
+    lawNumber: mergedRecord.lawNumber || source.lawNumber || "",
+    url: mergedRecord.url || source.url || "",
+    keyword: mergedRecord.keyword || source.keyword || "",
+    documentId: mergedRecord.documentId || mergedRecord.document_id || source.documentId || null,
+    content: continuationText,
+    comment: "",
+    score: Math.max(Number(source.score || 0), Number(mergedRecord.score || 0)),
+    contextCarry: true,
+    continuationMode: source.continuationMode || "text",
+    continuationCursor: currentOffset,
+    continuationNextOffset: nextOffset,
+    continuationTotalLength: fullText.length,
+    continuationHasMore: nextOffset < fullText.length,
+  };
+}
+
+async function buildDocumentContinuationSource(source = {}, promptProfile = {}) {
+  const charBudget = getContinuationCharBudget(promptProfile);
+  const documentId = Number(source.documentId || source.document_id || (source.source === "documents" ? source.id || 0 : 0));
+  let remainingBudget = charBudget;
+  let currentChunkId = Number(source.continuationChunkId || (source.source === "pdf_chunks" ? source.id || 0 : 0));
+  let currentChunkOffset = Math.max(0, Number(source.continuationChunkOffset || 0));
+  let currentChunkLength = Math.max(0, Number(source.continuationTotalLength || 0));
+  let activeRecord = null;
+  const pieces = [];
+  let additionalChunksFetched = 0;
+
+  const appendChunkText = (chunk, startOffset = 0) => {
+    const chunkText = normalizeContinuationText(chunk?.content || chunk?.chunk_text || "");
+    if (!chunkText || startOffset >= chunkText.length || remainingBudget <= 0) {
+      return false;
+    }
+
+    const rawSlice = chunkText.slice(startOffset, startOffset + remainingBudget);
+    const normalizedSlice = normalizeContinuationText(rawSlice);
+    if (!normalizedSlice) {
+      return false;
+    }
+
+    pieces.push(normalizedSlice);
+    remainingBudget = Math.max(0, remainingBudget - rawSlice.length);
+    currentChunkId = Number(chunk.id || currentChunkId || 0);
+    currentChunkOffset = Math.min(chunkText.length, startOffset + rawSlice.length);
+    currentChunkLength = chunkText.length;
+    activeRecord = chunk;
+    return true;
+  };
+
+  if (currentChunkId) {
+    const currentChunk = await LawChatbotPdfChunkModel.findChunkById(currentChunkId);
+    if (currentChunk) {
+      appendChunkText(currentChunk, currentChunkOffset);
+    }
+  }
+
+  if (remainingBudget > 0 && documentId > 0) {
+    const nextChunks = await LawChatbotPdfChunkModel.listChunksByDocumentId(documentId, {
+      afterChunkId: currentChunkId,
+      limit: 4,
+    });
+
+    for (const chunk of nextChunks) {
+      if (remainingBudget <= 0) {
+        break;
+      }
+
+      if (appendChunkText(chunk, 0)) {
+        additionalChunksFetched += 1;
+      }
+    }
+
+    if (!activeRecord && nextChunks[0]) {
+      activeRecord = nextChunks[0];
+    }
+  }
+
+  if (pieces.length === 0) {
+    return null;
+  }
+
+  const mergedRecord = activeRecord || source;
+  const hasMore =
+    remainingBudget <= 0 ||
+    currentChunkOffset < currentChunkLength ||
+    (documentId > 0 && additionalChunksFetched >= 4);
+
+  return {
+    ...source,
+    ...mergedRecord,
+    id: source.id || mergedRecord.id || null,
+    source: source.source || mergedRecord.source || "documents",
+    title: mergedRecord.title || source.title || "",
+    reference: mergedRecord.reference || source.reference || source.title || "",
+    lawNumber: mergedRecord.lawNumber || source.lawNumber || "",
+    url: mergedRecord.url || source.url || "",
+    keyword: mergedRecord.keyword || source.keyword || "",
+    documentId: documentId || mergedRecord.documentId || mergedRecord.document_id || null,
+    content: normalizeContinuationText(pieces.join(" ")),
+    comment: "",
+    score: Math.max(Number(source.score || 0), Number(mergedRecord.score || 0)),
+    contextCarry: true,
+    continuationMode: "document_chunks",
+    continuationChunkId: currentChunkId || null,
+    continuationChunkOffset: currentChunkOffset,
+    continuationTotalLength: currentChunkLength,
+    continuationHasMore: hasMore,
+  };
+}
+
+async function expandCarrySourcesForContinuation(carrySources = [], promptProfile = {}) {
+  const expanded = await Promise.all(
+    (Array.isArray(carrySources) ? carrySources : []).map(async (source) => {
+      const sourceName = String(source?.source || "").trim().toLowerCase();
+      if (!source || typeof source !== "object") {
+        return null;
+      }
+
+      if (sourceName === "documents" || sourceName === "pdf_chunks" || source.continuationMode === "document_chunks") {
+        const continuedDocumentSource = await buildDocumentContinuationSource(source, promptProfile);
+        return continuedDocumentSource || source;
+      }
+
+      const hydratedRecord = await hydrateContinuationRecord(source);
+      const continuedTextSource = buildTextContinuationSource(source, hydratedRecord || source, promptProfile);
+      return continuedTextSource || source;
+    }),
+  );
+
+  return mergeUniqueSources(expanded.filter(Boolean));
+}
+
 async function collectAnswerSources(message, target, session, options = {}) {
   const startedAt = nowMs();
   const questionIntent = classifyQuestionIntent(message);
@@ -158,12 +385,16 @@ async function collectAnswerSources(message, target, session, options = {}) {
   const afterDbSearchAt = nowMs();
 
   const resolvedEffectiveMessage = searchPlan.effectiveMessage || effectiveMessage;
-  const carrySources = getFollowUpCarrySources(
+  const initialCarrySources = getFollowUpCarrySources(
     session,
     target,
     message,
     searchPlan.resolvedContext || {},
   );
+  const carrySources =
+    initialCarrySources.length > 0
+      ? await expandCarrySourcesForContinuation(initialCarrySources, options.promptProfile || {})
+      : [];
   const databaseMatches = mergeUniqueSources(
     carrySources,
     Array.isArray(searchPlan.matches) ? searchPlan.matches : [],
@@ -275,9 +506,12 @@ async function replyToChat(payload, session) {
   const sessionUser = session?.user || null;
   const userId = Number(sessionUser?.userId || sessionUser?.id || 0);
   const usageMonth = UserMonthlyUsageModel.getYearMonth();
+  const monthlyUsage = userId
+    ? await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth)
+    : null;
   const freeAiPreviewUsage =
     userId && canUseAiPreview(basePlanContext.code)
-      ? await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth)
+      ? monthlyUsage
       : null;
   const freeAiPreviewMeta = buildAiPreviewMeta(basePlanContext, freeAiPreviewUsage);
   const aiPreviewRequested = isTruthyFlag(payload.aiPreview);
@@ -425,14 +659,17 @@ async function replyToChat(payload, session) {
     totalBudgetMs: CHAT_REPLY_BUDGET_MS,
     planCode: runtimeSearchPlanCode,
   });
-  const planContext = aiPreviewApproved
-    ? buildFreeAiPreviewPlanContext(basePlanContext, usePremiumPreview)
-    : applyEconomyDatabaseOnlyMode(
-        basePlanContext,
-        searchPlan.effectiveMessage || message,
-        searchPlan.matches,
-        classifyQuestionIntent(message),
-      );
+  const planContext = resolveRuntimeAiPlanContext(
+    aiPreviewApproved
+      ? buildFreeAiPreviewPlanContext(basePlanContext, usePremiumPreview)
+      : applyEconomyDatabaseOnlyMode(
+          basePlanContext,
+          searchPlan.effectiveMessage || message,
+          searchPlan.matches,
+          classifyQuestionIntent(message),
+        ),
+    monthlyUsage,
+  );
   const cacheScope = buildAnswerCacheScope(planContext);
   const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target, cacheScope);
   const cacheKey = buildAnswerCacheKey(message, target, planContext);
@@ -470,6 +707,7 @@ async function replyToChat(payload, session) {
       highlightTerms: cachedAnswer.highlightTerms,
       usedFollowUpContext: false,
       usedInternetFallback: cachedAnswer.usedInternetFallback,
+      answerMode: cachedAnswer.answerMode || cachedAnswer.responseMeta?.answerMode || "cache",
       responseMeta: cachedAnswer.responseMeta || null,
       fromCache: true,
     };
@@ -503,8 +741,8 @@ async function replyToChat(payload, session) {
 
     return attachAiPreviewState(cachedResult, {
       previewMeta: freeAiPreviewMeta,
-      consumePreview: aiPreviewApproved && Boolean(cachedResult.answer),
-      consumePremiumPreview: usePremiumPreview,
+      consumePreview: aiPreviewApproved && cachedResult.answerMode !== "db_only" && Boolean(cachedResult.answer),
+      consumePremiumPreview: usePremiumPreview && cachedResult.answerMode !== "db_only",
       userId,
       usageMonth,
     });
@@ -517,6 +755,7 @@ async function replyToChat(payload, session) {
         await LawChatbotAnswerCacheModel.incrementHitCount(dbCachedAnswer.id);
 
         const cachedResult = buildDbCachedChatResult(dbCachedAnswer, message);
+        cachedResult.answerMode = dbCachedAnswer?.metadata?.answerMode || cachedResult.responseMeta?.answerMode || "db_cache";
         if (debugMode) {
           cachedResult.debug = {
             selectedSourceTier: dbCachedAnswer?.metadata?.selectedSourceTier || "db_cache",
@@ -574,8 +813,8 @@ async function replyToChat(payload, session) {
 
         return attachAiPreviewState(cachedResult, {
           previewMeta: freeAiPreviewMeta,
-          consumePreview: aiPreviewApproved && Boolean(cachedResult.answer),
-          consumePremiumPreview: usePremiumPreview,
+          consumePreview: aiPreviewApproved && cachedResult.answerMode !== "db_only" && Boolean(cachedResult.answer),
+          consumePremiumPreview: usePremiumPreview && cachedResult.answerMode !== "db_only",
           userId,
           usageMonth,
         });
@@ -593,6 +832,7 @@ async function replyToChat(payload, session) {
     databaseOnlyMode: !planContext.useAI,
     sourceLimit: planContext.sourceLimit,
     internetLimit: planContext.maxInternetSources,
+    promptProfile: planContext.promptProfile,
     planCode: runtimeSearchPlanCode,
   });
   const afterCollectSourcesAt = nowMs();
@@ -618,8 +858,12 @@ async function replyToChat(payload, session) {
   if (!retrievalEvaluation.shouldAnswer) {
     answer = retrievalEvaluation.userFacingMessage;
   } else {
-    const remainingBudgetBeforeAnswerMs = getRemainingBudgetMs(startedAt, CHAT_REPLY_BUDGET_MS);
+    const remainingBudgetBeforeAnswerMs = getRemainingBudgetMs(
+      startedAt,
+      CHAT_REPLY_BUDGET_MS,
+    );
     const answerSources = sources;
+    const answerDiagnostics = {};
     answer = await generateChatSummary(message, answerSources, {
       conversationalFollowUp: resolvedContext.usedContext,
       conversationHistory: getConversationHistory(session, target),
@@ -638,12 +882,20 @@ async function replyToChat(payload, session) {
       promptProfile: planContext.promptProfile,
       planCode: runtimeSearchPlanCode,
       target,
+      answerDiagnostics,
     });
+    evidence.answerDiagnostics = answerDiagnostics;
   }
   const afterAnswerGenerationAt = nowMs();
+  const effectiveAnswerMode = retrievalEvaluation.shouldAnswer
+    ? evidence.answerDiagnostics?.answerMode || planContext.answerMode || (planContext.useAI ? "ai" : "db_only")
+    : retrievalEvaluation.policy;
 
   if (retrievalEvaluation.shouldAnswer) {
-    storeConversationContext(session, target, message, effectiveMessage, sources, resolvedContext, { answerText: answer });
+    storeConversationContext(session, target, message, effectiveMessage, sources, resolvedContext, {
+      answerText: answer,
+      usedSourcesForContinuation: evidence.answerDiagnostics?.usedSources,
+    });
   }
 
   LawChatbotModel.create({
@@ -668,9 +920,7 @@ async function replyToChat(payload, session) {
     usedFollowUpContext: resolvedContext.usedContext,
     usedInternetFallback: evidence.usedInternetFallback,
     responseMeta: buildResponseMeta(
-      retrievalEvaluation.shouldAnswer
-        ? planContext.answerMode || (planContext.useAI ? "ai" : "db_only")
-        : retrievalEvaluation.policy,
+      effectiveAnswerMode,
       sources,
     ),
     fromCache: false,
@@ -686,7 +936,7 @@ async function replyToChat(payload, session) {
       selectedSourceTier: evidence.selectedSourceTier || "none",
       planCode: planContext.code,
       promptProfile: planContext.promptProfile?.code || "template",
-      answerMode: planContext.answerMode || (planContext.useAI ? "ai" : "db_only"),
+      answerMode: effectiveAnswerMode,
       effectiveMessage,
       resolvedContext,
       sources,
@@ -718,7 +968,7 @@ async function replyToChat(payload, session) {
           responseMeta: result.responseMeta || null,
           planCode: planContext.code,
           promptProfile: planContext.promptProfile?.code || "template",
-          answerMode: planContext.answerMode || (planContext.useAI ? "ai" : "db_only"),
+          answerMode: effectiveAnswerMode,
         },
       });
     } catch (error) {
@@ -743,13 +993,11 @@ async function replyToChat(payload, session) {
       databaseMatches: evidence.databaseMatches?.length || 0,
       internetMatches: evidence.internetMatches?.length || 0,
       answerMode:
-        retrievalEvaluation.shouldAnswer
-          ? planContext.answerMode || (planContext.useAI ? "ai" : "db_only")
-          : retrievalEvaluation.policy,
+        evidence.answerDiagnostics?.answerMode || effectiveAnswerMode,
       promptProfile: planContext.promptProfile?.code || "template",
       queryRewrite: evidence.queryRewriteTrace || null,
-      selectionTrace: evidence.selectionTrace || null,
-      diagnostics: evidence.selectionDiagnostics || null,
+      queryRewriteCount: Array.isArray(evidence.queryRewriteTrace?.rewrites) ? evidence.queryRewriteTrace.rewrites.length : 0,
+      selectionDiagnostics: evidence.selectionDiagnostics || null,
       evaluation: retrievalEvaluation.trace,
       timing: {
         ...(evidence.timing || {}),
@@ -783,8 +1031,8 @@ async function replyToChat(payload, session) {
 
   return attachAiPreviewState(result, {
     previewMeta: freeAiPreviewMeta,
-    consumePreview: aiPreviewApproved && retrievalEvaluation.shouldAnswer && Boolean(answer),
-    consumePremiumPreview: usePremiumPreview && retrievalEvaluation.shouldAnswer && Boolean(answer),
+    consumePreview: aiPreviewApproved && effectiveAnswerMode !== "db_only" && retrievalEvaluation.shouldAnswer && Boolean(answer),
+    consumePremiumPreview: usePremiumPreview && effectiveAnswerMode !== "db_only" && retrievalEvaluation.shouldAnswer && Boolean(answer),
     userId,
     usageMonth,
   });
@@ -800,17 +1048,26 @@ async function summarizeChat(payload, session) {
   const basePlanContext = resolveChatPlanContext(session, {
     aiAvailable: aiRuntimeEnabled && Boolean(openAiConfig),
   });
+  const sessionUser = session?.user || null;
+  const userId = Number(sessionUser?.userId || sessionUser?.id || 0);
+  const usageMonth = UserMonthlyUsageModel.getYearMonth();
+  const monthlyUsage = userId
+    ? await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth)
+    : null;
 
   const target =
     payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
   const searchPlan = await resolveSearchPlan(message, target, session, {
     planCode: basePlanContext.code,
   });
-  const planContext = applyEconomyDatabaseOnlyMode(
-    basePlanContext,
-    searchPlan.effectiveMessage || message,
-    searchPlan.matches,
-    classifyQuestionIntent(message),
+  const planContext = resolveRuntimeAiPlanContext(
+    applyEconomyDatabaseOnlyMode(
+      basePlanContext,
+      searchPlan.effectiveMessage || message,
+      searchPlan.matches,
+      classifyQuestionIntent(message),
+    ),
+    monthlyUsage,
   );
   const evidence = await collectAnswerSources(message, target, session, {
     searchPlan,

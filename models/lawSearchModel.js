@@ -509,16 +509,15 @@ function scoreStructuredLawKeywordMatch(message, keywordText = "") {
     score += (matched.size / queryTerms.length) * 24;
   }
 
-  return score;
 }
 
 class LawSearchModel {
   static async searchVinichai(message, limit = 5) {
-    const pool = getDbPool();
-    if (!pool) {
+    const candidateTerms = buildCandidateTerms(message);
+    if (candidateTerms.length === 0) {
       return [];
     }
-
+ 
     const terms = uniqueTokens([
       ...segmentWords(message),
       ...getVinichaiQueryTerms(message),
@@ -576,6 +575,79 @@ class LawSearchModel {
       .filter((row) => row.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
+  }
+
+  static async findBySourceId(sourceName, id) {
+    const normalizedSource = String(sourceName || "").trim().toLowerCase();
+    const normalizedId = Number(id || 0);
+    if (!normalizedSource || !normalizedId) {
+      return null;
+    }
+
+    const pool = getDbPool();
+    if (!pool) {
+      return null;
+    }
+
+    if (normalizedSource === "tbl_vinichai") {
+      const [rows] = await pool.query(
+        `SELECT vin_id, vin_group, vin_key, vin_question, vin_detail, vin_maihed
+         FROM tbl_vinichai
+         WHERE vin_id = ?
+         LIMIT 1`,
+        [normalizedId],
+      );
+
+      const row = rows[0];
+      if (!row) {
+        return null;
+      }
+
+      return {
+        id: row.vin_id,
+        source: "tbl_vinichai",
+        title: row.vin_question || row.vin_key || "วินิจฉัยที่เกี่ยวข้อง",
+        reference: row.vin_key || "tbl_vinichai",
+        content: row.vin_detail || "",
+        comment: row.vin_maihed || "",
+        score: 0,
+      };
+    }
+
+    if (!["tbl_laws", "tbl_glaws"].includes(normalizedSource)) {
+      return null;
+    }
+
+    const tableName = normalizedSource === "tbl_glaws" ? "tbl_glaws" : "tbl_laws";
+    const idField = normalizedSource === "tbl_glaws" ? "glaw_id" : "law_id";
+    const numberField = normalizedSource === "tbl_glaws" ? "glaw_number" : "law_number";
+    const partField = normalizedSource === "tbl_glaws" ? "glaw_part" : "law_part";
+    const detailField = normalizedSource === "tbl_glaws" ? "glaw_detail" : "law_detail";
+    const commentField = normalizedSource === "tbl_glaws" ? "glaw_comment" : "law_comment";
+    const [rows] = await pool.query(
+      `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
+              ${detailField} AS law_detail, ${commentField} AS law_comment
+       FROM ${tableName}
+       WHERE ${idField} = ?
+       LIMIT 1`,
+      [normalizedId],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      source: normalizedSource,
+      title: row.law_part || row.law_number || "กฎหมายที่เกี่ยวข้อง",
+      reference: row.law_number || row.law_part || normalizedSource,
+      lawNumber: row.law_number || "",
+      content: row.law_detail || "",
+      comment: row.law_comment || "",
+      score: 0,
+    };
   }
 
   static async searchStructuredLaws(message, target = "all", limit = 5) {

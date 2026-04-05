@@ -347,6 +347,133 @@ class LawChatbotPdfChunkModel {
     return rows[0]?.total || 0;
   }
 
+  static async findChunkById(id) {
+    const normalizedId = Number(id || 0);
+    if (!normalizedId) {
+      return null;
+    }
+
+    const pool = getDbPool();
+
+    if (!pool) {
+      const row = memoryChunks.find((item) => Number(item.id) === normalizedId);
+      if (!row) {
+        return null;
+      }
+
+      const document = memoryDocuments.find((item) => Number(item.id) === Number(row.document_id));
+      if (document && document.isSearchable === 0) {
+        return null;
+      }
+
+      return {
+        ...row,
+        source: "pdf_chunks",
+        content: row.chunk_text || "",
+        title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
+        reference:
+          document?.documentNumber ||
+          document?.title ||
+          row.keyword ||
+          "เอกสารที่อัปโหลด",
+        documentNumber: document?.documentNumber || "",
+        documentDateText: document?.documentDateText || "",
+        documentSource: document?.documentSource || "",
+        documentId: row.document_id || null,
+      };
+    }
+
+    const [rows] = await pool.query(
+      `SELECT c.id, c.keyword, c.chunk_text, c.created_at, c.document_id,
+              d.title, d.document_number, d.document_date_text, d.document_source, d.originalname, d.is_searchable
+       FROM pdf_chunks AS c
+       LEFT JOIN documents AS d ON d.id = c.document_id
+       WHERE c.id = ?
+       LIMIT 1`,
+      [normalizedId],
+    );
+
+    const row = rows[0];
+    if (!row || Number(row.is_searchable || 1) === 0) {
+      return null;
+    }
+
+    return {
+      ...row,
+      source: "pdf_chunks",
+      content: row.chunk_text || "",
+      title: row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
+      reference: row.document_number || row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
+      documentNumber: row.document_number || "",
+      documentDateText: row.document_date_text || "",
+      documentSource: row.document_source || "",
+      documentId: row.document_id || null,
+    };
+  }
+
+  static async listChunksByDocumentId(documentId, options = {}) {
+    const normalizedDocumentId = Number(documentId || 0);
+    const normalizedLimit = Math.max(1, Number(options.limit || 3));
+    const afterChunkId = Math.max(0, Number(options.afterChunkId || 0));
+    if (!normalizedDocumentId) {
+      return [];
+    }
+
+    const pool = getDbPool();
+
+    if (!pool) {
+      const document = memoryDocuments.find((item) => Number(item.id) === normalizedDocumentId);
+      if (document && document.isSearchable === 0) {
+        return [];
+      }
+
+      return memoryChunks
+        .filter((row) => Number(row.document_id) === normalizedDocumentId && Number(row.id) > afterChunkId)
+        .sort((a, b) => Number(a.id) - Number(b.id))
+        .slice(0, normalizedLimit)
+        .map((row) => ({
+          ...row,
+          source: "pdf_chunks",
+          content: row.chunk_text || "",
+          title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
+          reference:
+            document?.documentNumber ||
+            document?.title ||
+            row.keyword ||
+            "เอกสารที่อัปโหลด",
+          documentNumber: document?.documentNumber || "",
+          documentDateText: document?.documentDateText || "",
+          documentSource: document?.documentSource || "",
+          documentId: row.document_id || null,
+        }));
+    }
+
+    const [rows] = await pool.query(
+      `SELECT c.id, c.keyword, c.chunk_text, c.created_at, c.document_id,
+              d.title, d.document_number, d.document_date_text, d.document_source, d.originalname, d.is_searchable
+       FROM pdf_chunks AS c
+       LEFT JOIN documents AS d ON d.id = c.document_id
+       WHERE c.document_id = ?
+         AND c.id > ?
+         AND (d.id IS NULL OR d.is_searchable = 1)
+       ORDER BY c.id ASC
+       LIMIT ?`,
+      [normalizedDocumentId, afterChunkId, normalizedLimit],
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      source: "pdf_chunks",
+      content: row.chunk_text || "",
+      title: row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
+      reference: row.document_number || row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
+      documentNumber: row.document_number || "",
+      documentDateText: row.document_date_text || "",
+      documentSource: row.document_source || "",
+      documentId: row.document_id || null,
+    }));
+  }
+
   static async searchChunks(message, limit = 5) {
     const normalizedMessage = normalizeForSearch(message).toLowerCase();
     const terms = buildCandidateTerms(message);

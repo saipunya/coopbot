@@ -16,6 +16,26 @@ const { refreshAiSetting } = require("./services/runtimeSettingsService");
 const app = express();
 const port = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === "production";
+const useAutoSecureSessionCookie = (() => {
+  const redirectUri = String(process.env.GOOGLE_REDIRECT_URI || "").trim();
+  if (!redirectUri) {
+    return !isProduction;
+  }
+
+  try {
+    const parsedRedirectUri = new URL(redirectUri);
+    const hostname = String(parsedRedirectUri.hostname || "").trim().toLowerCase();
+    const isLoopbackHost =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname === "[::1]";
+
+    return parsedRedirectUri.protocol !== "https:" && isLoopbackHost;
+  } catch (error) {
+    return !isProduction;
+  }
+})();
 const sessionTtlMs = 1000 * 60 * 60 * 8;
 const sessionStore = createSessionStore({
   defaultTtlMs: sessionTtlMs,
@@ -39,7 +59,7 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      secure: isProduction ? true : "auto",
+      secure: useAutoSecureSessionCookie ? "auto" : isProduction,
       maxAge: sessionTtlMs,
     },
   })
