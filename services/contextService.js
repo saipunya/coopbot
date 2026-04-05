@@ -295,7 +295,7 @@ function storeConversationContext(session, target, originalMessage, effectiveMes
 }
 
 function getFollowUpCarrySources(session, target, message, resolvedContext = {}) {
-  if (!resolvedContext?.usedContext || !wantsExplanation(message)) {
+  if (!wantsExplanation(message)) {
     return [];
   }
 
