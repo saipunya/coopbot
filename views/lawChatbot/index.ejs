@@ -52,6 +52,12 @@
       --plan-shell-glow: rgba(49, 128, 181, 0.16);
       --plan-band-start: rgba(215, 237, 249, 0.82);
       --plan-band-end: rgba(255, 255, 255, 0.4);
+      --plan-icon-start: #2b9fd6;
+      --plan-icon-end: #1a6e9e;
+      --plan-accent: #2b9fd6;
+      --plan-accent-soft: rgba(43, 159, 214, 0.10);
+      --plan-highlight-border: rgba(43, 159, 214, 0.18);
+      --plan-highlight-icon: #1a7fb5;
     }
 
     body[data-bot-plan="pro"] {
@@ -65,6 +71,12 @@
       --plan-band-start: rgba(215, 240, 234, 0.86);
       --plan-band-end: rgba(255, 255, 255, 0.42);
       --plan-chip-ink: #09483f;
+      --plan-icon-start: #14a38e;
+      --plan-icon-end: #0a6b5e;
+      --plan-accent: #14a38e;
+      --plan-accent-soft: rgba(20, 163, 142, 0.10);
+      --plan-highlight-border: rgba(20, 163, 142, 0.18);
+      --plan-highlight-icon: #0d7f6e;
     }
 
     body[data-bot-plan="premium"] {
@@ -78,6 +90,12 @@
       --plan-band-start: rgba(247, 234, 210, 0.88);
       --plan-band-end: rgba(255, 250, 242, 0.46);
       --plan-chip-ink: #5e3810;
+      --plan-icon-start: #d4952a;
+      --plan-icon-end: #a16b14;
+      --plan-accent: #c48820;
+      --plan-accent-soft: rgba(196, 136, 32, 0.10);
+      --plan-highlight-border: rgba(196, 136, 32, 0.18);
+      --plan-highlight-icon: #a16b14;
     }
 
     html, body {
@@ -231,19 +249,6 @@
       gap: 0.35rem;
     }
 
-    .plan-ribbon-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.42rem;
-      width: fit-content;
-      padding: 0.38rem 0.82rem;
-      border-radius: 999px;
-      background: var(--plan-chip-bg);
-      color: var(--plan-chip-ink);
-      font-size: 0.82rem;
-      font-weight: 700;
-    }
-
     .plan-ribbon-title {
       margin: 0;
       font-size: clamp(1rem, 1.7vw, 1.2rem);
@@ -303,6 +308,151 @@
       margin-top: 0.2rem;
       font-size: 1rem;
       color: var(--primary-strong);
+    }
+
+    /* ── Plan-specific brand icon ── */
+    body[data-bot-plan="pro"] .brand-icon {
+      background: linear-gradient(145deg, var(--plan-icon-start, #14a38e), var(--plan-icon-end, #0a6b5e));
+      box-shadow: 0 8px 18px rgba(10, 107, 94, 0.18);
+    }
+    body[data-bot-plan="premium"] .brand-icon {
+      background: linear-gradient(145deg, var(--plan-icon-start, #d4952a), var(--plan-icon-end, #a16b14));
+      box-shadow: 0 8px 18px rgba(161, 107, 20, 0.18);
+    }
+
+    /* ── Plan ribbon chip per-plan icons ── */
+    .plan-ribbon-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.42rem;
+      width: fit-content;
+      padding: 0.38rem 0.82rem;
+      border-radius: 999px;
+      background: var(--plan-chip-bg);
+      color: var(--plan-chip-ink);
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+    body[data-bot-plan="pro"] .plan-ribbon-chip {
+      background: rgba(20, 163, 142, 0.12);
+      border: 1px solid rgba(20, 163, 142, 0.18);
+    }
+    body[data-bot-plan="premium"] .plan-ribbon-chip {
+      background: linear-gradient(135deg, rgba(212, 149, 42, 0.14), rgba(255, 215, 100, 0.10));
+      border: 1px solid rgba(196, 136, 32, 0.22);
+    }
+
+    /* ── Plan ribbon decorative shimmer (premium) ── */
+    body[data-bot-plan="premium"] .plan-ribbon::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(120deg, transparent 30%, rgba(255, 215, 100, 0.08) 50%, transparent 70%);
+      pointer-events: none;
+      animation: planShimmer 4s ease-in-out infinite;
+    }
+    @keyframes planShimmer {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+
+    /* ── Plan feature highlights ── */
+    .plan-highlights {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.65rem;
+      margin-top: 0.55rem;
+    }
+
+    .plan-highlight-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.55rem;
+      padding: 0.68rem 0.82rem;
+      border-radius: 0.82rem;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--plan-highlight-border, rgba(21, 84, 122, 0.12));
+      backdrop-filter: blur(8px);
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }
+
+    .plan-highlight-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+    }
+
+    .plan-highlight-icon {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 0.55rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      font-size: 0.88rem;
+      color: var(--plan-highlight-icon, var(--primary));
+      background: var(--plan-accent-soft, rgba(21, 84, 122, 0.08));
+    }
+
+    .plan-highlight-text {
+      font-size: 0.82rem;
+      line-height: 1.42;
+      color: var(--text-main);
+    }
+
+    /* ── Plan usage quick-stat bar ── */
+    .plan-ribbon-usage-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      margin-top: 0.35rem;
+    }
+
+    .plan-ribbon-usage-track {
+      flex: 1;
+      height: 0.42rem;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.06);
+      overflow: hidden;
+    }
+
+    .plan-ribbon-usage-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--plan-accent, var(--primary)), var(--primary-strong));
+      transition: width 400ms ease;
+    }
+
+    .plan-ribbon-usage-label {
+      font-size: 0.72rem;
+      color: var(--text-sub);
+      white-space: nowrap;
+    }
+
+    /* ── Plan upgrade nudge inside ribbon ── */
+    .plan-ribbon-upgrade {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.42rem;
+      width: fit-content;
+      margin-top: 0.3rem;
+      padding: 0.42rem 0.82rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-decoration: none;
+      color: #fff;
+      background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }
+
+    .plan-ribbon-upgrade:hover,
+    .plan-ribbon-upgrade:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
+      color: #fff;
     }
 
     .page-brand {
@@ -1749,6 +1899,15 @@
         flex-direction: column;
         align-items: stretch;
       }
+      .plan-highlights {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .plan-ribbon {
+        grid-template-columns: 1fr;
+      }
+      .plan-ribbon-stats {
+        justify-content: flex-start;
+      }
     }
 
     @media (min-width: 1025px) {
@@ -2169,21 +2328,45 @@
           title: "เริ่มใช้งานแบบเรียบง่าย",
           description: "เหมาะกับการสำรวจระบบและดูรูปแบบคำตอบก่อนขยับไปแพ็กเกจที่ตอบได้ลึกและต่อเนื่องขึ้น",
           quota: "โควต้าแบบเริ่มต้น",
-          depth: "คำตอบกระชับและตรงประเด็น"
+          depth: "คำตอบกระชับและตรงประเด็น",
+          icon: "bi-gift",
+          highlights: [
+            { icon: "bi-database", text: "ค้นหาจากฐานข้อมูลภายในระบบแบบเร็วและตรงประเด็น" },
+            { icon: "bi-stars", text: "ลองคำตอบแบบ AI ได้ฟรี 5 ครั้งต่อเดือน" },
+            { icon: "bi-chat-text", text: "รองรับการถามต่อเนื่องจากเรื่องเดิม" },
+            { icon: "bi-arrow-up-circle", text: "อัปเกรดเมื่อพร้อม เพื่อปลดล็อกความสามารถเต็ม" }
+          ],
+          upgradeCta: true
         },
         pro: {
           label: "Professional",
           title: "ทำงานประจำได้ลื่นและมั่นใจ",
           description: "โทนคำตอบและการค้นหาถูกยกระดับให้เหมาะกับการใช้งานต่อเนื่อง พร้อม internet fallback แบบจำกัดเมื่อจำเป็น",
           quota: "โควต้ารายเดือนที่สูงขึ้น",
-          depth: "คำตอบละเอียดและต่อบทสนทนาได้ดี"
+          depth: "คำตอบละเอียดและต่อบทสนทนาได้ดี",
+          icon: "bi-lightning-charge-fill",
+          highlights: [
+            { icon: "bi-cpu", text: "AI ตอบได้ต่อเนื่องโดยไม่ต้องใช้สิทธิ์ทดลอง" },
+            { icon: "bi-globe2", text: "ค้นข้อมูลภายนอกได้แบบจำกัดเมื่อข้อมูลในระบบยังไม่พอ" },
+            { icon: "bi-clock-history", text: "เก็บประวัติการค้นหา 15 วัน" },
+            { icon: "bi-chat-dots", text: "ตอบละเอียดขึ้น พร้อมเหตุผลและเงื่อนไขสำคัญ" }
+          ],
+          upgradeCta: true
         },
         premium: {
           label: "Premium",
           title: "วิเคราะห์เชิงลึกในมุมที่กว้างกว่า",
           description: "เหมาะกับงานที่ต้องการความครอบคลุมสูงสุด การเรียบเรียงแน่นขึ้น และการใช้หลายแหล่งข้อมูลมากกว่าเดิม",
           quota: "ใช้งานระดับเข้มข้น",
-          depth: "คำตอบเชิงลึกและหลายแหล่งอ้างอิง"
+          depth: "คำตอบเชิงลึกและหลายแหล่งอ้างอิง",
+          icon: "bi-gem",
+          highlights: [
+            { icon: "bi-bullseye", text: "AI เชิงลึกพร้อมเปรียบเทียบหลายแหล่งและอธิบายเพิ่มเติม" },
+            { icon: "bi-arrow-repeat", text: "follow-up และวิเคราะห์ต่อเนื่องได้ดีที่สุด" },
+            { icon: "bi-globe", text: "ค้นอินเทอร์เน็ตได้เต็มกว่าแพ็กเกจอื่น" },
+            { icon: "bi-journal-bookmark", text: "เก็บประวัติการค้นหา 30 วัน" }
+          ],
+          upgradeCta: false
         }
       };
       const activeBotPlanMeta = botPlanMeta[botPlanTheme] || botPlanMeta.free;
@@ -2281,9 +2464,37 @@
 
     <section class="plan-ribbon">
       <div class="plan-ribbon-copy">
-        <span class="plan-ribbon-chip"><i class="bi bi-layers"></i> <%= activeBotPlanMeta.label %></span>
+        <span class="plan-ribbon-chip"><i class="bi <%= activeBotPlanMeta.icon || 'bi-layers' %>"></i> <%= activeBotPlanMeta.label %></span>
         <h2 class="plan-ribbon-title"><%= activeBotPlanMeta.title %></h2>
         <p class="plan-ribbon-text"><%= activeBotPlanMeta.description %></p>
+
+        <% if (Array.isArray(activeBotPlanMeta.highlights) && activeBotPlanMeta.highlights.length) { %>
+          <div class="plan-highlights">
+            <% activeBotPlanMeta.highlights.forEach(function(hl) { %>
+              <div class="plan-highlight-card">
+                <div class="plan-highlight-icon"><i class="bi <%= hl.icon %>"></i></div>
+                <span class="plan-highlight-text"><%= hl.text %></span>
+              </div>
+            <% }); %>
+          </div>
+        <% } %>
+
+        <% if (isGoogleUser && signedInUsage && !signedInUsage.isUnlimited) { %>
+          <div class="plan-ribbon-usage-bar">
+            <div class="plan-ribbon-usage-track">
+              <div class="plan-ribbon-usage-fill" style="width: <%= Math.min(100, Math.round(((signedInUsage.questionCount || 0) / Math.max(1, signedInUsage.questionLimit || 1)) * 100)) %>%"></div>
+            </div>
+            <span class="plan-ribbon-usage-label">ใช้แล้ว <%= signedInUsage.questionCount || 0 %>/<%= signedInUsage.questionLimit || 0 %> ครั้ง</span>
+          </div>
+        <% } %>
+
+        <% if (activeBotPlanMeta.upgradeCta && !currentUser && botPlanTheme !== 'premium') { %>
+          <a href="/user" class="plan-ribbon-upgrade">
+            <i class="bi bi-rocket-takeoff"></i>
+            <span>อัปเกรดแพ็กเกจ</span>
+            <i class="bi bi-chevron-right"></i>
+          </a>
+        <% } %>
       </div>
       <div class="plan-ribbon-stats">
         <div class="plan-ribbon-stat">
