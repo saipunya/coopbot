@@ -11,6 +11,21 @@ const {
 } = require("../services/thaiTextUtils");
 
 const STRUCTURED_LAW_SEARCH_FIELD_CACHE = new Map();
+const GENERIC_QUERY_TOKENS = new Set([
+  "การ",
+  "กฎหมาย",
+  "สหกรณ์",
+  "กลุ่ม",
+  "เกษตรกร",
+  "พระราชบัญญัติ",
+  "พระราชกฤษฎีกา",
+  "พรบ",
+  "พรฎ",
+  "มาตรา",
+  "ข้อ",
+  "วรรค",
+  "อนุมาตรา",
+]);
 
 function extractLawNumber(text) {
   const match = String(text || "").match(/\d+/);
@@ -110,6 +125,26 @@ function extractAbbreviationTerms(text) {
   return uniqueTokens(
     matches.filter((term) => term && term.length >= 2 && term.length <= 8),
   );
+}
+
+function buildCandidateTerms(message) {
+  const normalizedMessage = normalizeForSearch(message).toLowerCase();
+  const queryTokens = uniqueTokens(segmentWords(message));
+  const specificTokens = queryTokens.filter(
+    (token) => token && token.length >= 3 && !GENERIC_QUERY_TOKENS.has(token),
+  );
+
+  const terms = uniqueTokens([
+    normalizedMessage,
+    ...specificTokens,
+  ]).filter(Boolean);
+
+  if (terms.length > 0) {
+    return terms.slice(0, 8);
+  }
+
+  const fallbackTokens = queryTokens.filter((token) => token && token.length >= 2);
+  return uniqueTokens([normalizedMessage, ...fallbackTokens].filter(Boolean)).slice(0, 8);
 }
 
 
