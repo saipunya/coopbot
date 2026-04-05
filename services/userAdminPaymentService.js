@@ -190,6 +190,14 @@ function buildSignedInProfile(signedInUser = {}, persistedUser = null) {
     planExpiresAt: persistedUser.plan_expires_at || signedInUser.planExpiresAt || null,
     status: persistedUser.status || signedInUser.status || "active",
     premiumExpiresAt: persistedUser.premium_expires_at || signedInUser.premiumExpiresAt || null,
+    lawChatbotNoticeAcceptedVersion:
+      persistedUser.law_chatbot_notice_accepted_version ||
+      signedInUser.lawChatbotNoticeAcceptedVersion ||
+      "",
+    lawChatbotNoticeAcceptedAt:
+      persistedUser.law_chatbot_notice_accepted_at ||
+      signedInUser.lawChatbotNoticeAcceptedAt ||
+      null,
   };
 }
 

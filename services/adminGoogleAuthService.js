@@ -225,6 +225,8 @@ async function loginWithGoogleCallback(req) {
       planStartedAt: persistedUser?.plan_started_at || null,
       planExpiresAt: persistedUser?.plan_expires_at || null,
       premiumExpiresAt: persistedUser?.premium_expires_at || null,
+      lawChatbotNoticeAcceptedVersion: persistedUser?.law_chatbot_notice_accepted_version || "",
+      lawChatbotNoticeAcceptedAt: persistedUser?.law_chatbot_notice_accepted_at || null,
       userId: persistedUser?.id || null,
     },
   };

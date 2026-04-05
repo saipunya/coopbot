@@ -1,6 +1,11 @@
 const lawChatbotService = require("../services/lawChatbotService");
 const runtimeFlags = require("../config/runtimeFlags");
-const { hasAcceptedLawChatbotNotice, markLawChatbotNoticeAccepted } = require("../middlewares/authMiddleware");
+const UserModel = require("../models/userModel");
+const {
+  hasAcceptedLawChatbotNotice,
+  markLawChatbotNoticeAccepted,
+  LAW_CHATBOT_NOTICE_VERSION,
+} = require("../middlewares/authMiddleware");
 const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
 
 function sanitizeLawChatbotReturnPath(value, fallbackPath, expectedPrefix) {
@@ -31,6 +36,10 @@ function sanitizeLawChatbotUserReturnPath(value, fallbackPath = "/law-chatbot") 
 
 async function renderIndex(req, res) {
   const returnTo = sanitizeLawChatbotUserReturnPath(req.query.returnTo, "/law-chatbot");
+  if (!req.signedInUser) {
+    return res.redirect(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`);
+  }
+
   if (!hasAcceptedLawChatbotNotice(req)) {
     return res.render("lawChatbot/accessNotice", {
       title: "คำประกาศชี้แจงก่อนใช้งาน",
@@ -38,12 +47,8 @@ async function renderIndex(req, res) {
       manifestPath: "/manifest-law-chatbot.json",
       errorMessage: req.query.error || "",
       returnTo,
-      requiresGoogleLogin: !req.signedInUser,
+      requiresGoogleLogin: false,
     });
-  }
-
-  if (!req.signedInUser) {
-    return res.redirect(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`);
   }
 
   const data = await lawChatbotService.getDashboardData();
@@ -56,7 +61,7 @@ async function renderIndex(req, res) {
   });
 }
 
-function acceptAccessNotice(req, res) {
+async function acceptAccessNotice(req, res) {
   const returnTo = sanitizeLawChatbotUserReturnPath(req.body.returnTo, "/law-chatbot");
   if (String(req.body.acceptNotice || "") !== "1") {
     return res.redirect(
@@ -65,7 +70,19 @@ function acceptAccessNotice(req, res) {
     );
   }
 
+  const signedInUser = req.signedInUser || req.session?.user || null;
+  const userId = Number(signedInUser?.userId || signedInUser?.id || 0);
+
+  if (!userId) {
+    return res.redirect(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`);
+  }
+
+  await UserModel.markLawChatbotNoticeAccepted(userId, LAW_CHATBOT_NOTICE_VERSION);
   markLawChatbotNoticeAccepted(req);
+  if (req.session?.user) {
+    req.session.user.lawChatbotNoticeAcceptedVersion = LAW_CHATBOT_NOTICE_VERSION;
+    req.session.user.lawChatbotNoticeAcceptedAt = new Date().toISOString();
+  }
   return req.session.save((error) => {
     if (error) {
       return res.redirect(
@@ -74,11 +91,7 @@ function acceptAccessNotice(req, res) {
       );
     }
 
-    if (req.signedInUser) {
-      return res.redirect(returnTo);
-    }
-
-    return res.redirect(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`);
+    return res.redirect(returnTo);
   });
 }
 

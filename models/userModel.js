@@ -2,12 +2,50 @@ const { getDbPool } = require("../config/db");
 const { DEFAULT_PLAN_DURATION_DAYS } = require("../config/planConfig");
 const { normalizePlanCode } = require("../services/planService");
 
+let userNoticeColumnsReadyPromise = null;
+
+async function ensureUserNoticeColumns() {
+  const pool = getDbPool();
+  if (!pool) {
+    return;
+  }
+
+  if (!userNoticeColumnsReadyPromise) {
+    userNoticeColumnsReadyPromise = (async () => {
+      const [versionColumns] = await pool.query(
+        "SHOW COLUMNS FROM users LIKE 'law_chatbot_notice_accepted_version'",
+      );
+      if (!Array.isArray(versionColumns) || versionColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE users ADD COLUMN law_chatbot_notice_accepted_version varchar(50) DEFAULT NULL AFTER status",
+        );
+      }
+
+      const [acceptedAtColumns] = await pool.query(
+        "SHOW COLUMNS FROM users LIKE 'law_chatbot_notice_accepted_at'",
+      );
+      if (!Array.isArray(acceptedAtColumns) || acceptedAtColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE users ADD COLUMN law_chatbot_notice_accepted_at timestamp NULL DEFAULT NULL AFTER law_chatbot_notice_accepted_version",
+        );
+      }
+    })().catch((error) => {
+      userNoticeColumnsReadyPromise = null;
+      throw error;
+    });
+  }
+
+  await userNoticeColumnsReadyPromise;
+}
+
 class UserModel {
   static async listForAdmin(options = {}) {
     const pool = getDbPool();
     if (!pool) {
       throw new Error("Database connection is required for admin user listing.");
     }
+
+    await ensureUserNoticeColumns();
 
     const query = String(options.query || "").trim().toLowerCase();
     const limit = Math.max(1, Math.min(200, Number(options.limit || 50)));
@@ -25,7 +63,8 @@ class UserModel {
 
     const [rows] = await pool.query(
       `SELECT id, google_id, email, name, avatar_url, plan, plan_started_at, plan_expires_at,
-              premium_expires_at, status, created_at, updated_at
+              premium_expires_at, status, law_chatbot_notice_accepted_version,
+              law_chatbot_notice_accepted_at, created_at, updated_at
        FROM users
        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
        ORDER BY updated_at DESC, id DESC
@@ -41,6 +80,8 @@ class UserModel {
     if (!pool) {
       throw new Error("Database connection is required for admin user count.");
     }
+
+    await ensureUserNoticeColumns();
 
     const trimmedQuery = String(query || "").trim().toLowerCase();
     const where = [];
@@ -68,6 +109,8 @@ class UserModel {
       throw new Error("Database connection is required for admin user stats.");
     }
 
+    await ensureUserNoticeColumns();
+
     const [rows] = await pool.query(
       `SELECT
           COUNT(*) AS total_count,
@@ -91,6 +134,8 @@ class UserModel {
       throw new Error("Database connection is required for user lookup.");
     }
 
+    await ensureUserNoticeColumns();
+
     const normalizedUserId = Number(userId || 0);
     if (!normalizedUserId) {
       return null;
@@ -98,7 +143,8 @@ class UserModel {
 
     const [rows] = await pool.query(
       `SELECT id, google_id, email, name, avatar_url, plan, plan_started_at, plan_expires_at,
-              premium_expires_at, status, created_at, updated_at
+              premium_expires_at, status, law_chatbot_notice_accepted_version,
+              law_chatbot_notice_accepted_at, created_at, updated_at
        FROM users
        WHERE id = ?
        LIMIT 1`,
@@ -113,6 +159,8 @@ class UserModel {
     if (!pool) {
       throw new Error("Database connection is required for Google user persistence.");
     }
+
+    await ensureUserNoticeColumns();
 
     const googleId = String(payload.googleId || "").trim();
     const email = String(payload.email || "").trim().toLowerCase();
@@ -139,7 +187,8 @@ class UserModel {
 
     const [rows] = await pool.query(
       `SELECT id, google_id, email, name, avatar_url, plan, plan_started_at, plan_expires_at,
-              premium_expires_at, status, created_at, updated_at
+              premium_expires_at, status, law_chatbot_notice_accepted_version,
+              law_chatbot_notice_accepted_at, created_at, updated_at
        FROM users
        WHERE google_id = ? OR email = ?
        ORDER BY id DESC
@@ -148,6 +197,32 @@ class UserModel {
     );
 
     return rows[0] || null;
+  }
+
+  static async markLawChatbotNoticeAccepted(userId, version) {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for notice acceptance persistence.");
+    }
+
+    await ensureUserNoticeColumns();
+
+    const normalizedUserId = Number(userId || 0);
+    const normalizedVersion = String(version || "").trim();
+    if (!normalizedUserId || !normalizedVersion) {
+      return false;
+    }
+
+    const [result] = await pool.query(
+      `UPDATE users
+       SET law_chatbot_notice_accepted_version = ?,
+           law_chatbot_notice_accepted_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [normalizedVersion, normalizedUserId],
+    );
+
+    return Number(result.affectedRows || 0) > 0;
   }
 
   static async activatePlan(userId, planCode, options = {}) {

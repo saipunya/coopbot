@@ -230,7 +230,7 @@ async function main() {
     const checks = [];
 
     checks.push(await fetchCheck("/law-chatbot", {
-      expectedPhrases: ["คำประกาศชี้แจงและเงื่อนไขการใช้งาน"],
+      expectedPhrases: [],
     }));
     checks.push(await fetchCheck("/admin/login", {
       expectedPhrases: ["เข้าสู่ระบบผู้ดูแล"],

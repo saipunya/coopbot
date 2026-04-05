@@ -126,7 +126,16 @@ function sanitizeReturnPath(value, fallbackPath = "/user") {
 }
 
 function hasAcceptedLawChatbotNotice(req) {
-  return String(req?.session?.[LAW_CHATBOT_NOTICE_ACCEPTED_KEY] || "").trim() === LAW_CHATBOT_NOTICE_VERSION;
+  const sessionAcceptedVersion = String(req?.session?.[LAW_CHATBOT_NOTICE_ACCEPTED_KEY] || "").trim();
+  const persistedAcceptedVersion = String(
+    req?.signedInUser?.lawChatbotNoticeAcceptedVersion ||
+    req?.signedInUser?.law_chatbot_notice_accepted_version ||
+    req?.session?.user?.lawChatbotNoticeAcceptedVersion ||
+    req?.session?.user?.law_chatbot_notice_accepted_version ||
+    "",
+  ).trim();
+
+  return sessionAcceptedVersion === LAW_CHATBOT_NOTICE_VERSION || persistedAcceptedVersion === LAW_CHATBOT_NOTICE_VERSION;
 }
 
 function markLawChatbotNoticeAccepted(req) {
@@ -162,6 +171,14 @@ function mapPersistedUserToSessionUser(sessionUser = {}, persistedUser = {}) {
     planExpiresAt: persistedUser.plan_expires_at || sessionUser.planExpiresAt || null,
     status: persistedUser.status || sessionUser.status || "active",
     premiumExpiresAt: persistedUser.premium_expires_at || sessionUser.premiumExpiresAt || null,
+    lawChatbotNoticeAcceptedVersion:
+      persistedUser.law_chatbot_notice_accepted_version ||
+      sessionUser.lawChatbotNoticeAcceptedVersion ||
+      "",
+    lawChatbotNoticeAcceptedAt:
+      persistedUser.law_chatbot_notice_accepted_at ||
+      sessionUser.lawChatbotNoticeAcceptedAt ||
+      null,
     authProvider: "google",
     group: sessionUser.group || "google-user",
     position: sessionUser.position || "Google User",
@@ -201,6 +218,11 @@ async function attachCurrentUser(req, res, next) {
         if (persistedUser) {
           googleUser = mapPersistedUserToSessionUser(googleUser, persistedUser);
           req.session.user = googleUser;
+          if (
+            String(persistedUser.law_chatbot_notice_accepted_version || "").trim() === LAW_CHATBOT_NOTICE_VERSION
+          ) {
+            req.session[LAW_CHATBOT_NOTICE_ACCEPTED_KEY] = LAW_CHATBOT_NOTICE_VERSION;
+          }
         }
       } catch (error) {
         console.error("Failed to hydrate signed-in Google user:", error.message || error);
@@ -435,4 +457,5 @@ module.exports = {
   requireLawChatbotNoticeAccepted,
   requireSignedInUser,
   redirectIfAuthenticated,
+  LAW_CHATBOT_NOTICE_VERSION,
 };

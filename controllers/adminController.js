@@ -131,11 +131,6 @@ async function submitLogin(req, res) {
 
 function redirectToGoogleLogin(req, res) {
   try {
-    const returnTo = sanitizePublicUserReturnPath(req.query.returnTo, "/law-chatbot");
-    if (!req.session?.adminUser && !hasAcceptedLawChatbotNotice(req)) {
-      return res.redirect(`/law-chatbot?returnTo=${encodeURIComponent(returnTo)}`);
-    }
-
     const authUrl = createGoogleAuthUrl(req);
 
     req.session.save((err) => {
