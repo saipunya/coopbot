@@ -71,6 +71,10 @@ const EXCLUSIVE_MEANING_RULES = [
     primary: "ผู้สอบบัญชี",
     conflicts: ["ผู้ตรวจสอบกิจการ", "ผู้ตรวจการสหกรณ์"],
   },
+  {
+    primary: "ผู้ชำระบัญชี",
+    conflicts: ["นายทะเบียนสหกรณ์", "ผู้สอบบัญชี", "ผู้ตรวจการสหกรณ์"],
+  },
 ];
 const QUERY_TOPIC_RULES = [
   {
@@ -238,7 +242,7 @@ const QUERY_TOPIC_RULES = [
   {
     primary: "การชำระบัญชี",
     aliases: ["ชำระบัญชี", "ผู้ชำระบัญชี"],
-    conflicts: ["สอบบัญชี", "ผู้สอบบัญชี"],
+    conflicts: ["สอบบัญชี", "ผู้สอบบัญชี", "นายทะเบียนสหกรณ์"],
     contextSignals: [
       "เลิกสหกรณ์",
       "เลิก",

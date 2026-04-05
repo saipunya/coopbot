@@ -186,12 +186,15 @@ function looksLikeFollowUpQuestion(message, recentTopic = "") {
 }
 
 function extractTopicHints(message, matches) {
-  const hints = [...extractExplicitTopicHints(message)];
+  const explicitHints = extractExplicitTopicHints(message);
   const strippedMessage = stripQuestionTail(message);
+  const hints = [];
 
   if (strippedMessage && strippedMessage.length >= 6) {
     hints.push(strippedMessage);
   }
+
+  hints.push(...explicitHints);
 
   (Array.isArray(matches) ? matches : []).slice(0, 3).forEach((item) => {
     if (item.reference) {
