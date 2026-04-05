@@ -158,7 +158,7 @@ function looksLikeFollowUpQuestion(message, recentTopic = "") {
   }
 
   if (isStandaloneLawLookup(text)) {
-    return false;
+    return Boolean(recentTopic);
   }
 
   if (text.length <= 18) {

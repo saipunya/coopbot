@@ -41,6 +41,10 @@ function detectLawScope(text) {
     return "coop";
   }
 
+  if (isDirectLawNumberQuery(normalized)) {
+    return "coop";
+  }
+
   return "all";
 }
 
