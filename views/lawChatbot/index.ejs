@@ -4570,7 +4570,6 @@
       updateSendButtonState();
       setHeaderCollapsed(localStorage.getItem(HEADER_COLLAPSE_KEY) === '1');
       if (SpeechRecognition) {
-        setVoiceStatus('กดปุ่มไมค์เพื่อเริ่มค้นหาด้วยเสียง');
         initVoiceRecognition();
       }
       const pendingPostLoginChat = consumePendingPostLoginChat();
