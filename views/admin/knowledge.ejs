@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet" />
+    <style>
+      body { margin: 0; font-family: 'Sarabun', Arial, sans-serif; background: linear-gradient(160deg, #e6eef6, #f5f9fc); color: #1f2a37; }
+      .shell { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; }
+      .card { background: rgba(255,255,255,0.9); border: 1px solid #d8e2ea; border-radius: 20px; box-shadow: 0 18px 45px rgba(18,52,77,0.16); padding: 1.25rem; margin-bottom: 1rem; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; position:relative; overflow:hidden; }
+      .topbar::before { content:""; position:absolute; inset:0; background: radial-gradient(circle at top left, rgba(255,255,255,0.36), transparent 30%), linear-gradient(135deg, rgba(255,255,255,0.16), transparent 44%); pointer-events:none; }
+      .topbar > * { position:relative; z-index:1; }
+      .topbar a { color: #0f4667; text-decoration:none; font-weight:700; }
+      .alert { padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; }
+      .alert.success { background:#e8f7ee; color:#1f6a3a; border:1px solid #b8e3c8; }
+      .alert.error { background:#fce9e7; color:#9b2c22; border:1px solid #f1b8b1; }
+      .tab-row { display:flex; gap:0.75rem; flex-wrap:wrap; }
+      .tab-row a { text-decoration:none; font-weight:700; color:#0f4667; padding:0.72rem 1rem; border-radius:14px; border:1px solid #d8e2ea; background:#eef4f8; }
+      .tab-row a.active { background:#0f5f8f; border-color:#0f5f8f; color:#fff; }
+      .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; }
+      .metric-card { position:relative; overflow:hidden; }
+      .metric-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, #0f5f8f, transparent 85%); }
+      .metric { font-size: 1.8rem; font-weight: 700; color: #0f4667; margin: 0.3rem 0 0; }
+      .section-note { color:#5d6a79; line-height:1.7; }
+      .form-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:0.9rem; }
+      .field label { display:block; font-weight:700; margin-bottom:0.35rem; }
+      .field input, .field select, .field textarea { width:100%; box-sizing:border-box; border:1px solid #c9d8e4; border-radius:14px; padding:0.8rem 0.9rem; font:inherit; background:#fff; color:#1f2a37; }
+      .field textarea { min-height:130px; resize:vertical; }
+      .primary-btn, .secondary-btn, .danger-btn { border:none; border-radius:12px; padding:0.72rem 0.95rem; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+      .primary-btn { background:#0f5f8f; }
+      .secondary-btn { background:#607180; }
+      .danger-btn { background:#922f24; }
+      .section-toolbar { display:flex; justify-content:flex-end; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem; }
+      .section-toolbar form { display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap; }
+      .section-toolbar select { border:1px solid #c9d8e4; border-radius:12px; padding:0.62rem 0.82rem; font:inherit; background:#fff; color:#1f2a37; }
+      .section-toolbar button { border:none; border-radius:12px; padding:0.66rem 0.9rem; font:inherit; font-weight:700; color:#fff; background:#0f5f8f; cursor:pointer; }
+      .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.8rem; }
+      .soft-list li { padding:0.95rem 1rem; border:1px solid #d8e2ea; border-radius:16px; background: rgba(255,255,255,0.82); min-width:0; }
+      .list-item-title, .list-item-body, .knowledge-meta, .editor-summary, .section-note { overflow-wrap:anywhere; word-break:break-word; }
+      .list-item-title { display:block; color:#0f4667; line-height:1.5; }
+      .knowledge-meta { margin-top:0.45rem; color:#5d6a79; font-size:0.92rem; line-height:1.6; }
+      .list-item-body { margin-top:0.6rem; color:#1f2a37; white-space:pre-line; line-height:1.7; }
+      .suggestion-editor { margin-top:0.9rem; padding:0.95rem; border:1px solid #d8e2ea; border-radius:16px; background:rgba(241,246,251,0.82); }
+      details.suggestion-editor { padding:0.85rem 0.95rem; }
+      .editor-summary { cursor:pointer; font-weight:700; color:#0f4667; list-style:none; display:flex; align-items:center; gap:0.55rem; }
+      .editor-summary::-webkit-details-marker { display:none; }
+      .editor-summary::before { content:"+"; width:1.3rem; height:1.3rem; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:#d2e8f7; color:#0f4667; font-weight:700; flex:0 0 auto; }
+      details[open] > .editor-summary::before { content:"-"; }
+      .editor-body { margin-top:0.9rem; }
+      .suggestion-actions, .knowledge-actions { display:flex; gap:0.65rem; flex-wrap:wrap; margin-top:0.9rem; }
+      .knowledge-actions { justify-content:flex-end; }
+      .pagination-bar { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; margin-top:1rem; }
+      .pagination-summary { color:#5d6a79; font-size:0.92rem; }
+      .pagination-links { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; }
+      .pagination-link, .pagination-current, .pagination-ellipsis { min-width:2.4rem; padding:0.58rem 0.82rem; border-radius:12px; text-align:center; font-weight:700; }
+      .pagination-link { background:#eef4f8; color:#0f4667; text-decoration:none; border:1px solid #d8e2ea; }
+      .pagination-current { background:#0f5f8f; color:#fff; border:1px solid #0f5f8f; }
+      .pagination-ellipsis { color:#5d6a79; }
+      @media (max-width: 820px) {
+        .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
+        .card, .topbar { padding: 1rem; }
+        .topbar { flex-direction: column; align-items: stretch; }
+        .field input, .field select, .field textarea, .primary-btn, .secondary-btn, .danger-btn, .section-toolbar select, .section-toolbar button { font-size:16px; }
+        .section-toolbar, .suggestion-actions, .knowledge-actions, .pagination-bar { flex-direction:column; align-items:stretch; }
+        .section-toolbar form, .section-toolbar select, .section-toolbar button, .suggestion-actions form, .suggestion-actions button, .knowledge-actions form, .knowledge-actions button { width:100%; }
+        .pagination-links { justify-content:center; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
+      <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
+
+      <section class="card topbar">
+        <div>
+          <h1 style="margin:0; color:#0f4667;">เพิ่มหรือแก้ไขความรู้สำหรับตอบคำถาม</h1>
+          <p style="margin:0.35rem 0 0; color:#5d6a79;">แยกหน้าจัดการฐานความรู้ออกจาก dashboard เพื่อโฟกัสการเพิ่มและแก้ไขข้อมูลได้เป็นส่วน ๆ</p>
+        </div>
+        <a href="/admin">กลับหน้าแดชบอร์ด</a>
+      </section>
+
+      <section class="card">
+        <%- include("partials/knowledgeAdminTabs", { activeTab: "knowledge" }) %>
+      </section>
+
+      <section class="grid">
+        <article class="card metric-card"><div>ความรู้ทั้งหมด</div><div class="metric"><%= data.knowledgeCount %></div></article>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-top:0; color:#0f4667;">เพิ่มความรู้ใหม่</h2>
+        <p class="section-note">ใช้หน้านี้เพื่อเพิ่มข้อมูลที่ถูกต้องลงในฐานข้อมูล เมื่อ AI ตอบไม่ตรงข้อเท็จจริง ระบบจะนำข้อมูลชุดนี้ไปช่วยตอบในรอบถัดไป</p>
+        <form action="/admin/knowledge" method="post">
+          <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+          <div class="form-grid">
+            <div class="field">
+              <label for="target">ประเภทข้อมูล</label>
+              <select id="target" name="target" required>
+                <% data.targets.forEach((target) => { %>
+                  <option value="<%= target.value %>"><%= target.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="field">
+              <label for="lawNumber">เลขอ้างอิง / หมวด</label>
+              <input id="lawNumber" name="lawNumber" type="text" placeholder="เช่น หมวดสมาชิก หรือ ข้อ 12" />
+            </div>
+          </div>
+          <div class="field" style="margin-top:0.9rem;">
+            <label for="title">หัวข้อ</label>
+            <input id="title" name="title" type="text" placeholder="เช่น การรับสมาชิกสหกรณ์" required />
+          </div>
+          <div class="field" style="margin-top:0.9rem;">
+            <label for="content">รายละเอียดความรู้ / คำตอบที่ถูกต้อง</label>
+            <textarea id="content" name="content" placeholder="พิมพ์ข้อมูลที่ต้องการให้บอทใช้เป็นหลักเมื่อมีคนถามเรื่องนี้" required></textarea>
+          </div>
+          <div class="field" style="margin-top:0.9rem;">
+            <label for="sourceNote">หมายเหตุ / แหล่งที่มา</label>
+            <input id="sourceNote" name="sourceNote" type="text" placeholder="เช่น มาตรา 15, เอกสารประชุม, หรือคำชี้แจงจากผู้เชี่ยวชาญ" />
+          </div>
+          <div style="margin-top:1rem;">
+            <button class="primary-btn" type="submit">บันทึกความรู้ลงฐานข้อมูล</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-top:0; color:#0f4667;">ความรู้ที่บันทึกล่าสุด</h2>
+        <div class="section-toolbar">
+          <form action="/admin/knowledge" method="get">
+            <input type="hidden" name="page" value="1" />
+            <label for="perPage">จำนวนรายการต่อหน้า</label>
+            <select id="perPage" name="perPage" aria-label="จำนวนรายการฐานความรู้ต่อหน้า">
+              <% [8, 16, 24].forEach((size) => { %>
+                <option value="<%= size %>" <%= Number(data.knowledgePagination?.pageSize || 12) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
+              <% }) %>
+            </select>
+            <button type="submit">แสดงผล</button>
+          </form>
+        </div>
+        <ul class="soft-list">
+          <% if (data.recentKnowledge.length === 0) { %>
+            <li>ยังไม่มีความรู้ที่เพิ่มเข้าฐานข้อมูล</li>
+          <% } %>
+          <% data.recentKnowledge.forEach((item) => { %>
+            <li>
+              <strong class="list-item-title"><%= item.title %></strong>
+              <% if (item.lawNumber) { %> - <%= item.lawNumber %><% } %>
+              <div class="knowledge-meta">
+                ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : 'สหกรณ์' %>
+                <% if (item.sourceNote) { %> | แหล่งที่มา: <%= item.sourceNote %><% } %>
+                <% if (item.updatedAt) { %> | แก้ไขล่าสุด: <%= item.updatedAt %><% } %>
+              </div>
+              <div class="list-item-body"><%= item.content %></div>
+              <details class="suggestion-editor">
+                <summary class="editor-summary">แก้ไขข้อมูลฐานความรู้นี้</summary>
+                <div class="editor-body">
+                  <form action="/admin/knowledge/update" method="post">
+                    <input type="hidden" name="id" value="<%= item.id %>" />
+                    <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+                    <div class="form-grid">
+                      <div class="field">
+                        <label for="knowledge-target-<%= item.id %>">ประเภทข้อมูล</label>
+                        <select id="knowledge-target-<%= item.id %>" name="target" required>
+                          <option value="coop" <%= item.target === 'coop' ? 'selected' : '' %>>สหกรณ์</option>
+                          <option value="group" <%= item.target === 'group' ? 'selected' : '' %>>กลุ่มเกษตรกร</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label for="knowledge-law-number-<%= item.id %>">เลขอ้างอิง / หมวด</label>
+                        <input id="knowledge-law-number-<%= item.id %>" name="lawNumber" type="text" value="<%= item.lawNumber || '' %>" placeholder="เช่น มาตรา 15 หรือ หมวดสมาชิก" />
+                      </div>
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
+                      <label for="knowledge-title-<%= item.id %>">หัวข้อ</label>
+                      <input id="knowledge-title-<%= item.id %>" name="title" type="text" value="<%= item.title %>" required />
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
+                      <label for="knowledge-content-<%= item.id %>">รายละเอียดความรู้ / คำตอบที่ถูกต้อง</label>
+                      <textarea id="knowledge-content-<%= item.id %>" name="content" required><%= item.content %></textarea>
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
+                      <label for="knowledge-source-note-<%= item.id %>">หมายเหตุ / แหล่งที่มา</label>
+                      <input id="knowledge-source-note-<%= item.id %>" name="sourceNote" type="text" value="<%= item.sourceNote || '' %>" placeholder="เช่น มาตรา 15, เอกสารประชุม, หรือคำชี้แจงจากผู้เชี่ยวชาญ" />
+                    </div>
+                    <div class="suggestion-actions">
+                      <button class="secondary-btn" type="submit">บันทึกการแก้ไข</button>
+                    </div>
+                  </form>
+                </div>
+              </details>
+              <div class="knowledge-actions">
+                <form action="/admin/knowledge/delete" method="post" onsubmit="return confirm('ยืนยันการลบข้อมูลฐานความรู้นี้ใช่หรือไม่');">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+                  <button class="danger-btn" type="submit">ลบรายการนี้</button>
+                </form>
+              </div>
+            </li>
+          <% }) %>
+        </ul>
+        <%- include("partials/pagination", { pagination: data.knowledgePagination, basePath: "/admin/knowledge", query: { perPage: data.knowledgePagination?.pageSize || 12 }, pageKey: "page", itemLabel: "รายการฐานความรู้" }) %>
+      </section>
+    </div>
+  </body>
+</html>

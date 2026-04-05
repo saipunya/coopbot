@@ -2046,7 +2046,6 @@
         }
       };
       const activeBotPlanMeta = botPlanMeta[botPlanTheme] || botPlanMeta.free;
-      const showGuestProtectionNotice = !currentUser && !isGoogleUser;
     %>
 
     <script>
@@ -2125,12 +2124,6 @@
         <span class="plan-ribbon-chip"><i class="bi bi-layers"></i> <%= activeBotPlanMeta.label %></span>
         <h2 class="plan-ribbon-title"><%= activeBotPlanMeta.title %></h2>
         <p class="plan-ribbon-text"><%= activeBotPlanMeta.description %></p>
-        <% if (showGuestProtectionNotice) { %>
-          <div class="plan-ribbon-note">
-            <i class="bi bi-shield-check"></i>
-            <span>Guest ใช้ได้ 2 คำถามต่อเดือน และระบบจะจำสิทธิ์จากอุปกรณ์หรือเครือข่ายเดิม แม้เปลี่ยน browser หรือล้าง cache</span>
-          </div>
-        <% } %>
       </div>
       <div class="plan-ribbon-stats">
         <div class="plan-ribbon-stat">
@@ -2278,7 +2271,7 @@
                   </div>
                   <textarea id="knowledgeSuggestionContent" name="content" class="form-control mt-2" rows="6" placeholder="พิมพ์หรือพูดคำตอบที่ถูกต้องที่ต้องการให้ผู้ดูแลตรวจสอบ" required></textarea>
                   <div class="knowledge-suggestion-hint mt-2">
-                    ข้อเสนอของคุณจะยังไม่ถูกนำเข้าฐานความรู้ทันที ระบบจะส่งให้ผู้ดูแลตรวจสอบก่อนอนุมัติ
+                    ข้อเสนอของคุณจะยังไม่ถูกนำเข้าฐานความรู้ทันที ระบบจะส่งให้ผู้ดูแลตรวจสอบก่อนอนุมัติ และหากอนุมัติแล้วจะเพิ่มสิทธิ์ถามฟรีให้อีก 1 ครั้งต่อเดือน
                   </div>
                 </div>
               </div>
@@ -3715,6 +3708,11 @@
           });
           clearTimeout(timeoutId);
           const data = await response.json();
+          if (!response.ok && data && (data.noticeRequired || data.signInRequired) && (data.redirectPath || data.signInPath)) {
+            window.location.href = data.redirectPath || data.signInPath;
+            return;
+          }
+
           loadingController.dispose();
           removeLoadingBubble();
           const answerText = data && typeof data.answer === 'string' ? data.answer.trim() : '';

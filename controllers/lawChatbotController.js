@@ -1,5 +1,6 @@
 const lawChatbotService = require("../services/lawChatbotService");
 const runtimeFlags = require("../config/runtimeFlags");
+const { hasAcceptedLawChatbotNotice, markLawChatbotNoticeAccepted } = require("../middlewares/authMiddleware");
 const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
 
 function sanitizeLawChatbotReturnPath(value, fallbackPath, expectedPrefix) {
@@ -15,7 +16,36 @@ function sanitizeLawChatbotReturnPath(value, fallbackPath, expectedPrefix) {
   return path;
 }
 
+function sanitizeLawChatbotUserReturnPath(value, fallbackPath = "/law-chatbot") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!/^(?:\/law-chatbot(?:[/?#].*)?|\/user(?:[/?#].*)?)$/.test(path)) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
 async function renderIndex(req, res) {
+  const returnTo = sanitizeLawChatbotUserReturnPath(req.query.returnTo, "/law-chatbot");
+  if (!hasAcceptedLawChatbotNotice(req)) {
+    return res.render("lawChatbot/accessNotice", {
+      title: "คำประกาศชี้แจงก่อนใช้งาน",
+      themeColor: "#2f5f7a",
+      manifestPath: "/manifest-law-chatbot.json",
+      errorMessage: req.query.error || "",
+      returnTo,
+      requiresGoogleLogin: !req.signedInUser,
+    });
+  }
+
+  if (!req.signedInUser) {
+    return res.redirect(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`);
+  }
+
   const data = await lawChatbotService.getDashboardData();
 
   res.render("lawChatbot/index", {
@@ -23,6 +53,32 @@ async function renderIndex(req, res) {
     themeColor: "#2f5f7a",
     manifestPath: "/manifest-law-chatbot.json",
     data,
+  });
+}
+
+function acceptAccessNotice(req, res) {
+  const returnTo = sanitizeLawChatbotUserReturnPath(req.body.returnTo, "/law-chatbot");
+  if (String(req.body.acceptNotice || "") !== "1") {
+    return res.redirect(
+      `/law-chatbot?returnTo=${encodeURIComponent(returnTo)}&error=` +
+        encodeURIComponent("กรุณาอ่านคำประกาศชี้แจงและกดยอมรับก่อนดำเนินการต่อ")
+    );
+  }
+
+  markLawChatbotNoticeAccepted(req);
+  return req.session.save((error) => {
+    if (error) {
+      return res.redirect(
+        `/law-chatbot?returnTo=${encodeURIComponent(returnTo)}&error=` +
+          encodeURIComponent("ไม่สามารถบันทึกการยอมรับคำประกาศได้ กรุณาลองใหม่อีกครั้ง")
+      );
+    }
+
+    if (req.signedInUser) {
+      return res.redirect(returnTo);
+    }
+
+    return res.redirect(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`);
   });
 }
 
@@ -84,6 +140,13 @@ async function saveKnowledgeFromChat(req, res) {
 async function submitKnowledgeSuggestion(req, res) {
   const title = String(req.body.title || req.body.question || "").trim();
   const content = String(req.body.content || "").trim();
+  const signedInUser = req.signedInUser || req.session?.user || null;
+  const submittedByUserId = Number(signedInUser?.userId || signedInUser?.id || 0);
+  const submittedByName = String(signedInUser?.name || "").trim();
+  const submittedByEmail = String(signedInUser?.email || signedInUser?.username || "").trim();
+  const submittedBy = submittedByName && submittedByEmail && submittedByName !== submittedByEmail
+    ? `${submittedByName} (${submittedByEmail})`
+    : submittedByName || submittedByEmail || String(req.body.name || "").trim();
 
   if (!title || !content) {
     return res.status(400).json({
@@ -94,14 +157,15 @@ async function submitKnowledgeSuggestion(req, res) {
 
   try {
     const entry = await lawChatbotService.submitKnowledgeSuggestion(req.body, {
-      submittedBy: req.body.name || "",
+      submittedBy,
+      submittedByUserId,
       sessionId: req.sessionID || "",
       ip: req.ip || req.headers["x-forwarded-for"] || "",
     });
 
     return res.json({
       success: true,
-      message: "ส่งข้อเสนอคำตอบเรียบร้อยแล้ว ระบบจะรอผู้ดูแลตรวจสอบก่อนนำเข้า",
+      message: "ส่งข้อเสนอคำตอบเรียบร้อยแล้ว หากผู้ดูแลอนุมัติ คุณจะได้รับสิทธิ์ถามเพิ่ม 1 ครั้งต่อเดือน",
       entry,
     });
   } catch (error) {
@@ -209,6 +273,7 @@ async function submitPaymentRequest(req, res) {
 
 module.exports = {
   renderIndex,
+  acceptAccessNotice,
   chat,
   chatSummary,
   chatFeedback,

@@ -5,7 +5,8 @@
   const queryEntries = Object.entries(query || {}).filter(([, value]) => value !== undefined && value !== null && String(value) !== "");
   const baseParams = new URLSearchParams(queryEntries.map(([key, value]) => [key, String(value)]));
   const resolvedPageKey = pageKey || "page";
-  const resolvedAnchor = anchor ? `#${anchor}` : "";
+  const resolvedAnchorValue = typeof anchor === "string" ? anchor.trim() : "";
+  const resolvedAnchor = resolvedAnchorValue ? `#${resolvedAnchorValue}` : "";
   const buildHref = (pageNumber) => {
     const params = new URLSearchParams(baseParams.toString());
     params.set(resolvedPageKey, String(pageNumber));

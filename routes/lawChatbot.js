@@ -4,9 +4,9 @@ const controller = require("../controllers/lawChatbotController");
 const lawChatbotService = require("../services/lawChatbotService");
 const {
   attachCurrentUser,
-  enforceLawChatbotGuestLimit,
   enforceLawChatbotMonthlyUsageLimit,
   requireAdminAuth,
+  requireLawChatbotNoticeAccepted,
   requireSignedInUser,
 } = require("../middlewares/authMiddleware");
 const upload = require("../middlewares/lawChatbotUpload");
@@ -55,12 +55,13 @@ function handlePaymentRequestUpload(req, res, next) {
 }
 
 router.get("/", attachCurrentUser, controller.renderIndex);
-router.post("/chat", attachCurrentUser, enforceLawChatbotGuestLimit, enforceLawChatbotMonthlyUsageLimit, controller.chat);
-router.post("/chat-summary", attachCurrentUser, controller.chatSummary);
-router.post("/chat-feedback", attachCurrentUser, controller.chatFeedback);
+router.post("/accept-notice", attachCurrentUser, controller.acceptAccessNotice);
+router.post("/chat", attachCurrentUser, requireLawChatbotNoticeAccepted, requireSignedInUser, enforceLawChatbotMonthlyUsageLimit, controller.chat);
+router.post("/chat-summary", attachCurrentUser, requireLawChatbotNoticeAccepted, requireSignedInUser, controller.chatSummary);
+router.post("/chat-feedback", attachCurrentUser, requireLawChatbotNoticeAccepted, requireSignedInUser, controller.chatFeedback);
 router.post("/admin-knowledge", requireAdminAuth, controller.saveKnowledgeFromChat);
-router.post("/knowledge-suggestion", attachCurrentUser, controller.submitKnowledgeSuggestion);
-router.post("/reset-context", attachCurrentUser, controller.resetContext);
+router.post("/knowledge-suggestion", attachCurrentUser, requireLawChatbotNoticeAccepted, requireSignedInUser, controller.submitKnowledgeSuggestion);
+router.post("/reset-context", attachCurrentUser, requireLawChatbotNoticeAccepted, requireSignedInUser, controller.resetContext);
 router.get("/upload", requireAdminAuth, controller.renderUpload);
 router.post("/upload", requireAdminAuth, handleUploadMiddleware, controller.handleUpload);
 router.get("/feedback", requireAdminAuth, controller.renderFeedback);

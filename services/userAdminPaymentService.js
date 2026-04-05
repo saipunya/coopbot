@@ -21,6 +21,7 @@ const {
   normalizePlanCode,
   resolveUserPlanContext,
 } = require("./planService");
+const { getContributionRewardSummary } = require("./contributionRewardService");
 const { sendPaymentRequestNotification } = require("./telegramService");
 
 async function findUserByIdForUpdate(connection, userId) {
@@ -236,7 +237,10 @@ async function getUserDashboardData(user) {
   const planContext = resolveUserPlanContext(profile);
   const questionCount = Number(usage?.question_count || 0);
   const aiPreview = buildAiPreviewMeta(planContext, usage);
-  const questionLimit = Number.isFinite(planContext.monthlyLimit) ? planContext.monthlyLimit : null;
+  const rewardSummary = await getContributionRewardSummary(profile);
+  const baseQuestionLimit = Number.isFinite(planContext.monthlyLimit) ? planContext.monthlyLimit : null;
+  const bonusQuestionLimit = Number(rewardSummary.bonusQuestionLimit || 0);
+  const questionLimit = Number.isFinite(baseQuestionLimit) ? baseQuestionLimit + bonusQuestionLimit : null;
   const remainingQuestions =
     Number.isFinite(questionLimit) ? Math.max(0, questionLimit - questionCount) : null;
 
@@ -247,6 +251,9 @@ async function getUserDashboardData(user) {
     usage: {
       usageMonth,
       questionCount,
+      baseQuestionLimit,
+      bonusQuestionLimit,
+      approvedContributionCount: Number(rewardSummary.approvedContributionCount || 0),
       questionLimit,
       remainingQuestions,
       isUnlimited: planContext.isUnlimited,

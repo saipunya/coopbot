@@ -5,7 +5,7 @@ const {
   getGoogleConfig,
   loginWithGoogleCallback,
 } = require("../services/adminGoogleAuthService");
-const { normalizePageNumber, normalizePageSize } = require("../services/paginationUtils");
+const { hasAcceptedLawChatbotNotice } = require("../middlewares/authMiddleware");
 const runtimeSettingsService = require("../services/runtimeSettingsService");
 
 function appendQueryParam(path, key, value) {
@@ -70,6 +70,32 @@ function sanitizeDashboardReturnPath(value, fallbackPath = "/admin") {
   return path;
 }
 
+function sanitizeKnowledgeAdminReturnPath(value, fallbackPath = "/admin") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!/^\/admin(?:\/(?:suggested-questions|knowledge|knowledge-suggestions))?(?:[?#].*)?$/.test(path)) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
+function sanitizePublicUserReturnPath(value, fallbackPath = "/law-chatbot") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!/^(?:\/law-chatbot(?:[/?#].*)?|\/user(?:[/?#].*)?)$/.test(path)) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
 function renderLogin(req, res) {
   res.render("admin/login", {
     title: "เข้าสู่ระบบผู้ดูแล",
@@ -105,6 +131,11 @@ async function submitLogin(req, res) {
 
 function redirectToGoogleLogin(req, res) {
   try {
+    const returnTo = sanitizePublicUserReturnPath(req.query.returnTo, "/law-chatbot");
+    if (!req.session?.adminUser && !hasAcceptedLawChatbotNotice(req)) {
+      return res.redirect(`/law-chatbot?returnTo=${encodeURIComponent(returnTo)}`);
+    }
+
     const authUrl = createGoogleAuthUrl(req);
 
     req.session.save((err) => {
@@ -170,18 +201,10 @@ async function handleGoogleCallback(req, res) {
 }
 
 async function renderDashboard(req, res) {
-  const dashboardPages = {
-    sqPage: normalizePageNumber(req.query.sqPage || 1),
-    knowledgePage: normalizePageNumber(req.query.knowledgePage || 1),
-    pendingPage: normalizePageNumber(req.query.pendingPage || 1),
-    sqPerPage: normalizePageSize(req.query.sqPerPage || 8, 8, 50),
-    knowledgePerPage: normalizePageSize(req.query.knowledgePerPage || 8, 8, 50),
-    pendingPerPage: normalizePageSize(req.query.pendingPerPage || 8, 8, 50),
-  };
   const [uploadData, feedbackData, knowledgeData, paymentRequestData, aiSettings] = await Promise.all([
     lawChatbotService.getUploadPageData(),
     lawChatbotService.getFeedbackPageData(),
-    lawChatbotService.getKnowledgeAdminData(dashboardPages),
+    lawChatbotService.getKnowledgeAdminSummaryData(),
     lawChatbotService.getAdminPaymentRequestsData({ page: 1 }),
     runtimeSettingsService.getAiAdminState(),
   ]);
@@ -196,8 +219,55 @@ async function renderDashboard(req, res) {
     knowledgeData,
     paymentRequestData,
     aiSettings,
-    dashboardPages,
     dashboardReturnPath: req.originalUrl || "/admin",
+  });
+}
+
+async function renderSuggestedQuestions(req, res) {
+  const data = await lawChatbotService.getKnowledgeAdminData({
+    sqPage: req.query.page || 1,
+    sqPerPage: req.query.perPage || 12,
+  });
+
+  res.render("admin/suggestedQuestions", {
+    title: "Suggested Questions",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data,
+    returnPath: req.originalUrl || "/admin/suggested-questions",
+  });
+}
+
+async function renderKnowledge(req, res) {
+  const data = await lawChatbotService.getKnowledgeAdminData({
+    knowledgePage: req.query.page || 1,
+    knowledgePerPage: req.query.perPage || 12,
+  });
+
+  res.render("admin/knowledge", {
+    title: "Knowledge Management",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data,
+    returnPath: req.originalUrl || "/admin/knowledge",
+  });
+}
+
+async function renderKnowledgeSuggestions(req, res) {
+  const data = await lawChatbotService.getKnowledgeAdminData({
+    pendingPage: req.query.page || 1,
+    pendingPerPage: req.query.perPage || 12,
+  });
+
+  res.render("admin/knowledgeSuggestions", {
+    title: "Knowledge Suggestions",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data,
+    returnPath: req.originalUrl || "/admin/knowledge-suggestions",
   });
 }
 
@@ -418,7 +488,7 @@ async function updateUserPlan(req, res) {
 }
 
 async function submitKnowledge(req, res) {
-  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-management");
+  const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/knowledge");
   const title = String(req.body.title || "").trim();
   const content = String(req.body.content || "").trim();
 
@@ -435,7 +505,7 @@ async function submitKnowledge(req, res) {
 }
 
 async function submitSuggestedQuestion(req, res) {
-  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#frequent-questions-management");
+  const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/suggested-questions");
   const questionText = String(req.body.questionText || req.body.question || "").trim();
   const answerText = String(req.body.answerText || req.body.answer || "").trim();
 
@@ -458,7 +528,7 @@ async function submitSuggestedQuestion(req, res) {
 }
 
 async function updateKnowledge(req, res) {
-  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-library");
+  const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/knowledge");
   const id = Number(req.body.id || 0);
   const title = String(req.body.title || "").trim();
   const content = String(req.body.content || "").trim();
@@ -488,7 +558,7 @@ async function updateKnowledge(req, res) {
 }
 
 async function updateSuggestedQuestion(req, res) {
-  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#frequent-questions-library");
+  const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/suggested-questions");
   const id = Number(req.body.id || 0);
   const questionText = String(req.body.questionText || req.body.question || "").trim();
   const answerText = String(req.body.answerText || req.body.answer || "").trim();
@@ -518,7 +588,7 @@ async function updateSuggestedQuestion(req, res) {
 }
 
 async function deleteKnowledge(req, res) {
-  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-library");
+  const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/knowledge");
   const id = Number(req.body.id || 0);
 
   if (!id) {
@@ -540,7 +610,7 @@ async function deleteKnowledge(req, res) {
 }
 
 async function deleteSuggestedQuestion(req, res) {
-  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#frequent-questions-library");
+  const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/suggested-questions");
   const id = Number(req.body.id || 0);
 
   if (!id) {
@@ -562,7 +632,7 @@ async function deleteSuggestedQuestion(req, res) {
 }
 
 async function approveKnowledgeSuggestion(req, res) {
-  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-suggestions");
+  const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/knowledge-suggestions");
   const id = Number(req.body.id || 0);
   if (!id) {
     return res.redirect(
@@ -582,13 +652,17 @@ async function approveKnowledgeSuggestion(req, res) {
     );
   }
 
+  const successMessage = result.rewardSummary?.grantedBonusQuestions
+    ? "อนุมัติข้อเสนอและนำเข้าฐานความรู้เรียบร้อยแล้ว ผู้เสนอจะได้รับสิทธิ์ถามฟรีเพิ่ม 1 ครั้งต่อเดือน"
+    : "อนุมัติข้อเสนอและนำเข้าฐานความรู้เรียบร้อยแล้ว";
+
   return res.redirect(
-    appendQueryParam(returnTo, "success", "อนุมัติข้อเสนอและนำเข้าฐานความรู้เรียบร้อยแล้ว")
+    appendQueryParam(returnTo, "success", successMessage)
   );
 }
 
 async function updateKnowledgeSuggestion(req, res) {
-  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-suggestions");
+  const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/knowledge-suggestions");
   const id = Number(req.body.id || 0);
   if (!id) {
     return res.redirect(
@@ -615,7 +689,7 @@ async function updateKnowledgeSuggestion(req, res) {
 }
 
 async function rejectKnowledgeSuggestion(req, res) {
-  const returnTo = sanitizeDashboardReturnPath(req.body.returnTo, "/admin#knowledge-suggestions");
+  const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/knowledge-suggestions");
   const id = Number(req.body.id || 0);
   if (!id) {
     return res.redirect(
@@ -712,6 +786,9 @@ module.exports = {
   redirectToGoogleLogin,
   handleGoogleCallback,
   renderDashboard,
+  renderSuggestedQuestions,
+  renderKnowledge,
+  renderKnowledgeSuggestions,
   renderGuestUsage,
   exportGuestUsageCsv,
   clearGuestUsage,

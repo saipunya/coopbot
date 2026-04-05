@@ -34,6 +34,7 @@ function normalizeEntry(entry = {}) {
     content: String(entry.content || "").trim(),
     sourceType: String(entry.sourceType || "text").trim().slice(0, 30) || "text",
     submittedBy: String(entry.submittedBy || "").trim().slice(0, 255),
+    submittedByUserId: Number(entry.submittedByUserId || 0) > 0 ? Number(entry.submittedByUserId) : null,
     submitterSession: String(entry.submitterSession || "").trim().slice(0, 255),
     submitterIp: String(entry.submitterIp || "").trim().slice(0, 80),
     status: ["pending", "approved", "rejected"].includes(entry.status) ? entry.status : "pending",
@@ -50,6 +51,7 @@ function mapRow(row) {
     content: row.content || "",
     sourceType: row.source_type || row.sourceType || "text",
     submittedBy: row.submitted_by || row.submittedBy || "",
+    submittedByUserId: Number(row.submitted_by_user_id || row.submittedByUserId || 0) || null,
     submitterSession: row.submitter_session || row.submitterSession || "",
     submitterIp: row.submitter_ip || row.submitterIp || "",
     status: row.status || "pending",
@@ -161,26 +163,43 @@ async function ensureTable() {
   }
 
   if (!tableReadyPromise) {
-    tableReadyPromise = pool.query(`
-      CREATE TABLE IF NOT EXISTS chatbot_knowledge_suggestions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        target ENUM('coop', 'group') NOT NULL DEFAULT 'coop',
-        title VARCHAR(255) NOT NULL,
-        content TEXT NOT NULL,
-        source_type VARCHAR(30) NOT NULL DEFAULT 'text',
-        submitted_by VARCHAR(255) NULL,
-        submitter_session VARCHAR(255) NULL,
-        submitter_ip VARCHAR(80) NULL,
-        status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
-        reviewed_by VARCHAR(255) NULL,
-        review_note VARCHAR(255) NULL,
-        reviewed_at DATETIME NULL,
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_chatbot_knowledge_suggestions_status_created (status, created_at),
-        INDEX idx_chatbot_knowledge_suggestions_target_status (target, status)
-      )
-    `);
+    tableReadyPromise = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS chatbot_knowledge_suggestions (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          target ENUM('coop', 'group') NOT NULL DEFAULT 'coop',
+          title VARCHAR(255) NOT NULL,
+          content TEXT NOT NULL,
+          source_type VARCHAR(30) NOT NULL DEFAULT 'text',
+          submitted_by VARCHAR(255) NULL,
+          submitter_session VARCHAR(255) NULL,
+          submitter_ip VARCHAR(80) NULL,
+          status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+          reviewed_by VARCHAR(255) NULL,
+          review_note VARCHAR(255) NULL,
+          reviewed_at DATETIME NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_chatbot_knowledge_suggestions_status_created (status, created_at),
+          INDEX idx_chatbot_knowledge_suggestions_target_status (target, status)
+        )
+      `);
+
+      const [submittedByUserIdColumns] = await pool.query(
+        "SHOW COLUMNS FROM chatbot_knowledge_suggestions LIKE 'submitted_by_user_id'",
+      );
+
+      if (!Array.isArray(submittedByUserIdColumns) || submittedByUserIdColumns.length === 0) {
+        await pool.query(`
+          ALTER TABLE chatbot_knowledge_suggestions
+            ADD COLUMN submitted_by_user_id INT NULL AFTER submitted_by,
+            ADD INDEX idx_chatbot_knowledge_suggestions_submitter_user_status (submitted_by_user_id, status)
+        `);
+      }
+    })().catch((error) => {
+      tableReadyPromise = null;
+      throw error;
+    });
   }
 
   await tableReadyPromise;
@@ -204,14 +223,15 @@ class LawChatbotKnowledgeSuggestionModel {
     await ensureTable();
     const [result] = await pool.query(
       `INSERT INTO chatbot_knowledge_suggestions
-        (target, title, content, source_type, submitted_by, submitter_session, submitter_ip, status, reviewed_by, review_note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (target, title, content, source_type, submitted_by, submitted_by_user_id, submitter_session, submitter_ip, status, reviewed_by, review_note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         normalized.target,
         normalized.title,
         normalized.content,
         normalized.sourceType,
         normalized.submittedBy || null,
+        normalized.submittedByUserId,
         normalized.submitterSession || null,
         normalized.submitterIp || null,
         normalized.status,
@@ -238,6 +258,31 @@ class LawChatbotKnowledgeSuggestionModel {
       "SELECT COUNT(*) AS total FROM chatbot_knowledge_suggestions WHERE status = 'pending'",
     );
     return rows[0]?.total || 0;
+  }
+
+  static async countApprovedByContributor(contributor = {}) {
+    const normalizedUserId = Number(contributor.userId || contributor.submittedByUserId || 0);
+    if (!normalizedUserId) {
+      return 0;
+    }
+
+    const pool = getDbPool();
+    if (!pool) {
+      return memorySuggestions.filter(
+        (item) => item.status === "approved" && Number(item.submittedByUserId || 0) === normalizedUserId,
+      ).length;
+    }
+
+    await ensureTable();
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) AS total
+         FROM chatbot_knowledge_suggestions
+        WHERE status = 'approved'
+          AND submitted_by_user_id = ?`,
+      [normalizedUserId],
+    );
+
+    return Number(rows[0]?.total || 0);
   }
 
   static async listPending(limit = 20, offset = 0) {

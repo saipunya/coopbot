@@ -91,6 +91,22 @@ async function getKnowledgeAdminData(options = {}) {
   };
 }
 
+async function getKnowledgeAdminSummaryData() {
+  const [knowledgeCount, pendingSuggestionCount, suggestedQuestionCount, activeSuggestedQuestionCount] = await Promise.all([
+    LawChatbotKnowledgeModel.count(),
+    LawChatbotKnowledgeSuggestionModel.countPending(),
+    LawChatbotSuggestedQuestionModel.countAll(),
+    LawChatbotSuggestedQuestionModel.countActive(),
+  ]);
+
+  return {
+    knowledgeCount,
+    pendingSuggestionCount,
+    suggestedQuestionCount,
+    activeSuggestedQuestionCount,
+  };
+}
+
 async function saveSuggestedQuestionEntry(payload = {}) {
   const entry = await LawChatbotSuggestedQuestionModel.create({
     target: payload.target,
@@ -180,6 +196,7 @@ async function submitKnowledgeSuggestion(payload, meta = {}) {
     content,
     sourceType,
     submittedBy: meta.submittedBy || "",
+    submittedByUserId: meta.submittedByUserId || null,
     submitterSession: meta.sessionId || "",
     submitterIp: meta.ip || "",
     status: "pending",
@@ -213,6 +230,10 @@ async function approveKnowledgeSuggestion(id, reviewMeta = {}) {
     ok: updated,
     entry,
     suggestion,
+    rewardSummary: {
+      grantedBonusQuestions: Number(suggestion.submittedByUserId || 0) > 0 ? 1 : 0,
+      contributorLabel: suggestion.submittedBy || "",
+    },
   };
 }
 
@@ -302,6 +323,7 @@ module.exports = {
   deleteKnowledgeEntry,
   deleteSuggestedQuestionEntry,
   getKnowledgeAdminData,
+  getKnowledgeAdminSummaryData,
   rejectKnowledgeSuggestion,
   saveKnowledgeEntry,
   saveSuggestedQuestionEntry,

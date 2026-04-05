@@ -4,6 +4,8 @@ const LAW_CHATBOT_GUEST_QUESTION_LIMIT = 2;
 const LAW_CHATBOT_GUEST_COUNT_KEY = "lawChatbotGuestQuestionCount";
 const LAW_CHATBOT_GUEST_ID_COOKIE = "lawbot_guest_id";
 const LAW_CHATBOT_GUEST_COOKIE_TTL_MS = 1000 * 60 * 60 * 24 * 180;
+const LAW_CHATBOT_NOTICE_ACCEPTED_KEY = "lawChatbotNoticeAcceptedVersion";
+const LAW_CHATBOT_NOTICE_VERSION = "2026-04-05";
 const UserModel = require("../models/userModel");
 const GuestMonthlyUsageModel = require("../models/guestMonthlyUsageModel");
 const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
@@ -13,6 +15,7 @@ const {
   isPaidPlan,
   normalizePlanCode,
 } = require("../services/planService");
+const { getContributionRewardSummary } = require("../services/contributionRewardService");
 
 function getYearMonth(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value);
@@ -120,6 +123,27 @@ function sanitizeReturnPath(value, fallbackPath = "/user") {
   }
 
   return path;
+}
+
+function hasAcceptedLawChatbotNotice(req) {
+  return String(req?.session?.[LAW_CHATBOT_NOTICE_ACCEPTED_KEY] || "").trim() === LAW_CHATBOT_NOTICE_VERSION;
+}
+
+function markLawChatbotNoticeAccepted(req) {
+  if (!req.session) {
+    return;
+  }
+
+  req.session[LAW_CHATBOT_NOTICE_ACCEPTED_KEY] = LAW_CHATBOT_NOTICE_VERSION;
+}
+
+function wantsJsonResponse(req) {
+  const acceptHeader = String(req?.headers?.accept || "").toLowerCase();
+  return Boolean(
+    req?.xhr ||
+      req?.is?.("application/json") ||
+      acceptHeader.includes("application/json")
+  );
 }
 
 function mapPersistedUserToSessionUser(sessionUser = {}, persistedUser = {}) {
@@ -263,28 +287,37 @@ async function enforceLawChatbotMonthlyUsageLimit(req, res, next) {
   const aiPreviewRequested =
     req.body?.aiPreview === true || String(req.body?.aiPreview || "").trim().toLowerCase() === "true";
   const planConfig = getPlanConfig(planCode);
-  const questionLimit = Number(planConfig.monthlyLimit);
 
   if (aiPreviewRequested && userId && planCode === "free") {
     return next();
   }
 
-  if (!userId || !Number.isFinite(questionLimit) || questionLimit <= 0) {
+  if (!userId) {
     return next();
   }
 
   try {
+    const rewardSummary = await getContributionRewardSummary(sessionUser);
+    const baseQuestionLimit = Number(planConfig.monthlyLimit);
+    const bonusQuestionLimit = Number(rewardSummary.bonusQuestionLimit || 0);
+    const questionLimit = Number.isFinite(baseQuestionLimit) ? baseQuestionLimit + bonusQuestionLimit : baseQuestionLimit;
+
+    if (!Number.isFinite(questionLimit) || questionLimit <= 0) {
+      return next();
+    }
+
     const usageMonth = UserMonthlyUsageModel.getYearMonth();
     const usage = await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth);
     const questionCount = Number(usage?.question_count || 0);
 
     if (questionCount >= questionLimit) {
+      const limitLabel = bonusQuestionLimit > 0 ? `${questionLimit} ครั้ง (${baseQuestionLimit} พื้นฐาน + ${bonusQuestionLimit} โบนัส)` : `${questionLimit} ครั้ง`;
       const limitMessage =
         planCode === "premium"
-          ? `คุณใช้สิทธิ์ถามคำถามครบ ${questionLimit} ครั้งของแพ็กเกจ ${getPlanLabel(planCode)} สำหรับเดือนนี้แล้ว กรุณารอรอบเดือนถัดไปเพื่อใช้งานต่อ`
+          ? `คุณใช้สิทธิ์ถามคำถามครบ ${limitLabel} ของแพ็กเกจ ${getPlanLabel(planCode)} สำหรับเดือนนี้แล้ว กรุณารอรอบเดือนถัดไปเพื่อใช้งานต่อ`
           : isPaidPlan(planCode)
-            ? `คุณใช้สิทธิ์ถามคำถามครบ ${questionLimit} ครั้งของแพ็กเกจ ${getPlanLabel(planCode)} สำหรับเดือนนี้แล้ว กรุณาอัปเกรดแพลนหรือรอรอบเดือนถัดไปเพื่อใช้งานต่อ`
-            : `คุณใช้สิทธิ์ถามคำถามครบ ${questionLimit} ครั้งของแพ็กเกจ ${getPlanLabel(planCode)} สำหรับเดือนนี้แล้ว กรุณาอัปเกรดแพลนหรือรอรอบเดือนถัดไปเพื่อใช้งานต่อ`;
+            ? `คุณใช้สิทธิ์ถามคำถามครบ ${limitLabel} ของแพ็กเกจ ${getPlanLabel(planCode)} สำหรับเดือนนี้แล้ว กรุณาอัปเกรดแพลนหรือรอรอบเดือนถัดไปเพื่อใช้งานต่อ`
+            : `คุณใช้สิทธิ์ถามคำถามครบ ${limitLabel} ของแพ็กเกจ ${getPlanLabel(planCode)} สำหรับเดือนนี้แล้ว กรุณาอัปเกรดแพลนหรือรอรอบเดือนถัดไปเพื่อใช้งานต่อ`;
       return res.json({
         hasContext: true,
         answer: limitMessage,
@@ -293,6 +326,8 @@ async function enforceLawChatbotMonthlyUsageLimit(req, res, next) {
         usedInternetFallback: false,
         monthlyUsageLimitReached: true,
         questionCount,
+        baseQuestionLimit,
+        bonusQuestionLimit,
         questionLimit,
         usageMonth,
       });
@@ -327,9 +362,39 @@ function requireSignedInUser(req, res, next) {
 
   const requestedPath = req.method === "GET" ? req.originalUrl : "/user";
   const returnTo = sanitizeReturnPath(requestedPath, "/user");
+  if (wantsJsonResponse(req)) {
+    return res.status(401).json({
+      success: false,
+      signInRequired: true,
+      signInPath: `/auth/google?returnTo=${encodeURIComponent(returnTo)}`,
+      message: "กรุณาเข้าสู่ระบบด้วย Google ก่อนใช้งาน",
+    });
+  }
+
   return res.redirect(
     `/auth/google?returnTo=${encodeURIComponent(returnTo)}`
   );
+}
+
+function requireLawChatbotNoticeAccepted(req, res, next) {
+  if (req.session?.adminUser || hasAcceptedLawChatbotNotice(req)) {
+    return next();
+  }
+
+  const requestedPath = req.method === "GET" ? req.originalUrl : "/law-chatbot";
+  const returnTo = sanitizeReturnPath(requestedPath, "/law-chatbot");
+  const redirectPath = `/law-chatbot?returnTo=${encodeURIComponent(returnTo)}`;
+
+  if (wantsJsonResponse(req)) {
+    return res.status(403).json({
+      success: false,
+      noticeRequired: true,
+      redirectPath,
+      message: "กรุณาอ่านคำประกาศชี้แจงและยอมรับก่อนใช้งาน",
+    });
+  }
+
+  return res.redirect(redirectPath);
 }
 
 function requireGoogleUser(req, res, next) {
@@ -363,8 +428,11 @@ module.exports = {
   attachCurrentUser,
   enforceLawChatbotGuestLimit,
   enforceLawChatbotMonthlyUsageLimit,
+  hasAcceptedLawChatbotNotice,
+  markLawChatbotNoticeAccepted,
   requireAdminAuth,
   requireGoogleUser,
+  requireLawChatbotNoticeAccepted,
   requireSignedInUser,
   redirectIfAuthenticated,
 };

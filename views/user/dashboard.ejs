@@ -423,6 +423,9 @@
         <span class="chip <%= usage.isUnlimited ? 'ok' : 'warn' %>">
           <%= usage.isUnlimited ? 'ใช้งานแบบไม่จำกัดรายเดือน' : `โควต้ารายเดือน ${usage.questionLimit || 0} ครั้ง` %>
         </span>
+        <% if (!usage.isUnlimited && (usage.bonusQuestionLimit || 0) > 0) { %>
+          <span class="chip ok">โบนัสจากข้อเสนอ +<%= usage.bonusQuestionLimit || 0 %> ครั้ง</span>
+        <% } %>
       </div>
       <div class="profile-plan-banner">
         <div class="profile-plan-banner-top">
@@ -490,6 +493,9 @@
         แพ็กเกจปัจจุบันไม่จำกัดจำนวนคำถามรายเดือน
       <% } else { %>
         ใช้ไป <strong><%= usage.questionCount || 0 %></strong> จาก <strong><%= usage.questionLimit || 0 %></strong> ครั้ง ของเดือน <strong><%= usage.usageMonth || "-" %></strong>
+        <% if ((usage.bonusQuestionLimit || 0) > 0) { %>
+          โดยแบ่งเป็นโควต้าพื้นฐาน <strong><%= usage.baseQuestionLimit || 0 %></strong> และโบนัสจากข้อเสนอที่อนุมัติ <strong><%= usage.bonusQuestionLimit || 0 %></strong>
+        <% } %>
       <% } %>
     </p>
   </article>
@@ -505,6 +511,20 @@
       <% } %>
     </p>
   </article>
+
+  <% if (!usage.isUnlimited && normalizedPlan === "free") { %>
+    <article class="card stat-card <%= planSurfaceClass %>">
+      <h2>โบนัสจากการช่วยเพิ่มความรู้</h2>
+      <p class="stat-value">+<%= usage.bonusQuestionLimit || 0 %></p>
+      <p class="stat-note">
+        <% if ((usage.bonusQuestionLimit || 0) > 0) { %>
+          ได้จากข้อเสนอที่ผู้ดูแลอนุมัติแล้ว <strong><%= usage.approvedContributionCount || 0 %></strong> รายการ โดยแต่ละรายการเพิ่มสิทธิ์ถามฟรีอีก 1 ครั้งต่อเดือน
+        <% } else { %>
+          หากข้อเสนอความรู้ของคุณได้รับอนุมัติ 1 รายการ ระบบจะเพิ่มสิทธิ์ถามฟรีให้อีก 1 ครั้งต่อเดือนโดยอัตโนมัติ
+        <% } %>
+      </p>
+    </article>
+  <% } %>
 
   <article class="card stat-card <%= planSurfaceClass %>">
     <h2>ประวัติการค้นหา</h2>

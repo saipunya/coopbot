@@ -608,23 +608,6 @@
   </head>
   <body>
     <div class="shell">
-      <% 
-        const dashboardQuery = {
-          sqPage: knowledgeData.suggestedQuestionsPagination?.page || dashboardPages?.sqPage || 1,
-          knowledgePage: knowledgeData.knowledgePagination?.page || dashboardPages?.knowledgePage || 1,
-          pendingPage: knowledgeData.pendingSuggestionsPagination?.page || dashboardPages?.pendingPage || 1,
-          sqPerPage: knowledgeData.suggestedQuestionsPagination?.pageSize || dashboardPages?.sqPerPage || 8,
-          knowledgePerPage: knowledgeData.knowledgePagination?.pageSize || dashboardPages?.knowledgePerPage || 8,
-          pendingPerPage: knowledgeData.pendingSuggestionsPagination?.pageSize || dashboardPages?.pendingPerPage || 8,
-        };
-        const dashboardBaseQueryString = new URLSearchParams(dashboardQuery).toString();
-        const dashboardBasePath = `/admin${dashboardBaseQueryString ? `?${dashboardBaseQueryString}` : ''}`;
-        const suggestedManagementReturnTo = `${dashboardBasePath}#frequent-questions-management`;
-        const suggestedLibraryReturnTo = `${dashboardBasePath}#frequent-questions-library`;
-        const knowledgeManagementReturnTo = `${dashboardBasePath}#knowledge-management`;
-        const knowledgeLibraryReturnTo = `${dashboardBasePath}#knowledge-library`;
-        const knowledgeSuggestionsReturnTo = `${dashboardBasePath}#knowledge-suggestions`;
-      %>
       <% if (successMessage) { %>
         <div class="alert success"><%= successMessage %></div>
       <% } %>
@@ -727,391 +710,40 @@
         <ul class="quick-links">
           <li><a href="/law-chatbot">หน้าแชตสาธารณะ</a></li>
           <li><a href="/admin/users">จัดการแพ็กเกจผู้ใช้งาน</a></li>
-          <li><a href="/admin/guest-usage">ตรวจ guest usage และการกันรีเซ็ตสิทธิ์</a></li>
           <li><a href="/law-chatbot/upload">หน้าจัดการอัปโหลด</a></li>
           <li><a href="/law-chatbot/feedback">หน้าดูข้อเสนอแนะ</a></li>
           <li><a href="/admin/payment-requests">ตรวจคำขออัปเกรดแพ็กเกจ <% if (paymentRequestData.pendingCount > 0) { %>(<%= paymentRequestData.pendingCount %> รออนุมัติ)<% } %></a></li>
-          <li><a href="#frequent-questions-management">จัดการคำถามแนะนำ / คำถามที่พบบ่อย</a></li>
-          <li><a href="#knowledge-management">จัดการความรู้แชตบอท</a></li>
-          <li><a href="#knowledge-suggestions">ตรวจข้อเสนอจากผู้ใช้งาน</a></li>
+          <li><a href="/admin/suggested-questions">จัดการคำถามแนะนำ / คำถามที่พบบ่อย</a></li>
+          <li><a href="/admin/knowledge">จัดการความรู้แชตบอท</a></li>
+          <li><a href="/admin/knowledge-suggestions">ตรวจข้อเสนอจากผู้ใช้งาน</a></li>
         </ul>
       </section>
 
-      <section class="card" id="frequent-questions-management">
-        <h2>จัดการคำถามแนะนำ / คำถามที่พบบ่อย</h2>
-        <p class="section-note">
-          คำถามชุดนี้จะถูกใช้แสดงในกล่องคำถามแนะนำเหนือช่องพิมพ์ และถ้าผู้ใช้ถามตรงกับคำถามที่กำหนดไว้ ระบบจะใช้คำตอบที่บันทึกไว้ล่วงหน้าได้ทันที
-        </p>
-        <p>
-          ทั้งหมด <strong><%= knowledgeData.suggestedQuestionCount %></strong> รายการ
-          <% if (Number(knowledgeData.activeSuggestedQuestionCount || 0) > 0) { %>
-            | ใช้งานอยู่ <strong><%= knowledgeData.activeSuggestedQuestionCount %></strong> รายการ
-          <% } %>
-        </p>
-        <form action="/admin/suggested-questions" method="post">
-          <input type="hidden" name="returnTo" value="<%= suggestedManagementReturnTo %>" />
-          <div class="form-grid">
-            <div class="field">
-              <label for="suggestedQuestionTarget">ประเภทข้อมูล</label>
-              <select id="suggestedQuestionTarget" name="target" required>
-                <% (knowledgeData.suggestedQuestionTargets || []).forEach((target) => { %>
-                  <option value="<%= target.value %>"><%= target.label %></option>
-                <% }) %>
-              </select>
-            </div>
-            <div class="field">
-              <label for="suggestedQuestionDisplayOrder">ลำดับการแสดง</label>
-              <input id="suggestedQuestionDisplayOrder" name="displayOrder" type="number" min="0" step="1" value="0" />
-            </div>
-          </div>
-          <div class="field" style="margin-top: 0.9rem;">
-            <label for="suggestedQuestionText">คำถามแนะนำ</label>
-            <input
-              id="suggestedQuestionText"
-              name="questionText"
-              type="text"
-              placeholder="เช่น มาตรา 12 ของ พ.ร.บ.สหกรณ์ คืออะไร"
-              required
-            />
-          </div>
-          <div class="field" style="margin-top: 0.9rem;">
-            <label for="suggestedQuestionAnswer">คำตอบที่บันทึกไว้</label>
-            <textarea
-              id="suggestedQuestionAnswer"
-              name="answerText"
-              placeholder="พิมพ์คำตอบที่ต้องการให้ระบบใช้ทันทีเมื่อผู้ใช้ถามตรงกับคำถามนี้"
-              required
-            ></textarea>
-          </div>
-          <div class="field" style="margin-top: 0.9rem;">
-            <label style="display: inline-flex; align-items: center; gap: 0.45rem;">
-              <input type="hidden" name="isActive" value="0" />
-              <input type="checkbox" name="isActive" value="1" checked />
-              <span>เปิดใช้งานคำถามนี้ทันที</span>
-            </label>
-          </div>
-          <div style="margin-top: 1rem;">
-            <button class="primary-btn" type="submit">บันทึกคำถามแนะนำ</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="card" id="frequent-questions-library">
-        <h2>รายการคำถามแนะนำที่ตั้งค่าไว้</h2>
-        <div class="section-toolbar">
-          <form action="/admin" method="get">
-            <input type="hidden" name="knowledgePage" value="<%= dashboardQuery.knowledgePage %>" />
-            <input type="hidden" name="pendingPage" value="<%= dashboardQuery.pendingPage %>" />
-            <input type="hidden" name="knowledgePerPage" value="<%= dashboardQuery.knowledgePerPage %>" />
-            <input type="hidden" name="pendingPerPage" value="<%= dashboardQuery.pendingPerPage %>" />
-            <input type="hidden" name="sqPage" value="1" />
-            <label for="sqPerPage" class="subtle-text">จำนวนรายการต่อหน้า</label>
-            <select id="sqPerPage" name="sqPerPage" aria-label="จำนวนรายการคำถามแนะนำต่อหน้า">
-              <% [8, 16, 24].forEach((size) => { %>
-                <option value="<%= size %>" <%= Number(dashboardQuery.sqPerPage || 8) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
-              <% }) %>
-            </select>
-            <button type="submit" formaction="/admin#frequent-questions-library">แสดงผล</button>
-          </form>
+      <section class="card">
+        <h2>ศูนย์จัดการฐานความรู้</h2>
+        <p class="section-note">แยกงานจัดการคำถามแนะนำ, ฐานความรู้ และข้อเสนอจากผู้ใช้งานออกเป็นคนละหน้าแล้ว เพื่อให้เพิ่มหรือแก้ไขข้อมูลแต่ละส่วนได้สะดวกขึ้น</p>
+        <div class="grid">
+          <article class="card metric-card" style="margin-bottom: 0;">
+            <p class="metric-label">คำถามแนะนำ</p>
+            <p class="metric"><%= knowledgeData.suggestedQuestionCount %></p>
+            <p class="subtle-text">
+              ใช้งานอยู่ <strong><%= knowledgeData.activeSuggestedQuestionCount %></strong> รายการ
+            </p>
+            <p style="margin: 0.75rem 0 0;"><a href="/admin/suggested-questions">เปิดหน้าจัดการคำถามแนะนำ</a></p>
+          </article>
+          <article class="card metric-card" style="margin-bottom: 0;">
+            <p class="metric-label">ฐานความรู้</p>
+            <p class="metric"><%= knowledgeData.knowledgeCount %></p>
+            <p class="subtle-text">เพิ่มความรู้ใหม่หรือแก้ไขรายการเดิมในหน้าเฉพาะ</p>
+            <p style="margin: 0.75rem 0 0;"><a href="/admin/knowledge">เปิดหน้าจัดการฐานความรู้</a></p>
+          </article>
+          <article class="card metric-card" style="margin-bottom: 0;">
+            <p class="metric-label">ข้อเสนอจากผู้ใช้งาน</p>
+            <p class="metric"><%= knowledgeData.pendingSuggestionCount %></p>
+            <p class="subtle-text">รายการที่ยังรอตรวจสอบและอนุมัติ</p>
+            <p style="margin: 0.75rem 0 0;"><a href="/admin/knowledge-suggestions">เปิดหน้าตรวจข้อเสนอ</a></p>
+          </article>
         </div>
-        <ul class="knowledge-list soft-list">
-          <% if (!knowledgeData.suggestedQuestions || knowledgeData.suggestedQuestions.length === 0) { %>
-            <li>ยังไม่มีคำถามแนะนำที่ผู้ดูแลสร้างไว้</li>
-          <% } %>
-          <% (knowledgeData.suggestedQuestions || []).forEach((item) => { %>
-            <li>
-              <strong class="list-item-title"><%= item.questionText %></strong>
-              <div class="knowledge-meta">
-                ใช้กับ:
-                <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : item.target === 'coop' ? 'สหกรณ์' : 'ทุกประเภท' %>
-                | สถานะ:
-                <%= item.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน' %>
-                | ลำดับ: <%= Number(item.displayOrder || 0) %>
-                <% if (item.updatedAt) { %> | แก้ไขล่าสุด: <%= item.updatedAt %><% } %>
-              </div>
-              <div class="list-item-body"><%= item.answerText %></div>
-              <details class="suggestion-editor">
-                <summary class="editor-summary">แก้ไขคำถามแนะนำนี้</summary>
-                <div class="editor-body">
-                  <form action="/admin/suggested-questions/update" method="post">
-                    <input type="hidden" name="id" value="<%= item.id %>" />
-                    <input type="hidden" name="returnTo" value="<%= suggestedLibraryReturnTo %>" />
-                    <div class="form-grid">
-                      <div class="field">
-                        <label for="suggested-target-<%= item.id %>">ประเภทข้อมูล</label>
-                        <select id="suggested-target-<%= item.id %>" name="target" required>
-                          <% (knowledgeData.suggestedQuestionTargets || []).forEach((target) => { %>
-                            <option value="<%= target.value %>" <%= item.target === target.value ? 'selected' : '' %>><%= target.label %></option>
-                          <% }) %>
-                        </select>
-                      </div>
-                      <div class="field">
-                        <label for="suggested-display-order-<%= item.id %>">ลำดับการแสดง</label>
-                        <input
-                          id="suggested-display-order-<%= item.id %>"
-                          name="displayOrder"
-                          type="number"
-                          min="0"
-                          step="1"
-                          value="<%= Number(item.displayOrder || 0) %>"
-                        />
-                      </div>
-                    </div>
-                    <div class="field" style="margin-top: 0.9rem;">
-                      <label for="suggested-question-text-<%= item.id %>">คำถามแนะนำ</label>
-                      <input id="suggested-question-text-<%= item.id %>" name="questionText" type="text" value="<%= item.questionText %>" required />
-                    </div>
-                    <div class="field" style="margin-top: 0.9rem;">
-                      <label for="suggested-answer-text-<%= item.id %>">คำตอบที่บันทึกไว้</label>
-                      <textarea id="suggested-answer-text-<%= item.id %>" name="answerText" required><%= item.answerText %></textarea>
-                    </div>
-                    <div class="field" style="margin-top: 0.9rem;">
-                      <label style="display: inline-flex; align-items: center; gap: 0.45rem;">
-                        <input type="hidden" name="isActive" value="0" />
-                        <input type="checkbox" name="isActive" value="1" <%= item.isActive ? 'checked' : '' %> />
-                        <span>เปิดใช้งานคำถามนี้</span>
-                      </label>
-                    </div>
-                    <div class="suggestion-actions">
-                      <button class="secondary-btn" type="submit">บันทึกการแก้ไข</button>
-                    </div>
-                  </form>
-                </div>
-              </details>
-              <div class="knowledge-actions">
-                <form action="/admin/suggested-questions/delete" method="post" onsubmit="return confirm('ยืนยันการลบคำถามแนะนำนี้ใช่หรือไม่');">
-                  <input type="hidden" name="id" value="<%= item.id %>" />
-                  <input type="hidden" name="returnTo" value="<%= suggestedLibraryReturnTo %>" />
-                  <button class="danger-btn" type="submit">ลบรายการนี้</button>
-                </form>
-              </div>
-            </li>
-          <% }) %>
-        </ul>
-        <%- include("partials/pagination", { pagination: knowledgeData.suggestedQuestionsPagination, basePath: "/admin", query: dashboardQuery, pageKey: "sqPage", anchor: "frequent-questions-library", itemLabel: "รายการคำถามแนะนำ" }) %>
-      </section>
-
-      <section class="card" id="knowledge-management">
-        <h2>เพิ่มหรือแก้ไขความรู้สำหรับตอบคำถาม</h2>
-        <p class="section-note">
-          ใช้หน้านี้เพื่อเพิ่มข้อมูลที่ถูกต้องลงในฐานข้อมูล เมื่อ AI ตอบไม่ตรงข้อเท็จจริง ระบบจะนำข้อมูลชุดนี้ไปช่วยตอบในรอบถัดไป
-        </p>
-        <form action="/admin/knowledge" method="post">
-          <input type="hidden" name="returnTo" value="<%= knowledgeManagementReturnTo %>" />
-          <div class="form-grid">
-            <div class="field">
-              <label for="target">ประเภทข้อมูล</label>
-              <select id="target" name="target" required>
-                <% knowledgeData.targets.forEach((target) => { %>
-                  <option value="<%= target.value %>"><%= target.label %></option>
-                <% }) %>
-              </select>
-            </div>
-            <div class="field">
-              <label for="lawNumber">เลขอ้างอิง / หมวด</label>
-              <input id="lawNumber" name="lawNumber" type="text" placeholder="เช่น หมวดสมาชิก หรือ ข้อ 12" />
-            </div>
-          </div>
-          <div class="field" style="margin-top: 0.9rem;">
-            <label for="title">หัวข้อ</label>
-            <input id="title" name="title" type="text" placeholder="เช่น การรับสมาชิกสหกรณ์" required />
-          </div>
-          <div class="field" style="margin-top: 0.9rem;">
-            <label for="content">รายละเอียดความรู้ / คำตอบที่ถูกต้อง</label>
-            <textarea id="content" name="content" placeholder="พิมพ์ข้อมูลที่ต้องการให้บอทใช้เป็นหลักเมื่อมีคนถามเรื่องนี้" required></textarea>
-          </div>
-          <div class="field" style="margin-top: 0.9rem;">
-            <label for="sourceNote">หมายเหตุ / แหล่งที่มา</label>
-            <input id="sourceNote" name="sourceNote" type="text" placeholder="เช่น มาตรา 15, เอกสารประชุม, หรือคำชี้แจงจากผู้เชี่ยวชาญ" />
-          </div>
-          <div style="margin-top: 1rem;">
-            <button class="primary-btn" type="submit">บันทึกความรู้ลงฐานข้อมูล</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="card" id="knowledge-library">
-        <h2>ความรู้ที่บันทึกล่าสุด</h2>
-        <p>ทั้งหมด <strong><%= knowledgeData.knowledgeCount %></strong> รายการ</p>
-        <div class="section-toolbar">
-          <form action="/admin" method="get">
-            <input type="hidden" name="sqPage" value="<%= dashboardQuery.sqPage %>" />
-            <input type="hidden" name="pendingPage" value="<%= dashboardQuery.pendingPage %>" />
-            <input type="hidden" name="sqPerPage" value="<%= dashboardQuery.sqPerPage %>" />
-            <input type="hidden" name="pendingPerPage" value="<%= dashboardQuery.pendingPerPage %>" />
-            <input type="hidden" name="knowledgePage" value="1" />
-            <label for="knowledgePerPage" class="subtle-text">จำนวนรายการต่อหน้า</label>
-            <select id="knowledgePerPage" name="knowledgePerPage" aria-label="จำนวนรายการฐานความรู้ต่อหน้า">
-              <% [8, 16, 24].forEach((size) => { %>
-                <option value="<%= size %>" <%= Number(dashboardQuery.knowledgePerPage || 8) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
-              <% }) %>
-            </select>
-            <button type="submit" formaction="/admin#knowledge-library">แสดงผล</button>
-          </form>
-        </div>
-        <ul class="knowledge-list soft-list">
-          <% if (knowledgeData.recentKnowledge.length === 0) { %>
-            <li>ยังไม่มีความรู้ที่เพิ่มเข้าฐานข้อมูล</li>
-          <% } %>
-          <% knowledgeData.recentKnowledge.forEach((item) => { %>
-            <li>
-              <strong class="list-item-title"><%= item.title %></strong>
-              <% if (item.lawNumber) { %> - <%= item.lawNumber %><% } %>
-              <div class="knowledge-meta">
-                ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : 'สหกรณ์' %>
-                <% if (item.sourceNote) { %> | แหล่งที่มา: <%= item.sourceNote %><% } %>
-                <% if (item.updatedAt) { %> | แก้ไขล่าสุด: <%= item.updatedAt %><% } %>
-              </div>
-              <div class="list-item-body"><%= item.content %></div>
-              <details class="suggestion-editor">
-                <summary class="editor-summary">แก้ไขข้อมูลฐานความรู้นี้</summary>
-                <div class="editor-body">
-                  <form action="/admin/knowledge/update" method="post">
-                    <input type="hidden" name="id" value="<%= item.id %>" />
-                    <input type="hidden" name="returnTo" value="<%= knowledgeLibraryReturnTo %>" />
-                    <div class="form-grid">
-                      <div class="field">
-                        <label for="knowledge-target-<%= item.id %>">ประเภทข้อมูล</label>
-                        <select id="knowledge-target-<%= item.id %>" name="target" required>
-                          <option value="coop" <%= item.target === 'coop' ? 'selected' : '' %>>สหกรณ์</option>
-                          <option value="group" <%= item.target === 'group' ? 'selected' : '' %>>กลุ่มเกษตรกร</option>
-                        </select>
-                      </div>
-                      <div class="field">
-                        <label for="knowledge-law-number-<%= item.id %>">เลขอ้างอิง / หมวด</label>
-                        <input
-                          id="knowledge-law-number-<%= item.id %>"
-                          name="lawNumber"
-                          type="text"
-                          value="<%= item.lawNumber || '' %>"
-                          placeholder="เช่น มาตรา 15 หรือ หมวดสมาชิก"
-                        />
-                      </div>
-                    </div>
-                    <div class="field" style="margin-top: 0.9rem;">
-                      <label for="knowledge-title-<%= item.id %>">หัวข้อ</label>
-                      <input id="knowledge-title-<%= item.id %>" name="title" type="text" value="<%= item.title %>" required />
-                    </div>
-                    <div class="field" style="margin-top: 0.9rem;">
-                      <label for="knowledge-content-<%= item.id %>">รายละเอียดความรู้ / คำตอบที่ถูกต้อง</label>
-                      <textarea id="knowledge-content-<%= item.id %>" name="content" required><%= item.content %></textarea>
-                    </div>
-                    <div class="field" style="margin-top: 0.9rem;">
-                      <label for="knowledge-source-note-<%= item.id %>">หมายเหตุ / แหล่งที่มา</label>
-                      <input
-                        id="knowledge-source-note-<%= item.id %>"
-                        name="sourceNote"
-                        type="text"
-                        value="<%= item.sourceNote || '' %>"
-                        placeholder="เช่น มาตรา 15, เอกสารประชุม, หรือคำชี้แจงจากผู้เชี่ยวชาญ"
-                      />
-                    </div>
-                    <div class="suggestion-actions">
-                      <button class="secondary-btn" type="submit">บันทึกการแก้ไข</button>
-                    </div>
-                  </form>
-                </div>
-              </details>
-              <div class="knowledge-actions">
-                <form action="/admin/knowledge/delete" method="post" onsubmit="return confirm('ยืนยันการลบข้อมูลฐานความรู้นี้ใช่หรือไม่');">
-                  <input type="hidden" name="id" value="<%= item.id %>" />
-                  <input type="hidden" name="returnTo" value="<%= knowledgeLibraryReturnTo %>" />
-                  <button class="danger-btn" type="submit">ลบรายการนี้</button>
-                </form>
-              </div>
-            </li>
-          <% }) %>
-        </ul>
-        <%- include("partials/pagination", { pagination: knowledgeData.knowledgePagination, basePath: "/admin", query: dashboardQuery, pageKey: "knowledgePage", anchor: "knowledge-library", itemLabel: "รายการฐานความรู้" }) %>
-      </section>
-
-      <section class="card" id="knowledge-suggestions">
-        <h2>ข้อเสนอคำตอบจากผู้ใช้งาน</h2>
-        <p>รอตรวจสอบ <strong><%= knowledgeData.pendingSuggestionCount %></strong> รายการ</p>
-        <div class="section-toolbar">
-          <form action="/admin" method="get">
-            <input type="hidden" name="sqPage" value="<%= dashboardQuery.sqPage %>" />
-            <input type="hidden" name="knowledgePage" value="<%= dashboardQuery.knowledgePage %>" />
-            <input type="hidden" name="sqPerPage" value="<%= dashboardQuery.sqPerPage %>" />
-            <input type="hidden" name="knowledgePerPage" value="<%= dashboardQuery.knowledgePerPage %>" />
-            <input type="hidden" name="pendingPage" value="1" />
-            <label for="pendingPerPage" class="subtle-text">จำนวนรายการต่อหน้า</label>
-            <select id="pendingPerPage" name="pendingPerPage" aria-label="จำนวนข้อเสนอที่รอตรวจสอบต่อหน้า">
-              <% [8, 16, 24].forEach((size) => { %>
-                <option value="<%= size %>" <%= Number(dashboardQuery.pendingPerPage || 8) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
-              <% }) %>
-            </select>
-            <button type="submit" formaction="/admin#knowledge-suggestions">แสดงผล</button>
-          </form>
-        </div>
-        <ul class="knowledge-list soft-list">
-          <% if (knowledgeData.pendingSuggestions.length === 0) { %>
-            <li>ยังไม่มีข้อเสนอคำตอบที่รออนุมัติ</li>
-          <% } %>
-          <% knowledgeData.pendingSuggestions.forEach((item) => { %>
-            <li>
-              <strong class="list-item-title"><%= item.title %></strong>
-              <div class="suggestion-meta">
-                ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : 'สหกรณ์' %>
-                <% if (item.sourceType) { %> | ช่องทาง: <%= item.sourceType === 'voice' ? 'เสียง' : 'ข้อความ' %><% } %>
-                <% if (item.createdAt) { %> | ส่งเมื่อ: <%= item.createdAt %><% } %>
-              </div>
-              <div class="list-item-body"><%= item.content %></div>
-              <details class="suggestion-editor" open>
-                <summary class="editor-summary">แก้ไขข้อเสนอก่อนอนุมัติ</summary>
-                <div class="editor-body">
-                  <form action="/admin/knowledge-suggestions/update" method="post">
-                    <input type="hidden" name="id" value="<%= item.id %>" />
-                    <input type="hidden" name="returnTo" value="<%= knowledgeSuggestionsReturnTo %>" />
-                    <div class="form-grid">
-                      <div class="field">
-                        <label for="suggestion-target-<%= item.id %>">ประเภทข้อมูล</label>
-                        <select id="suggestion-target-<%= item.id %>" name="target" required>
-                          <option value="coop" <%= item.target === 'coop' ? 'selected' : '' %>>สหกรณ์</option>
-                          <option value="group" <%= item.target === 'group' ? 'selected' : '' %>>กลุ่มเกษตรกร</option>
-                        </select>
-                      </div>
-                      <div class="field">
-                        <label for="suggestion-title-<%= item.id %>">หัวข้อ</label>
-                        <input id="suggestion-title-<%= item.id %>" name="title" type="text" value="<%= item.title %>" required />
-                      </div>
-                    </div>
-                    <div class="field" style="margin-top: 0.9rem;">
-                      <label for="suggestion-content-<%= item.id %>">รายละเอียดคำตอบ</label>
-                      <textarea id="suggestion-content-<%= item.id %>" name="content" required><%= item.content %></textarea>
-                    </div>
-                    <div class="field" style="margin-top: 0.9rem;">
-                      <label for="suggestion-review-note-<%= item.id %>">หมายเหตุการตรวจทาน</label>
-                      <input
-                        id="suggestion-review-note-<%= item.id %>"
-                        name="reviewNote"
-                        type="text"
-                        value="<%= item.reviewNote || '' %>"
-                        placeholder="เช่น ปรับถ้อยคำก่อนนำเข้าฐานความรู้"
-                      />
-                    </div>
-                    <div class="suggestion-actions">
-                      <button class="secondary-btn" type="submit">บันทึกการแก้ไขก่อน</button>
-                    </div>
-                  </form>
-                </div>
-              </details>
-              <div class="knowledge-actions">
-                <form action="/admin/knowledge-suggestions/approve" method="post" onsubmit="return confirm('ยืนยันการอนุมัติและนำเข้าฐานความรู้จากข้อมูลฉบับล่าสุดใช่หรือไม่');">
-                  <input type="hidden" name="id" value="<%= item.id %>" />
-                  <input type="hidden" name="returnTo" value="<%= knowledgeSuggestionsReturnTo %>" />
-                  <button class="primary-btn" type="submit">อนุมัติและนำเข้าจากฉบับล่าสุด</button>
-                </form>
-                <form action="/admin/knowledge-suggestions/reject" method="post" onsubmit="return confirm('ยืนยันการปฏิเสธข้อเสนอนี้ใช่หรือไม่');">
-                  <input type="hidden" name="id" value="<%= item.id %>" />
-                  <input type="hidden" name="returnTo" value="<%= knowledgeSuggestionsReturnTo %>" />
-                  <button class="secondary-btn" type="submit">ปฏิเสธ</button>
-                </form>
-              </div>
-            </li>
-          <% }) %>
-        </ul>
-        <%- include("partials/pagination", { pagination: knowledgeData.pendingSuggestionsPagination, basePath: "/admin", query: dashboardQuery, pageKey: "pendingPage", anchor: "knowledge-suggestions", itemLabel: "ข้อเสนอที่รอตรวจสอบ" }) %>
       </section>
     </div>
   </body>

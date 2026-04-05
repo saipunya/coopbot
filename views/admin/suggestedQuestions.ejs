@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet" />
+    <style>
+      body { margin: 0; font-family: 'Sarabun', Arial, sans-serif; background: linear-gradient(160deg, #e6eef6, #f5f9fc); color: #1f2a37; }
+      .shell { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; }
+      .card { background: rgba(255,255,255,0.9); border: 1px solid #d8e2ea; border-radius: 20px; box-shadow: 0 18px 45px rgba(18,52,77,0.16); padding: 1.25rem; margin-bottom: 1rem; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; position:relative; overflow:hidden; }
+      .topbar::before { content:""; position:absolute; inset:0; background: radial-gradient(circle at top left, rgba(255,255,255,0.36), transparent 30%), linear-gradient(135deg, rgba(255,255,255,0.16), transparent 44%); pointer-events:none; }
+      .topbar > * { position:relative; z-index:1; }
+      .topbar a { color: #0f4667; text-decoration:none; font-weight:700; }
+      .alert { padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; }
+      .alert.success { background:#e8f7ee; color:#1f6a3a; border:1px solid #b8e3c8; }
+      .alert.error { background:#fce9e7; color:#9b2c22; border:1px solid #f1b8b1; }
+      .tab-row { display:flex; gap:0.75rem; flex-wrap:wrap; }
+      .tab-row a { text-decoration:none; font-weight:700; color:#0f4667; padding:0.72rem 1rem; border-radius:14px; border:1px solid #d8e2ea; background:#eef4f8; }
+      .tab-row a.active { background:#0f5f8f; border-color:#0f5f8f; color:#fff; }
+      .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; }
+      .metric-card { position:relative; overflow:hidden; }
+      .metric-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, #0f5f8f, transparent 85%); }
+      .metric-card.active::before { background: linear-gradient(90deg, #1d7a52, transparent 85%); }
+      .metric { font-size: 1.8rem; font-weight: 700; color: #0f4667; margin: 0.3rem 0 0; }
+      .section-note { color:#5d6a79; line-height:1.7; }
+      .form-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:0.9rem; }
+      .field label { display:block; font-weight:700; margin-bottom:0.35rem; }
+      .field input, .field select, .field textarea { width:100%; box-sizing:border-box; border:1px solid #c9d8e4; border-radius:14px; padding:0.8rem 0.9rem; font:inherit; background:#fff; color:#1f2a37; }
+      .field textarea { min-height:130px; resize:vertical; }
+      .field input[type="checkbox"] { width:auto; padding:0; border:none; border-radius:0; }
+      .primary-btn, .secondary-btn, .danger-btn { border:none; border-radius:12px; padding:0.72rem 0.95rem; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+      .primary-btn { background:#0f5f8f; }
+      .secondary-btn { background:#607180; }
+      .danger-btn { background:#922f24; }
+      .section-toolbar { display:flex; justify-content:flex-end; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem; }
+      .section-toolbar form { display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap; }
+      .section-toolbar select { border:1px solid #c9d8e4; border-radius:12px; padding:0.62rem 0.82rem; font:inherit; background:#fff; color:#1f2a37; }
+      .section-toolbar button { border:none; border-radius:12px; padding:0.66rem 0.9rem; font:inherit; font-weight:700; color:#fff; background:#0f5f8f; cursor:pointer; }
+      .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.8rem; }
+      .soft-list li { padding:0.95rem 1rem; border:1px solid #d8e2ea; border-radius:16px; background: rgba(255,255,255,0.82); min-width:0; }
+      .list-item-title, .list-item-body, .knowledge-meta, .editor-summary, .section-note { overflow-wrap:anywhere; word-break:break-word; }
+      .list-item-title { display:block; color:#0f4667; line-height:1.5; }
+      .knowledge-meta { margin-top:0.45rem; color:#5d6a79; font-size:0.92rem; line-height:1.6; }
+      .list-item-body { margin-top:0.6rem; color:#1f2a37; white-space:pre-line; line-height:1.7; }
+      .suggestion-editor { margin-top:0.9rem; padding:0.95rem; border:1px solid #d8e2ea; border-radius:16px; background:rgba(241,246,251,0.82); }
+      details.suggestion-editor { padding:0.85rem 0.95rem; }
+      .editor-summary { cursor:pointer; font-weight:700; color:#0f4667; list-style:none; display:flex; align-items:center; gap:0.55rem; }
+      .editor-summary::-webkit-details-marker { display:none; }
+      .editor-summary::before { content:"+"; width:1.3rem; height:1.3rem; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:#d2e8f7; color:#0f4667; font-weight:700; flex:0 0 auto; }
+      details[open] > .editor-summary::before { content:"-"; }
+      .editor-body { margin-top:0.9rem; }
+      .suggestion-actions, .knowledge-actions { display:flex; gap:0.65rem; flex-wrap:wrap; margin-top:0.9rem; }
+      .knowledge-actions { justify-content:flex-end; }
+      .pagination-bar { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; margin-top:1rem; }
+      .pagination-summary { color:#5d6a79; font-size:0.92rem; }
+      .pagination-links { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; }
+      .pagination-link, .pagination-current, .pagination-ellipsis { min-width:2.4rem; padding:0.58rem 0.82rem; border-radius:12px; text-align:center; font-weight:700; }
+      .pagination-link { background:#eef4f8; color:#0f4667; text-decoration:none; border:1px solid #d8e2ea; }
+      .pagination-current { background:#0f5f8f; color:#fff; border:1px solid #0f5f8f; }
+      .pagination-ellipsis { color:#5d6a79; }
+      @media (max-width: 820px) {
+        .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
+        .card, .topbar { padding: 1rem; }
+        .topbar { flex-direction: column; align-items: stretch; }
+        .field input, .field select, .field textarea, .primary-btn, .secondary-btn, .danger-btn, .section-toolbar select, .section-toolbar button { font-size:16px; }
+        .section-toolbar, .suggestion-actions, .knowledge-actions, .pagination-bar { flex-direction:column; align-items:stretch; }
+        .section-toolbar form, .section-toolbar select, .section-toolbar button, .suggestion-actions form, .suggestion-actions button, .knowledge-actions form, .knowledge-actions button { width:100%; }
+        .pagination-links { justify-content:center; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
+      <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
+
+      <section class="card topbar">
+        <div>
+          <h1 style="margin:0; color:#0f4667;">จัดการคำถามแนะนำ / คำถามที่พบบ่อย</h1>
+          <p style="margin:0.35rem 0 0; color:#5d6a79;">แยกหน้าจัดการคำถามแนะนำออกจาก dashboard เพื่อเพิ่ม แก้ไข และลบรายการได้สะดวกขึ้น</p>
+        </div>
+        <a href="/admin">กลับหน้าแดชบอร์ด</a>
+      </section>
+
+      <section class="card">
+        <%- include("partials/knowledgeAdminTabs", { activeTab: "suggested-questions" }) %>
+      </section>
+
+      <section class="grid">
+        <article class="card metric-card"><div>คำถามแนะนำทั้งหมด</div><div class="metric"><%= data.suggestedQuestionCount %></div></article>
+        <article class="card metric-card active"><div>เปิดใช้งานอยู่</div><div class="metric"><%= data.activeSuggestedQuestionCount %></div></article>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-top:0; color:#0f4667;">เพิ่มคำถามแนะนำใหม่</h2>
+        <p class="section-note">คำถามชุดนี้จะถูกใช้แสดงในกล่องคำถามแนะนำเหนือช่องพิมพ์ และถ้าผู้ใช้ถามตรงกับคำถามที่กำหนดไว้ ระบบจะใช้คำตอบที่บันทึกไว้ล่วงหน้าได้ทันที</p>
+        <form action="/admin/suggested-questions" method="post">
+          <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+          <div class="form-grid">
+            <div class="field">
+              <label for="suggestedQuestionTarget">ประเภทข้อมูล</label>
+              <select id="suggestedQuestionTarget" name="target" required>
+                <% (data.suggestedQuestionTargets || []).forEach((target) => { %>
+                  <option value="<%= target.value %>"><%= target.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="field">
+              <label for="suggestedQuestionDisplayOrder">ลำดับการแสดง</label>
+              <input id="suggestedQuestionDisplayOrder" name="displayOrder" type="number" min="0" step="1" value="0" />
+            </div>
+          </div>
+          <div class="field" style="margin-top:0.9rem;">
+            <label for="suggestedQuestionText">คำถามแนะนำ</label>
+            <input id="suggestedQuestionText" name="questionText" type="text" placeholder="เช่น มาตรา 12 ของ พ.ร.บ.สหกรณ์ คืออะไร" required />
+          </div>
+          <div class="field" style="margin-top:0.9rem;">
+            <label for="suggestedQuestionAnswer">คำตอบที่บันทึกไว้</label>
+            <textarea id="suggestedQuestionAnswer" name="answerText" placeholder="พิมพ์คำตอบที่ต้องการให้ระบบใช้ทันทีเมื่อผู้ใช้ถามตรงกับคำถามนี้" required></textarea>
+          </div>
+          <div class="field" style="margin-top:0.9rem;">
+            <label style="display:inline-flex; align-items:center; gap:0.45rem;">
+              <input type="hidden" name="isActive" value="0" />
+              <input type="checkbox" name="isActive" value="1" checked />
+              <span>เปิดใช้งานคำถามนี้ทันที</span>
+            </label>
+          </div>
+          <div style="margin-top:1rem;">
+            <button class="primary-btn" type="submit">บันทึกคำถามแนะนำ</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-top:0; color:#0f4667;">รายการคำถามแนะนำที่ตั้งค่าไว้</h2>
+        <div class="section-toolbar">
+          <form action="/admin/suggested-questions" method="get">
+            <input type="hidden" name="page" value="1" />
+            <label for="perPage">จำนวนรายการต่อหน้า</label>
+            <select id="perPage" name="perPage" aria-label="จำนวนรายการคำถามแนะนำต่อหน้า">
+              <% [8, 16, 24].forEach((size) => { %>
+                <option value="<%= size %>" <%= Number(data.suggestedQuestionsPagination?.pageSize || 12) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
+              <% }) %>
+            </select>
+            <button type="submit">แสดงผล</button>
+          </form>
+        </div>
+        <ul class="soft-list">
+          <% if (!data.suggestedQuestions || data.suggestedQuestions.length === 0) { %>
+            <li>ยังไม่มีคำถามแนะนำที่ผู้ดูแลสร้างไว้</li>
+          <% } %>
+          <% (data.suggestedQuestions || []).forEach((item) => { %>
+            <li>
+              <strong class="list-item-title"><%= item.questionText %></strong>
+              <div class="knowledge-meta">
+                ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : item.target === 'coop' ? 'สหกรณ์' : 'ทุกประเภท' %>
+                | สถานะ: <%= item.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน' %>
+                | ลำดับ: <%= Number(item.displayOrder || 0) %>
+                <% if (item.updatedAt) { %> | แก้ไขล่าสุด: <%= item.updatedAt %><% } %>
+              </div>
+              <div class="list-item-body"><%= item.answerText %></div>
+              <details class="suggestion-editor">
+                <summary class="editor-summary">แก้ไขคำถามแนะนำนี้</summary>
+                <div class="editor-body">
+                  <form action="/admin/suggested-questions/update" method="post">
+                    <input type="hidden" name="id" value="<%= item.id %>" />
+                    <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+                    <div class="form-grid">
+                      <div class="field">
+                        <label for="suggested-target-<%= item.id %>">ประเภทข้อมูล</label>
+                        <select id="suggested-target-<%= item.id %>" name="target" required>
+                          <% (data.suggestedQuestionTargets || []).forEach((target) => { %>
+                            <option value="<%= target.value %>" <%= item.target === target.value ? 'selected' : '' %>><%= target.label %></option>
+                          <% }) %>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label for="suggested-display-order-<%= item.id %>">ลำดับการแสดง</label>
+                        <input id="suggested-display-order-<%= item.id %>" name="displayOrder" type="number" min="0" step="1" value="<%= Number(item.displayOrder || 0) %>" />
+                      </div>
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
+                      <label for="suggested-question-text-<%= item.id %>">คำถามแนะนำ</label>
+                      <input id="suggested-question-text-<%= item.id %>" name="questionText" type="text" value="<%= item.questionText %>" required />
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
+                      <label for="suggested-answer-text-<%= item.id %>">คำตอบที่บันทึกไว้</label>
+                      <textarea id="suggested-answer-text-<%= item.id %>" name="answerText" required><%= item.answerText %></textarea>
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
+                      <label style="display:inline-flex; align-items:center; gap:0.45rem;">
+                        <input type="hidden" name="isActive" value="0" />
+                        <input type="checkbox" name="isActive" value="1" <%= item.isActive ? 'checked' : '' %> />
+                        <span>เปิดใช้งานคำถามนี้</span>
+                      </label>
+                    </div>
+                    <div class="suggestion-actions">
+                      <button class="secondary-btn" type="submit">บันทึกการแก้ไข</button>
+                    </div>
+                  </form>
+                </div>
+              </details>
+              <div class="knowledge-actions">
+                <form action="/admin/suggested-questions/delete" method="post" onsubmit="return confirm('ยืนยันการลบคำถามแนะนำนี้ใช่หรือไม่');">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+                  <button class="danger-btn" type="submit">ลบรายการนี้</button>
+                </form>
+              </div>
+            </li>
+          <% }) %>
+        </ul>
+        <%- include("partials/pagination", { pagination: data.suggestedQuestionsPagination, basePath: "/admin/suggested-questions", query: { perPage: data.suggestedQuestionsPagination?.pageSize || 12 }, pageKey: "page", itemLabel: "รายการคำถามแนะนำ" }) %>
+      </section>
+    </div>
+  </body>
+</html>
