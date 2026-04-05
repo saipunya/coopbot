@@ -3177,6 +3177,15 @@
         `;
       }
 
+      function looksLikeMonthlyLimitMessage(text) {
+        const normalized = String(text || '').trim();
+        if (!normalized) {
+          return false;
+        }
+
+        return /ใช้สิทธิ์ถามคำถามครบ|ครบ\s*\d+\s*ครั้ง|กรุณาอัปเกรดแพลน|รอรอบเดือนถัดไป/i.test(normalized);
+      }
+
       function buildInlineActionHtml(options = {}) {
         const segments = [];
 
@@ -3191,7 +3200,7 @@
           `);
         }
 
-        if (isSignedInUser && options && options.monthlyUsageLimitReached) {
+        if (isSignedInUser && options && (options.monthlyUsageLimitReached || looksLikeMonthlyLimitMessage(options.answerText))) {
           const questionLimit = Number.isFinite(Number(options.questionLimit)) ? Number(options.questionLimit) : null;
           const questionCount = Number.isFinite(Number(options.questionCount)) ? Number(options.questionCount) : null;
           const usageLabel = questionLimit && questionCount !== null
@@ -3207,7 +3216,7 @@
                 </div>
                 <a href="/law-chatbot/payment-request?source=chat-limit-panel" class="bot-upgrade-cta-prominent">
                   <i class="bi bi-arrow-up-circle-fill"></i>
-                  <span>อัปเกรดแพ็กเกจตอนนี้</span>
+                  <span>Upgrade</span>
                 </a>
               </div>
             </div>
@@ -3224,7 +3233,10 @@
 
       function formatBotMessageHtml(text, terms, options = {}) {
         const raw = sanitizeDisplayText(text);
-        const inlineActionHtml = buildInlineActionHtml(options);
+        const inlineActionHtml = buildInlineActionHtml({
+          ...(options || {}),
+          answerText: raw,
+        });
         if (!raw.includes('แหล่งอ้างอิง:')) {
           const highlighted = applyHighlightHtml(raw, terms);
           return `${decorateBotFallbackHtml(highlighted)}${inlineActionHtml}`;
