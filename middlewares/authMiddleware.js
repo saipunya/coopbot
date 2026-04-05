@@ -428,9 +428,23 @@ function requireGoogleUser(req, res, next) {
     return next();
   }
 
+  if (req.session?.adminUser) {
+    return res.redirect(
+      "/admin?error=" + encodeURIComponent("คุณกำลังใช้งานในโหมดผู้ดูแล กรุณาออกจากโหมดผู้ดูแลก่อนเข้าใช้งานหน้าบัญชีผู้ใช้")
+    );
+  }
+
   const requestedPath = req.method === "GET" ? req.originalUrl : "/user";
   const returnTo = sanitizeReturnPath(requestedPath, "/user");
   return res.redirect(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`);
+}
+
+function redirectIfAdminAuthenticated(req, res, next) {
+  if (req.session?.adminUser) {
+    return res.redirect("/admin");
+  }
+
+  next();
 }
 
 function redirectIfAuthenticated(req, res, next) {
@@ -456,6 +470,7 @@ module.exports = {
   requireGoogleUser,
   requireLawChatbotNoticeAccepted,
   requireSignedInUser,
+  redirectIfAdminAuthenticated,
   redirectIfAuthenticated,
   LAW_CHATBOT_NOTICE_VERSION,
 };

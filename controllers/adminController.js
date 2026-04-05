@@ -125,6 +125,9 @@ async function submitLogin(req, res) {
     );
   }
 
+  delete req.session.user;
+  delete req.session.googleOAuthState;
+  delete req.session.googleOAuthReturnTo;
   req.session.adminUser = result.user;
   return res.redirect("/admin");
 }

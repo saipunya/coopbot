@@ -153,6 +153,7 @@
         <% if (errorMessage) { %>
           <p class="error"><%= errorMessage %></p>
         <% } %>
+        <p class="muted">เมื่อเข้าสู่ระบบผู้ดูแล ระบบจะสลับออกจากโหมดผู้ใช้ทั่วไปอัตโนมัติ เพื่อแยกสิทธิ์การใช้งานให้ชัดเจน</p>
         <form action="/admin/login" method="post">
           <label for="username">ชื่อผู้ใช้</label>
           <input id="username" name="username" type="text" required />

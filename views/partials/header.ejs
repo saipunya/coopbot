@@ -23,6 +23,13 @@
     admin: "ผู้ดูแลระบบ",
   };
   const headerPlanLabel = headerPlanLabelMap[headerPlanCode] || "แพ็กเกจฟรี";
+  const headerModeCode = hasAdminUser ? "admin" : (hasGoogleUser ? "user" : "guest");
+  const headerModeLabelMap = {
+    guest: "โหมด Guest",
+    user: "โหมด User",
+    admin: "โหมด Admin",
+  };
+  const headerModeLabel = headerModeLabelMap[headerModeCode] || "โหมด Guest";
 %>
 <!DOCTYPE html>
 <html lang="th">
@@ -132,6 +139,26 @@
         background: rgba(255, 255, 255, 0.72);
         color: var(--accent-strong);
         border: 1px solid rgba(255, 255, 255, 0.6);
+      }
+      .brand-mode {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border-radius: 999px;
+        padding: 0.38rem 0.72rem;
+        font-size: 0.82rem;
+        font-weight: 700;
+        border: 1px solid rgba(21, 84, 122, 0.18);
+        background: rgba(255, 255, 255, 0.9);
+        color: var(--ink);
+      }
+      .brand-mode::before {
+        content: "";
+        width: 0.56rem;
+        height: 0.56rem;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 0.18rem rgba(21, 84, 122, 0.12);
       }
       .nav {
         display: flex;
@@ -277,6 +304,7 @@
           <a class="brand" href="/law-chatbot">Coopbot</a>
           <div class="brand-meta">
             <span class="brand-chip"><%= headerPlanLabel %></span>
+            <span class="brand-mode"><%= headerModeLabel %></span>
             <span class="brand-subtle">ระบบผู้ช่วยค้นหากฎหมายสหกรณ์</span>
           </div>
         </div>

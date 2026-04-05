@@ -2,7 +2,7 @@ const express = require("express");
 
 const adminController = require("../controllers/adminController");
 const {
-  redirectIfAuthenticated,
+  redirectIfAdminAuthenticated,
   requireAdminAuth,
 } = require("../middlewares/authMiddleware");
 
@@ -16,8 +16,8 @@ function redirectLegacyGoogleAuthPath(targetPath) {
   };
 }
 
-router.get("/login", redirectIfAuthenticated, adminController.renderLogin);
-router.post("/login", redirectIfAuthenticated, adminController.submitLogin);
+router.get("/login", redirectIfAdminAuthenticated, adminController.renderLogin);
+router.post("/login", redirectIfAdminAuthenticated, adminController.submitLogin);
 router.get("/auth/google", redirectLegacyGoogleAuthPath("/auth/google"));
 router.get("/auth/google/callback", redirectLegacyGoogleAuthPath("/auth/google/callback"));
 router.get("/", requireAdminAuth, adminController.renderDashboard);
