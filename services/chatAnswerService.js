@@ -2477,6 +2477,59 @@ function sourceMatchesQueryLawNumber(source, queryLawNumber) {
   return getSourcePrimaryLawNumber(source) === normalizedQueryLawNumber;
 }
 
+function extractLawSubsectionOrder(source = {}) {
+  const candidates = [source?.reference, source?.title, source?.keyword, source?.lawNumber]
+    .map((item) => cleanLine(item))
+    .filter(Boolean);
+  const ordinalMap = new Map([
+    ["แรก", 1],
+    ["หนึ่ง", 1],
+    ["1", 1],
+    ["๑", 1],
+    ["สอง", 2],
+    ["2", 2],
+    ["๒", 2],
+    ["สาม", 3],
+    ["3", 3],
+    ["๓", 3],
+    ["สี่", 4],
+    ["4", 4],
+    ["๔", 4],
+    ["ห้า", 5],
+    ["5", 5],
+    ["๕", 5],
+    ["หก", 6],
+    ["6", 6],
+    ["๖", 6],
+    ["เจ็ด", 7],
+    ["7", 7],
+    ["๗", 7],
+    ["แปด", 8],
+    ["8", 8],
+    ["๘", 8],
+    ["เก้า", 9],
+    ["9", 9],
+    ["๙", 9],
+    ["สิบ", 10],
+    ["10", 10],
+  ]);
+
+  for (const candidate of candidates) {
+    const normalized = normalizeThaiDigits(String(candidate || "")).toLowerCase();
+    const paragraphMatch = normalized.match(/วรรค\s*(แรก|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|[0-9]{1,2})/i);
+    if (paragraphMatch) {
+      return ordinalMap.get(paragraphMatch[1]) || Number(paragraphMatch[1]) || Number.POSITIVE_INFINITY;
+    }
+
+    const subsectionMatch = normalized.match(/(?:ข้อ|อนุมาตรา)\s*([0-9]{1,3})/i);
+    if (subsectionMatch) {
+      return Number(subsectionMatch[1]);
+    }
+  }
+
+  return Number.POSITIVE_INFINITY;
+}
+
 function sortLawSectionSources(left, right, queryLawNumber = "") {
   const normalizedQueryLawNumber = normalizeClauseNumber(queryLawNumber);
   const leftExact = normalizedQueryLawNumber ? sourceMatchesQueryLawNumber(left, normalizedQueryLawNumber) : false;
@@ -2489,6 +2542,16 @@ function sortLawSectionSources(left, right, queryLawNumber = "") {
   const rightStructured = isStructuredLawSource(right);
   if (leftStructured !== rightStructured) {
     return rightStructured ? 1 : -1;
+  }
+
+  const leftLawNumber = getSourcePrimaryLawNumber(left);
+  const rightLawNumber = getSourcePrimaryLawNumber(right);
+  if (leftLawNumber && rightLawNumber && leftLawNumber === rightLawNumber) {
+    const leftSubsectionOrder = extractLawSubsectionOrder(left);
+    const rightSubsectionOrder = extractLawSubsectionOrder(right);
+    if (leftSubsectionOrder !== rightSubsectionOrder) {
+      return leftSubsectionOrder - rightSubsectionOrder;
+    }
   }
 
   const scoreDiff = Number(right?.score || 0) - Number(left?.score || 0);
