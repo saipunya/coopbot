@@ -5,6 +5,11 @@ const DEFAULT_TTL_MS = 1000 * 60 * 60 * 8;
 const DEFAULT_CLEANUP_INTERVAL_MS = 1000 * 60 * 15;
 const SESSION_TABLE_NAME = "sessions";
 
+function isTransientDbError(error) {
+  const code = String(error?.code || "").trim();
+  return ["ECONNRESET", "PROTOCOL_CONNECTION_LOST", "ETIMEDOUT", "ECONNREFUSED"].includes(code);
+}
+
 function parseSessionExpiry(sessionData, defaultTtlMs) {
   const expiresAt = new Date(sessionData?.cookie?.expires || "").getTime();
   if (Number.isFinite(expiresAt) && expiresAt > 0) {
@@ -29,6 +34,7 @@ class MySqlSessionStore extends session.Store {
     this.fallbackStore = options.fallbackStore || new session.MemoryStore();
     this.lastCleanupAt = 0;
     this.storeType = "mysql";
+    this.degradedToFallback = false;
   }
 
   getPool() {
@@ -36,7 +42,20 @@ class MySqlSessionStore extends session.Store {
   }
 
   getActiveStoreType() {
+    if (this.degradedToFallback) {
+      return "memory-fallback";
+    }
+
     return this.getPool() ? "mysql" : "memory-fallback";
+  }
+
+  useFallbackStore(error, callback, methodName) {
+    if (error) {
+      console.error(`Session store ${methodName} failed; switching to memory fallback:`, error.message);
+    }
+
+    this.degradedToFallback = true;
+    return callback ? callback(null) : undefined;
   }
 
   maybeCleanupExpiredSessions(pool) {
@@ -53,11 +72,21 @@ class MySqlSessionStore extends session.Store {
     return pool
       .query(`DELETE FROM ${SESSION_TABLE_NAME} WHERE expires_at < ?`, [now])
       .catch((error) => {
+        if (isTransientDbError(error)) {
+          this.degradedToFallback = true;
+          console.error("Failed to clean up expired sessions; falling back to memory store:", error.message);
+          return;
+        }
+
         console.error("Failed to clean up expired sessions:", error.message);
       });
   }
 
   get(sid, callback) {
+    if (this.degradedToFallback) {
+      return this.fallbackStore.get(sid, callback);
+    }
+
     const pool = this.getPool();
     if (!pool) {
       return this.fallbackStore.get(sid, callback);
@@ -83,11 +112,19 @@ class MySqlSessionStore extends session.Store {
         }
       })
       .catch((error) => {
+        if (isTransientDbError(error)) {
+          return this.fallbackStore.get(sid, callback);
+        }
+
         callback(error);
       });
   }
 
   set(sid, sessionData, callback) {
+    if (this.degradedToFallback) {
+      return this.fallbackStore.set(sid, sessionData, callback);
+    }
+
     const pool = this.getPool();
     if (!pool) {
       return this.fallbackStore.set(sid, sessionData, callback);
@@ -110,11 +147,20 @@ class MySqlSessionStore extends session.Store {
       )
       .then(() => callback && callback(null))
       .catch((error) => {
+        if (isTransientDbError(error)) {
+          this.degradedToFallback = true;
+          return this.fallbackStore.set(sid, sessionData, callback);
+        }
+
         callback && callback(error);
       });
   }
 
   touch(sid, sessionData, callback) {
+    if (this.degradedToFallback) {
+      return this.fallbackStore.touch(sid, sessionData, callback);
+    }
+
     const pool = this.getPool();
     if (!pool) {
       return this.fallbackStore.touch(sid, sessionData, callback);
@@ -133,11 +179,20 @@ class MySqlSessionStore extends session.Store {
       )
       .then(() => callback && callback(null))
       .catch((error) => {
+        if (isTransientDbError(error)) {
+          this.degradedToFallback = true;
+          return this.fallbackStore.touch(sid, sessionData, callback);
+        }
+
         callback && callback(error);
       });
   }
 
   destroy(sid, callback) {
+    if (this.degradedToFallback) {
+      return this.fallbackStore.destroy(sid, callback);
+    }
+
     const pool = this.getPool();
     if (!pool) {
       return this.fallbackStore.destroy(sid, callback);
@@ -147,6 +202,11 @@ class MySqlSessionStore extends session.Store {
       .query(`DELETE FROM ${SESSION_TABLE_NAME} WHERE sid = ?`, [sid])
       .then(() => callback && callback(null))
       .catch((error) => {
+        if (isTransientDbError(error)) {
+          this.degradedToFallback = true;
+          return this.fallbackStore.destroy(sid, callback);
+        }
+
         callback && callback(error);
       });
   }

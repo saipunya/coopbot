@@ -129,7 +129,9 @@ function hasKnowledgeRelevance(query, row) {
   // If the query has multiple important words, the document must contain all of them,
   // unless a more specific phrase or bigram matches.
   if (queryTokens.length > 1 && !(hasExactPhrase || hasBigramMatch)) {
-    return tokenHits >= queryTokens.length;
+    const isTypeOrCountQuestion = /(กี่|จำนวน|ประเภท|ชนิด|แบบ|ลักษณะ|เท่าไร|เท่าไหร่)/.test(normalizedQuery);
+    const minimumHits = isTypeOrCountQuestion ? 1 : queryTokens.length;
+    return tokenHits >= minimumHits;
   }
 
   // For single-word queries, at least one hit is required.

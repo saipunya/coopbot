@@ -7,6 +7,7 @@ const {
 } = require("../services/adminGoogleAuthService");
 const { hasAcceptedLawChatbotNotice } = require("../middlewares/authMiddleware");
 const runtimeSettingsService = require("../services/runtimeSettingsService");
+const vinichaiAdminService = require("../services/vinichaiAdminService");
 
 function appendQueryParam(path, key, value) {
   const normalizedPath = String(path || "").trim();
@@ -25,6 +26,19 @@ function sanitizePaymentRequestReturnPath(value, fallbackPath = "/admin/payment-
   }
 
   if (!path.startsWith("/admin/payment-requests")) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
+function sanitizeVinichaiReturnPath(value, fallbackPath = "/admin/vinichai") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!/^\/admin\/vinichai(?:[?#].*)?$/.test(path)) {
     return fallbackPath;
   }
 
@@ -269,6 +283,24 @@ async function renderKnowledgeSuggestions(req, res) {
   });
 }
 
+async function renderVinichai(req, res) {
+  const data = await vinichaiAdminService.getVinichaiAdminData({
+    query: req.query.q || "",
+    page: req.query.page || 1,
+    pageSize: req.query.perPage || 12,
+  });
+
+  res.render("admin/vinichai", {
+    title: "Vinichai Management",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data,
+    returnPath: req.originalUrl || "/admin/vinichai",
+    todayDate: new Date().toISOString().slice(0, 10),
+  });
+}
+
 async function updateAiSetting(req, res) {
   const rawEnabled = String(req.body.enabled || "").trim().toLowerCase();
   if (!["true", "false"].includes(rawEnabled)) {
@@ -291,6 +323,111 @@ async function updateAiSetting(req, res) {
           ? "เปิดการใช้งาน AI สำหรับสรุปคำตอบเรียบร้อยแล้ว"
           : "ปิด AI สำหรับสรุปคำตอบเรียบร้อยแล้ว ระบบจะค้นข้อมูลจากฐานข้อมูลต่อไปโดยไม่เรียก AI"
       )
+  );
+}
+
+async function submitVinichai(req, res) {
+  const returnTo = sanitizeVinichaiReturnPath(req.body.returnTo, "/admin/vinichai");
+  const requiredFields = [
+    ["vinGroup", "vin_group"],
+    ["vinKey", "vin_key"],
+    ["vinQuestion", "vin_question"],
+    ["vinDetail", "vin_detail"],
+    ["vinMaihed", "vin_maihed"],
+  ];
+
+  const hasAllRequired = requiredFields.every(([camel, snake]) => {
+    return String(req.body[camel] || req.body[snake] || "").trim();
+  });
+
+  if (!hasAllRequired) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "กรุณากรอกข้อมูลให้ครบก่อนบันทึกวินิจฉัย")
+    );
+  }
+
+  const result = await vinichaiAdminService.saveVinichaiEntry(req.body, {
+    saveBy:
+      (req.session.adminUser && (req.session.adminUser.email || req.session.adminUser.username || req.session.adminUser.name)) ||
+      "admin",
+    vinSavedate: req.body.vinSavedate || req.body.vin_savedate || "",
+  });
+
+  if (!result.ok) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่สามารถบันทึกข้อมูลวินิจฉัยรายการนี้ได้")
+    );
+  }
+
+  return res.redirect(
+    appendQueryParam(returnTo, "success", `บันทึกวินิจฉัย "${result.entry?.vinQuestion || result.entry?.vin_key || req.body.vinQuestion || "รายการใหม่"}" เรียบร้อยแล้ว`)
+  );
+}
+
+async function updateVinichai(req, res) {
+  const returnTo = sanitizeVinichaiReturnPath(req.body.returnTo, "/admin/vinichai");
+  const id = Number(req.body.id || req.body.vin_id || 0);
+  if (!id) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่พบรายการวินิจฉัยที่ต้องการแก้ไข")
+    );
+  }
+
+  const requiredFields = [
+    ["vinGroup", "vin_group"],
+    ["vinKey", "vin_key"],
+    ["vinQuestion", "vin_question"],
+    ["vinDetail", "vin_detail"],
+    ["vinMaihed", "vin_maihed"],
+  ];
+
+  const hasAllRequired = requiredFields.every(([camel, snake]) => {
+    return String(req.body[camel] || req.body[snake] || "").trim();
+  });
+
+  if (!hasAllRequired) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "กรุณากรอกข้อมูลให้ครบก่อนบันทึกการแก้ไขวินิจฉัย")
+    );
+  }
+
+  const result = await vinichaiAdminService.updateVinichaiEntry(id, req.body, {
+    saveBy:
+      (req.session.adminUser && (req.session.adminUser.email || req.session.adminUser.username || req.session.adminUser.name)) ||
+      "admin",
+    vinSavedate: req.body.vinSavedate || req.body.vin_savedate || "",
+  });
+
+  if (!result.ok) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่สามารถบันทึกการแก้ไขรายการวินิจฉัยนี้ได้")
+    );
+  }
+
+  return res.redirect(
+    appendQueryParam(returnTo, "success", `บันทึกการแก้ไขวินิจฉัย "${result.entry?.vinQuestion || req.body.vinQuestion || "รายการเดิม"}" เรียบร้อยแล้ว`)
+  );
+}
+
+async function deleteVinichai(req, res) {
+  const returnTo = sanitizeVinichaiReturnPath(req.body.returnTo, "/admin/vinichai");
+  const id = Number(req.body.id || req.body.vin_id || 0);
+
+  if (!id) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่พบรายการวินิจฉัยที่ต้องการลบ")
+    );
+  }
+
+  const removed = await vinichaiAdminService.deleteVinichaiEntry(id);
+  if (!removed) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่พบรายการวินิจฉัยที่ต้องการลบ หรืออาจถูกลบไปแล้ว")
+    );
+  }
+
+  return res.redirect(
+    appendQueryParam(returnTo, "success", "ลบรายการวินิจฉัยเรียบร้อยแล้ว")
   );
 }
 
@@ -815,6 +952,7 @@ module.exports = {
   renderSuggestedQuestions,
   renderKnowledge,
   renderKnowledgeSuggestions,
+  renderVinichai,
   renderGuestUsage,
   exportGuestUsageCsv,
   clearGuestUsage,
@@ -826,10 +964,13 @@ module.exports = {
   updatePaymentRequestPlan,
   submitKnowledge,
   submitSuggestedQuestion,
+  submitVinichai,
   updateKnowledge,
   updateSuggestedQuestion,
+  updateVinichai,
   deleteKnowledge,
   deleteSuggestedQuestion,
+  deleteVinichai,
   updateKnowledgeSuggestion,
   approveKnowledgeSuggestion,
   rejectKnowledgeSuggestion,

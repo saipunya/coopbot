@@ -148,7 +148,9 @@ function hasSuggestionRelevance(query, row) {
   }
 
   if (queryTokens.length > 1 && !(hasExactPhrase || hasBigramMatch)) {
-    return tokenHits >= queryTokens.length;
+    const isTypeOrCountQuestion = /(กี่|จำนวน|ประเภท|ชนิด|แบบ|ลักษณะ|เท่าไร|เท่าไหร่)/.test(normalizedQuery);
+    const minimumHits = isTypeOrCountQuestion ? 1 : queryTokens.length;
+    return tokenHits >= minimumHits;
   }
 
   return tokenHits >= 1;

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet" />
+    <style>
+      body { margin: 0; font-family: 'Sarabun', Arial, sans-serif; background: linear-gradient(160deg, #e6eef6, #f5f9fc); color: #1f2a37; }
+      .shell { width: min(1180px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; }
+      .card { background: rgba(255,255,255,0.9); border: 1px solid #d8e2ea; border-radius: 20px; box-shadow: 0 18px 45px rgba(18,52,77,0.16); padding: 1.25rem; margin-bottom: 1rem; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; position:relative; overflow:hidden; }
+      .topbar::before { content:""; position:absolute; inset:0; background: radial-gradient(circle at top left, rgba(255,255,255,0.36), transparent 30%), linear-gradient(135deg, rgba(255,255,255,0.16), transparent 44%); pointer-events:none; }
+      .topbar > * { position:relative; z-index:1; }
+      .topbar a { color: #0f4667; text-decoration:none; font-weight:700; }
+      .alert { padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; }
+      .alert.success { background:#e8f7ee; color:#1f6a3a; border:1px solid #b8e3c8; }
+      .alert.error { background:#fce9e7; color:#9b2c22; border:1px solid #f1b8b1; }
+      .tab-row { display:flex; gap:0.75rem; flex-wrap:wrap; }
+      .tab-row a { text-decoration:none; font-weight:700; color:#0f4667; padding:0.72rem 1rem; border-radius:14px; border:1px solid #d8e2ea; background:#eef4f8; }
+      .tab-row a.active { background:#0f5f8f; border-color:#0f5f8f; color:#fff; }
+      .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; }
+      .metric-card { position:relative; overflow:hidden; }
+      .metric-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, #0f5f8f, transparent 85%); }
+      .metric { font-size: 1.8rem; font-weight: 700; color: #0f4667; margin: 0.3rem 0 0; }
+      .section-note { color:#5d6a79; line-height:1.7; }
+      .form-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:0.9rem; }
+      .field label { display:block; font-weight:700; margin-bottom:0.35rem; }
+      .field input, .field select, .field textarea { width:100%; box-sizing:border-box; border:1px solid #c9d8e4; border-radius:14px; padding:0.8rem 0.9rem; font:inherit; background:#fff; color:#1f2a37; }
+      .field textarea { min-height:130px; resize:vertical; }
+      .primary-btn, .secondary-btn, .danger-btn { border:none; border-radius:12px; padding:0.72rem 0.95rem; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+      .primary-btn { background:#0f5f8f; }
+      .secondary-btn { background:#607180; }
+      .danger-btn { background:#922f24; }
+      .section-toolbar { display:flex; justify-content:flex-end; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem; }
+      .section-toolbar form { display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap; }
+      .section-toolbar select, .section-toolbar input { border:1px solid #c9d8e4; border-radius:12px; padding:0.62rem 0.82rem; font:inherit; background:#fff; color:#1f2a37; }
+      .section-toolbar button { border:none; border-radius:12px; padding:0.66rem 0.9rem; font:inherit; font-weight:700; color:#fff; background:#0f5f8f; cursor:pointer; }
+      .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.8rem; }
+      .soft-list li { padding:0.95rem 1rem; border:1px solid #d8e2ea; border-radius:16px; background: rgba(255,255,255,0.82); min-width:0; }
+      .list-item-title, .list-item-body, .vinichai-meta, .editor-summary, .section-note { overflow-wrap:anywhere; word-break:break-word; }
+      .list-item-title { display:block; color:#0f4667; line-height:1.5; }
+      .vinichai-meta { margin-top:0.45rem; color:#5d6a79; font-size:0.92rem; line-height:1.6; }
+      .list-item-body { margin-top:0.6rem; color:#1f2a37; white-space:pre-line; line-height:1.7; }
+      .vinichai-editor { margin-top:0.9rem; padding:0.95rem; border:1px solid #d8e2ea; border-radius:16px; background:rgba(241,246,251,0.82); }
+      details.vinichai-editor { padding:0.85rem 0.95rem; }
+      .editor-summary { cursor:pointer; font-weight:700; color:#0f4667; list-style:none; display:flex; align-items:center; gap:0.55rem; }
+      .editor-summary::-webkit-details-marker { display:none; }
+      .editor-summary::before { content:"+"; width:1.3rem; height:1.3rem; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:#d2e8f7; color:#0f4667; font-weight:700; flex:0 0 auto; }
+      details[open] > .editor-summary::before { content:"-"; }
+      .editor-body { margin-top:0.9rem; }
+      .vinichai-actions { display:flex; gap:0.65rem; flex-wrap:wrap; margin-top:0.9rem; }
+      .pagination-bar { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; margin-top:1rem; }
+      .pagination-summary { color:#5d6a79; font-size:0.92rem; }
+      .pagination-links { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; }
+      .pagination-link, .pagination-current, .pagination-ellipsis { min-width:2.4rem; padding:0.58rem 0.82rem; border-radius:12px; text-align:center; font-weight:700; }
+      .pagination-link { background:#eef4f8; color:#0f4667; text-decoration:none; border:1px solid #d8e2ea; }
+      .pagination-current { background:#0f5f8f; color:#fff; border:1px solid #0f5f8f; }
+      .pagination-ellipsis { color:#5d6a79; }
+      @media (max-width: 820px) {
+        .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
+        .card, .topbar { padding: 1rem; }
+        .topbar { flex-direction: column; align-items: stretch; }
+        .field input, .field select, .field textarea, .primary-btn, .secondary-btn, .danger-btn, .section-toolbar select, .section-toolbar input, .section-toolbar button { font-size:16px; }
+        .section-toolbar, .vinichai-actions, .pagination-bar { flex-direction:column; align-items:stretch; }
+        .section-toolbar form, .section-toolbar select, .section-toolbar input, .section-toolbar button, .vinichai-actions form, .vinichai-actions button { width:100%; }
+        .pagination-links { justify-content:center; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
+      <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
+
+      <section class="card topbar">
+        <div>
+          <h1 style="margin:0; color:#0f4667;">จัดการฐานข้อมูลวินิจฉัย</h1>
+          <p style="margin:0.35rem 0 0; color:#5d6a79;">เพิ่ม แก้ไข และลบรายการใน <code>tbl_vinichai</code> ได้จากหน้าเดียว พร้อมบันทึกผู้แก้ไขและวันที่บันทึก</p>
+        </div>
+        <a href="/admin">กลับหน้าแดชบอร์ด</a>
+      </section>
+
+      <section class="card">
+        <%- include("partials/knowledgeAdminTabs", { activeTab: "vinichai" }) %>
+      </section>
+
+      <section class="grid">
+        <article class="card metric-card"><div>วินิจฉัยทั้งหมด</div><div class="metric"><%= data.totalCount %></div></article>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-top:0; color:#0f4667;">เพิ่มวินิจฉัยใหม่</h2>
+        <p class="section-note">ฟอร์มนี้จะบันทึกข้อมูลลงตาราง <code>tbl_vinichai</code> โดยตรง และจะรีเฟรชแคชคำตอบอัตโนมัติเมื่อมีการบันทึกหรือแก้ไข</p>
+        <form action="/admin/vinichai" method="post">
+          <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+          <div class="form-grid">
+            <div class="field">
+              <label for="vin_group">กลุ่ม</label>
+              <input id="vin_group" name="vin_group" type="text" placeholder="เช่น สหกรณ์ / กลุ่มเกษตรกร" required />
+            </div>
+            <div class="field">
+              <label for="vin_key">คีย์ / หมวดอ้างอิง</label>
+              <input id="vin_key" name="vin_key" type="text" placeholder="เช่น หมวดสมาชิก / มาตรา 12" required />
+            </div>
+            <div class="field">
+              <label for="vin_savedate">วันที่บันทึก</label>
+              <input id="vin_savedate" name="vin_savedate" type="date" value="<%= todayDate || '' %>" required />
+            </div>
+          </div>
+          <div class="field" style="margin-top:0.9rem;">
+            <label for="vin_question">คำถาม</label>
+            <textarea id="vin_question" name="vin_question" placeholder="พิมพ์คำถามที่ต้องการให้ vinichai ใช้เป็นหัวข้อ" required></textarea>
+          </div>
+          <div class="field" style="margin-top:0.9rem;">
+            <label for="vin_detail">รายละเอียด</label>
+            <textarea id="vin_detail" name="vin_detail" placeholder="พิมพ์รายละเอียดหรือคำตอบฉบับเต็ม" required></textarea>
+          </div>
+          <div class="field" style="margin-top:0.9rem;">
+            <label for="vin_maihed">หมายเหตุ</label>
+            <textarea id="vin_maihed" name="vin_maihed" placeholder="พิมพ์หมายเหตุหรือที่มาของวินิจฉัย" required></textarea>
+          </div>
+          <div style="margin-top:1rem;">
+            <button class="primary-btn" type="submit">บันทึกวินิจฉัยใหม่</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-top:0; color:#0f4667;">รายการวินิจฉัยล่าสุด</h2>
+        <div class="section-toolbar">
+          <form action="/admin/vinichai" method="get">
+            <input type="hidden" name="page" value="1" />
+            <label for="q">ค้นหา</label>
+            <input id="q" name="q" type="text" value="<%= data.query || '' %>" placeholder="ค้นหาจากกลุ่ม คีย์ คำถาม หรือรายละเอียด" />
+            <label for="perPage">จำนวนรายการต่อหน้า</label>
+            <select id="perPage" name="perPage" aria-label="จำนวนรายการวินิจฉัยต่อหน้า">
+              <% [8, 16, 24].forEach((size) => { %>
+                <option value="<%= size %>" <%= Number(data.pagination?.pageSize || 12) === size ? 'selected' : '' %>><%= size %> รายการ/หน้า</option>
+              <% }) %>
+            </select>
+            <button type="submit">แสดงผล</button>
+          </form>
+        </div>
+        <ul class="soft-list">
+          <% if (!data.entries || data.entries.length === 0) { %>
+            <li>ยังไม่มีข้อมูลวินิจฉัยในตารางนี้</li>
+          <% } %>
+          <% (data.entries || []).forEach((item) => { %>
+            <li>
+              <strong class="list-item-title"><%= item.vinQuestion || item.vinKey || 'วินิจฉัย' %></strong>
+              <div class="vinichai-meta">
+                กลุ่ม: <%= item.vinGroup || '-' %>
+                <% if (item.vinKey) { %> | คีย์: <%= item.vinKey %><% } %>
+                <% if (item.vinSaveBy) { %> | ผู้บันทึก: <%= item.vinSaveBy %><% } %>
+                <% if (item.vinSavedate) { %> | วันที่: <%= item.vinSavedate %><% } %>
+              </div>
+              <div class="list-item-body"><%= item.vinDetail %></div>
+              <details class="vinichai-editor">
+                <summary class="editor-summary">แก้ไขรายการนี้</summary>
+                <div class="editor-body">
+                  <form action="/admin/vinichai/update" method="post">
+                    <input type="hidden" name="id" value="<%= item.id %>" />
+                    <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+                    <div class="form-grid">
+                      <div class="field">
+                        <label for="vin_group_<%= item.id %>">กลุ่ม</label>
+                        <input id="vin_group_<%= item.id %>" name="vin_group" type="text" value="<%= item.vinGroup || '' %>" required />
+                      </div>
+                      <div class="field">
+                        <label for="vin_key_<%= item.id %>">คีย์ / หมวดอ้างอิง</label>
+                        <input id="vin_key_<%= item.id %>" name="vin_key" type="text" value="<%= item.vinKey || '' %>" required />
+                      </div>
+                      <div class="field">
+                        <label for="vin_savedate_<%= item.id %>">วันที่บันทึก</label>
+                        <input id="vin_savedate_<%= item.id %>" name="vin_savedate" type="date" value="<%= item.vinSavedate || todayDate || '' %>" required />
+                      </div>
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
+                      <label for="vin_question_<%= item.id %>">คำถาม</label>
+                      <textarea id="vin_question_<%= item.id %>" name="vin_question" required><%= item.vinQuestion || '' %></textarea>
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
+                      <label for="vin_detail_<%= item.id %>">รายละเอียด</label>
+                      <textarea id="vin_detail_<%= item.id %>" name="vin_detail" required><%= item.vinDetail || '' %></textarea>
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
+                      <label for="vin_maihed_<%= item.id %>">หมายเหตุ</label>
+                      <textarea id="vin_maihed_<%= item.id %>" name="vin_maihed" required><%= item.vinMaihed || '' %></textarea>
+                    </div>
+                    <div class="vinichai-actions">
+                      <button class="secondary-btn" type="submit">บันทึกการแก้ไข</button>
+                    </div>
+                  </form>
+                </div>
+              </details>
+              <div class="vinichai-actions">
+                <form action="/admin/vinichai/delete" method="post" onsubmit="return confirm('ยืนยันการลบรายการวินิจฉัยนี้ใช่หรือไม่');">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+                  <button class="danger-btn" type="submit">ลบรายการนี้</button>
+                </form>
+              </div>
+            </li>
+          <% }) %>
+        </ul>
+        <%- include("partials/pagination", { pagination: data.pagination, basePath: "/admin/vinichai", query: { q: data.query || "", perPage: data.pagination?.pageSize || 12 }, pageKey: "page", itemLabel: "รายการวินิจฉัย" }) %>
+      </section>
+    </div>
+  </body>
+</html>
