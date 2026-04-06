@@ -153,36 +153,36 @@ function getDatabaseOnlySourceOrder(options = {}) {
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      primaryLawSource,
-      secondaryLawSource,
-      "documents",
+      "tbl_laws",
+      "tbl_glaws",
       "pdf_chunks",
+      "documents",
       "knowledge_base",
     ];
   }
 
   if (isVinichaiPriorityQuestion(options.originalMessage || options.message || "")) {
     return [
-      "tbl_vinichai",
       "admin_knowledge",
       "knowledge_suggestion",
-      primaryLawSource,
-      secondaryLawSource,
-      "documents",
+      "tbl_vinichai",
+      "tbl_laws",
+      "tbl_glaws",
       "pdf_chunks",
+      "documents",
       "knowledge_base",
     ];
   }
 
   if (isFreePlanDisplay(options) && isLawPriorityQuestion(options.originalMessage || options.message || "")) {
     return [
-      primaryLawSource,
+      "tbl_laws",
+      "tbl_glaws",
       "admin_knowledge",
-      "tbl_vinichai",
       "knowledge_suggestion",
-      secondaryLawSource,
-      "documents",
+      "tbl_vinichai",
       "pdf_chunks",
+      "documents",
       "knowledge_base",
     ];
   }
@@ -216,22 +216,23 @@ function getDatabaseOnlySourceOrder(options = {}) {
   if (isFreePlanDisplay(options)) {
     return [
       "admin_knowledge",
-      "tbl_vinichai",
       "knowledge_suggestion",
-      primaryLawSource,
-      secondaryLawSource,
-      "documents",
+      "tbl_vinichai",
+      "tbl_laws",
+      "tbl_glaws",
       "pdf_chunks",
+      "documents",
       "knowledge_base",
     ];
   }
 
   return [
     "admin_knowledge",
+    "knowledge_suggestion",
+    "tbl_vinichai",
     "tbl_laws",
     "tbl_glaws",
     "pdf_chunks",
-    "tbl_vinichai",
     "documents",
     "knowledge_base",
   ];
@@ -2797,22 +2798,24 @@ function getSourceDisplayPriority(sourceName, questionIntent = "general") {
   if (normalized === "managed_suggested_question") return 110;
 
   if (questionIntent === "law_section") {
-    if (STRUCTURED_LAW_SOURCES.has(normalized)) return 100;
-    if (normalized === "admin_knowledge") return 70;
-    if (normalized === "knowledge_suggestion") return 65;
-    if (normalized === "tbl_vinichai") return 60;
-    if (normalized === "documents") return 40;
-    if (normalized === "pdf_chunks") return 30;
+    if (normalized === "tbl_laws") return 100;
+    if (normalized === "tbl_glaws") return 95;
+    if (normalized === "admin_knowledge") return 80;
+    if (normalized === "knowledge_suggestion") return 75;
+    if (normalized === "tbl_vinichai") return 70;
+    if (normalized === "pdf_chunks") return 40;
+    if (normalized === "documents") return 30;
     if (normalized === "knowledge_base") return 20;
     return 0;
   }
 
   if (normalized === "admin_knowledge") return 90;
-  if (normalized === "knowledge_suggestion") return 75;
-  if (STRUCTURED_LAW_SOURCES.has(normalized)) return 80;
-  if (normalized === "tbl_vinichai") return 70;
-  if (normalized === "documents") return 60;
+  if (normalized === "knowledge_suggestion") return 85;
+  if (normalized === "tbl_vinichai") return 80;
+  if (normalized === "tbl_laws") return 75;
+  if (normalized === "tbl_glaws") return 70;
   if (normalized === "pdf_chunks") return 50;
+  if (normalized === "documents") return 45;
   if (normalized === "knowledge_base") return 40;
   if (normalized === "internet_search") return 10;
   return 0;
