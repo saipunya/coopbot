@@ -30,7 +30,12 @@
       .search-form a { background:#eef4f8; color:#0f4667; border:1px solid #d8e2ea; }
       .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.9rem; }
       .user-card { padding:1rem; border:1px solid #d8e2ea; border-radius:22px; background: rgba(255,255,255,0.82); position:relative; overflow:hidden; }
-      .user-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, var(--tone), transparent 85%); }
+      .user-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, #0f5f8f, transparent 85%); }
+      .user-card.plan-free { background: linear-gradient(150deg, #dff1fb, #fbfdff); }
+      .user-card.plan-pro { background: linear-gradient(150deg, #daf2ec, #f9fcfb); }
+      .user-card.plan-premium { background: linear-gradient(150deg, #f8ead3, #fffaf2); }
+      .user-card.plan-pro::before { background: linear-gradient(90deg, #0f695f, transparent 85%); }
+      .user-card.plan-premium::before { background: linear-gradient(90deg, #8c5d1f, transparent 85%); }
       .user-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; }
       .identity { display:flex; gap:0.85rem; align-items:center; }
       .user-card, .user-head, .identity, .meta, .plan-chip-row, .plan-hint { min-width:0; overflow-wrap:anywhere; word-break:break-word; }
@@ -50,6 +55,10 @@
       .plan-form select, .plan-form input { border:1px solid #c8d6e2; border-radius:12px; padding:0.78rem 0.9rem; font:inherit; background:#fff; color:#1f2a37; width:100%; box-sizing:border-box; }
       .plan-form button { border:none; border-radius:12px; padding:0.82rem 1rem; background:#0f5f8f; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
       .plan-hint { color:#5d6a79; font-size:0.88rem; }
+      .usage-reset-row { margin-top:0.85rem; display:flex; gap:0.65rem; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+      .usage-reset-row .usage-summary { color:#5d6a79; font-size:0.88rem; }
+      .usage-reset-row button { border:none; border-radius:12px; padding:0.78rem 0.95rem; background:#b42318; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+      .usage-reset-row button:disabled { background:#cbd5e1; color:#64748b; cursor:not-allowed; }
       .pagination-bar { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; margin-top:1rem; }
       .pagination-summary { color:#5d6a79; font-size:0.92rem; }
       .pagination-links { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; }
@@ -66,6 +75,8 @@
         .search-form input, .search-form button, .search-form a, .plan-form select, .plan-form input, .plan-form button { font-size:16px; }
         .plan-controls { grid-template-columns: 1fr; }
         .plan-form button, .search-form button, .search-form a { width:100%; }
+        .usage-reset-row { justify-content:stretch; }
+        .usage-reset-row button { width:100%; }
         .user-head, .identity { flex-direction: column; align-items: flex-start; }
         .status-chip { width: fit-content; }
         .pagination-bar { flex-direction:column; align-items:stretch; }
@@ -116,8 +127,7 @@
           <% } %>
           <% data.users.forEach((account) => { %>
             <% const accountPlanCode = normalizePlanCode(account.planCode || account.plan || 'free'); %>
-            <% const accountTone = accountPlanCode === 'premium' ? '#8c5d1f' : accountPlanCode === 'pro' ? '#0f695f' : '#205f89'; %>
-            <li class="user-card" style="--tone:<%= accountTone %>; background:<%= accountPlanCode === 'premium' ? 'linear-gradient(150deg, #f8ead3, #fffaf2)' : accountPlanCode === 'pro' ? 'linear-gradient(150deg, #daf2ec, #f9fcfb)' : 'linear-gradient(150deg, #dff1fb, #fbfdff)' %>;">
+            <li class="user-card plan-<%= accountPlanCode %>">
               <div class="user-head">
                 <div class="identity">
                   <% if (account.avatar_url) { %>
@@ -147,6 +157,8 @@
                 <% if (account.remainingDays !== null) { %>
                   | คงเหลือ: <%= account.remainingDays > 0 ? `${account.remainingDays} วัน` : "หมดอายุแล้ว" %>
                 <% } %>
+                <br />
+                เดือนปัจจุบัน (<%= account.currentMonthUsageMonth || data.usageMonth || "-" %>): <strong><%= Number(account.currentMonthQuestionCount || 0) %></strong> คำถาม
               </div>
 
               <form class="plan-form" action="/admin/users/update-plan" method="post">
@@ -176,6 +188,14 @@
                 <div class="plan-hint" data-plan-hint>
                   ถ้าเลือกแพ็กเกจฟรี ระบบจะล้างวันหมดอายุแพ็กเกจอัตโนมัติ ส่วนแพ็กเกจแบบชำระเงินจะเริ่มนับจากเวลาที่บันทึก
                 </div>
+              </form>
+
+              <form class="usage-reset-row" action="/admin/users/reset-question-count" method="post" onsubmit="return confirm('ยืนยันการรีเซ็ตจำนวนคำถามเดือนปัจจุบันของผู้ใช้งานรายนี้?');">
+                <input type="hidden" name="userId" value="<%= account.id %>" />
+                <input type="hidden" name="usageMonth" value="<%= account.currentMonthUsageMonth || data.usageMonth || '' %>" />
+                <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+                <span class="usage-summary">รีเซ็ตเฉพาะ <strong>question_count</strong> ของเดือนปัจจุบัน</span>
+                <button type="submit" <%= Number(account.currentMonthQuestionCount || 0) <= 0 ? 'disabled' : '' %>>รีเซ็ตจำนวนคำถาม</button>
               </form>
             </li>
           <% }) %>

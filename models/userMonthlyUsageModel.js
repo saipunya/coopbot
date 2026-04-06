@@ -52,6 +52,42 @@ class UserMonthlyUsageModel {
     return this.findByUserAndMonth(userId, usageMonth);
   }
 
+  static async resetQuestionCount(userId, usageMonth) {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for monthly usage tracking.");
+    }
+
+    const normalizedUserId = Number(userId || 0);
+    const normalizedUsageMonth = String(usageMonth || "").trim();
+    if (!normalizedUserId || !normalizedUsageMonth) {
+      return null;
+    }
+
+    const currentUsage = await this.findByUserAndMonth(normalizedUserId, normalizedUsageMonth);
+    if (!currentUsage) {
+      return null;
+    }
+
+    const [result] = await pool.query(
+      `UPDATE user_monthly_usage
+       SET question_count = 0,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND usage_month = ?`,
+      [normalizedUserId, normalizedUsageMonth]
+    );
+
+    if (!result || Number(result.affectedRows || 0) <= 0) {
+      return null;
+    }
+
+    return {
+      ...currentUsage,
+      question_count: 0,
+      previousQuestionCount: Number(currentUsage.question_count || 0),
+    };
+  }
+
   static async incrementAiPreviewCount(userId, usageMonth) {
     const pool = getDbPool();
     if (!pool) {

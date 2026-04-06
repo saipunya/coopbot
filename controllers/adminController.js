@@ -485,6 +485,34 @@ async function updateUserPlan(req, res) {
   );
 }
 
+async function resetUserQuestionCount(req, res) {
+  const userId = Number(req.body.userId || req.body.id || 0);
+  const usageMonth = String(req.body.usageMonth || req.body.month || "").trim();
+  const returnTo = sanitizeAdminUsersReturnPath(req.body.returnTo, "/admin/users");
+
+  if (!userId) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่พบผู้ใช้ที่ต้องการรีเซ็ตจำนวนคำถาม")
+    );
+  }
+
+  const result = await lawChatbotService.resetUserQuestionCount(userId, usageMonth);
+  if (!result.ok) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่พบข้อมูลจำนวนคำถามของผู้ใช้งานรายนี้ในเดือนปัจจุบัน")
+    );
+  }
+
+  const displayName = result.user?.name || result.user?.email || `#${userId}`;
+  return res.redirect(
+    appendQueryParam(
+      returnTo,
+      "success",
+      `รีเซ็ตจำนวนคำถามของ ${displayName} ประจำเดือน ${result.usageMonth || usageMonth || "ปัจจุบัน"} จาก ${Number(result.previousQuestionCount || 0)} เป็น 0 เรียบร้อยแล้ว`,
+    )
+  );
+}
+
 async function submitKnowledge(req, res) {
   const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/knowledge");
   const title = String(req.body.title || "").trim();
@@ -794,6 +822,7 @@ module.exports = {
   renderPaymentRequests,
   renderPaymentRequestDetail,
   updateUserPlan,
+  resetUserQuestionCount,
   updatePaymentRequestPlan,
   submitKnowledge,
   submitSuggestedQuestion,

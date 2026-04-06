@@ -511,6 +511,18 @@ async function getAdminUsersData(query = "", options = {}) {
     offset: pagination.offset,
   });
 
+  const usageMonth = UserMonthlyUsageModel.getYearMonth();
+  const usageRecords = await Promise.all(
+    users.map((item) => {
+      const userId = Number(item?.id || 0);
+      if (!userId) {
+        return null;
+      }
+
+      return UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth);
+    })
+  );
+
   return {
     query: trimmedQuery,
     totalCount: Number(stats.total_count || 0),
@@ -520,7 +532,43 @@ async function getAdminUsersData(query = "", options = {}) {
     defaultPlanDurationDays: getPlanDurationDays(),
     plans: listAdminManageablePlans(),
     pagination,
-    users: users.map((item) => enrichAdminUserRecord(item)),
+    usageMonth,
+    users: users.map((item, index) => {
+      const usage = usageRecords[index] || null;
+      return {
+        ...enrichAdminUserRecord(item),
+        currentMonthUsageMonth: usageMonth,
+        currentMonthQuestionCount: Number(usage?.question_count || 0),
+        currentMonthUsageUpdatedAt: usage?.updated_at || null,
+      };
+    }),
+  };
+}
+
+async function resetUserQuestionCount(userId, usageMonth = UserMonthlyUsageModel.getYearMonth()) {
+  const normalizedUserId = Number(userId || 0);
+  const normalizedUsageMonth = String(usageMonth || "").trim() || UserMonthlyUsageModel.getYearMonth();
+
+  if (!normalizedUserId || !normalizedUsageMonth) {
+    return { ok: false, reason: "invalid_user" };
+  }
+
+  const currentUser = await UserModel.findById(normalizedUserId);
+  if (!currentUser) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const usage = await UserMonthlyUsageModel.resetQuestionCount(normalizedUserId, normalizedUsageMonth);
+  if (!usage) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  return {
+    ok: true,
+    user: enrichAdminUserRecord(currentUser),
+    usageMonth: normalizedUsageMonth,
+    questionCount: Number(usage.question_count || 0),
+    previousQuestionCount: Number(usage.previousQuestionCount || 0),
   };
 }
 
@@ -821,6 +869,7 @@ module.exports = {
   getPaymentRequestPageData,
   getUserDashboardData,
   getUserSearchHistoryData,
+  resetUserQuestionCount,
   rejectPaymentRequest,
   submitPaymentRequest,
   updatePaymentRequestPlan,

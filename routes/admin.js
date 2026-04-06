@@ -29,6 +29,7 @@ router.get("/guest-usage/export.csv", requireAdminAuth, adminController.exportGu
 router.post("/guest-usage/clear", requireAdminAuth, adminController.clearGuestUsage);
 router.get("/users", requireAdminAuth, adminController.renderUsers);
 router.post("/users/update-plan", requireAdminAuth, adminController.updateUserPlan);
+router.post("/users/reset-question-count", requireAdminAuth, adminController.resetUserQuestionCount);
 router.get("/payment-requests", requireAdminAuth, adminController.renderPaymentRequests);
 router.get("/payment-requests/:id", requireAdminAuth, adminController.renderPaymentRequestDetail);
 router.post("/payment-requests/update-plan", requireAdminAuth, adminController.updatePaymentRequestPlan);
