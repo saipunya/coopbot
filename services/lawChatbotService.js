@@ -48,6 +48,7 @@ const {
   getKnowledgeAdminSummaryData,
   rejectKnowledgeSuggestion,
   saveKnowledgeEntry,
+  saveKnowledgeSuggestionAsKnowledgeEntry,
   saveSuggestedQuestionEntry,
   submitKnowledgeSuggestion,
   updateKnowledgeEntry,
@@ -241,6 +242,44 @@ function getInitialAssistantProfile(session) {
     label: assistantProfile.label,
     gender: assistantProfile.gender,
   };
+}
+
+function buildAutoSuggestionQueueMeta(meta = {}, tag = "auto-feedback") {
+  const submittedBy = String(meta.submittedBy || "").trim();
+
+  return {
+    submittedBy: submittedBy
+      ? `${submittedBy} [${tag}]`
+      : `ระบบบันทึกอัตโนมัติ [${tag}]`,
+    submittedByUserId: Number(meta.submittedByUserId || 0) > 0 ? Number(meta.submittedByUserId) : null,
+    sessionId: String(meta.sessionId || "").trim(),
+    ip: String(meta.ip || "").trim(),
+  };
+}
+
+async function queueAutomaticKnowledgeSuggestion(payload = {}, meta = {}, tag = "auto-feedback") {
+  try {
+    await submitKnowledgeSuggestion(payload, buildAutoSuggestionQueueMeta(meta, tag));
+    return {
+      queued: true,
+      duplicate: false,
+    };
+  } catch (error) {
+    const errorMessage = String(error?.message || "").trim();
+    if (errorMessage.includes("มีการส่งข้อเสนอแนะเดิมเข้ามาแล้ว")) {
+      return {
+        queued: false,
+        duplicate: true,
+      };
+    }
+
+    console.error("[law-chatbot] failed to queue automatic knowledge suggestion:", error);
+
+    return {
+      queued: false,
+      duplicate: false,
+    };
+  }
 }
 
 function resolveRuntimeAiPlanContext(planContext = {}, usage = null) {
@@ -930,7 +969,7 @@ async function replyToChat(payload, session) {
     sourceLimit: planContext.sourceLimit,
     internetLimit: planContext.maxInternetSources,
     promptProfile: planContext.promptProfile,
-    planCode: runtimeSearchPlanCode,
+    planCode: aiPreviewApproved ? runtimeSearchPlanCode : planContext.code,
   });
   const afterCollectSourcesAt = nowMs();
   const resolvedContext = evidence.resolvedContext;
@@ -1120,6 +1159,16 @@ async function replyToChat(payload, session) {
     };
   }
 
+  if (retrievalEvaluation.shouldReturnNoAnswer) {
+    result.reviewQueue = await queueNoAnswerKnowledgeSuggestion(
+      message,
+      target,
+      retrievalEvaluation,
+      evidence,
+      payload?.requestMeta || {},
+    );
+  }
+
   await recordUserSearchHistory(session, planContext, {
     questionText: message,
     target,
@@ -1216,8 +1265,97 @@ async function summarizeChat(payload, session) {
   };
 }
 
-async function saveChatFeedback(payload) {
-  return LawChatbotFeedbackModel.create({
+function buildAutoSuggestionSourceReference(payload = {}) {
+  const parts = [];
+  const suggestedLawNumber = String(payload.suggestedLawNumber || "").trim();
+  const sourceLabel = String(payload.sourceLabel || payload.source || "").trim();
+
+  if (suggestedLawNumber) {
+    parts.push(suggestedLawNumber);
+  }
+
+  if (sourceLabel) {
+    parts.push(`อ้างอิงคำตอบเดิมจาก ${sourceLabel}`);
+  }
+
+  return parts.join("\n");
+}
+
+function buildAutoNoAnswerSuggestionContent(message = "", retrievalEvaluation = null) {
+  const reasonText = String(retrievalEvaluation?.trace?.humanReadableDecision || "").trim();
+
+  return [
+    `ระบบยังไม่พบคำตอบที่มั่นใจเพียงพอสำหรับคำถามนี้: ${String(message || "").trim()}`,
+    reasonText ? `เหตุผล: ${reasonText}` : "",
+    "กรุณาแก้ไขข้อความนี้ให้เป็นคำตอบที่ถูกต้องก่อนอนุมัติ",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function buildAutoNoAnswerSourceReference(message = "", retrievalEvaluation = null, evidence = {}) {
+  const parts = [];
+  const reasonCodes = Array.isArray(retrievalEvaluation?.trace?.reasonCodes)
+    ? retrievalEvaluation.trace.reasonCodes.filter(Boolean)
+    : [];
+  const sourceTables = Array.from(
+    new Set(
+      (Array.isArray(evidence?.selectionDiagnostics?.selected) ? evidence.selectionDiagnostics.selected : [])
+        .map((item) => getSourceTableName(item?.source || ""))
+        .filter(Boolean),
+    ),
+  );
+
+  parts.push(`คำถามต้นฉบับ: ${String(message || "").trim()}`);
+
+  if (reasonCodes.length > 0) {
+    parts.push(`รหัสเหตุผล: ${reasonCodes.join(", ")}`);
+  }
+
+  if (sourceTables.length > 0) {
+    parts.push(`แหล่งที่ระบบพิจารณา: ${sourceTables.join(", ")}`);
+  }
+
+  return parts.join("\n");
+}
+
+async function queueNoAnswerKnowledgeSuggestion(message, target, retrievalEvaluation, evidence = {}, meta = {}) {
+  const question = String(message || "").trim();
+  if (!question || !retrievalEvaluation?.shouldReturnNoAnswer) {
+    return {
+      queued: false,
+      duplicate: false,
+    };
+  }
+
+  const hasDuplicatePending = await LawChatbotKnowledgeSuggestionModel.hasPendingDuplicate({
+    target: target || "all",
+    title: question,
+    sourceType: "auto_no_answer",
+  });
+
+  if (hasDuplicatePending) {
+    return {
+      queued: false,
+      duplicate: true,
+    };
+  }
+
+  return queueAutomaticKnowledgeSuggestion(
+    {
+      target: target || "all",
+      title: question,
+      content: buildAutoNoAnswerSuggestionContent(question, retrievalEvaluation),
+      sourceReference: buildAutoNoAnswerSourceReference(question, retrievalEvaluation, evidence),
+      sourceType: "auto_no_answer",
+    },
+    meta,
+    "auto-no-answer",
+  );
+}
+
+async function saveChatFeedback(payload, meta = {}) {
+  const feedbackEntry = LawChatbotFeedbackModel.create({
     name: "Chat Feedback",
     email: "",
     message: payload.message || "",
@@ -1229,6 +1367,36 @@ async function saveChatFeedback(payload) {
     expectedAnswer: payload.expectedAnswer || "",
     suggestedLawNumber: payload.suggestedLawNumber || "",
   });
+
+  const isHelpful = Boolean(payload.isHelpful);
+  const question = String(payload.message || "").trim();
+  const expectedAnswer = String(payload.expectedAnswer || "").trim();
+
+  if (isHelpful || !question || expectedAnswer.length < 10) {
+    return {
+      feedbackEntry,
+      autoSuggestionQueued: false,
+      autoSuggestionDuplicate: false,
+    };
+  }
+
+  const queueResult = await queueAutomaticKnowledgeSuggestion(
+    {
+      target: payload.target || "all",
+      title: question,
+      content: expectedAnswer,
+      sourceReference: buildAutoSuggestionSourceReference(payload),
+      sourceType: "auto_feedback",
+    },
+    meta,
+    "auto-feedback",
+  );
+
+  return {
+    feedbackEntry,
+    autoSuggestionQueued: Boolean(queueResult.queued),
+    autoSuggestionDuplicate: Boolean(queueResult.duplicate),
+  };
 }
 
 async function getUploadPageData(options = {}) {
@@ -1320,6 +1488,7 @@ module.exports = {
   updateKnowledgeSuggestion,
   rejectKnowledgeSuggestion,
   saveKnowledgeEntry,
+  saveKnowledgeSuggestionAsKnowledgeEntry,
   updateKnowledgeEntry,
   deleteKnowledgeEntry,
   saveFeedback,

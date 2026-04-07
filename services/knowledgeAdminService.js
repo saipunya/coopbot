@@ -23,6 +23,9 @@ async function getKnowledgeAdminData(options = {}) {
   const suggestedQuestionsPage = normalizePageNumber(options.suggestedQuestionsPage || options.sqPage || 1);
   const knowledgePage = normalizePageNumber(options.knowledgePage || 1);
   const pendingSuggestionsPage = normalizePageNumber(options.pendingSuggestionsPage || options.pendingPage || 1);
+  const pendingSuggestionSourceTypeFilter = ["text", "voice", "auto_feedback", "auto_no_answer"].includes(String(options.pendingSourceType || options.sourceType || "").trim())
+    ? String(options.pendingSourceType || options.sourceType || "").trim()
+    : "all";
   const suggestedQuestionsPageSize = normalizePageSize(options.suggestedQuestionsPageSize || options.sqPerPage || 8, 8, 50);
   const knowledgePageSize = normalizePageSize(options.knowledgePageSize || options.knowledgePerPage || 8, 8, 50);
   const pendingSuggestionsPageSize = normalizePageSize(options.pendingSuggestionsPageSize || options.pendingPerPage || 8, 8, 50);
@@ -30,11 +33,15 @@ async function getKnowledgeAdminData(options = {}) {
   const [
     knowledgeCount,
     pendingSuggestionCount,
+    pendingSuggestionSourceTypeCounts,
+    createdTodaySuggestionSourceTypeCounts,
     suggestedQuestionCount,
     activeSuggestedQuestionCount,
   ] = await Promise.all([
     LawChatbotKnowledgeModel.count(),
-    LawChatbotKnowledgeSuggestionModel.countPending(),
+    LawChatbotKnowledgeSuggestionModel.countPending(pendingSuggestionSourceTypeFilter),
+    LawChatbotKnowledgeSuggestionModel.countPendingBySourceType(),
+    LawChatbotKnowledgeSuggestionModel.countCreatedTodayBySourceType(),
     LawChatbotSuggestedQuestionModel.countAll(),
     LawChatbotSuggestedQuestionModel.countActive(),
   ]);
@@ -60,6 +67,7 @@ async function getKnowledgeAdminData(options = {}) {
     LawChatbotKnowledgeSuggestionModel.listPending(
       pendingSuggestionsPagination.pageSize,
       pendingSuggestionsPagination.offset,
+      pendingSuggestionSourceTypeFilter,
     ),
     LawChatbotSuggestedQuestionModel.listRecent(
       suggestedQuestionsPagination.pageSize,
@@ -72,6 +80,9 @@ async function getKnowledgeAdminData(options = {}) {
     knowledgeCount,
     recentKnowledge,
     pendingSuggestionCount,
+    pendingSuggestionSourceTypeCounts,
+    createdTodaySuggestionSourceTypeCounts,
+    pendingSuggestionSourceTypeFilter,
     pendingSuggestions,
     suggestedQuestionCount,
     activeSuggestedQuestionCount,
@@ -88,13 +99,22 @@ async function getKnowledgeAdminData(options = {}) {
       { value: "coop", label: "สหกรณ์" },
       { value: "group", label: "กลุ่มเกษตรกร" },
     ],
+    pendingSuggestionSourceTypeOptions: [
+      { value: "all", label: "ทุกช่องทาง" },
+      { value: "text", label: "ข้อความ" },
+      { value: "voice", label: "เสียง" },
+      { value: "auto_feedback", label: "feedback อัตโนมัติ" },
+      { value: "auto_no_answer", label: "คำถามที่ระบบตอบไม่ได้" },
+    ],
   };
 }
 
 async function getKnowledgeAdminSummaryData() {
-  const [knowledgeCount, pendingSuggestionCount, suggestedQuestionCount, activeSuggestedQuestionCount] = await Promise.all([
+  const [knowledgeCount, pendingSuggestionCount, pendingSuggestionSourceTypeCounts, createdTodaySuggestionSourceTypeCounts, suggestedQuestionCount, activeSuggestedQuestionCount] = await Promise.all([
     LawChatbotKnowledgeModel.count(),
     LawChatbotKnowledgeSuggestionModel.countPending(),
+    LawChatbotKnowledgeSuggestionModel.countPendingBySourceType(),
+    LawChatbotKnowledgeSuggestionModel.countCreatedTodayBySourceType(),
     LawChatbotSuggestedQuestionModel.countAll(),
     LawChatbotSuggestedQuestionModel.countActive(),
   ]);
@@ -102,6 +122,8 @@ async function getKnowledgeAdminSummaryData() {
   return {
     knowledgeCount,
     pendingSuggestionCount,
+    pendingSuggestionSourceTypeCounts,
+    createdTodaySuggestionSourceTypeCounts,
     suggestedQuestionCount,
     activeSuggestedQuestionCount,
   };
@@ -170,7 +192,9 @@ async function submitKnowledgeSuggestion(payload, meta = {}) {
   const content = String(payload.content || "").trim();
   const sourceReference = String(payload.sourceReference || payload.reference || "").trim();
   const target = payload.target === "group" ? "group" : "coop";
-  const sourceType = payload.sourceType === "voice" ? "voice" : "text";
+  const allowedSourceTypes = new Set(["text", "voice", "auto_feedback", "auto_no_answer"]);
+  const requestedSourceType = String(payload.sourceType || "text").trim();
+  const sourceType = allowedSourceTypes.has(requestedSourceType) ? requestedSourceType : "text";
 
   if (!title || !content) {
     throw new Error("กรุณาระบุคำถามและคำตอบที่ต้องการเสนอ");
@@ -289,6 +313,46 @@ async function saveKnowledgeEntry(payload) {
   });
 }
 
+async function saveKnowledgeSuggestionAsKnowledgeEntry(id, reviewMeta = {}) {
+  const suggestion = await LawChatbotKnowledgeSuggestionModel.findById(id);
+  if (!suggestion || suggestion.status !== "pending") {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const reviewedBy = String(reviewMeta.reviewedBy || "").trim() || "admin";
+  const reviewedAt = new Date().toISOString();
+  const conversionNote = `แปลงจากข้อเสนอเป็นฐานความรู้โดย ${reviewedBy} เมื่อ ${reviewedAt}`;
+  const mergedSourceNote = [suggestion.sourceReference || "", conversionNote]
+    .filter(Boolean)
+    .join(" | ");
+
+  const entry = await saveKnowledgeEntry({
+    target: suggestion.target,
+    title: suggestion.title,
+    content: suggestion.content,
+    sourceNote: mergedSourceNote,
+  });
+
+  if (!entry) {
+    return { ok: false, reason: "not_saved" };
+  }
+
+  const rejected = await LawChatbotKnowledgeSuggestionModel.updateStatus(id, "rejected", {
+    reviewedBy,
+    reviewNote: reviewMeta.reviewNote || conversionNote,
+  });
+
+  if (!rejected) {
+    return { ok: false, reason: "not_updated" };
+  }
+
+  return {
+    ok: true,
+    entry,
+    suggestion,
+  };
+}
+
 async function updateKnowledgeEntry(id, payload = {}) {
   const existing = await LawChatbotKnowledgeModel.findById(id);
   if (!existing) {
@@ -332,6 +396,7 @@ module.exports = {
   getKnowledgeAdminSummaryData,
   rejectKnowledgeSuggestion,
   saveKnowledgeEntry,
+  saveKnowledgeSuggestionAsKnowledgeEntry,
   saveSuggestedQuestionEntry,
   submitKnowledgeSuggestion,
   updateKnowledgeEntry,

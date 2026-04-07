@@ -493,21 +493,22 @@ function buildClarifyingQuestion(payload = {}, metrics = {}, profile = {}) {
 }
 
 function buildNoAnswerMessage(payload = {}, metrics = {}, profile = {}) {
-  const baseMessage = payload.usedInternetSearch
-    ? "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนทั้งในฐานข้อมูลและแหล่งข้อมูลสาธารณะ"
-    : "ไม่ปรากฏข้อมูลที่ตรงกับประเด็นคำถามอย่างชัดเจนในฐานข้อมูลและเอกสารภายในระบบ";
+    const baseMessage = payload.usedInternetSearch
+      ? 'ไม่พบข้อมูลที่ท่านสอบถามในระบบ และยังไม่พบข้อมูลสาธารณะที่ยืนยันได้ชัดเจน'
+      : 'ไม่พบข้อมูลที่ท่านสอบถามในระบบ';
+    const suggestionMessage = 'หากท่านมีข้อมูลเพิ่มเติม สามารถกดปุ่ม "เสนอคำตอบที่ถูกต้อง" ใต้ข้อความนี้เพื่อช่วยเพิ่มข้อมูลให้ระบบได้';
 
   const hintExamples = buildHintExamples(payload, metrics);
 
   if (profile.intent === "law_section") {
-    return `${baseMessage}\n\nกรุณาระบุชื่อเรื่องกฎหมายหรือมาตราที่เกี่ยวข้องเพิ่มเติม${hintExamples ? ` เช่น ${hintExamples}` : ""}`;
+      return `${baseMessage}\n\n${suggestionMessage}\n\nกรุณาระบุชื่อเรื่องกฎหมายหรือมาตราที่เกี่ยวข้องเพิ่มเติม${hintExamples ? ` เช่น ${hintExamples}` : ""}`;
   }
 
   if (profile.intent === "document") {
-    return `${baseMessage}\n\nกรุณาระบุชื่อเอกสาร เลขที่หนังสือ หน่วยงาน หรือวันที่เพิ่มเติม${hintExamples ? ` เช่น ${hintExamples}` : ""}`;
+      return `${baseMessage}\n\n${suggestionMessage}\n\nกรุณาระบุชื่อเอกสาร เลขที่หนังสือ หน่วยงาน หรือวันที่เพิ่มเติม${hintExamples ? ` เช่น ${hintExamples}` : ""}`;
   }
 
-  return `${baseMessage}\n\nกรุณาระบุคำสำคัญเพิ่มเติม${hintExamples ? ` เช่น ${hintExamples}` : " เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร"}`;
+    return `${baseMessage}\n\n${suggestionMessage}\n\nกรุณาระบุคำสำคัญเพิ่มเติม${hintExamples ? ` เช่น ${hintExamples}` : " เช่น การประชุมใหญ่ สมาชิก คณะกรรมการ หรือการจัดตั้งกลุ่มเกษตรกร"}`;
 }
 
 function buildHumanReadableDecision(policy = "no_answer", metrics = {}, payload = {}, profile = {}) {

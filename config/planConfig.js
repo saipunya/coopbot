@@ -49,7 +49,7 @@ const PLAN_DEFINITIONS = {
     highlights: [
       "ค้นหาจากฐานข้อมูลภายในระบบแบบเร็วและตรงประเด็น",
       "ลองคำตอบแบบ AI ใกล้เคียง Professional ได้ฟรี 5 ครั้งต่อเดือน",
-      "ไม่ใช้อินเทอร์เน็ต แต่จัดคำตอบให้อ่านง่ายขึ้น",
+      "โหมดฟรีปกติไม่ใช้อินเทอร์เน็ต แต่สิทธิ์ลอง AI อาจค้นข้อมูลภายนอกแบบจำกัดเมื่อจำเป็น",
       "รองรับการถามต่อเนื่องจากเรื่องเดิมได้ดีขึ้น",
       "ไม่เก็บประวัติการค้นหา",
     ],
@@ -71,6 +71,9 @@ const PLAN_DEFINITIONS = {
     allowSearchHistory: true,
     searchHistoryRetentionDays: 15,
     useAI: true,
+    useInternet: true,
+    internetMode: "limited",
+    maxInternetSources: 2,
     aiModel: "gpt-4o-mini",
     sourceLimit: 8,
     allowDeepAnalysis: false,

@@ -1518,6 +1518,12 @@
       border-color: rgba(191, 139, 38, 0.18);
     }
 
+    .answer-origin-chip-internet {
+      color: #0d4f58;
+      background: rgba(32, 143, 160, 0.12);
+      border-color: rgba(32, 143, 160, 0.2);
+    }
+
     .reference-modal-list {
       margin: 0;
       padding-left: 1.1rem;
@@ -3814,13 +3820,14 @@
 
       function formatBotMessageHtml(text, terms, options = {}) {
         const raw = sanitizeDisplayText(text);
+        const answerOriginHtml = buildAnswerOriginChipHtml(options);
         const inlineActionHtml = buildInlineActionHtml({
           ...(options || {}),
           answerText: raw,
         });
         if (!raw.includes('แหล่งอ้างอิง:')) {
           const highlighted = formatBotDisplayLineHtml(raw, terms);
-          return `${decorateBotFallbackHtml(highlighted)}${inlineActionHtml}`;
+          return `${answerOriginHtml}${decorateBotFallbackHtml(highlighted)}${inlineActionHtml}`;
         }
 
         const [mainText, referenceText] = raw.split(/\n\s*\nแหล่งอ้างอิง:\s*\n/i);
@@ -3833,7 +3840,27 @@
         ].filter(Boolean).join('');
         const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
 
-        return `<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}${inlineActionHtml}</div>`;
+        return `${answerOriginHtml}<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}${inlineActionHtml}</div>`;
+      }
+
+      function buildAnswerOriginChipHtml(options = {}) {
+        const responseMeta = options && options.responseMeta && typeof options.responseMeta === 'object'
+          ? options.responseMeta
+          : null;
+        const sourceTables = responseMeta && Array.isArray(responseMeta.sourceTables)
+          ? responseMeta.sourceTables.map((item) => String(item || '').trim().toLowerCase())
+          : [];
+
+        if (!sourceTables.includes('internet_search')) {
+          return '';
+        }
+
+        return `
+          <div class="answer-origin-chip answer-origin-chip-internet">
+            <i class="bi bi-globe2" aria-hidden="true"></i>
+            <span>ข้อมูลนี้มาจากอินเทอร์เน็ต</span>
+          </div>
+        `;
       }
 
       const AI_SECTION_ICONS = {

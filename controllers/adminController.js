@@ -271,6 +271,7 @@ async function renderKnowledgeSuggestions(req, res) {
   const data = await lawChatbotService.getKnowledgeAdminData({
     pendingPage: req.query.page || 1,
     pendingPerPage: req.query.perPage || 12,
+    pendingSourceType: req.query.sourceType || "all",
   });
 
   res.render("admin/knowledgeSuggestions", {
@@ -877,6 +878,33 @@ async function rejectKnowledgeSuggestion(req, res) {
   );
 }
 
+async function saveKnowledgeSuggestionAsKnowledge(req, res) {
+  const returnTo = sanitizeKnowledgeAdminReturnPath(req.body.returnTo, "/admin/knowledge-suggestions");
+  const id = Number(req.body.id || 0);
+  if (!id) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่พบรายการข้อเสนอที่ต้องการบันทึกเป็นฐานความรู้")
+    );
+  }
+
+  const result = await lawChatbotService.saveKnowledgeSuggestionAsKnowledgeEntry(id, {
+    reviewedBy:
+      (req.session.adminUser && (req.session.adminUser.email || req.session.adminUser.username || req.session.adminUser.name)) ||
+      "admin",
+    reviewNote: "บันทึกเป็นฐานความรู้แล้ว",
+  });
+
+  if (!result.ok) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่สามารถบันทึกข้อเสนอนี้เป็นฐานความรู้ได้")
+    );
+  }
+
+  return res.redirect(
+    appendQueryParam(returnTo, "success", `บันทึกข้อเสนอ \"${result.entry?.title || result.suggestion?.title || "รายการนี้"}\" เป็นฐานความรู้เรียบร้อยแล้ว`)
+  );
+}
+
 async function approvePaymentRequest(req, res) {
   const id = Number(req.body.id || 0);
   if (!id) {
@@ -974,6 +1002,7 @@ module.exports = {
   updateKnowledgeSuggestion,
   approveKnowledgeSuggestion,
   rejectKnowledgeSuggestion,
+  saveKnowledgeSuggestionAsKnowledge,
   approvePaymentRequest,
   rejectPaymentRequest,
   updateAiSetting,

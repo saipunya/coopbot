@@ -49,6 +49,7 @@ router.post("/knowledge/delete", requireAdminAuth, adminController.deleteKnowled
 router.post("/knowledge-suggestions/update", requireAdminAuth, adminController.updateKnowledgeSuggestion);
 router.post("/knowledge-suggestions/approve", requireAdminAuth, adminController.approveKnowledgeSuggestion);
 router.post("/knowledge-suggestions/reject", requireAdminAuth, adminController.rejectKnowledgeSuggestion);
+router.post("/knowledge-suggestions/save-as-knowledge", requireAdminAuth, adminController.saveKnowledgeSuggestionAsKnowledge);
 router.post("/logout", requireAdminAuth, adminController.logout);
 
 module.exports = router;

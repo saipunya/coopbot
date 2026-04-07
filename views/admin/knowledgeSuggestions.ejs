@@ -86,6 +86,10 @@
 
       <section class="grid">
         <article class="card metric-card"><div>รอตรวจสอบ</div><div class="metric"><%= data.pendingSuggestionCount %></div></article>
+        <article class="card metric-card"><div>feedback อัตโนมัติ</div><div class="metric"><%= data.pendingSuggestionSourceTypeCounts?.auto_feedback || 0 %></div></article>
+        <article class="card metric-card"><div>ระบบตอบไม่ได้</div><div class="metric"><%= data.pendingSuggestionSourceTypeCounts?.auto_no_answer || 0 %></div></article>
+        <article class="card metric-card"><div>เพิ่มวันนี้: feedback</div><div class="metric"><%= data.createdTodaySuggestionSourceTypeCounts?.auto_feedback || 0 %></div></article>
+        <article class="card metric-card"><div>เพิ่มวันนี้: ตอบไม่ได้</div><div class="metric"><%= data.createdTodaySuggestionSourceTypeCounts?.auto_no_answer || 0 %></div></article>
       </section>
 
       <section class="card">
@@ -94,6 +98,12 @@
         <div class="section-toolbar">
           <form action="/admin/knowledge-suggestions" method="get">
             <input type="hidden" name="page" value="1" />
+            <label for="sourceType">ช่องทาง</label>
+            <select id="sourceType" name="sourceType" aria-label="กรองประเภทข้อเสนอที่รอตรวจสอบ">
+              <% (data.pendingSuggestionSourceTypeOptions || []).forEach((option) => { %>
+                <option value="<%= option.value %>" <%= String(data.pendingSuggestionSourceTypeFilter || 'all') === option.value ? 'selected' : '' %>><%= option.label %></option>
+              <% }) %>
+            </select>
             <label for="perPage">จำนวนรายการต่อหน้า</label>
             <select id="perPage" name="perPage" aria-label="จำนวนข้อเสนอที่รอตรวจสอบต่อหน้า">
               <% [8, 16, 24].forEach((size) => { %>
@@ -105,14 +115,22 @@
         </div>
         <ul class="soft-list">
           <% if (data.pendingSuggestions.length === 0) { %>
-            <li>ยังไม่มีข้อเสนอคำตอบที่รออนุมัติ</li>
+            <li>ยังไม่มีข้อเสนอคำตอบที่รออนุมัติในตัวกรองนี้</li>
           <% } %>
           <% data.pendingSuggestions.forEach((item) => { %>
             <li>
               <strong class="list-item-title"><%= item.title %></strong>
               <div class="suggestion-meta">
                 ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : 'สหกรณ์' %>
-                <% if (item.sourceType) { %> | ช่องทาง: <%= item.sourceType === 'voice' ? 'เสียง' : 'ข้อความ' %><% } %>
+                <% if (item.sourceType) { %> | ช่องทาง:
+                  <%= item.sourceType === 'voice'
+                    ? 'เสียง'
+                    : item.sourceType === 'auto_feedback'
+                      ? 'feedback อัตโนมัติ'
+                      : item.sourceType === 'auto_no_answer'
+                        ? 'คำถามที่ระบบตอบไม่ได้'
+                        : 'ข้อความ' %>
+                <% } %>
                 <% if (item.submittedBy) { %> | ผู้เสนอ: <%= item.submittedBy %><% } %>
                 <% if (item.createdAt) { %> | ส่งเมื่อ: <%= item.createdAt %><% } %>
               </div>
@@ -158,6 +176,13 @@
                 </div>
               </details>
               <div class="knowledge-actions">
+                <% if (item.sourceType === 'auto_no_answer') { %>
+                <form action="/admin/knowledge-suggestions/save-as-knowledge" method="post" onsubmit="return confirm('ยืนยันการบันทึกข้อเสนอนี้เป็นฐานความรู้ และนำออกจากคิวตรวจข้อเสนอใช่หรือไม่');">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+                  <button class="primary-btn" type="submit">บันทึกเป็นฐานความรู้</button>
+                </form>
+                <% } %>
                 <form action="/admin/knowledge-suggestions/approve" method="post" onsubmit="return confirm('ยืนยันการอนุมัติและบันทึกเป็นคำถามแนะนำจากข้อมูลฉบับล่าสุดใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />
                   <input type="hidden" name="returnTo" value="<%= returnPath %>" />
@@ -172,7 +197,7 @@
             </li>
           <% }) %>
         </ul>
-        <%- include("partials/pagination", { pagination: data.pendingSuggestionsPagination, basePath: "/admin/knowledge-suggestions", query: { perPage: data.pendingSuggestionsPagination?.pageSize || 12 }, pageKey: "page", itemLabel: "ข้อเสนอที่รอตรวจสอบ" }) %>
+        <%- include("partials/pagination", { pagination: data.pendingSuggestionsPagination, basePath: "/admin/knowledge-suggestions", query: { perPage: data.pendingSuggestionsPagination?.pageSize || 12, sourceType: data.pendingSuggestionSourceTypeFilter || 'all' }, pageKey: "page", itemLabel: "ข้อเสนอที่รอตรวจสอบ" }) %>
       </section>
     </div>
   </body>

@@ -741,7 +741,15 @@
           <article class="card metric-card" style="margin-bottom: 0;">
             <p class="metric-label">ข้อเสนอจากผู้ใช้งาน</p>
             <p class="metric"><%= knowledgeData.pendingSuggestionCount %></p>
-            <p class="subtle-text">รายการที่ยังรอตรวจสอบและอนุมัติ</p>
+            <p class="subtle-text">
+              รายการที่ยังรอตรวจสอบและอนุมัติ
+              <% const pendingTypeCounts = knowledgeData.pendingSuggestionSourceTypeCounts || {}; %>
+              <% const createdTodayTypeCounts = knowledgeData.createdTodaySuggestionSourceTypeCounts || {}; %>
+              <br />feedback อัตโนมัติ <strong><%= pendingTypeCounts.auto_feedback || 0 %></strong>
+              | ตอบไม่ได้ <strong><%= pendingTypeCounts.auto_no_answer || 0 %></strong>
+              <br />เพิ่มวันนี้: feedback <strong><%= createdTodayTypeCounts.auto_feedback || 0 %></strong>
+              | ตอบไม่ได้ <strong><%= createdTodayTypeCounts.auto_no_answer || 0 %></strong>
+            </p>
             <p style="margin: 0.75rem 0 0;"><a href="/admin/knowledge-suggestions">เปิดหน้าตรวจข้อเสนอ</a></p>
           </article>
         </div>

@@ -102,6 +102,9 @@ function buildFreeAiPreviewPlanContext(basePlanContext = {}, usePremiumModel = f
   const professionalPromptProfile = professionalPlanContext.promptProfile || {};
   const freePlanConfig = require("../config/planConfig").PLAN_DEFINITIONS.free;
   const compactSourceLimit = Math.max(2, Math.min(5, Number(professionalPlanContext.sourceLimit || 5)));
+  const previewInternetSourceLimit = professionalPlanContext.useInternet
+    ? Math.max(1, Math.min(usePremiumModel ? 2 : 1, Number(professionalPlanContext.maxInternetSources || 1)))
+    : 0;
   const previewModel = usePremiumModel
     ? String(freePlanConfig.aiPreviewPremiumModel || "gpt-4o")
     : String(freePlanConfig.aiModel || "gpt-4o-mini");
@@ -110,8 +113,9 @@ function buildFreeAiPreviewPlanContext(basePlanContext = {}, usePremiumModel = f
     ...basePlanContext,
     detailLevel: professionalPlanContext.detailLevel,
     useAI: true,
-    useInternet: false,
-    maxInternetSources: 0,
+    useInternet: previewInternetSourceLimit > 0,
+    internetMode: String(professionalPlanContext.internetMode || "limited"),
+    maxInternetSources: previewInternetSourceLimit,
     sourceLimit: compactSourceLimit,
     strictSourceFiltering: Boolean(professionalPlanContext.strictSourceFiltering),
     preferDatabaseOnlyForLawSections: Boolean(professionalPlanContext.preferDatabaseOnlyForLawSections),

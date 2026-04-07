@@ -10,6 +10,12 @@ const {
 } = require("../services/thaiTextUtils");
 
 const memorySuggestions = [];
+const FILTERABLE_SOURCE_TYPES = new Set(["text", "voice", "auto_feedback", "auto_no_answer"]);
+
+function normalizeSourceTypeFilter(value = "all") {
+  const normalized = String(value || "all").trim();
+  return FILTERABLE_SOURCE_TYPES.has(normalized) ? normalized : "all";
+}
 
 const GENERIC_THAI_TOKENS = new Set([
   "การ",
@@ -287,17 +293,160 @@ class LawChatbotKnowledgeSuggestionModel {
     };
   }
 
-  static async countPending() {
+  static async countPending(sourceType = "all") {
     const pool = getDbPool();
+    const normalizedSourceType = normalizeSourceTypeFilter(sourceType);
     if (!pool) {
-      return memorySuggestions.filter((item) => item.status === "pending").length;
+      return memorySuggestions.filter((item) => {
+        if (item.status !== "pending") {
+          return false;
+        }
+
+        return normalizedSourceType === "all"
+          ? true
+          : String(item.sourceType || "text") === normalizedSourceType;
+      }).length;
+    }
+
+    await ensureTable();
+    const [rows] = normalizedSourceType === "all"
+      ? await pool.query(
+          "SELECT COUNT(*) AS total FROM chatbot_knowledge_suggestions WHERE status = 'pending'",
+        )
+      : await pool.query(
+          `SELECT COUNT(*) AS total
+             FROM chatbot_knowledge_suggestions
+            WHERE status = 'pending'
+              AND source_type = ?`,
+          [normalizedSourceType],
+        );
+    return rows[0]?.total || 0;
+  }
+
+  static async countPendingBySourceType() {
+    const pool = getDbPool();
+    const defaultCounts = {
+      text: 0,
+      voice: 0,
+      auto_feedback: 0,
+      auto_no_answer: 0,
+      other: 0,
+    };
+
+    if (!pool) {
+      return memorySuggestions
+        .filter((item) => item.status === "pending")
+        .reduce((counts, item) => {
+          const sourceType = String(item.sourceType || "text").trim();
+          if (Object.prototype.hasOwnProperty.call(counts, sourceType)) {
+            counts[sourceType] += 1;
+          } else {
+            counts.other += 1;
+          }
+          return counts;
+        }, { ...defaultCounts });
     }
 
     await ensureTable();
     const [rows] = await pool.query(
-      "SELECT COUNT(*) AS total FROM chatbot_knowledge_suggestions WHERE status = 'pending'",
+      `SELECT source_type, COUNT(*) AS total
+         FROM chatbot_knowledge_suggestions
+        WHERE status = 'pending'
+        GROUP BY source_type`,
     );
-    return rows[0]?.total || 0;
+
+    return (Array.isArray(rows) ? rows : []).reduce((counts, row) => {
+      const sourceType = String(row?.source_type || "text").trim();
+      const total = Number(row?.total || 0);
+      if (Object.prototype.hasOwnProperty.call(counts, sourceType)) {
+        counts[sourceType] = total;
+      } else {
+        counts.other += total;
+      }
+      return counts;
+    }, { ...defaultCounts });
+  }
+
+  static async countCreatedTodayBySourceType() {
+    const pool = getDbPool();
+    const defaultCounts = {
+      text: 0,
+      voice: 0,
+      auto_feedback: 0,
+      auto_no_answer: 0,
+      other: 0,
+    };
+    const todayKey = new Date().toISOString().slice(0, 10);
+
+    if (!pool) {
+      return memorySuggestions.reduce((counts, item) => {
+        const createdAt = String(item.createdAt || "").slice(0, 10);
+        if (createdAt !== todayKey) {
+          return counts;
+        }
+
+        const sourceType = String(item.sourceType || "text").trim();
+        if (Object.prototype.hasOwnProperty.call(counts, sourceType)) {
+          counts[sourceType] += 1;
+        } else {
+          counts.other += 1;
+        }
+        return counts;
+      }, { ...defaultCounts });
+    }
+
+    await ensureTable();
+    const [rows] = await pool.query(
+      `SELECT source_type, COUNT(*) AS total
+         FROM chatbot_knowledge_suggestions
+        WHERE DATE(created_at) = CURRENT_DATE()
+        GROUP BY source_type`,
+    );
+
+    return (Array.isArray(rows) ? rows : []).reduce((counts, row) => {
+      const sourceType = String(row?.source_type || "text").trim();
+      const total = Number(row?.total || 0);
+      if (Object.prototype.hasOwnProperty.call(counts, sourceType)) {
+        counts[sourceType] = total;
+      } else {
+        counts.other += total;
+      }
+      return counts;
+    }, { ...defaultCounts });
+  }
+
+  static async hasPendingDuplicate(entry = {}) {
+    const normalizedTarget = entry.target === "group" ? "group" : "coop";
+    const normalizedTitle = normalizeForSearch(String(entry.title || "")).toLowerCase();
+    const normalizedSourceType = String(entry.sourceType || "text").trim() || "text";
+
+    if (!normalizedTitle) {
+      return false;
+    }
+
+    const pool = getDbPool();
+    if (!pool) {
+      return memorySuggestions.some((item) => (
+        item.status === "pending" &&
+        String(item.target || "coop") === normalizedTarget &&
+        String(item.sourceType || "text") === normalizedSourceType &&
+        normalizeForSearch(String(item.title || "")).toLowerCase() === normalizedTitle
+      ));
+    }
+
+    await ensureTable();
+    const [rows] = await pool.query(
+      `SELECT id
+         FROM chatbot_knowledge_suggestions
+        WHERE status = 'pending'
+          AND target = ?
+          AND source_type = ?
+          AND LOWER(TRIM(title)) = ?
+        LIMIT 1`,
+      [normalizedTarget, normalizedSourceType, normalizedTitle],
+    );
+
+    return Array.isArray(rows) && rows.length > 0;
   }
 
   static async countApprovedByContributor(contributor = {}) {
@@ -325,27 +474,47 @@ class LawChatbotKnowledgeSuggestionModel {
     return Number(rows[0]?.total || 0);
   }
 
-  static async listPending(limit = 20, offset = 0) {
+  static async listPending(limit = 20, offset = 0, sourceType = "all") {
     const pool = getDbPool();
     const normalizedLimit = Math.max(1, Number(limit || 20));
     const normalizedOffset = Math.max(0, Number(offset || 0));
+    const normalizedSourceType = normalizeSourceTypeFilter(sourceType);
     if (!pool) {
       return memorySuggestions
-        .filter((item) => item.status === "pending")
+        .filter((item) => {
+          if (item.status !== "pending") {
+            return false;
+          }
+
+          return normalizedSourceType === "all"
+            ? true
+            : String(item.sourceType || "text") === normalizedSourceType;
+        })
         .slice(normalizedOffset, normalizedOffset + normalizedLimit)
         .map(mapRow);
     }
 
     await ensureTable();
-    const [rows] = await pool.query(
-      `SELECT id, target, title, content, source_type, submitted_by, submitter_session,
-              submitter_ip, status, reviewed_by, review_note, source_reference, reviewed_at, created_at
-         FROM chatbot_knowledge_suggestions
-        WHERE status = 'pending'
-        ORDER BY id DESC
-        LIMIT ? OFFSET ?`,
-      [normalizedLimit, normalizedOffset],
-    );
+    const [rows] = normalizedSourceType === "all"
+      ? await pool.query(
+          `SELECT id, target, title, content, source_type, submitted_by, submitter_session,
+                  submitter_ip, status, reviewed_by, review_note, source_reference, reviewed_at, created_at
+             FROM chatbot_knowledge_suggestions
+            WHERE status = 'pending'
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?`,
+          [normalizedLimit, normalizedOffset],
+        )
+      : await pool.query(
+          `SELECT id, target, title, content, source_type, submitted_by, submitter_session,
+                  submitter_ip, status, reviewed_by, review_note, source_reference, reviewed_at, created_at
+             FROM chatbot_knowledge_suggestions
+            WHERE status = 'pending'
+              AND source_type = ?
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?`,
+          [normalizedSourceType, normalizedLimit, normalizedOffset],
+        );
 
     return rows.map(mapRow);
   }

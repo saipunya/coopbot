@@ -101,8 +101,24 @@ async function acceptAccessNotice(req, res) {
 
 async function chat(req, res) {
   try {
+    const signedInUser = req.signedInUser || req.session?.user || null;
+    const submittedByUserId = Number(signedInUser?.userId || signedInUser?.id || 0);
+    const submittedByName = String(signedInUser?.name || "").trim();
+    const submittedByEmail = String(signedInUser?.email || signedInUser?.username || "").trim();
+    const submittedBy = submittedByName && submittedByEmail && submittedByName !== submittedByEmail
+      ? `${submittedByName} (${submittedByEmail})`
+      : submittedByName || submittedByEmail || "";
+
     const result = await Promise.race([
-      lawChatbotService.replyToChat(req.body, req.session),
+      lawChatbotService.replyToChat({
+        ...req.body,
+        requestMeta: {
+          submittedBy,
+          submittedByUserId,
+          sessionId: req.sessionID || "",
+          ip: req.ip || req.headers["x-forwarded-for"] || "",
+        },
+      }, req.session),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error(`chat request timed out after ${CHAT_REQUEST_TIMEOUT_MS}ms`)), CHAT_REQUEST_TIMEOUT_MS),
       ),
@@ -131,8 +147,26 @@ async function chatSummary(req, res) {
 }
 
 async function chatFeedback(req, res) {
-  await lawChatbotService.saveChatFeedback(req.body);
-  res.json({ success: true });
+  const signedInUser = req.signedInUser || req.session?.user || null;
+  const submittedByUserId = Number(signedInUser?.userId || signedInUser?.id || 0);
+  const submittedByName = String(signedInUser?.name || "").trim();
+  const submittedByEmail = String(signedInUser?.email || signedInUser?.username || "").trim();
+  const submittedBy = submittedByName && submittedByEmail && submittedByName !== submittedByEmail
+    ? `${submittedByName} (${submittedByEmail})`
+    : submittedByName || submittedByEmail || "";
+
+  const result = await lawChatbotService.saveChatFeedback(req.body, {
+    submittedBy,
+    submittedByUserId,
+    sessionId: req.sessionID || "",
+    ip: req.ip || req.headers["x-forwarded-for"] || "",
+  });
+
+  res.json({
+    success: true,
+    autoSuggestionQueued: Boolean(result?.autoSuggestionQueued),
+    autoSuggestionDuplicate: Boolean(result?.autoSuggestionDuplicate),
+  });
 }
 
 async function saveKnowledgeFromChat(req, res) {

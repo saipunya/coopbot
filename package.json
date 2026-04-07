@@ -9,6 +9,7 @@
     "review:responsive": "node scripts/responsive_review_helper.js",
     "review:responsive:open": "node scripts/open_responsive_review_pages.js",
     "verify:ui": "node scripts/verify_ui_routes.js",
+    "verify:free-preview": "node scripts/verify_free_preview.js",
     "telegram:test": "node scripts/sendTelegramTest.js"
   },
   "repository": {
