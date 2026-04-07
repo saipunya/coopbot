@@ -1,4 +1,5 @@
 const LawChatbotModel = require("../models/lawChatbotModel");
+const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
 const LawChatbotKnowledgeModel = require("../models/lawChatbotKnowledgeModel");
 const LawChatbotKnowledgeSuggestionModel = require("../models/lawChatbotKnowledgeSuggestionModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
@@ -361,6 +362,7 @@ function buildRerankReasons({
   sectionTrace,
   focusTrace,
   freshnessTrace,
+  helpfulBoost,
   item,
 }) {
   const reasons = [];
@@ -389,8 +391,12 @@ function buildRerankReasons({
     reasons.push(`fresh source (${freshnessTrace.sourceDate})`);
   }
 
+  if (Number(helpfulBoost || 0) > 0) {
+    reasons.push("boosted by prior helpful feedback");
+  }
+
   if (item?.contextCarry) {
-    reasons.push("carried from follow-up context");
+    reasons.push("conversation context carry-over");
   }
 
   return reasons.slice(0, 5);
@@ -578,6 +584,7 @@ function buildSelectionDiagnostics(groups, selectedSources, intent = "general", 
 
 function rerankRetrievedMatches(matches, message, options = {}) {
   const intent = options.intent || "general";
+  const feedbackTarget = options.target || "all";
 
   return (Array.isArray(matches) ? matches : [])
     .filter(Boolean)
@@ -590,6 +597,12 @@ function rerankRetrievedMatches(matches, message, options = {}) {
       const focusTrace = getFocusAlignmentTrace(item, message);
       const freshnessTrace = getFreshnessTrace(item, message, intent);
       const contextWeight = item.contextCarry ? 6 : 0;
+      const helpfulFeedbackProfile = LawChatbotFeedbackModel.getHelpfulBoostProfile(
+        message,
+        feedbackTarget,
+        item.source || "",
+      );
+      const helpfulBoost = Number(helpfulFeedbackProfile?.boost || 0);
       const offTopicPenalty =
   ["documents", "pdf_chunks", "knowledge_base"].includes(String(item.source || "").trim().toLowerCase()) &&
   Number(focusTrace.rawFocusScore || 0) < 18
@@ -602,6 +615,7 @@ function rerankRetrievedMatches(matches, message, options = {}) {
   Number(sectionTrace.score || 0) +
   Number(focusTrace.score || 0) +
   Number(freshnessTrace.score || 0) +
+  helpfulBoost +
   contextWeight +
   offTopicPenalty,
 );
@@ -621,6 +635,9 @@ function rerankRetrievedMatches(matches, message, options = {}) {
           focusScore: Number(focusTrace.score || 0),
           focusAlignmentRaw: Number(focusTrace.rawFocusScore || 0),
           freshnessScore: Number(freshnessTrace.score || 0),
+          helpfulBoost,
+          helpfulFeedbackHelpfulMatches: Number(helpfulFeedbackProfile?.helpfulMatches || 0),
+          helpfulFeedbackHarmfulMatches: Number(helpfulFeedbackProfile?.harmfulMatches || 0),
           contextWeight,
           matchedReference: sectionTrace.matchedReference || "",
           sourceDate: freshnessTrace.sourceDate || "",
@@ -632,6 +649,7 @@ function rerankRetrievedMatches(matches, message, options = {}) {
             sectionTrace,
             focusTrace,
             freshnessTrace,
+            helpfulBoost,
             item,
           }),
         },
@@ -1138,6 +1156,7 @@ async function searchDatabaseSources(message, target, options = {}) {
 
   return rerankRetrievedMatches(pruneFocusedQueryMatches(combinedMatches, focusMessage), focusMessage, {
     intent,
+    target,
   });
 }
 

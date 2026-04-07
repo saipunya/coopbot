@@ -1121,6 +1121,8 @@ async function saveChatFeedback(payload) {
     answerShown: payload.answerShown || "",
     isHelpful: Boolean(payload.isHelpful),
     target: payload.target || "all",
+    source: payload.source || payload.sourceName || "",
+    sourceLabel: payload.sourceLabel || "",
     expectedAnswer: payload.expectedAnswer || "",
     suggestedLawNumber: payload.suggestedLawNumber || "",
   });

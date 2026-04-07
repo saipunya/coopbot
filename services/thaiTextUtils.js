@@ -444,6 +444,19 @@ const QUERY_TOPIC_RULES = [
     ],
   },
   {
+    primary: "อธิบดีกรมส่งเสริมสหกรณ์",
+    aliases: ["อธิบดีกรมส่งเสริม", "อธิบดีกรมส่งเสริม ฯ"],
+    conflicts: ["กรมส่งเสริมสหกรณ์", "กองทุนพัฒนาสหกรณ์", "ประธานกรรมการ"],
+    contextSignals: [
+      "คือ",
+      "หมายถึง",
+      "หัวหน้าส่วนราชการ",
+      "ผู้ดำรงตำแหน่ง",
+      "ผู้บริหารสูงสุด",
+      "อธิบดีกรมส่งเสริมสหกรณ์",
+    ],
+  },
+  {
     primary: "คณะผู้จัดตั้ง",
     aliases: [
       "ผู้จัดตั้งสหกรณ์",
@@ -512,6 +525,7 @@ const DUTY_INTENT_PATTERNS = [
   "หน้าที่ในการ",
   "บทบาท",
 ];
+const IDENTITY_INTENT_PATTERNS = ["คือใคร", "หมายถึงใคร", "คืออะไร", "หมายถึงอะไร"];
 const RIGHTS_INTENT_PATTERNS = [
   "สิทธิ",
   "สิทธิของ",
@@ -570,7 +584,25 @@ function getQueryFocusProfile(query) {
     const aliases = Array.isArray(rule.aliases)
       ? rule.aliases.map((phrase) => normalizeForSearch(phrase).toLowerCase()).filter(Boolean)
       : [];
-    return [primary, ...aliases].some((phrase) => phrase && normalizedQuery.includes(phrase));
+    const candidatePhrases = [primary, ...aliases].filter(Boolean);
+    const matched = candidatePhrases.some((phrase) => phrase && normalizedQuery.includes(phrase));
+    if (!matched) {
+      return false;
+    }
+
+    const conflicts = Array.isArray(rule.conflicts)
+      ? rule.conflicts.map((phrase) => normalizeForSearch(phrase).toLowerCase()).filter(Boolean)
+      : [];
+    const queryWithoutPrimary = primary ? normalizedQuery.split(primary).join(" ") : normalizedQuery;
+    const coveredByLongerConflict = conflicts.some((phrase) => {
+      if (!phrase || !phrase.includes(primary) || !normalizedQuery.includes(phrase)) {
+        return false;
+      }
+
+      return !queryWithoutPrimary.includes(primary);
+    });
+
+    return !coveredByLongerConflict;
   }).map((rule) => ({
     primary: normalizeForSearch(rule.primary).toLowerCase(),
     aliases: Array.isArray(rule.aliases)
@@ -587,6 +619,8 @@ function getQueryFocusProfile(query) {
   let intent = "general";
   if (QUALIFICATION_INTENT_PATTERNS.some((phrase) => normalizedQuery.includes(normalizeForSearch(phrase).toLowerCase()))) {
     intent = "qualification";
+  } else if (IDENTITY_INTENT_PATTERNS.some((phrase) => normalizedQuery.includes(normalizeForSearch(phrase).toLowerCase()))) {
+    intent = "identity";
   } else if (DUTY_INTENT_PATTERNS.some((phrase) => normalizedQuery.includes(normalizeForSearch(phrase).toLowerCase()))) {
     intent = "duty";
   } else if (RIGHTS_INTENT_PATTERNS.some((phrase) => normalizedQuery.includes(normalizeForSearch(phrase).toLowerCase()))) {
@@ -661,6 +695,19 @@ function scoreQueryFocusAlignment(query, text) {
         score += 32;
       } else if (hasPrimary) {
         score -= 20;
+      }
+    }
+
+    if (profile.intent === "identity") {
+      if (
+        hasPrimary &&
+        /(คือ|หมายถึง|หัวหน้าส่วนราชการ|ผู้ดำรงตำแหน่ง|ผู้บริหารสูงสุด|ตำแหน่ง|หัวหน้ากรม)/.test(normalizedText)
+      ) {
+        score += 28;
+      } else if (hasPrimary && /(ประกอบด้วย|ประธานกรรมการ|กรรมการโดยตำแหน่ง|กองทุนพัฒนาสหกรณ์|จัดการฝากไว้)/.test(normalizedText)) {
+        score -= 22;
+      } else if (hasPrimary) {
+        score -= 12;
       }
     }
 

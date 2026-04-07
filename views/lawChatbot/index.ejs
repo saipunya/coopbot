@@ -3598,12 +3598,14 @@
         return html;
       }
 
-      async function submitFeedback({ question, answerShown, isHelpful, target }) {
+      async function submitFeedback({ question, answerShown, isHelpful, target, source, sourceLabel }) {
         const payload = {
           message: question,
           answerShown,
           isHelpful,
-          target
+          target,
+          source,
+          sourceLabel
         };
 
         if (!isHelpful) {
@@ -3769,12 +3771,12 @@
         };
       }
 
-      function attachFeedbackActions(container, { question, answerShown, target }) {
+      function attachFeedbackActions(container, { question, answerShown, target, source = "", sourceLabel = "", showFeedbackButtons = false }) {
         if (!question || !answerShown) return;
 
         const wrap = document.createElement('div');
         wrap.className = 'feedback-actions';
-        wrap.innerHTML = `
+        wrap.innerHTML = `${showFeedbackButtons ? `
           <button
             type="button"
             class="btn btn-sm feedback-icon-btn feedback-like-btn"
@@ -3783,6 +3785,8 @@
             data-question="${escapeHtml(question)}"
             data-answer-shown="${escapeHtml(answerShown)}"
             data-target="${escapeHtml(target || selectedTarget)}"
+            data-source="${escapeHtml(source)}"
+            data-source-label="${escapeHtml(sourceLabel)}"
             title="มีประโยชน์"
             aria-label="มีประโยชน์"
           ><i class="bi bi-hand-thumbs-up-fill"></i><span class="visually-hidden">มีประโยชน์</span></button>
@@ -3794,9 +3798,12 @@
             data-question="${escapeHtml(question)}"
             data-answer-shown="${escapeHtml(answerShown)}"
             data-target="${escapeHtml(target || selectedTarget)}"
+            data-source="${escapeHtml(source)}"
+            data-source-label="${escapeHtml(sourceLabel)}"
             title="ควรปรับปรุง"
             aria-label="ควรปรับปรุง"
           ><i class="bi bi-hand-thumbs-down-fill"></i><span class="visually-hidden">ควรปรับปรุง</span></button>
+          ` : ""}
           <button
             type="button"
             class="btn btn-outline-primary btn-sm btn-knowledge-suggestion"
@@ -3958,14 +3965,16 @@
           !isLoading &&
           feedbackContext &&
           feedbackContext.question &&
-          feedbackContext.variant === 'ai' &&
           !feedbackContext.guestLimitReached &&
           !feedbackContext.monthlyUsageLimitReached
         ) {
           attachFeedbackActions(content, {
             question: feedbackContext.question,
             answerShown: displayText,
-            target: feedbackContext.target || selectedTarget
+            target: feedbackContext.target || selectedTarget,
+            source: feedbackContext.source || '',
+            sourceLabel: feedbackContext.sourceLabel || '',
+            showFeedbackButtons: feedbackContext.variant === 'ai'
           });
         }
 
@@ -4268,10 +4277,12 @@
           const question = feedbackButton.dataset.question || '';
           const answerShown = feedbackButton.dataset.answerShown || '';
           const target = feedbackButton.dataset.target || selectedTarget;
+          const source = feedbackButton.dataset.source || '';
+          const sourceLabel = feedbackButton.dataset.sourceLabel || '';
           const isHelpful = feedbackButton.dataset.helpful === '1';
 
           try {
-            await submitFeedback({ question, answerShown, isHelpful, target });
+            await submitFeedback({ question, answerShown, isHelpful, target, source, sourceLabel });
             wrap.dataset.feedbackSent = '1';
             wrap.innerHTML = '<span class="text-success small">ขอบคุณสำหรับข้อเสนอแนะ</span>';
           } catch (_) {

@@ -1,8 +1,10 @@
 const { getDbPool } = require("../config/db");
 const {
+  getQueryFocusProfile,
   hasExclusiveMeaningMismatch,
   makeBigrams,
   normalizeForSearch,
+  scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,
 } = require("../services/thaiTextUtils");
@@ -80,6 +82,7 @@ function getMeaningfulTokens(text) {
 
 function scoreSuggestionMatch(query, row) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
+  const focusProfile = getQueryFocusProfile(query);
   const rowText = normalizeForSearch(
     `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
   ).toLowerCase();
@@ -105,9 +108,21 @@ function scoreSuggestionMatch(query, row) {
 
   const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
   score += coverage * 18;
+  score += scoreQueryFocusAlignment(
+    query,
+    `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
+  );
 
   if (String(row.title || "").trim()) {
     score += 6;
+  }
+
+  if (
+    focusProfile.intent === "identity" &&
+    normalizedQuery &&
+    normalizeForSearch(row.title || "").toLowerCase() === normalizedQuery
+  ) {
+    score += 24;
   }
 
   if (
@@ -133,6 +148,7 @@ function hasSuggestionRelevance(query, row) {
   }
 
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
+  const focusProfile = getQueryFocusProfile(query);
   const rowText = normalizeForSearch(
     `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
   ).toLowerCase();
@@ -142,9 +158,16 @@ function hasSuggestionRelevance(query, row) {
   const hasExactPhrase = normalizedQuery && rowText.includes(normalizedQuery);
   const queryBigrams = makeBigrams(queryTokens);
   const hasBigramMatch = queryBigrams.some((bigram) => rowText.includes(bigram));
+  const focusScore = scoreQueryFocusAlignment(query, rowText);
+  const primaryTopic = focusProfile.topics[0]?.primary || "";
+  const matchesPrimaryTopic = primaryTopic ? rowText.includes(primaryTopic) : false;
 
   if (queryTokens.length === 0) {
     return false;
+  }
+
+  if (focusProfile.intent === "identity") {
+    return hasExactPhrase || hasBigramMatch || matchesPrimaryTopic || focusScore >= 24 || tokenHits >= 2;
   }
 
   if (queryTokens.length > 1 && !(hasExactPhrase || hasBigramMatch)) {
