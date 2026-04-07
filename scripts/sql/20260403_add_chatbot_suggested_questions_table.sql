@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS chatbot_suggested_questions (
   question_text VARCHAR(255) NOT NULL,
   normalized_question VARCHAR(255) NOT NULL,
   answer_text TEXT NOT NULL,
+  source_reference TEXT DEFAULT NULL,
   display_order INT NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,

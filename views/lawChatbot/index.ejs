@@ -2694,7 +2694,7 @@
               <div class="row g-3">
                 <div class="col-12">
                   <label for="knowledgeSuggestionTitle" class="form-label">คำถามที่ต้องการเสนอคำตอบ</label>
-                  <input id="knowledgeSuggestionTitle" name="title" type="text" class="form-control" readonly />
+                  <input id="knowledgeSuggestionTitle" name="title" type="text" class="form-control" />
                 </div>
                 <div class="col-12">
                   <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
@@ -2707,6 +2707,10 @@
                   <div class="knowledge-suggestion-hint mt-2">
                     ข้อเสนอของคุณจะยังไม่ถูกนำเข้าฐานความรู้ทันที ระบบจะส่งให้ผู้ดูแลตรวจสอบก่อนอนุมัติ และหากอนุมัติแล้วจะเพิ่มสิทธิ์ถามฟรีให้อีก 1 ครั้งต่อเดือน
                   </div>
+                </div>
+                <div class="col-12">
+                  <label for="knowledgeSuggestionSourceReference" class="form-label">แหล่งอ้างอิง</label>
+                  <textarea id="knowledgeSuggestionSourceReference" name="sourceReference" class="form-control" rows="3" placeholder="เช่น มาตรา 12 พ.ร.บ.สหกรณ์ พ.ศ. 2542 หรือระบุหลายบรรทัดได้"></textarea>
                 </div>
               </div>
             </div>
@@ -2858,6 +2862,7 @@
       const knowledgeSuggestionSourceTypeInput = document.getElementById('knowledgeSuggestionSourceType');
       const knowledgeSuggestionTitleInput = document.getElementById('knowledgeSuggestionTitle');
       const knowledgeSuggestionContentInput = document.getElementById('knowledgeSuggestionContent');
+      const knowledgeSuggestionSourceReferenceInput = document.getElementById('knowledgeSuggestionSourceReference');
       const knowledgeSuggestionSubmitBtn = document.getElementById('knowledgeSuggestionSubmitBtn');
       const knowledgeSuggestionVoiceBtn = document.getElementById('knowledgeSuggestionVoiceBtn');
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -3702,6 +3707,9 @@
         knowledgeSuggestionForm.reset();
         knowledgeSuggestionTitleInput.value = String(question || '').trim();
         knowledgeSuggestionContentInput.value = '';
+        if (knowledgeSuggestionSourceReferenceInput) {
+          knowledgeSuggestionSourceReferenceInput.value = '';
+        }
         knowledgeSuggestionTargetInput.value = target === 'group' ? 'group' : 'coop';
         knowledgeSuggestionSourceTypeInput.value = 'text';
         knowledgeSuggestionSubmitBtn.disabled = false;
@@ -4457,11 +4465,12 @@
             question: String(knowledgeSuggestionTitleInput.value || '').trim(),
             target: String(knowledgeSuggestionTargetInput.value || '').trim() === 'group' ? 'group' : 'coop',
             content: String(knowledgeSuggestionContentInput.value || '').trim(),
+            sourceReference: String((knowledgeSuggestionSourceReferenceInput && knowledgeSuggestionSourceReferenceInput.value) || '').trim(),
             sourceType: String(knowledgeSuggestionSourceTypeInput.value || '').trim() === 'voice' ? 'voice' : 'text',
           };
 
           if (!payload.title || !payload.content) {
-            setKnowledgeSuggestionAlert('กรุณากรอกคำตอบที่ต้องการเสนอ');
+            setKnowledgeSuggestionAlert('กรุณากรอกหัวข้อและคำตอบที่ต้องการเสนอ');
             return;
           }
 

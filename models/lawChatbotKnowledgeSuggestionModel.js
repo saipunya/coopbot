@@ -34,6 +34,7 @@ function normalizeEntry(entry = {}) {
     target: entry.target === "group" ? "group" : "coop",
     title: String(entry.title || "").trim().slice(0, 255),
     content: String(entry.content || "").trim(),
+    sourceReference: String(entry.sourceReference || entry.reference || "").trim(),
     sourceType: String(entry.sourceType || "text").trim().slice(0, 30) || "text",
     submittedBy: String(entry.submittedBy || "").trim().slice(0, 255),
     submittedByUserId: Number(entry.submittedByUserId || 0) > 0 ? Number(entry.submittedByUserId) : null,
@@ -51,6 +52,7 @@ function mapRow(row) {
     target: row.target === "group" ? "group" : "coop",
     title: row.title || "",
     content: row.content || "",
+    sourceReference: row.source_reference || row.sourceReference || "",
     sourceType: row.source_type || row.sourceType || "text",
     submittedBy: row.submitted_by || row.submittedBy || "",
     submittedByUserId: Number(row.submitted_by_user_id || row.submittedByUserId || 0) || null,
@@ -195,6 +197,7 @@ async function ensureTable() {
           target ENUM('coop', 'group') NOT NULL DEFAULT 'coop',
           title VARCHAR(255) NOT NULL,
           content TEXT NOT NULL,
+          source_reference TEXT NULL,
           source_type VARCHAR(30) NOT NULL DEFAULT 'text',
           submitted_by VARCHAR(255) NULL,
           submitter_session VARCHAR(255) NULL,
@@ -219,6 +222,17 @@ async function ensureTable() {
           ALTER TABLE chatbot_knowledge_suggestions
             ADD COLUMN submitted_by_user_id INT NULL AFTER submitted_by,
             ADD INDEX idx_chatbot_knowledge_suggestions_submitter_user_status (submitted_by_user_id, status)
+        `);
+      }
+
+      const [sourceReferenceColumns] = await pool.query(
+        "SHOW COLUMNS FROM chatbot_knowledge_suggestions LIKE 'source_reference'",
+      );
+
+      if (!Array.isArray(sourceReferenceColumns) || sourceReferenceColumns.length === 0) {
+        await pool.query(`
+          ALTER TABLE chatbot_knowledge_suggestions
+            ADD COLUMN source_reference TEXT NULL AFTER content
         `);
       }
     })().catch((error) => {
@@ -248,12 +262,13 @@ class LawChatbotKnowledgeSuggestionModel {
     await ensureTable();
     const [result] = await pool.query(
       `INSERT INTO chatbot_knowledge_suggestions
-        (target, title, content, source_type, submitted_by, submitted_by_user_id, submitter_session, submitter_ip, status, reviewed_by, review_note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (target, title, content, source_reference, source_type, submitted_by, submitted_by_user_id, submitter_session, submitter_ip, status, reviewed_by, review_note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         normalized.target,
         normalized.title,
         normalized.content,
+        normalized.sourceReference || null,
         normalized.sourceType,
         normalized.submittedBy || null,
         normalized.submittedByUserId,
@@ -324,7 +339,7 @@ class LawChatbotKnowledgeSuggestionModel {
     await ensureTable();
     const [rows] = await pool.query(
       `SELECT id, target, title, content, source_type, submitted_by, submitter_session,
-              submitter_ip, status, reviewed_by, review_note, reviewed_at, created_at
+              submitter_ip, status, reviewed_by, review_note, source_reference, reviewed_at, created_at
          FROM chatbot_knowledge_suggestions
         WHERE status = 'pending'
         ORDER BY id DESC
@@ -350,7 +365,7 @@ class LawChatbotKnowledgeSuggestionModel {
     await ensureTable();
     const [rows] = await pool.query(
       `SELECT id, target, title, content, source_type, submitted_by, submitter_session,
-              submitter_ip, status, reviewed_by, review_note, reviewed_at, created_at, updated_at
+              submitter_ip, status, reviewed_by, review_note, source_reference, reviewed_at, created_at, updated_at
          FROM chatbot_knowledge_suggestions
         WHERE id = ?
         LIMIT 1`,
@@ -370,6 +385,7 @@ class LawChatbotKnowledgeSuggestionModel {
       target: patch.target === "group" ? "group" : "coop",
       title: String(patch.title || "").trim().slice(0, 255),
       content: String(patch.content || "").trim(),
+      sourceReference: String(patch.sourceReference || patch.reference || "").trim(),
       reviewNote: String(patch.reviewNote || "").trim().slice(0, 255),
     };
 
@@ -390,6 +406,7 @@ class LawChatbotKnowledgeSuggestionModel {
         target: normalizedPatch.target,
         title: normalizedPatch.title,
         content: normalizedPatch.content,
+        sourceReference: normalizedPatch.sourceReference,
         reviewNote: normalizedPatch.reviewNote,
         updatedAt: new Date().toISOString(),
       });
@@ -402,6 +419,7 @@ class LawChatbotKnowledgeSuggestionModel {
        SET target = ?,
            title = ?,
            content = ?,
+           source_reference = ?,
            review_note = ?,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = ?
@@ -410,6 +428,7 @@ class LawChatbotKnowledgeSuggestionModel {
         normalizedPatch.target,
         normalizedPatch.title,
         normalizedPatch.content,
+        normalizedPatch.sourceReference || null,
         normalizedPatch.reviewNote || null,
         normalizedId,
       ],
@@ -451,7 +470,7 @@ class LawChatbotKnowledgeSuggestionModel {
             title: row.title,
             content: row.content,
             source: "knowledge_suggestion",
-            reference: row.title || "ข้อเสนอจากผู้ใช้งานที่ได้รับอนุมัติ",
+            reference: row.sourceReference || row.title || "ข้อเสนอจากผู้ใช้งานที่ได้รับอนุมัติ",
             comment: row.reviewNote || "",
             score,
             createdAt: row.createdAt,
@@ -476,11 +495,13 @@ class LawChatbotKnowledgeSuggestionModel {
     const sql =
       target === "all"
         ? `SELECT id, target, title, content, review_note, created_at, updated_at
+             , source_reference
            FROM chatbot_knowledge_suggestions
            WHERE status = 'approved' AND (${whereClause})
            ORDER BY id DESC
            LIMIT 50`
-        : `SELECT id, target, title, content, review_note, created_at, updated_at
+          : `SELECT id, target, title, content, review_note, created_at, updated_at
+             , source_reference
            FROM chatbot_knowledge_suggestions
            WHERE status = 'approved' AND target = ? AND (${whereClause})
            ORDER BY id DESC
@@ -501,7 +522,7 @@ class LawChatbotKnowledgeSuggestionModel {
           title: row.title || "",
           content: row.content || "",
           source: "knowledge_suggestion",
-          reference: row.title || "ข้อเสนอจากผู้ใช้งานที่ได้รับอนุมัติ",
+          reference: row.source_reference || row.title || "ข้อเสนอจากผู้ใช้งานที่ได้รับอนุมัติ",
           comment: row.review_note || "",
           score: scoreSuggestionMatch(message, row),
           createdAt: row.created_at || "",

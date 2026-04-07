@@ -325,6 +325,7 @@ async function ensureSchema() {
       question_text varchar(255) NOT NULL,
       normalized_question varchar(255) NOT NULL,
       answer_text text NOT NULL,
+      source_reference text DEFAULT NULL,
       display_order int(11) NOT NULL DEFAULT 0,
       is_active tinyint(1) NOT NULL DEFAULT 1,
       created_at timestamp NULL DEFAULT current_timestamp(),
@@ -407,6 +408,10 @@ async function ensureSchema() {
 
   try {
     await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN answer_text text NOT NULL");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN source_reference text DEFAULT NULL");
   } catch (_) {}
 
   try {

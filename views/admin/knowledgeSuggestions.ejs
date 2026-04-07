@@ -90,7 +90,7 @@
 
       <section class="card">
         <h2 style="margin-top:0; color:#0f4667;">รายการข้อเสนอที่รอตรวจสอบ</h2>
-        <p class="section-note">เมื่ออนุมัติ ระบบจะนำข้อมูลฉบับล่าสุดจากฟอร์มแก้ไขด้านล่างไปบันทึกลงฐานความรู้ทันที และหากข้อเสนอนี้มาจากผู้ใช้ฟรีที่ลงชื่อเข้าใช้ ระบบจะเพิ่มสิทธิ์ถามฟรีให้อีก 1 ครั้งต่อเดือน</p>
+        <p class="section-note">เมื่ออนุมัติ ระบบจะนำข้อมูลฉบับล่าสุดจากฟอร์มแก้ไขด้านล่างไปบันทึกลงรายการคำถามแนะนำทันที และหากข้อเสนอนี้มาจากผู้ใช้ฟรีที่ลงชื่อเข้าใช้ ระบบจะเพิ่มสิทธิ์ถามฟรีให้อีก 1 ครั้งต่อเดือน</p>
         <div class="section-toolbar">
           <form action="/admin/knowledge-suggestions" method="get">
             <input type="hidden" name="page" value="1" />
@@ -117,6 +117,9 @@
                 <% if (item.createdAt) { %> | ส่งเมื่อ: <%= item.createdAt %><% } %>
               </div>
               <div class="list-item-body"><%= item.content %></div>
+              <% if (item.sourceReference) { %>
+                <div class="suggestion-meta">แหล่งอ้างอิง: <%= item.sourceReference %></div>
+              <% } %>
               <details class="suggestion-editor" open>
                 <summary class="editor-summary">แก้ไขข้อเสนอก่อนอนุมัติ</summary>
                 <div class="editor-body">
@@ -141,8 +144,12 @@
                       <textarea id="suggestion-content-<%= item.id %>" name="content" required><%= item.content %></textarea>
                     </div>
                     <div class="field" style="margin-top:0.9rem;">
+                      <label for="suggestion-source-reference-<%= item.id %>">แหล่งอ้างอิง</label>
+                      <textarea id="suggestion-source-reference-<%= item.id %>" name="sourceReference" placeholder="เช่น มาตรา 12 พ.ร.บ.สหกรณ์ พ.ศ. 2542"><%= item.sourceReference || '' %></textarea>
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
                       <label for="suggestion-review-note-<%= item.id %>">หมายเหตุการตรวจทาน</label>
-                      <input id="suggestion-review-note-<%= item.id %>" name="reviewNote" type="text" value="<%= item.reviewNote || '' %>" placeholder="เช่น ปรับถ้อยคำก่อนนำเข้าฐานความรู้" />
+                      <input id="suggestion-review-note-<%= item.id %>" name="reviewNote" type="text" value="<%= item.reviewNote || '' %>" placeholder="เช่น ปรับถ้อยคำก่อนบันทึกเป็นคำถามแนะนำ" />
                     </div>
                     <div class="suggestion-actions">
                       <button class="secondary-btn" type="submit">บันทึกการแก้ไขก่อน</button>
@@ -151,10 +158,10 @@
                 </div>
               </details>
               <div class="knowledge-actions">
-                <form action="/admin/knowledge-suggestions/approve" method="post" onsubmit="return confirm('ยืนยันการอนุมัติและนำเข้าฐานความรู้จากข้อมูลฉบับล่าสุดใช่หรือไม่');">
+                <form action="/admin/knowledge-suggestions/approve" method="post" onsubmit="return confirm('ยืนยันการอนุมัติและบันทึกเป็นคำถามแนะนำจากข้อมูลฉบับล่าสุดใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />
                   <input type="hidden" name="returnTo" value="<%= returnPath %>" />
-                  <button class="primary-btn" type="submit">อนุมัติและนำเข้าจากฉบับล่าสุด</button>
+                  <button class="primary-btn" type="submit">อนุมัติและบันทึกเป็นคำถามแนะนำ</button>
                 </form>
                 <form action="/admin/knowledge-suggestions/reject" method="post" onsubmit="return confirm('ยืนยันการปฏิเสธข้อเสนอนี้ใช่หรือไม่');">
                   <input type="hidden" name="id" value="<%= item.id %>" />

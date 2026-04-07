@@ -816,8 +816,8 @@ async function approveKnowledgeSuggestion(req, res) {
   }
 
   const successMessage = result.rewardSummary?.grantedBonusQuestions
-    ? "อนุมัติข้อเสนอและนำเข้าฐานความรู้เรียบร้อยแล้ว ผู้เสนอจะได้รับสิทธิ์ถามฟรีเพิ่ม 1 ครั้งต่อเดือน"
-    : "อนุมัติข้อเสนอและนำเข้าฐานความรู้เรียบร้อยแล้ว";
+    ? "อนุมัติข้อเสนอและบันทึกเป็นคำถามแนะนำเรียบร้อยแล้ว ผู้เสนอจะได้รับสิทธิ์ถามฟรีเพิ่ม 1 ครั้งต่อเดือน"
+    : "อนุมัติข้อเสนอและบันทึกเป็นคำถามแนะนำเรียบร้อยแล้ว";
 
   return res.redirect(
     appendQueryParam(returnTo, "success", successMessage)

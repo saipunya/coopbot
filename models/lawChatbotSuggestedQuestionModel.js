@@ -15,6 +15,7 @@ function normalizeEntry(entry = {}) {
       entry.target === "coop" ? "coop" : entry.target === "group" ? "group" : "all",
     questionText: String(entry.questionText || entry.question || "").trim().slice(0, 255),
     answerText: String(entry.answerText || entry.answer || "").trim(),
+    sourceReference: String(entry.sourceReference || entry.reference || "").trim(),
     displayOrder: Number.isFinite(rawDisplayOrder) ? Math.max(0, Math.floor(rawDisplayOrder)) : 0,
     isActive:
       entry.isActive === false ||
@@ -33,6 +34,7 @@ function mapRow(row = {}) {
     questionText: row.question_text || row.questionText || "",
     normalizedQuestion: row.normalized_question || row.normalizedQuestion || "",
     answerText: row.answer_text || row.answerText || "",
+    sourceReference: row.source_reference || row.sourceReference || "",
     displayOrder: Number(row.display_order ?? row.displayOrder ?? 0) || 0,
     isActive:
       row.is_active === undefined
@@ -59,6 +61,7 @@ async function ensureTable() {
         question_text VARCHAR(255) NOT NULL,
         normalized_question VARCHAR(255) NOT NULL,
         answer_text TEXT NOT NULL,
+        source_reference TEXT DEFAULT NULL,
         display_order INT NOT NULL DEFAULT 0,
         is_active TINYINT(1) NOT NULL DEFAULT 1,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -90,6 +93,7 @@ class LawChatbotSuggestedQuestionModel {
         questionText: normalized.questionText,
         normalizedQuestion,
         answerText: normalized.answerText,
+        sourceReference: normalized.sourceReference,
         displayOrder: normalized.displayOrder,
         isActive: normalized.isActive === 1,
         createdAt: new Date().toISOString(),
@@ -102,13 +106,14 @@ class LawChatbotSuggestedQuestionModel {
     await ensureTable();
     const [result] = await pool.query(
       `INSERT INTO chatbot_suggested_questions
-        (target, question_text, normalized_question, answer_text, display_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+        (target, question_text, normalized_question, answer_text, source_reference, display_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         normalized.target,
         normalized.questionText,
         normalizedQuestion,
         normalized.answerText,
+        normalized.sourceReference || null,
         normalized.displayOrder,
         normalized.isActive,
       ],
@@ -120,6 +125,7 @@ class LawChatbotSuggestedQuestionModel {
       question_text: normalized.questionText,
       normalized_question: normalizedQuestion,
       answer_text: normalized.answerText,
+      source_reference: normalized.sourceReference,
       display_order: normalized.displayOrder,
       is_active: normalized.isActive,
       created_at: new Date().toISOString(),
@@ -165,7 +171,7 @@ class LawChatbotSuggestedQuestionModel {
 
     await ensureTable();
     const [rows] = await pool.query(
-      `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
+      `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
          FROM chatbot_suggested_questions
         WHERE id = ?
         LIMIT 1`,
@@ -202,7 +208,7 @@ class LawChatbotSuggestedQuestionModel {
 
     await ensureTable();
     const [rows] = await pool.query(
-      `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
+      `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
          FROM chatbot_suggested_questions
         ORDER BY is_active DESC, display_order ASC, id DESC
         LIMIT ? OFFSET ?`,
@@ -246,7 +252,7 @@ class LawChatbotSuggestedQuestionModel {
     const [rows] =
       normalizedTarget === "all"
         ? await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
+            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
                FROM chatbot_suggested_questions
               WHERE is_active = 1
               ORDER BY display_order ASC, id DESC
@@ -254,7 +260,7 @@ class LawChatbotSuggestedQuestionModel {
             [normalizedLimit],
           )
         : await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
+            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND target IN ('all', ?)
@@ -291,6 +297,7 @@ class LawChatbotSuggestedQuestionModel {
         questionText: normalized.questionText,
         normalizedQuestion,
         answerText: normalized.answerText,
+        sourceReference: normalized.sourceReference,
         displayOrder: normalized.displayOrder,
         isActive: normalized.isActive === 1,
         updatedAt: new Date().toISOString(),
@@ -305,6 +312,7 @@ class LawChatbotSuggestedQuestionModel {
               question_text = ?,
               normalized_question = ?,
               answer_text = ?,
+              source_reference = ?,
               display_order = ?,
               is_active = ?,
               updated_at = CURRENT_TIMESTAMP
@@ -315,6 +323,7 @@ class LawChatbotSuggestedQuestionModel {
         normalized.questionText,
         normalizedQuestion,
         normalized.answerText,
+        normalized.sourceReference || null,
         normalized.displayOrder,
         normalized.isActive,
         normalizedId,
@@ -436,7 +445,7 @@ class LawChatbotSuggestedQuestionModel {
     const [rows] =
       normalizedTarget === "all"
         ? await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
+            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND normalized_question = ?
@@ -445,7 +454,7 @@ class LawChatbotSuggestedQuestionModel {
             [normalizedQuestion],
           )
         : await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
+            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND normalized_question = ?
@@ -466,14 +475,14 @@ class LawChatbotSuggestedQuestionModel {
     const [rows] =
       normalizedTarget === "all"
         ? await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
+            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
                FROM chatbot_suggested_questions
               WHERE is_active = 1
               ORDER BY display_order ASC, id DESC
               LIMIT 50`,
           )
         : await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, display_order, is_active, created_at, updated_at
+            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND target IN ('all', ?)

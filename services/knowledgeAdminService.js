@@ -112,6 +112,7 @@ async function saveSuggestedQuestionEntry(payload = {}) {
     target: payload.target,
     questionText: payload.questionText || payload.question,
     answerText: payload.answerText || payload.answer,
+    sourceReference: payload.sourceReference || payload.reference,
     displayOrder: payload.displayOrder,
     isActive: payload.isActive,
   });
@@ -138,6 +139,7 @@ async function updateSuggestedQuestionEntry(id, payload = {}) {
     target: payload.target,
     questionText: payload.questionText || payload.question,
     answerText: payload.answerText || payload.answer,
+    sourceReference: payload.sourceReference || payload.reference,
     displayOrder: payload.displayOrder,
     isActive: payload.isActive,
   });
@@ -166,6 +168,7 @@ async function deleteSuggestedQuestionEntry(id) {
 async function submitKnowledgeSuggestion(payload, meta = {}) {
   const title = String(payload.title || payload.question || "").trim();
   const content = String(payload.content || "").trim();
+  const sourceReference = String(payload.sourceReference || payload.reference || "").trim();
   const target = payload.target === "group" ? "group" : "coop";
   const sourceType = payload.sourceType === "voice" ? "voice" : "text";
 
@@ -194,6 +197,7 @@ async function submitKnowledgeSuggestion(payload, meta = {}) {
     target,
     title,
     content,
+    sourceReference,
     sourceType,
     submittedBy: meta.submittedBy || "",
     submittedByUserId: meta.submittedByUserId || null,
@@ -209,17 +213,18 @@ async function approveKnowledgeSuggestion(id, reviewMeta = {}) {
     return { ok: false, reason: "not_found" };
   }
 
-  const sourceNoteParts = [
-    suggestion.sourceType === "voice" ? "ข้อเสนอจากผู้ใช้งาน (เสียง)" : "ข้อเสนอจากผู้ใช้งาน",
-    suggestion.submittedBy ? `โดย ${suggestion.submittedBy}` : "",
-  ].filter(Boolean);
-
-  const entry = await saveKnowledgeEntry({
+  const entryResult = await saveSuggestedQuestionEntry({
     target: suggestion.target,
-    title: suggestion.title,
-    content: suggestion.content,
-    sourceNote: sourceNoteParts.join(" | "),
+    questionText: suggestion.title,
+    answerText: suggestion.content,
+    sourceReference: suggestion.sourceReference,
+    displayOrder: 0,
+    isActive: 1,
   });
+
+  if (!entryResult.ok) {
+    return { ok: false, reason: "not_saved" };
+  }
 
   const updated = await LawChatbotKnowledgeSuggestionModel.updateStatus(id, "approved", {
     reviewedBy: reviewMeta.reviewedBy || "",
@@ -228,7 +233,7 @@ async function approveKnowledgeSuggestion(id, reviewMeta = {}) {
 
   return {
     ok: updated,
-    entry,
+    entry: entryResult.entry,
     suggestion,
     rewardSummary: {
       grantedBonusQuestions: Number(suggestion.submittedByUserId || 0) > 0 ? 1 : 0,
@@ -247,6 +252,7 @@ async function updateKnowledgeSuggestion(id, patch = {}) {
     target: patch.target,
     title: patch.title,
     content: patch.content,
+    sourceReference: patch.sourceReference || patch.reference || "",
     reviewNote: patch.reviewNote || "",
   });
 

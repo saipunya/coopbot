@@ -121,6 +121,10 @@
             <textarea id="suggestedQuestionAnswer" name="answerText" placeholder="พิมพ์คำตอบที่ต้องการให้ระบบใช้ทันทีเมื่อผู้ใช้ถามตรงกับคำถามนี้" required></textarea>
           </div>
           <div class="field" style="margin-top:0.9rem;">
+            <label for="suggestedQuestionReference">แหล่งอ้างอิง</label>
+            <textarea id="suggestedQuestionReference" name="sourceReference" placeholder="เช่น มาตรา 12 พ.ร.บ.สหกรณ์ พ.ศ. 2542 หรือใส่หลายบรรทัดหากมีหลายแหล่ง"></textarea>
+          </div>
+          <div class="field" style="margin-top:0.9rem;">
             <label style="display:inline-flex; align-items:center; gap:0.45rem;">
               <input type="hidden" name="isActive" value="0" />
               <input type="checkbox" name="isActive" value="1" checked />
@@ -161,6 +165,9 @@
                 <% if (item.updatedAt) { %> | แก้ไขล่าสุด: <%= item.updatedAt %><% } %>
               </div>
               <div class="list-item-body"><%= item.answerText %></div>
+              <% if (item.sourceReference) { %>
+                <div class="knowledge-meta">แหล่งอ้างอิง: <%= item.sourceReference %></div>
+              <% } %>
               <details class="suggestion-editor">
                 <summary class="editor-summary">แก้ไขคำถามแนะนำนี้</summary>
                 <div class="editor-body">
@@ -188,6 +195,10 @@
                     <div class="field" style="margin-top:0.9rem;">
                       <label for="suggested-answer-text-<%= item.id %>">คำตอบที่บันทึกไว้</label>
                       <textarea id="suggested-answer-text-<%= item.id %>" name="answerText" required><%= item.answerText %></textarea>
+                    </div>
+                    <div class="field" style="margin-top:0.9rem;">
+                      <label for="suggested-source-reference-<%= item.id %>">แหล่งอ้างอิง</label>
+                      <textarea id="suggested-source-reference-<%= item.id %>" name="sourceReference"><%= item.sourceReference || '' %></textarea>
                     </div>
                     <div class="field" style="margin-top:0.9rem;">
                       <label style="display:inline-flex; align-items:center; gap:0.45rem;">

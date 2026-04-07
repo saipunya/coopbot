@@ -140,12 +140,32 @@ function buildManagedSuggestedQuestionSource(match = {}) {
     id: match.id || null,
     target: match.target || "all",
     title: match.questionText || "",
-    reference: match.questionText || "คำถามแนะนำ",
+    reference: match.sourceReference || match.questionText || "คำถามแนะนำ",
     content: match.answerText || "",
     source: "managed_suggested_question",
     comment: "คำตอบที่ผู้ดูแลกำหนดไว้ล่วงหน้า",
     score: 1000,
   };
+}
+
+function formatManagedSuggestedQuestionAnswer(match = {}) {
+  const answerText = String(match.answerText || "").trim();
+  const sourceReference = String(match.sourceReference || "").trim();
+
+  if (!answerText || !sourceReference || /แหล่งอ้างอิง\s*:/i.test(answerText)) {
+    return answerText;
+  }
+
+  const referenceLines = sourceReference
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!referenceLines.length) {
+    return answerText;
+  }
+
+  return `${answerText}\n\nแหล่งอ้างอิง:\n${referenceLines.map((line) => `- ${line}`).join("\n")}`;
 }
 
 async function findManagedSuggestedQuestionMatch(message, target = "all") {
@@ -156,6 +176,7 @@ async function findManagedSuggestedQuestionMatch(message, target = "all") {
 
   return {
     ...match,
+    answerText: formatManagedSuggestedQuestionAnswer(match),
     topicHint: normalizeForSearch(match.questionText || message).toLowerCase(),
     source: buildManagedSuggestedQuestionSource(match),
   };
