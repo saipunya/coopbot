@@ -5,7 +5,7 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "node --watch app.js",
+    "dev": "nodemon app.js",
     "review:responsive": "node scripts/responsive_review_helper.js",
     "review:responsive:open": "node scripts/open_responsive_review_pages.js",
     "verify:ui": "node scripts/verify_ui_routes.js",
@@ -37,5 +37,8 @@
     "pdfjs-dist": "^5.6.205",
     "tesseract.js": "^7.0.0",
     "word-extractor": "^1.0.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }

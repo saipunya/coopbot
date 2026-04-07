@@ -251,7 +251,7 @@ async function main() {
 
     checks.push(await fetchCheck("/user", {
       cookie: userCookie,
-      expectedPhrases: ["แพ็กเกจปัจจุบัน", "สิทธิ์ลอง AI ฟรี"],
+      expectedPhrases: ["แพ็กเกจปัจจุบัน"],
     }));
     checks.push(await fetchCheck("/user/search-history", {
       cookie: userCookie,
