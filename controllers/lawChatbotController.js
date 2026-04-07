@@ -52,12 +52,16 @@ async function renderIndex(req, res) {
   }
 
   const data = await lawChatbotService.getDashboardData(req.signedInUser);
+  const assistantProfile = lawChatbotService.getInitialAssistantProfile(req.session);
 
   res.render("lawChatbot/index", {
     title: "แชตบอทกฎหมายสหกรณ์",
     themeColor: "#2f5f7a",
     manifestPath: "/manifest-law-chatbot.json",
-    data,
+    data: {
+      ...data,
+      assistantProfile,
+    },
   });
 }
 

@@ -89,6 +89,21 @@ const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_B
 const PREPARED_QA_NOTICE = "คำตอบนี้มาจาก Q&A/ฐานข้อมูลในระบบ โดยไม่ได้เรียก AI";
 const AI_SUMMARY_NOTICE = "คำตอบนี้สรุปโดย AI จากข้อมูลที่ระบบค้นพบ";
 const DB_LOOKUP_NOTICE = "คำตอบนี้มาจากการค้นฐานข้อมูลโดยตรง";
+const LAW_CHATBOT_ASSISTANT_SESSION_KEY = "lawChatbotAssistantProfile";
+const LAW_CHATBOT_ASSISTANT_PROFILES = [
+  {
+    id: "male",
+    label: "ผู้ช่วยกฤต",
+    gender: "male",
+    politeParticle: "ครับ",
+  },
+  {
+    id: "female",
+    label: "ผู้ช่วยดาว",
+    gender: "female",
+    politeParticle: "ค่ะ",
+  },
+];
 
 const SOURCE_TABLE_NAMES = {
   managed_suggested_question: "chatbot_suggested_questions",
@@ -144,6 +159,87 @@ function buildResponseMeta(answerMode = "", sources = []) {
           ? DB_LOOKUP_NOTICE
           : "",
     sourceTables,
+  };
+}
+
+function getLawChatbotAssistantProfile(session) {
+  if (!session || typeof session !== "object") {
+    return LAW_CHATBOT_ASSISTANT_PROFILES[0];
+  }
+
+  const existingProfileId = String(session[LAW_CHATBOT_ASSISTANT_SESSION_KEY]?.id || "").trim();
+  const existingProfile = LAW_CHATBOT_ASSISTANT_PROFILES.find((profile) => profile.id === existingProfileId);
+  if (existingProfile) {
+    return existingProfile;
+  }
+
+  const selectedProfile = LAW_CHATBOT_ASSISTANT_PROFILES[
+    Math.floor(Math.random() * LAW_CHATBOT_ASSISTANT_PROFILES.length)
+  ] || LAW_CHATBOT_ASSISTANT_PROFILES[0];
+
+  session[LAW_CHATBOT_ASSISTANT_SESSION_KEY] = {
+    id: selectedProfile.id,
+  };
+
+  return selectedProfile;
+}
+
+function applyThaiPoliteParticle(text = "", politeParticle = "ครับ") {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  const trailingPunctuationMatch = trimmed.match(/([\s"'”’)\]\u0E2F\u0E46.!?…]+)$/u);
+  const trailingPunctuation = trailingPunctuationMatch ? trailingPunctuationMatch[0] : "";
+  const baseText = trailingPunctuation ? trimmed.slice(0, -trailingPunctuation.length).trimEnd() : trimmed;
+
+  const normalizedBaseText = baseText.replace(/(ครับ|ค่ะ|คะ)$/u, "").trimEnd();
+  const separator = normalizedBaseText ? " " : "";
+
+  return `${normalizedBaseText}${separator}${politeParticle}${trailingPunctuation}`.trim();
+}
+
+function personalizeAnswerWithAssistantProfile(answer = "", assistantProfile = LAW_CHATBOT_ASSISTANT_PROFILES[0]) {
+  const rawAnswer = String(answer || "");
+  if (!rawAnswer.trim()) {
+    return rawAnswer;
+  }
+
+  const referenceSectionMatch = rawAnswer.match(/(\n\s*\nแหล่งอ้างอิง:\s*\n[\s\S]*)$/u);
+  const referenceSection = referenceSectionMatch ? referenceSectionMatch[1] : "";
+  const mainAnswer = referenceSectionMatch
+    ? rawAnswer.slice(0, rawAnswer.length - referenceSection.length)
+    : rawAnswer;
+
+  return `${applyThaiPoliteParticle(mainAnswer, assistantProfile.politeParticle)}${referenceSection}`;
+}
+
+function personalizeChatResult(session, result = {}) {
+  if (!result || typeof result !== "object") {
+    return result;
+  }
+
+  const assistantProfile = getLawChatbotAssistantProfile(session);
+
+  return {
+    ...result,
+    answer: personalizeAnswerWithAssistantProfile(result.answer, assistantProfile),
+    assistantProfile: {
+      id: assistantProfile.id,
+      label: assistantProfile.label,
+      gender: assistantProfile.gender,
+    },
+  };
+}
+
+function getInitialAssistantProfile(session) {
+  const assistantProfile = getLawChatbotAssistantProfile(session);
+
+  return {
+    id: assistantProfile.id,
+    label: assistantProfile.label,
+    gender: assistantProfile.gender,
   };
 }
 
@@ -526,14 +622,14 @@ async function replyToChat(payload, session) {
       ? `คุณใช้สิทธิ์ลองคำตอบแบบ AI ฟรีครบแล้วของเดือนนี้ (AI ขั้นสูง ${freeAiPreviewMeta.premiumLimit} ครั้ง + AI มาตรฐาน ${freeAiPreviewMeta.limit} ครั้ง) หากต้องการใช้ AI ต่อเนื่อง แนะนำอัปเกรดเป็นแพ็กเกจ Professional`
       : "ขณะนี้ยังไม่สามารถใช้สิทธิ์ลอง AI ได้ กรุณาลองใหม่อีกครั้งในภายหลัง";
     return attachAiPreviewState(
-      {
+      personalizeChatResult(session, {
         hasContext: false,
         answer: unavailableMessage,
         highlightTerms: [],
         usedFollowUpContext: false,
         usedInternetFallback: false,
         fromCache: false,
-      },
+      }),
       {
         previewMeta: freeAiPreviewMeta,
       },
@@ -619,7 +715,7 @@ async function replyToChat(payload, session) {
       answerText: answer,
     });
 
-    return attachAiPreviewState(result, {
+    return attachAiPreviewState(personalizeChatResult(session, result), {
       previewMeta: freeAiPreviewMeta,
       consumePreview: aiPreviewApproved && Boolean(answer),
       consumePremiumPreview: usePremiumPreview,
@@ -638,7 +734,7 @@ async function replyToChat(payload, session) {
       answerText: answer,
     });
 
-    return attachAiPreviewState({
+    return attachAiPreviewState(personalizeChatResult(session, {
       hasContext: true,
       answer,
       highlightTerms,
@@ -646,7 +742,7 @@ async function replyToChat(payload, session) {
       usedInternetFallback: false,
       responseMeta: buildResponseMeta("mock_ai", []),
       fromCache: false,
-    }, {
+    }), {
       previewMeta: freeAiPreviewMeta,
       consumePreview: aiPreviewApproved && Boolean(answer),
       consumePremiumPreview: usePremiumPreview,
@@ -740,7 +836,7 @@ async function replyToChat(payload, session) {
       answerText: cachedResult.answer,
     });
 
-    return attachAiPreviewState(cachedResult, {
+    return attachAiPreviewState(personalizeChatResult(session, cachedResult), {
       previewMeta: freeAiPreviewMeta,
       consumePreview: aiPreviewApproved && cachedResult.answerMode !== "db_only" && Boolean(cachedResult.answer),
       consumePremiumPreview: usePremiumPreview && cachedResult.answerMode !== "db_only",
@@ -812,7 +908,7 @@ async function replyToChat(payload, session) {
           answerText: cachedResult.answer,
         });
 
-        return attachAiPreviewState(cachedResult, {
+        return attachAiPreviewState(personalizeChatResult(session, cachedResult), {
           previewMeta: freeAiPreviewMeta,
           consumePreview: aiPreviewApproved && cachedResult.answerMode !== "db_only" && Boolean(cachedResult.answer),
           consumePremiumPreview: usePremiumPreview && cachedResult.answerMode !== "db_only",
@@ -1030,7 +1126,7 @@ async function replyToChat(payload, session) {
     answerText: answer,
   });
 
-  return attachAiPreviewState(result, {
+  return attachAiPreviewState(personalizeChatResult(session, result), {
     previewMeta: freeAiPreviewMeta,
     consumePreview: aiPreviewApproved && effectiveAnswerMode !== "db_only" && retrievalEvaluation.shouldAnswer && Boolean(answer),
     consumePremiumPreview: usePremiumPreview && effectiveAnswerMode !== "db_only" && retrievalEvaluation.shouldAnswer && Boolean(answer),
@@ -1099,8 +1195,10 @@ async function summarizeChat(payload, session) {
     };
   }
 
+  const assistantProfile = getLawChatbotAssistantProfile(session);
+
   return {
-    summary: await generateChatSummary(message, sources, {
+    summary: personalizeAnswerWithAssistantProfile(await generateChatSummary(message, sources, {
       conversationalFollowUp: resolvedContext.usedContext,
       conversationHistory: getConversationHistory(session, target),
       topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
@@ -1109,7 +1207,12 @@ async function summarizeChat(payload, session) {
       promptProfile: planContext.promptProfile,
       planCode: planContext.code,
       target,
-    }),
+    }), assistantProfile),
+    assistantProfile: {
+      id: assistantProfile.id,
+      label: assistantProfile.label,
+      gender: assistantProfile.gender,
+    },
   };
 }
 
@@ -1188,6 +1291,7 @@ async function saveFeedback(payload) {
 
 module.exports = {
   getDashboardData,
+  getInitialAssistantProfile,
   collectAnswerSources,
   replyToChat,
   summarizeChat,

@@ -1022,6 +1022,14 @@
       border-color: #303b4a;
     }
 
+    .message-avatar-bot-assistant-male {
+      box-shadow: 0 0 0 3px rgba(57, 129, 203, 0.14), 0 6px 16px rgba(31, 73, 114, 0.2);
+    }
+
+    .message-avatar-bot-assistant-female {
+      box-shadow: 0 0 0 3px rgba(192, 93, 141, 0.15), 0 6px 16px rgba(125, 62, 91, 0.2);
+    }
+
     .bot-avatar-badge-free {
       background: rgba(233, 246, 255, 0.96);
       color: #155a86;
@@ -1040,6 +1048,16 @@
     .bot-avatar-badge-admin {
       background: rgba(239, 243, 248, 0.98);
       color: #364354;
+    }
+
+    .bot-avatar-badge-assistant-male {
+      background: rgba(234, 244, 255, 0.98);
+      color: #195a8e;
+    }
+
+    .bot-avatar-badge-assistant-female {
+      background: rgba(255, 238, 245, 0.98);
+      color: #9f426d;
     }
 
     .message-avatar-user {
@@ -1066,6 +1084,14 @@
       white-space: pre-wrap;
     }
 
+    .bubble-bot .bubble-content {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.1rem;
+      white-space: normal;
+    }
+
     .bubble-content-user {
       text-align: right;
     }
@@ -1077,6 +1103,45 @@
       white-space: pre-wrap;
       word-break: break-word;
       overflow-wrap: anywhere;
+    }
+
+    .bubble-bot .bubble-message {
+      width: 100%;
+      margin: 0;
+      line-height: 1.45;
+    }
+
+    .bubble-assistant-name {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin: 0;
+      font-size: 0.76rem;
+      font-weight: 700;
+      line-height: 1;
+      color: #31566f;
+      letter-spacing: 0.01em;
+    }
+
+    .bubble-assistant-name-male {
+      color: #224f78;
+    }
+
+    .bubble-assistant-name-female {
+      color: #8a4e6b;
+    }
+
+    .bubble-assistant-name i {
+      color: #2f7fb8;
+      font-size: 0.82rem;
+    }
+
+    .bubble-assistant-name-male i {
+      color: #2c78b5;
+    }
+
+    .bubble-assistant-name-female i {
+      color: #c05d8d;
     }
 
     .bot-answer-main {
@@ -1118,7 +1183,7 @@
     }
 
     .bot-answer-summary {
-      font-size: inherit;
+      font-size: 0.93rem;
       line-height: 1.7;
       color: #18354a;
       display: flex;
@@ -1142,13 +1207,23 @@
       display: inline-flex;
       align-items: center;
       gap: 0.38rem;
-      font-size: 0.82rem;
+      font-size: 0.78rem;
       font-weight: 700;
       color: #0f4667;
       background: rgba(47, 127, 184, 0.12);
       padding: 0.26rem 0.7rem;
       border-radius: 999px;
       width: fit-content;
+    }
+
+    .bot-answer-section-title-assistant-male {
+      color: #224f78;
+      background: rgba(44, 120, 181, 0.12);
+    }
+
+    .bot-answer-section-title-assistant-female {
+      color: #8a4e6b;
+      background: rgba(192, 93, 141, 0.12);
     }
 
     .bot-answer-bullets {
@@ -1206,7 +1281,7 @@
     }
 
     .bot-answer-bullet-card .answer-bullet-card-content {
-      font-size: inherit;
+      font-size: 0.93rem;
     }
 
     .bot-reference-toggle {
@@ -1246,6 +1321,16 @@
       color: #2f7fb8;
       flex: 0 0 auto;
       font-size: 0.7rem;
+    }
+
+    .follow-up-prompt-line {
+      display: inline;
+      color: inherit;
+    }
+
+    .follow-up-prompt-command {
+      color: #c22828;
+      font-weight: 700;
     }
 
     .bot-inline-actions {
@@ -1447,6 +1532,7 @@
 
     .bubble-bot {
       color: var(--text-main);
+      font-size: 0.95rem;
       border: 1px solid var(--bubble-bot-border);
       background: #fff;
       border-bottom-left-radius: 0.25rem;
@@ -1530,6 +1616,10 @@
     .bubble-loading .bubble-content {
       min-width: 16rem;
       max-width: 100%;
+    }
+
+    .bubble-loading.bubble-bot .bubble-content {
+      gap: 0.18rem;
     }
 
     .loading-status {
@@ -1729,6 +1819,12 @@
 
     .bubble-content .feedback-actions {
       margin-left: auto;
+    }
+
+    .bubble-bot .bubble-content .feedback-actions {
+      align-self: stretch;
+      margin-top: 0.55rem;
+      margin-left: 0;
     }
 
     .knowledge-suggestion-form .form-label {
@@ -2794,6 +2890,7 @@
       const isGoogleSignedIn = <%- JSON.stringify(Boolean(isGoogleUser)) %>;
       const isSignedInUser = isAdminUser || isGoogleSignedIn;
       const botPackageVariant = <%- JSON.stringify(botPackageVariant) %>;
+      const initialAssistantProfile = <%- JSON.stringify(data && data.assistantProfile ? data.assistantProfile : null) %>;
       const botAvatarConfigs = {
         free: {
           iconClass: 'bi-robot',
@@ -2818,6 +2915,21 @@
           avatarClass: 'message-avatar-bot-admin',
           badgeText: 'ADM',
           badgeClass: 'bot-avatar-badge-admin'
+        }
+      };
+
+      const assistantAvatarConfigs = {
+        male: {
+          iconClass: 'bi-person-fill',
+          avatarClass: 'message-avatar-bot-assistant-male',
+          badgeClass: 'bot-avatar-badge-assistant-male',
+          badgeText: 'KR'
+        },
+        female: {
+          iconClass: 'bi-person-standing-dress',
+          avatarClass: 'message-avatar-bot-assistant-female',
+          badgeClass: 'bot-avatar-badge-assistant-female',
+          badgeText: 'DA'
         }
       };
 
@@ -2888,6 +3000,7 @@
       let pendingKnowledgeSuggestionResolve = null;
       let suggestionRecognition = null;
       let isSuggestionListening = false;
+      let currentAssistantProfile = normalizeAssistantProfile(initialAssistantProfile);
       const DEFAULT_FREQUENT_CHAT_SUGGESTIONS = [
         'มาตรา 12 ของ พ.ร.บ.สหกรณ์ คืออะไร',
         'สมาชิกสหกรณ์ลาออกต้องทำอย่างไร',
@@ -2924,6 +3037,106 @@
 
       function autoScroll() {
         chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      function normalizeAssistantProfile(profile) {
+        if (!profile || typeof profile !== 'object') {
+          return null;
+        }
+
+        const id = String(profile.id || '').trim();
+        const label = String(profile.label || '').trim();
+        const gender = String(profile.gender || '').trim();
+
+        if (!id && !label) {
+          return null;
+        }
+
+        return {
+          id: id || 'assistant',
+          label: label || 'ผู้ช่วยกฎหมาย',
+          gender: gender || '',
+        };
+      }
+
+      function updateAssistantProfile(profile) {
+        const normalizedProfile = normalizeAssistantProfile(profile);
+        if (!normalizedProfile) {
+          return currentAssistantProfile;
+        }
+
+        currentAssistantProfile = normalizedProfile;
+        return currentAssistantProfile;
+      }
+
+      function getAssistantProfileVariant(profile) {
+        const normalizedProfile = normalizeAssistantProfile(profile) || currentAssistantProfile;
+        return normalizedProfile && normalizedProfile.id ? normalizedProfile.id : '';
+      }
+
+      function getAssistantAvatarConfig(profile) {
+        const botAvatarConfig = getBotAvatarConfig();
+        const variant = getAssistantProfileVariant(profile);
+        const override = assistantAvatarConfigs[variant];
+
+        if (!override) {
+          return botAvatarConfig;
+        }
+
+        return {
+          ...botAvatarConfig,
+          iconClass: override.iconClass || botAvatarConfig.iconClass,
+          avatarClass: `${botAvatarConfig.avatarClass || ''} ${override.avatarClass || ''}`.trim(),
+          badgeClass: `${botAvatarConfig.badgeClass || ''} ${override.badgeClass || ''}`.trim(),
+          badgeText: override.badgeText || botAvatarConfig.badgeText,
+        };
+      }
+
+      function buildAssistantProfileHtml(profile) {
+        const normalizedProfile = normalizeAssistantProfile(profile) || currentAssistantProfile;
+        if (!normalizedProfile || !normalizedProfile.label) {
+          return '';
+        }
+
+        const variant = getAssistantProfileVariant(normalizedProfile);
+        const variantClass = variant ? ` bubble-assistant-name-${variant}` : '';
+
+        return `<div class="bubble-assistant-name${variantClass}"><i class="bi bi-person-badge"></i><span>${escapeHtml(normalizedProfile.label)}</span></div>`;
+      }
+
+      function getAssistantPoliteParticle(profile) {
+        const variant = getAssistantProfileVariant(profile);
+        return variant === 'female' ? 'ค่ะ' : 'ครับ';
+      }
+
+      function buildAssistantWelcomeText(options = {}) {
+        const normalizedProfile = normalizeAssistantProfile(options.assistantProfile) || currentAssistantProfile;
+        const politeParticle = getAssistantPoliteParticle(normalizedProfile);
+        const variant = getAssistantProfileVariant(normalizedProfile);
+
+        if (options.afterClear) {
+          if (variant === 'female') {
+            return `จัดหน้าแชตให้โล่งเรียบร้อยแล้ว${politeParticle} ถ้าอยากเริ่มเรื่องใหม่พิมพ์มาได้เลย`;
+          }
+
+          return `เคลียร์บทสนทนาให้เรียบร้อยแล้ว${politeParticle} พร้อมลุยคำถามใหม่ได้ทันที`;
+        }
+
+        if (variant === 'female') {
+          return `พร้อมช่วยสรุปกฎหมายสหกรณ์และกลุ่มเกษตรกรแบบอ่านง่ายให้${politeParticle} ส่งคำถามเข้ามาได้เลย`;
+        }
+
+        return `พร้อมช่วยค้นข้อกฎหมายและประเด็นสำคัญให้แบบตรงประเด็น${politeParticle} ถามมาได้เลย`;
+      }
+
+      function buildAssistantWelcomeHtml(options = {}) {
+        const normalizedProfile = normalizeAssistantProfile(options.assistantProfile) || currentAssistantProfile;
+        const welcomeText = buildAssistantWelcomeText({
+          ...options,
+          assistantProfile: normalizedProfile,
+        });
+
+        return escapeHtml(welcomeText);
       }
 
       function sampleComposerSuggestions(count = 4) {
@@ -3269,6 +3482,32 @@
         return html;
       }
 
+      function formatFollowUpPromptHtml(text, terms) {
+        const rawText = String(text || '').trim();
+        const promptMatch = rawText.match(/^(หากต้องการ(?:เจาะลึกต่อ|ข้อมูลเพิ่มเติม|เพิ่มเติม)\s*พิมพ์:\s*)อธิบาย,\s*แสดงรายละเอียด,\s*รายละเอียด,\s*ใจความทั้งหมด,\s*ฉันไม่เข้าใจ\s*หรือ\s*แจ้งเพิ่มเติม(.*)$/u);
+        if (!promptMatch) {
+          return '';
+        }
+
+        const prefix = applyHighlightHtml(promptMatch[1], terms);
+        const suffix = applyHighlightHtml(promptMatch[2] || '', terms);
+        const commandHtml = [
+          'อธิบาย',
+          'แสดงรายละเอียด',
+          'รายละเอียด',
+          'ใจความทั้งหมด',
+          'ฉันไม่เข้าใจ',
+        ]
+          .map((command) => `<span class="follow-up-prompt-command">${applyHighlightHtml(command, terms)}....</span>`)
+          .join(', ');
+
+        return `<span class="follow-up-prompt-line">${prefix}${commandHtml} หรือ <span class="follow-up-prompt-command">${applyHighlightHtml('แจ้งเพิ่มเติม', terms)}....</span>${suffix}</span>`;
+      }
+
+      function formatBotDisplayLineHtml(text, terms) {
+        return formatFollowUpPromptHtml(text, terms) || applyHighlightHtml(text, terms);
+      }
+
       function decorateBotFallbackHtml(html) {
         let decorated = String(html || '');
         const botAlertIconClass = getBotAvatarConfig().iconClass || 'bi-robot';
@@ -3388,19 +3627,48 @@
           ? 'answer-bullet-card ai-bullet-card'
           : 'answer-bullet-card bot-answer-bullet-card';
 
-        return `<li><div class="${cardClass}"><div class="answer-bullet-card-content">${applyHighlightHtml(line, terms)}</div></div></li>`;
+        return `<li><div class="${cardClass}"><div class="answer-bullet-card-content">${formatBotDisplayLineHtml(line, terms)}</div></div></li>`;
       }
 
       function buildAnswerSectionHtml(title, icon, text, terms) {
         const cleaned = String(text || '').trim();
         if (!cleaned) return '';
 
+        const normalizedTitle = String(title || '').trim();
+        const normalizedProfile = normalizeAssistantProfile(currentAssistantProfile);
+        const assistantLabel = normalizedProfile && normalizedProfile.label
+          ? normalizedProfile.label
+          : 'ผู้ช่วยกฎหมาย';
+        const assistantVariant = getAssistantProfileVariant(normalizedProfile);
+        const assistantAvatarConfig = getAssistantAvatarConfig(normalizedProfile);
+        const titleClass = normalizedTitle === 'สรุปสาระสำคัญ'
+          ? `bot-answer-section-title bot-answer-section-title-assistant${assistantVariant ? ` bot-answer-section-title-assistant-${assistantVariant}` : ''}`
+          : 'bot-answer-section-title';
+        const titleIconClass = normalizedTitle === 'สรุปสาระสำคัญ'
+          ? (assistantAvatarConfig.iconClass || icon)
+          : icon;
+        const sectionTitle = normalizedTitle === 'สรุปสาระสำคัญ'
+          ? `${assistantLabel} ขอสรุปข้อมูล ดังนี้`
+          : normalizedTitle;
+
         const bulletLines = splitSummaryIntoBullets(cleaned);
         const items = (bulletLines.length ? bulletLines : [cleaned])
           .map((line) => buildBulletCardItemHtml(line, terms, 'bot'))
           .join('');
 
-        return `<div class="bot-answer-section"><div class="bot-answer-section-title"><i class="bi ${icon}"></i>${escapeHtml(title)}</div><ul class="bot-answer-bullets">${items}</ul></div>`;
+        return `<div class="bot-answer-section"><div class="${titleClass}"><i class="bi ${titleIconClass}"></i>${escapeHtml(sectionTitle)}</div><ul class="bot-answer-bullets">${items}</ul></div>`;
+      }
+
+      function shouldShowAssistantBubbleHeader(role, isLoading, renderedHtml) {
+        if (role !== 'bot') {
+          return false;
+        }
+
+        if (isLoading) {
+          return true;
+        }
+
+        return !String(renderedHtml || '').includes('bot-answer-section-title-assistant');
       }
 
       async function resetConversationContext() {
@@ -3528,7 +3796,7 @@
           answerText: raw,
         });
         if (!raw.includes('แหล่งอ้างอิง:')) {
-          const highlighted = applyHighlightHtml(raw, terms);
+          const highlighted = formatBotDisplayLineHtml(raw, terms);
           return `${decorateBotFallbackHtml(highlighted)}${inlineActionHtml}`;
         }
 
@@ -3878,9 +4146,12 @@
       }
 
       function buildLoadingBubbleHtml(text, hint = '') {
+        const loadingAvatarConfig = getAssistantAvatarConfig(currentAssistantProfile);
+        const assistantProfileHtml = buildAssistantProfileHtml(currentAssistantProfile);
         return `
+          ${assistantProfileHtml}
           <span class="loading-status">
-            <span class="loading-status-icon"><i class="bi bi-robot"></i></span>
+            <span class="loading-status-icon"><i class="bi ${loadingAvatarConfig.iconClass || 'bi-robot'}"></i></span>
             <span class="loading-status-text">
               <span class="loading-status-label">${escapeHtml(text || 'กำลังประมวลผลคำถาม')}</span>
               <span class="loading-status-dots" aria-hidden="true"><span></span><span></span><span></span></span>
@@ -3930,13 +4201,20 @@
         const displayText = role === 'bot' ? sanitizeDisplayText(text) : String(text || '');
         const row = document.createElement('div');
         row.className = `message-row ${role === 'user' ? 'message-user' : 'message-bot'}`;
+        const resolvedAssistantProfile = role === 'bot'
+          ? updateAssistantProfile(
+              (feedbackContext && feedbackContext.assistantProfile)
+              || (restoreOptions && restoreOptions.assistantProfile)
+              || currentAssistantProfile
+            )
+          : null;
 
         const avatar = document.createElement('div');
         if (role === 'user') {
           avatar.className = 'message-avatar message-avatar-user';
           avatar.innerHTML = '<i class="bi bi-person-fill"></i>';
         } else {
-          const botAvatarConfig = getBotAvatarConfig();
+          const botAvatarConfig = getAssistantAvatarConfig(resolvedAssistantProfile);
           avatar.className = `message-avatar message-avatar-bot ${botAvatarConfig.avatarClass || 'message-avatar-bot-free'}`;
           avatar.innerHTML = `
             <i class="bi ${botAvatarConfig.iconClass || 'bi-robot'} bot-avatar-icon"></i>
@@ -3947,6 +4225,9 @@
         const bubbleVariantClass = feedbackContext && feedbackContext.variant === 'ai' ? ' bubble-ai' : '';
         const div = document.createElement('div');
         div.className = `bubble ${role === 'user' ? 'bubble-user' : 'bubble-bot'}${bubbleVariantClass}${isLoading ? ' bubble-loading' : ''}`;
+        if (resolvedAssistantProfile) {
+          div.dataset.assistantProfile = JSON.stringify(resolvedAssistantProfile);
+        }
         const content = document.createElement('div');
         content.className = `bubble-content ${role === 'user' ? 'bubble-content-user' : ''}`;
 
@@ -3964,6 +4245,13 @@
           message.innerHTML = restoreOptions.renderedHtml;
         } else {
           message.textContent = displayText;
+        }
+
+        if (shouldShowAssistantBubbleHeader(role, isLoading, message.innerHTML)) {
+          const assistantProfileHtml = buildAssistantProfileHtml(resolvedAssistantProfile);
+          if (assistantProfileHtml) {
+            content.insertAdjacentHTML('beforeend', assistantProfileHtml);
+          }
         }
 
         content.appendChild(message);
@@ -4116,10 +4404,21 @@
           .map((node) => {
             const role = node.classList.contains('bubble-user') ? 'user' : 'bot';
             const messageNode = node.querySelector('.bubble-message');
+            let assistantProfile = null;
+
+            if (role === 'bot' && node.dataset.assistantProfile) {
+              try {
+                assistantProfile = normalizeAssistantProfile(JSON.parse(node.dataset.assistantProfile));
+              } catch (_) {
+                assistantProfile = null;
+              }
+            }
+
             return {
               text: messageNode ? messageNode.textContent || '' : node.textContent || '',
               renderedHtml: messageNode ? messageNode.innerHTML : node.innerHTML,
               role,
+              assistantProfile,
             };
           })
           .slice(-CHAT_CACHE_LIMIT);
@@ -4149,11 +4448,20 @@
                 ? stripGuestLoginCtaHtml(item.renderedHtml)
                 : item.renderedHtml;
               if (!restoredHtml) return;
-              addBubble(item.text || '', item.role, false, [], null, true, { renderedHtml: restoredHtml });
+              addBubble(item.text || '', item.role, false, [], {
+                assistantProfile: item.assistantProfile || null,
+              }, true, {
+                renderedHtml: restoredHtml,
+                assistantProfile: item.assistantProfile || null,
+              });
               return;
             }
 
-            if (item.text) addBubble(item.text, item.role);
+            if (item.text) {
+              addBubble(item.text, item.role, false, [], {
+                assistantProfile: item.assistantProfile || null,
+              });
+            }
           });
         } catch (_) {}
       }
@@ -4201,6 +4509,7 @@
           });
           clearTimeout(timeoutId);
           const data = await response.json();
+          updateAssistantProfile(data && data.assistantProfile ? data.assistantProfile : null);
           if (!response.ok && data && (data.noticeRequired || data.signInRequired) && (data.redirectPath || data.signInPath)) {
             window.location.href = data.redirectPath || data.signInPath;
             return;
@@ -4232,7 +4541,8 @@
               questionLimit: data && typeof data.questionLimit !== 'undefined' ? data.questionLimit : null,
               signInPath: data && typeof data.signInPath === 'string' ? data.signInPath : '',
               freeAiPreview: data && data.freeAiPreview ? data.freeAiPreview : null,
-              responseMeta: data && data.responseMeta ? data.responseMeta : null
+              responseMeta: data && data.responseMeta ? data.responseMeta : null,
+              assistantProfile: data && data.assistantProfile ? data.assistantProfile : currentAssistantProfile
             });
             focusFirstAnswer(botRow);
           }
@@ -4247,7 +4557,8 @@
           const botRow = addBubble(fallbackMessage, 'bot', false, [], {
             question: trimmed,
             target: options.target || selectedTarget,
-            variant: 'ai'
+            variant: 'ai',
+            assistantProfile: currentAssistantProfile
           });
           focusFirstAnswer(botRow);
         } finally {
@@ -4619,8 +4930,11 @@
         chatMessages.innerHTML = '';
         localStorage.removeItem(CHAT_CACHE_KEY);
         clearPendingPostLoginChat();
-        addBubble('ล้างประวัติแล้ว', 'bot', false, [], null, true, {
-          renderedHtml: 'ล้างประวัติแล้ว'
+        addBubble(buildAssistantWelcomeText({ afterClear: true, assistantProfile: currentAssistantProfile }), 'bot', false, [], {
+          assistantProfile: currentAssistantProfile,
+        }, true, {
+          renderedHtml: buildAssistantWelcomeHtml({ afterClear: true, assistantProfile: currentAssistantProfile }),
+          assistantProfile: currentAssistantProfile,
         });
       }));
 
@@ -4669,9 +4983,14 @@
       }
       const pendingPostLoginChat = consumePendingPostLoginChat();
       restoreRecentChats();
-      if (!chatMessages.querySelector('.bubble')) addBubble('ตั้งคำถามด้วยข้อความกระชับ bot จะตอบข้อมูลได้ดีขึ้น', 'bot', false, [], null, true, {
-        renderedHtml: 'ตั้งคำถามด้วยข้อความกระชับ bot จะตอบข้อมูลได้ดีขึ้น'
-      });
+      if (!chatMessages.querySelector('.bubble')) {
+        addBubble(buildAssistantWelcomeText({ assistantProfile: currentAssistantProfile }), 'bot', false, [], {
+          assistantProfile: currentAssistantProfile,
+        }, true, {
+          renderedHtml: buildAssistantWelcomeHtml({ assistantProfile: currentAssistantProfile }),
+          assistantProfile: currentAssistantProfile,
+        });
+      }
       if (pendingPostLoginChat && pendingPostLoginChat.message) {
         selectedTarget = pendingPostLoginChat.target;
         window.setTimeout(() => {
