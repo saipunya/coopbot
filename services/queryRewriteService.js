@@ -184,10 +184,54 @@ function buildRetrievalQuery(effectiveQuery, expandedKeywords = [], legalAliases
   ) || normalizeRewriteQuery(effectiveQuery);
 }
 
+function getGroupBylawRewriteBoost(message) {
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalizedMessage) {
+    return { expandedKeywords: [], legalAliases: [] };
+  }
+
+  const mentionsGroupBylaw = /ข้อบังคับ/.test(normalizedMessage) && /กลุ่มเกษตรกร/.test(normalizedMessage);
+  if (!mentionsGroupBylaw) {
+    return { expandedKeywords: [], legalAliases: [] };
+  }
+
+  if (/(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|ยื่นแก้|จดทะเบียนแก้)/.test(normalizedMessage)) {
+    return { expandedKeywords: [], legalAliases: [] };
+  }
+
+  const asksRequiredItems =
+    /(?:ต้องมี|มีอะไรบ้าง|รายการ|อย่างไร|อย่างไหน|อย่างน้อย|ประกอบด้วย|ต้องระบุ|กำหนดอะไร)/.test(normalizedMessage) ||
+    normalizedMessage === "ข้อบังคับกลุ่มเกษตรกร" ||
+    normalizedMessage === "ข้อบังคับของกลุ่มเกษตรกร";
+
+  if (!asksRequiredItems) {
+    return {
+      expandedKeywords: ["ข้อบังคับกลุ่มเกษตรกร"],
+      legalAliases: ["ข้อบังคับของกลุ่มเกษตรกร"],
+    };
+  }
+
+  return {
+    expandedKeywords: [
+      "ข้อบังคับกลุ่มเกษตรกร",
+      "รายการที่ต้องมีในข้อบังคับกลุ่มเกษตรกร",
+      "อย่างน้อยต้องมีรายการ",
+      "วัตถุประสงค์",
+      "ที่ตั้งสำนักงาน",
+    ],
+    legalAliases: [
+      "ข้อบังคับของกลุ่มเกษตรกร",
+      "รายการที่ต้องมี",
+      "ข้อบังคับกลุ่มเกษตรกรต้องมี",
+    ],
+  };
+}
+
 function buildHeuristicQueryRewrite(message, context = {}) {
   const baseMessage = normalizeRewriteQuery(message);
   const expandedQueryText = normalizeRewriteQuery(expandSearchConcepts(baseMessage)) || baseMessage;
   const focusProfile = getQueryFocusProfile(expandedQueryText);
+  const groupBylawBoost = getGroupBylawRewriteBoost(expandedQueryText);
   const topicAliases = uniqueTokens(
     focusProfile.topics.flatMap((topic) => [topic.primary, ...(topic.aliases || [])]).filter(Boolean),
   );
@@ -196,6 +240,7 @@ function buildHeuristicQueryRewrite(message, context = {}) {
   );
   const legalAliases = sanitizeRewriteTerms([
     ...topicAliases,
+    ...(groupBylawBoost.legalAliases || []),
     ...getLegalRewriteAliases(expandedQueryText),
   ], getAllowedLawReferenceTokens(message, context), QUERY_REWRITE_MAX_ALIASES)
     .filter((alias) => alias.toLowerCase() !== expandedQueryText.toLowerCase());
@@ -203,6 +248,7 @@ function buildHeuristicQueryRewrite(message, context = {}) {
     ...(context.topicAnchor ? [context.topicAnchor] : []),
     ...(context.sourceAnchors || []),
     ...extractExplicitTopicHints(expandedQueryText),
+    ...(groupBylawBoost.expandedKeywords || []),
     ...segmentWords(stripFollowUpLeadText(expandedQueryText)).filter((token) => String(token || "").trim().length >= 3),
     ...contextSignals,
   ], getAllowedLawReferenceTokens(message, context), QUERY_REWRITE_MAX_KEYWORDS)

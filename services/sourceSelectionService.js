@@ -265,8 +265,46 @@ function getSectionMatchTrace(item = {}, message = "", intent = "general") {
   };
 }
 
+function getGroupBylawStructuredLawFocusBoost(message = "", item = {}) {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  if (sourceName !== "tbl_glaws") {
+    return 0;
+  }
+
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalizedMessage || !/ข้อบังคับ/.test(normalizedMessage) || !/กลุ่มเกษตรกร/.test(normalizedMessage)) {
+    return 0;
+  }
+
+  const sourceText = buildSourceFocusSearchText(item);
+  if (!sourceText || !/ข้อบังคับ/.test(sourceText)) {
+    return 0;
+  }
+
+  let boost = 26;
+
+  if (
+    /(อย่างน้อยต้องมีรายการ|ต้องมีรายการ|ต้องระบุ|ชื่อ|วัตถุประสงค์|ที่ตั้งสำนักงาน|ทุนซึ่งแบ่งเป็นหุ้น|การประชุมใหญ่|ผู้ตรวจสอบกิจการ|ผู้จัดการ|สมาชิกภาพ)/.test(
+      sourceText,
+    )
+  ) {
+    boost += 14;
+  }
+
+  if (/(มาตรา 8|มาตรา8|ข้อ 8|ข้อ8)/.test(sourceText)) {
+    boost += 6;
+  }
+
+  return boost;
+}
+
+function getSourceAwareFocusScore(message = "", item = {}) {
+  const baseFocusScore = Number(scoreQueryFocusAlignment(message, buildSourceFocusSearchText(item)) || 0);
+  return baseFocusScore + getGroupBylawStructuredLawFocusBoost(message, item);
+}
+
 function getFocusAlignmentTrace(item = {}, message = "") {
-  const rawFocusScore = Number(scoreQueryFocusAlignment(message, buildSourceFocusSearchText(item)) || 0);
+  const rawFocusScore = Number(getSourceAwareFocusScore(message, item) || 0);
   return {
     rawFocusScore,
     score: Math.round(clamp(rawFocusScore, -20, 60) * 0.18),
@@ -1773,7 +1811,7 @@ function pruneFocusedQueryMatches(matches, message) {
 
   const scoredMatches = ranked.map((item) => ({
     ...item,
-    __focusScore: scoreQueryFocusAlignment(message, buildSourceFocusSearchText(item)),
+    __focusScore: getSourceAwareFocusScore(message, item),
   }));
 
   let filtered = scoredMatches.filter((item) => {
