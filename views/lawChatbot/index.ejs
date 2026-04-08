@@ -3159,6 +3159,7 @@
       const FREQUENT_CHAT_SUGGESTIONS = MANAGED_CHAT_SUGGESTIONS.length > 0
         ? MANAGED_CHAT_SUGGESTIONS
         : DEFAULT_FREQUENT_CHAT_SUGGESTIONS;
+      const COMPOSER_SUGGESTION_MIN_QUERY_LENGTH = 2;
       const COMPOSER_SUGGESTION_PAGE_SIZE = 4;
       let composerSuggestionPageIndex = 0;
       let composerSuggestionsAreFiltered = false;
@@ -3739,13 +3740,13 @@
       function showComposerSuggestions(options = {}) {
         if (!composerSuggestions || !composerSuggestionsList || isSubmitting) return;
         const currentQuery = String(chatInput.value || '').trim();
-        if (!currentQuery) {
+        if (!currentQuery || compactSuggestionSearchText(currentQuery).length < COMPOSER_SUGGESTION_MIN_QUERY_LENGTH) {
           hideComposerSuggestions();
           return;
         }
 
         const matchedSuggestions = getFilteredComposerSuggestions(currentQuery, 6);
-        renderComposerSuggestions(matchedSuggestions, 'คำถามที่ตรงกับข้อความที่พิมพ์', 0, {
+        renderComposerSuggestions(matchedSuggestions, 'คำถามที่ตรงกับข้อความที่พิมพ์', -1, {
           isFiltered: true,
           queryText: currentQuery,
         });
