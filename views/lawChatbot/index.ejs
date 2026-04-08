@@ -3739,26 +3739,16 @@
       function showComposerSuggestions(options = {}) {
         if (!composerSuggestions || !composerSuggestionsList || isSubmitting) return;
         const currentQuery = String(chatInput.value || '').trim();
-        if (currentQuery) {
-          const matchedSuggestions = getFilteredComposerSuggestions(currentQuery, 6);
-          renderComposerSuggestions(matchedSuggestions, 'คำถามที่ตรงกับข้อความที่พิมพ์', 0, {
-            isFiltered: true,
-            queryText: currentQuery,
-          });
+        if (!currentQuery) {
+          hideComposerSuggestions();
           return;
         }
 
-        const pageCount = getComposerSuggestionPageCount();
-        composerSuggestionPageIndex = Math.max(0, Math.min(composerSuggestionPageIndex, pageCount - 1));
-        renderComposerSuggestions(
-          getPagedComposerSuggestions(composerSuggestionPageIndex),
-          'คำถามที่ถามบ่อย',
-          -1,
-          {
-            isFiltered: false,
-            animateDirection: options.animateDirection,
-          }
-        );
+        const matchedSuggestions = getFilteredComposerSuggestions(currentQuery, 6);
+        renderComposerSuggestions(matchedSuggestions, 'คำถามที่ตรงกับข้อความที่พิมพ์', 0, {
+          isFiltered: true,
+          queryText: currentQuery,
+        });
       }
 
       function focusFirstAnswer(row) {
@@ -5487,14 +5477,6 @@
       });
 
       if (chatInput) {
-        chatInput.addEventListener('click', () => {
-          showComposerSuggestions();
-        });
-
-        chatInput.addEventListener('focus', () => {
-          showComposerSuggestions();
-        });
-
         chatInput.addEventListener('input', () => {
           showComposerSuggestions();
         });
