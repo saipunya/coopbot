@@ -2,6 +2,7 @@ const knowledgeDraftService = require("../services/knowledgeDraftService");
 
 const ERROR_STATUS_BY_REASON = {
   admin_auth_required: 401,
+  invalid_draft_id: 400,
   draft_not_found: 404,
   generation_failed: 500,
   invalid_payload: 400,
@@ -15,6 +16,7 @@ const ERROR_STATUS_BY_REASON = {
 
 const ERROR_MESSAGE_BY_REASON = {
   admin_auth_required: "กรุณาเข้าสู่ระบบผู้ดูแลก่อนใช้งาน",
+  invalid_draft_id: "รหัสร่างไม่ถูกต้อง",
   draft_not_found: "ไม่พบร่างที่ต้องการจัดการ",
   generation_failed: "ไม่สามารถสร้างร่างจากแหล่งข้อมูลนี้ได้",
   invalid_payload: "ข้อมูลที่ส่งมาไม่ครบหรือไม่ถูกต้อง",
@@ -131,8 +133,8 @@ async function approveDraftToSuggestedQuestion(req, res) {
   if (!draftId) {
     return res.status(400).json({
       ok: false,
-      reason: "draft_not_found",
-      message: ERROR_MESSAGE_BY_REASON.draft_not_found,
+      reason: "invalid_draft_id",
+      message: ERROR_MESSAGE_BY_REASON.invalid_draft_id,
     });
   }
 
@@ -145,8 +147,8 @@ async function approveDraftToKnowledge(req, res) {
   if (!draftId) {
     return res.status(400).json({
       ok: false,
-      reason: "draft_not_found",
-      message: ERROR_MESSAGE_BY_REASON.draft_not_found,
+      reason: "invalid_draft_id",
+      message: ERROR_MESSAGE_BY_REASON.invalid_draft_id,
     });
   }
 
@@ -159,8 +161,8 @@ async function rejectDraft(req, res) {
   if (!draftId) {
     return res.status(400).json({
       ok: false,
-      reason: "draft_not_found",
-      message: ERROR_MESSAGE_BY_REASON.draft_not_found,
+      reason: "invalid_draft_id",
+      message: ERROR_MESSAGE_BY_REASON.invalid_draft_id,
     });
   }
 
