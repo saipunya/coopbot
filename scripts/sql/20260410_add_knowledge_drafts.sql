@@ -29,12 +29,14 @@ CREATE TABLE IF NOT EXISTS knowledge_drafts (
   notes text DEFAULT NULL,
   status enum('draft', 'approved', 'rejected') NOT NULL DEFAULT 'draft',
   approved_target enum('coop', 'group', 'all', 'general') DEFAULT NULL,
+  approved_record_type enum('knowledge', 'suggested_question') DEFAULT NULL,
   approved_record_id int(11) DEFAULT NULL,
   created_at timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_knowledge_drafts_source_id (source_id),
   KEY idx_knowledge_drafts_status (status),
+  KEY idx_knowledge_drafts_approved_record_type_id (approved_record_type, approved_record_id),
   CONSTRAINT fk_knowledge_drafts_source
     FOREIGN KEY (source_id) REFERENCES knowledge_sources(id)
     ON DELETE CASCADE

@@ -12,7 +12,6 @@ const SUGGESTED_QUESTION_SELECT_COLUMNS = `
   source_reference,
   source_id,
   draft_id,
-  workflow_id,
   display_order,
   is_active,
   created_at,
@@ -38,11 +37,6 @@ function normalizeSuggestedQuestionDraftId(value) {
   return normalized > 0 ? normalized : null;
 }
 
-function normalizeSuggestedQuestionWorkflowId(value) {
-  const normalized = Number(value || 0);
-  return normalized > 0 ? normalized : null;
-}
-
 function normalizeEntry(entry = {}) {
   const rawDisplayOrder = Number(entry.displayOrder);
 
@@ -55,7 +49,6 @@ function normalizeEntry(entry = {}) {
     sourceReference: String(entry.sourceReference || entry.reference || "").trim(),
     sourceId: normalizeSuggestedQuestionSourceId(entry.sourceId || entry.source_id),
     draftId: normalizeSuggestedQuestionDraftId(entry.draftId || entry.draft_id),
-    workflowId: normalizeSuggestedQuestionWorkflowId(entry.workflowId || entry.workflow_id),
     displayOrder: Number.isFinite(rawDisplayOrder) ? Math.max(0, Math.floor(rawDisplayOrder)) : 0,
     isActive:
       entry.isActive === false ||
@@ -78,7 +71,6 @@ function mapRow(row = {}) {
     sourceReference: row.source_reference || row.sourceReference || "",
     sourceId: Number(row.source_id || row.sourceId || 0) || null,
     draftId: Number(row.draft_id || row.draftId || 0) || null,
-    workflowId: Number(row.workflow_id || row.workflowId || 0) || null,
     displayOrder: Number(row.display_order ?? row.displayOrder ?? 0) || 0,
     isActive:
       row.is_active === undefined
@@ -110,7 +102,6 @@ async function ensureTable() {
           source_reference TEXT DEFAULT NULL,
           source_id INT(11) DEFAULT NULL,
           draft_id INT(11) DEFAULT NULL,
-          workflow_id INT(11) DEFAULT NULL,
           display_order INT NOT NULL DEFAULT 0,
           is_active TINYINT(1) NOT NULL DEFAULT 1,
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -120,8 +111,7 @@ async function ensureTable() {
           INDEX idx_chatbot_suggested_questions_normalized (normalized_question),
           INDEX idx_chatbot_suggested_questions_domain (domain),
           INDEX idx_chatbot_suggested_questions_source_id (source_id),
-          INDEX idx_chatbot_suggested_questions_draft_id (draft_id),
-          INDEX idx_chatbot_suggested_questions_workflow_id (workflow_id)
+          INDEX idx_chatbot_suggested_questions_draft_id (draft_id)
         )
       `)
       .then(async () => {
@@ -152,15 +142,6 @@ async function ensureTable() {
         );
       }
 
-      const [workflowIdColumns] = await pool.query(
-        "SHOW COLUMNS FROM chatbot_suggested_questions LIKE 'workflow_id'",
-      );
-      if (!Array.isArray(workflowIdColumns) || workflowIdColumns.length === 0) {
-        await pool.query(
-          "ALTER TABLE chatbot_suggested_questions ADD COLUMN workflow_id int(11) DEFAULT NULL AFTER draft_id",
-        );
-      }
-
       const [domainIndexColumns] = await pool.query(
         "SHOW INDEX FROM chatbot_suggested_questions WHERE Key_name = 'idx_chatbot_suggested_questions_domain'",
       );
@@ -185,15 +166,6 @@ async function ensureTable() {
       if (!Array.isArray(draftIdIndexColumns) || draftIdIndexColumns.length === 0) {
         await pool.query(
           "ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_draft_id (draft_id)",
-        );
-      }
-
-      const [workflowIdIndexColumns] = await pool.query(
-        "SHOW INDEX FROM chatbot_suggested_questions WHERE Key_name = 'idx_chatbot_suggested_questions_workflow_id'",
-      );
-      if (!Array.isArray(workflowIdIndexColumns) || workflowIdIndexColumns.length === 0) {
-        await pool.query(
-          "ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_workflow_id (workflow_id)",
         );
       }
     })
@@ -227,7 +199,6 @@ class LawChatbotSuggestedQuestionModel {
         sourceReference: normalized.sourceReference,
         sourceId: normalized.sourceId,
         draftId: normalized.draftId,
-        workflowId: normalized.workflowId,
         displayOrder: normalized.displayOrder,
         isActive: normalized.isActive === 1,
         createdAt: new Date().toISOString(),
@@ -240,8 +211,8 @@ class LawChatbotSuggestedQuestionModel {
     await ensureTable();
     const [result] = await pool.query(
       `INSERT INTO chatbot_suggested_questions
-        (domain, target, question_text, normalized_question, answer_text, source_reference, source_id, draft_id, workflow_id, display_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (domain, target, question_text, normalized_question, answer_text, source_reference, source_id, draft_id, display_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         normalized.domain,
         normalized.target,
@@ -251,7 +222,6 @@ class LawChatbotSuggestedQuestionModel {
         normalized.sourceReference || null,
         normalized.sourceId,
         normalized.draftId,
-        normalized.workflowId,
         normalized.displayOrder,
         normalized.isActive,
       ],
@@ -267,7 +237,6 @@ class LawChatbotSuggestedQuestionModel {
       source_reference: normalized.sourceReference,
       source_id: normalized.sourceId,
       draft_id: normalized.draftId,
-      workflow_id: normalized.workflowId,
       display_order: normalized.displayOrder,
       is_active: normalized.isActive,
       created_at: new Date().toISOString(),
@@ -433,7 +402,6 @@ class LawChatbotSuggestedQuestionModel {
       sourceReference: patch.sourceReference !== undefined ? patch.sourceReference : existing.sourceReference,
       sourceId: patch.sourceId !== undefined ? patch.sourceId : existing.sourceId,
       draftId: patch.draftId !== undefined ? patch.draftId : existing.draftId,
-      workflowId: patch.workflowId !== undefined ? patch.workflowId : existing.workflowId,
       displayOrder: patch.displayOrder !== undefined ? patch.displayOrder : existing.displayOrder,
       isActive: patch.isActive !== undefined ? patch.isActive : existing.isActive,
     });
@@ -460,7 +428,6 @@ class LawChatbotSuggestedQuestionModel {
         sourceReference: normalized.sourceReference,
         sourceId: normalized.sourceId,
         draftId: normalized.draftId,
-        workflowId: normalized.workflowId,
         displayOrder: normalized.displayOrder,
         isActive: normalized.isActive === 1,
         updatedAt: new Date().toISOString(),
@@ -479,7 +446,6 @@ class LawChatbotSuggestedQuestionModel {
               source_reference = ?,
               source_id = ?,
               draft_id = ?,
-              workflow_id = ?,
               display_order = ?,
               is_active = ?,
               updated_at = CURRENT_TIMESTAMP
@@ -494,7 +460,6 @@ class LawChatbotSuggestedQuestionModel {
         normalized.sourceReference || null,
         normalized.sourceId,
         normalized.draftId,
-        normalized.workflowId,
         normalized.displayOrder,
         normalized.isActive,
         normalizedId,

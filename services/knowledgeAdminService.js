@@ -6,6 +6,7 @@ const { buildPaginationMeta, normalizePageNumber, normalizePageSize } = require(
 const { normalizeForSearch } = require("./thaiTextUtils");
 
 const suggestionThrottleMap = new Map();
+const KNOWLEDGE_TARGETS = new Set(["coop", "group", "all", "general"]);
 
 function cleanupSuggestionThrottle() {
   if (suggestionThrottleMap.size <= 200) {
@@ -17,6 +18,11 @@ function cleanupSuggestionThrottle() {
       suggestionThrottleMap.delete(key);
     }
   }
+}
+
+function normalizeKnowledgeTarget(value, fallback = "general") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return KNOWLEDGE_TARGETS.has(normalized) ? normalized : fallback;
 }
 
 async function getKnowledgeAdminData(options = {}) {
@@ -91,6 +97,8 @@ async function getKnowledgeAdminData(options = {}) {
     knowledgePagination,
     pendingSuggestionsPagination,
     targets: [
+      { value: "general", label: "ทั่วไป" },
+      { value: "all", label: "ทุกกลุ่ม" },
       { value: "coop", label: "สหกรณ์" },
       { value: "group", label: "กลุ่มเกษตรกร" },
     ],
@@ -138,7 +146,6 @@ async function saveSuggestedQuestionEntry(payload = {}) {
     sourceReference: payload.sourceReference || payload.reference,
     sourceId: payload.sourceId || payload.source_id,
     draftId: payload.draftId || payload.draft_id,
-    workflowId: payload.workflowId || payload.workflow_id,
     displayOrder: payload.displayOrder,
     isActive: payload.isActive,
   });
@@ -169,7 +176,6 @@ async function updateSuggestedQuestionEntry(id, payload = {}) {
     sourceReference: payload.sourceReference || payload.reference,
     sourceId: payload.sourceId || payload.source_id,
     draftId: payload.draftId || payload.draft_id,
-    workflowId: payload.workflowId || payload.workflow_id,
     displayOrder: payload.displayOrder,
     isActive: payload.isActive,
   });
@@ -253,7 +259,6 @@ async function approveKnowledgeSuggestion(id, reviewMeta = {}) {
     sourceReference: suggestion.sourceReference,
     sourceId: suggestion.sourceId || suggestion.source_id,
     draftId: suggestion.draftId || suggestion.draft_id,
-    workflowId: suggestion.workflowId || suggestion.workflow_id,
     displayOrder: 0,
     isActive: 1,
   });
@@ -312,7 +317,7 @@ async function rejectKnowledgeSuggestion(id, reviewMeta = {}) {
 }
 
 async function saveKnowledgeEntry(payload) {
-  const target = payload.target === "group" ? "group" : "coop";
+  const target = normalizeKnowledgeTarget(payload.target);
 
   clearAnswerCache();
 
@@ -376,7 +381,7 @@ async function updateKnowledgeEntry(id, payload = {}) {
     return { ok: false, reason: "not_found" };
   }
 
-  const target = payload.target === "group" ? "group" : "coop";
+  const target = normalizeKnowledgeTarget(payload.target, existing.target);
 
   clearAnswerCache();
 

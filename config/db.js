@@ -305,72 +305,29 @@ async function ensureSchema() {
     CREATE TABLE IF NOT EXISTS chatbot_knowledge (
       id int(11) NOT NULL AUTO_INCREMENT,
       domain enum('legal','general','mixed') NOT NULL DEFAULT 'legal',
-      target enum('coop','group') NOT NULL DEFAULT 'coop',
+      target enum('coop','group','all','general') NOT NULL DEFAULT 'general',
       title varchar(255) NOT NULL,
       law_number varchar(100) DEFAULT NULL,
       content text NOT NULL,
       source_note varchar(255) DEFAULT NULL,
       source_id int(11) DEFAULT NULL,
       review_status enum('approved','archived') NOT NULL DEFAULT 'approved',
-      workflow_id int(11) DEFAULT NULL,
       created_at timestamp NULL DEFAULT current_timestamp(),
       updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
       PRIMARY KEY (id),
       KEY idx_chatbot_knowledge_target (target),
       KEY idx_chatbot_knowledge_domain_review_status (domain, review_status),
-      KEY idx_chatbot_knowledge_source_id (source_id),
-      KEY idx_chatbot_knowledge_workflow_id (workflow_id)
+      KEY idx_chatbot_knowledge_source_id (source_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
  
  
     `);
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS chatbot_knowledge_workflows (
-      id int(11) NOT NULL AUTO_INCREMENT,
-      target enum('all','coop','group') NOT NULL DEFAULT 'all',
-      source_kind varchar(30) NOT NULL DEFAULT 'manual',
-      source_title varchar(255) DEFAULT NULL,
-      source_text longtext NOT NULL,
-      source_reference text DEFAULT NULL,
-      source_metadata_json longtext DEFAULT NULL,
-      source_hash char(64) DEFAULT NULL,
-      workflow_stage enum('received', 'drafted', 'in_review', 'approved', 'published', 'rejected', 'needs_revision') NOT NULL DEFAULT 'received',
-      ai_model varchar(100) DEFAULT NULL,
-      ai_prompt_version varchar(50) DEFAULT NULL,
-      ai_draft_json longtext DEFAULT NULL,
-      ai_generated_at datetime DEFAULT NULL,
-      draft_title varchar(255) DEFAULT NULL,
-      draft_content longtext DEFAULT NULL,
-      draft_reference text DEFAULT NULL,
-      review_title varchar(255) DEFAULT NULL,
-      review_content longtext DEFAULT NULL,
-      review_reference text DEFAULT NULL,
-      review_note text DEFAULT NULL,
-      reviewed_by varchar(255) DEFAULT NULL,
-      reviewed_at datetime DEFAULT NULL,
-      approved_by varchar(255) DEFAULT NULL,
-      approved_at datetime DEFAULT NULL,
-      publication_type enum('suggested_question', 'knowledge') DEFAULT NULL,
-      published_knowledge_id int(11) DEFAULT NULL,
-      published_suggested_question_id int(11) DEFAULT NULL,
-      published_by varchar(255) DEFAULT NULL,
-      published_at datetime DEFAULT NULL,
-      created_by varchar(255) DEFAULT NULL,
-      created_by_user_id int(11) DEFAULT NULL,
-      created_at timestamp NULL DEFAULT current_timestamp(),
-      updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-      PRIMARY KEY (id),
-      KEY idx_chatbot_knowledge_workflows_stage_created (workflow_stage, created_at),
-      KEY idx_chatbot_knowledge_workflows_target_stage (target, workflow_stage),
-      KEY idx_chatbot_knowledge_workflows_source_kind (source_kind),
-      KEY idx_chatbot_knowledge_workflows_source_hash (source_hash),
-      KEY idx_chatbot_knowledge_workflows_publication_type (publication_type),
-      KEY idx_chatbot_knowledge_workflows_created_by_user (created_by_user_id),
-      KEY idx_chatbot_knowledge_workflows_published_knowledge_id (published_knowledge_id),
-      KEY idx_chatbot_knowledge_workflows_published_suggested_question_id (published_suggested_question_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-  `);
+  try {
+    await pool.query(
+      "ALTER TABLE chatbot_knowledge MODIFY COLUMN target enum('coop','group','all','general') NOT NULL DEFAULT 'general'",
+    );
+  } catch (_) {}
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS knowledge_sources (
@@ -406,17 +363,27 @@ async function ensureSchema() {
       notes text DEFAULT NULL,
       status enum('draft','approved','rejected') NOT NULL DEFAULT 'draft',
       approved_target enum('coop','group','all','general') DEFAULT NULL,
+      approved_record_type enum('knowledge','suggested_question') DEFAULT NULL,
       approved_record_id int(11) DEFAULT NULL,
       created_at timestamp NULL DEFAULT current_timestamp(),
       updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
       PRIMARY KEY (id),
       KEY idx_knowledge_drafts_source_id (source_id),
       KEY idx_knowledge_drafts_status (status),
+      KEY idx_knowledge_drafts_approved_record_type_id (approved_record_type, approved_record_id),
       CONSTRAINT fk_knowledge_drafts_source
         FOREIGN KEY (source_id) REFERENCES knowledge_sources(id)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
   `);
+
+  try {
+    await pool.query("ALTER TABLE knowledge_drafts ADD COLUMN approved_record_type enum('knowledge','suggested_question') DEFAULT NULL AFTER approved_target");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE knowledge_drafts ADD KEY idx_knowledge_drafts_approved_record_type_id (approved_record_type, approved_record_id)");
+  } catch (_) {}
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chatbot_suggested_questions (
@@ -429,7 +396,6 @@ async function ensureSchema() {
       source_reference text DEFAULT NULL,
       source_id int(11) DEFAULT NULL,
       draft_id int(11) DEFAULT NULL,
-      workflow_id int(11) DEFAULT NULL,
       display_order int(11) NOT NULL DEFAULT 0,
       is_active tinyint(1) NOT NULL DEFAULT 1,
       created_at timestamp NULL DEFAULT current_timestamp(),
@@ -440,8 +406,7 @@ async function ensureSchema() {
       KEY idx_chatbot_suggested_questions_normalized (normalized_question),
       KEY idx_chatbot_suggested_questions_domain (domain),
       KEY idx_chatbot_suggested_questions_source_id (source_id),
-      KEY idx_chatbot_suggested_questions_draft_id (draft_id),
-      KEY idx_chatbot_suggested_questions_workflow_id (workflow_id)
+      KEY idx_chatbot_suggested_questions_draft_id (draft_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
 
     `);
@@ -515,14 +480,6 @@ async function ensureSchema() {
   } catch (_) {}
 
   try {
-    await pool.query("ALTER TABLE chatbot_knowledge ADD COLUMN workflow_id int(11) DEFAULT NULL AFTER review_status");
-  } catch (_) {}
-
-  try {
-    await pool.query("ALTER TABLE chatbot_knowledge ADD KEY idx_chatbot_knowledge_workflow_id (workflow_id)");
-  } catch (_) {}
-
-  try {
     await pool.query("ALTER TABLE chatbot_knowledge ADD KEY idx_chatbot_knowledge_domain_review_status (domain, review_status)");
   } catch (_) {}
 
@@ -563,10 +520,6 @@ async function ensureSchema() {
   } catch (_) {}
 
   try {
-    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN workflow_id int(11) DEFAULT NULL AFTER draft_id");
-  } catch (_) {}
-
-  try {
     await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN display_order int(11) NOT NULL DEFAULT 0");
   } catch (_) {}
 
@@ -604,10 +557,6 @@ async function ensureSchema() {
 
   try {
     await pool.query("ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_draft_id (draft_id)");
-  } catch (_) {}
-
-  try {
-    await pool.query("ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_workflow_id (workflow_id)");
   } catch (_) {}
 
   try {

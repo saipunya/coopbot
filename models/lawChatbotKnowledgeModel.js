@@ -25,10 +25,15 @@ function normalizeKnowledgeSourceId(value) {
   return normalized > 0 ? normalized : null;
 }
 
+function normalizeKnowledgeTarget(value, fallback = "general") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["coop", "group", "all", "general"].includes(normalized) ? normalized : fallback;
+}
+
 function normalizeEntry(entry) {
   return {
     domain: normalizeKnowledgeDomain(entry.domain),
-    target: entry.target === "group" ? "group" : "coop",
+    target: normalizeKnowledgeTarget(entry.target),
     title: String(entry.title || "").trim().slice(0, 255),
     lawNumber: String(entry.lawNumber || "").trim().slice(0, 100),
     content: String(entry.content || "").trim(),
@@ -160,7 +165,7 @@ function mapRow(row) {
   return {
     id: row.id,
     domain: row.domain || "legal",
-    target: row.target,
+    target: normalizeKnowledgeTarget(row.target, "general"),
     title: row.title || "ฐานความรู้ภายในระบบ",
     lawNumber: row.law_number || row.lawNumber || "",
     content: row.content || "",
@@ -423,6 +428,8 @@ class LawChatbotKnowledgeModel {
     }
 
     const pool = getDbPool();
+    const normalizedTarget = normalizeKnowledgeTarget(target, "all");
+    const shouldFilterByTarget = normalizedTarget !== "all" && normalizedTarget !== "general";
 
     if (!pool) {
       return memoryKnowledgeEntries
@@ -462,7 +469,18 @@ class LawChatbotKnowledgeModel {
           };
         })
         .filter(Boolean)
-        .filter((row) => (target === "all" ? true : row.target === target) && row.score > 0)
+        .filter((row) => {
+          if (row.score <= 0) {
+            return false;
+          }
+
+          if (!shouldFilterByTarget) {
+            return true;
+          }
+
+          const rowTarget = normalizeKnowledgeTarget(row.target, "general");
+          return rowTarget === normalizedTarget || rowTarget === "all" || rowTarget === "general";
+        })
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
     }
@@ -479,7 +497,7 @@ class LawChatbotKnowledgeModel {
     });
 
     const sql =
-      target === "all"
+      !shouldFilterByTarget
         ? `SELECT id, domain, target, title, law_number, content, source_note, source_id, review_status, created_at, updated_at
            FROM chatbot_knowledge
            WHERE ${whereClause}
@@ -487,10 +505,10 @@ class LawChatbotKnowledgeModel {
            LIMIT 50`
         : `SELECT id, domain, target, title, law_number, content, source_note, source_id, review_status, created_at, updated_at
            FROM chatbot_knowledge
-           WHERE target = ? AND (${whereClause})
-           ORDER BY id DESC
+           WHERE target IN (?, 'all', 'general') AND (${whereClause})
+           ORDER BY CASE WHEN target = ? THEN 0 ELSE 1 END, id DESC
            LIMIT 50`;
-    const sqlParams = target === "all" ? params : [target, ...params];
+    const sqlParams = !shouldFilterByTarget ? params : [normalizedTarget, ...params, normalizedTarget];
 
     const [rows] = await pool.query(sql, sqlParams);
 
