@@ -10,13 +10,31 @@ const {
 
 const memoryKnowledgeEntries = [];
 
+function normalizeKnowledgeDomain(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["legal", "general", "mixed"].includes(normalized) ? normalized : "legal";
+}
+
+function normalizeKnowledgeReviewStatus(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["approved", "archived"].includes(normalized) ? normalized : "approved";
+}
+
+function normalizeKnowledgeSourceId(value) {
+  const normalized = Number(value || 0);
+  return normalized > 0 ? normalized : null;
+}
+
 function normalizeEntry(entry) {
   return {
+    domain: normalizeKnowledgeDomain(entry.domain),
     target: entry.target === "group" ? "group" : "coop",
     title: String(entry.title || "").trim().slice(0, 255),
     lawNumber: String(entry.lawNumber || "").trim().slice(0, 100),
     content: String(entry.content || "").trim(),
     sourceNote: String(entry.sourceNote || "").trim().slice(0, 255),
+    sourceId: normalizeKnowledgeSourceId(entry.sourceId || entry.source_id),
+    reviewStatus: normalizeKnowledgeReviewStatus(entry.reviewStatus || entry.review_status),
   };
 }
 
@@ -141,11 +159,14 @@ function hasKnowledgeRelevance(query, row) {
 function mapRow(row) {
   return {
     id: row.id,
+    domain: row.domain || "legal",
     target: row.target,
     title: row.title || "ฐานความรู้ภายในระบบ",
     lawNumber: row.law_number || row.lawNumber || "",
     content: row.content || "",
     sourceNote: row.source_note || row.sourceNote || "",
+    sourceId: Number(row.source_id || row.sourceId || 0) || null,
+    reviewStatus: row.review_status || row.reviewStatus || "approved",
     source: "admin_knowledge",
     reference: row.law_number || row.title || "ฐานความรู้ภายในระบบ",
     comment: row.source_note || row.sourceNote || "",
@@ -170,11 +191,14 @@ class LawChatbotKnowledgeModel {
       memoryKnowledgeEntries.unshift(record);
       return mapRow({
         id: record.id,
+        domain: record.domain,
         target: record.target,
         title: record.title,
         law_number: record.lawNumber,
         content: record.content,
         source_note: record.sourceNote,
+        source_id: record.sourceId,
+        review_status: record.reviewStatus,
         created_at: record.createdAt,
         updated_at: record.updatedAt,
       });
@@ -182,9 +206,18 @@ class LawChatbotKnowledgeModel {
 
     const [result] = await pool.query(
       `INSERT INTO chatbot_knowledge
-        (target, title, law_number, content, source_note)
-       VALUES (?, ?, ?, ?, ?)`,
-      [normalized.target, normalized.title || null, normalized.lawNumber || null, normalized.content || null, normalized.sourceNote || null],
+        (domain, target, title, law_number, content, source_note, source_id, review_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        normalized.domain,
+        normalized.target,
+        normalized.title || null,
+        normalized.lawNumber || null,
+        normalized.content || null,
+        normalized.sourceNote || null,
+        normalized.sourceId,
+        normalized.reviewStatus,
+      ],
     );
 
     return {
@@ -224,18 +257,21 @@ class LawChatbotKnowledgeModel {
 
       return mapRow({
         id: found.id,
+        domain: found.domain,
         target: found.target,
         title: found.title,
         law_number: found.lawNumber,
         content: found.content,
         source_note: found.sourceNote,
+        source_id: found.sourceId,
+        review_status: found.reviewStatus,
         created_at: found.createdAt,
         updated_at: found.updatedAt,
       });
     }
 
     const [rows] = await pool.query(
-      `SELECT id, target, title, law_number, content, source_note, created_at, updated_at
+      `SELECT id, domain, target, title, law_number, content, source_note, source_id, review_status, created_at, updated_at
        FROM chatbot_knowledge
        WHERE id = ?
        LIMIT 1`,
@@ -251,7 +287,22 @@ class LawChatbotKnowledgeModel {
       return false;
     }
 
-    const normalizedPatch = normalizeEntry(patch);
+    const existing = await this.findById(normalizedId);
+    if (!existing) {
+      return false;
+    }
+
+    const normalizedPatch = normalizeEntry({
+      domain: patch.domain !== undefined ? patch.domain : existing.domain,
+      target: patch.target !== undefined ? patch.target : existing.target,
+      title: patch.title !== undefined ? patch.title : existing.title,
+      lawNumber: patch.lawNumber !== undefined ? patch.lawNumber : existing.lawNumber,
+      content: patch.content !== undefined ? patch.content : existing.content,
+      sourceNote: patch.sourceNote !== undefined ? patch.sourceNote : existing.sourceNote,
+      sourceId: patch.sourceId !== undefined ? patch.sourceId : existing.sourceId,
+      reviewStatus: patch.reviewStatus !== undefined ? patch.reviewStatus : existing.reviewStatus,
+    });
+
     if (!normalizedPatch.title || !normalizedPatch.content) {
       return false;
     }
@@ -265,11 +316,14 @@ class LawChatbotKnowledgeModel {
       }
 
       Object.assign(found, {
+        domain: normalizedPatch.domain,
         target: normalizedPatch.target,
         title: normalizedPatch.title,
         lawNumber: normalizedPatch.lawNumber,
         content: normalizedPatch.content,
         sourceNote: normalizedPatch.sourceNote,
+        sourceId: normalizedPatch.sourceId,
+        reviewStatus: normalizedPatch.reviewStatus,
         updatedAt: new Date().toISOString(),
       });
       return true;
@@ -277,20 +331,26 @@ class LawChatbotKnowledgeModel {
 
     const [result] = await pool.query(
       `UPDATE chatbot_knowledge
-       SET target = ?,
+       SET domain = ?,
+           target = ?,
            title = ?,
            law_number = ?,
            content = ?,
            source_note = ?,
+           source_id = ?,
+           review_status = ?,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = ?
        LIMIT 1`,
       [
+        normalizedPatch.domain,
         normalizedPatch.target,
         normalizedPatch.title || null,
         normalizedPatch.lawNumber || null,
         normalizedPatch.content || null,
         normalizedPatch.sourceNote || null,
+        normalizedPatch.sourceId,
+        normalizedPatch.reviewStatus,
         normalizedId,
       ],
     );
@@ -332,18 +392,21 @@ class LawChatbotKnowledgeModel {
     if (!pool) {
       return memoryKnowledgeEntries.slice(normalizedOffset, normalizedOffset + normalizedLimit).map((row) => mapRow({
         id: row.id,
+        domain: row.domain,
         target: row.target,
         title: row.title,
         law_number: row.lawNumber,
         content: row.content,
         source_note: row.sourceNote,
+        source_id: row.sourceId,
+        review_status: row.reviewStatus,
         created_at: row.createdAt,
         updated_at: row.updatedAt,
       }));
     }
 
     const [rows] = await pool.query(
-      `SELECT id, target, title, law_number, content, source_note, created_at, updated_at
+      `SELECT id, domain, target, title, law_number, content, source_note, source_id, review_status, created_at, updated_at
        FROM chatbot_knowledge
        ORDER BY id DESC
        LIMIT ? OFFSET ?`,
@@ -382,11 +445,14 @@ class LawChatbotKnowledgeModel {
 
           return {
             id: row.id,
+            domain: row.domain,
             target: row.target,
             title: row.title,
             lawNumber: row.lawNumber,
             content: row.content,
             sourceNote: row.sourceNote,
+            sourceId: row.sourceId,
+            reviewStatus: row.reviewStatus,
             source: "admin_knowledge",
             reference: row.lawNumber || row.title || "ฐานความรู้ภายในระบบ",
             comment: row.sourceNote || "",
@@ -414,12 +480,12 @@ class LawChatbotKnowledgeModel {
 
     const sql =
       target === "all"
-        ? `SELECT id, target, title, law_number, content, source_note, created_at, updated_at
+        ? `SELECT id, domain, target, title, law_number, content, source_note, source_id, review_status, created_at, updated_at
            FROM chatbot_knowledge
            WHERE ${whereClause}
            ORDER BY id DESC
            LIMIT 50`
-        : `SELECT id, target, title, law_number, content, source_note, created_at, updated_at
+        : `SELECT id, domain, target, title, law_number, content, source_note, source_id, review_status, created_at, updated_at
            FROM chatbot_knowledge
            WHERE target = ? AND (${whereClause})
            ORDER BY id DESC

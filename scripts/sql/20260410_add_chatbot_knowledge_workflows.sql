@@ -1,0 +1,52 @@
+CREATE TABLE IF NOT EXISTS chatbot_knowledge_workflows (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  target enum('all', 'coop', 'group') NOT NULL DEFAULT 'all',
+  source_kind varchar(30) NOT NULL DEFAULT 'manual',
+  source_title varchar(255) DEFAULT NULL,
+  source_text longtext NOT NULL,
+  source_reference text DEFAULT NULL,
+  source_metadata_json longtext DEFAULT NULL,
+  source_hash char(64) DEFAULT NULL,
+  workflow_stage enum('received', 'drafted', 'in_review', 'approved', 'published', 'rejected', 'needs_revision') NOT NULL DEFAULT 'received',
+  ai_model varchar(100) DEFAULT NULL,
+  ai_prompt_version varchar(50) DEFAULT NULL,
+  ai_draft_json longtext DEFAULT NULL,
+  ai_generated_at datetime DEFAULT NULL,
+  draft_title varchar(255) DEFAULT NULL,
+  draft_content longtext DEFAULT NULL,
+  draft_reference text DEFAULT NULL,
+  review_title varchar(255) DEFAULT NULL,
+  review_content longtext DEFAULT NULL,
+  review_reference text DEFAULT NULL,
+  review_note text DEFAULT NULL,
+  reviewed_by varchar(255) DEFAULT NULL,
+  reviewed_at datetime DEFAULT NULL,
+  approved_by varchar(255) DEFAULT NULL,
+  approved_at datetime DEFAULT NULL,
+  publication_type enum('suggested_question', 'knowledge') DEFAULT NULL,
+  published_knowledge_id int(11) DEFAULT NULL,
+  published_suggested_question_id int(11) DEFAULT NULL,
+  published_by varchar(255) DEFAULT NULL,
+  published_at datetime DEFAULT NULL,
+  created_by varchar(255) DEFAULT NULL,
+  created_by_user_id int(11) DEFAULT NULL,
+  created_at timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_chatbot_knowledge_workflows_stage_created (workflow_stage, created_at),
+  KEY idx_chatbot_knowledge_workflows_target_stage (target, workflow_stage),
+  KEY idx_chatbot_knowledge_workflows_source_kind (source_kind),
+  KEY idx_chatbot_knowledge_workflows_source_hash (source_hash),
+  KEY idx_chatbot_knowledge_workflows_publication_type (publication_type),
+  KEY idx_chatbot_knowledge_workflows_created_by_user (created_by_user_id),
+  KEY idx_chatbot_knowledge_workflows_published_knowledge_id (published_knowledge_id),
+  KEY idx_chatbot_knowledge_workflows_published_suggested_question_id (published_suggested_question_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+ALTER TABLE chatbot_knowledge
+  ADD COLUMN workflow_id int(11) DEFAULT NULL,
+  ADD KEY idx_chatbot_knowledge_workflow_id (workflow_id);
+
+ALTER TABLE chatbot_suggested_questions
+  ADD COLUMN workflow_id int(11) DEFAULT NULL,
+  ADD KEY idx_chatbot_suggested_questions_workflow_id (workflow_id);

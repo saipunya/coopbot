@@ -1,6 +1,6 @@
 # Coopbot Manual Regression Checklist
 
-Last updated: 2026-04-05
+Last updated: 2026-04-10
 
 This checklist covers the recent guest access, Google login persistence, monthly usage, three-plan package model, payment request, admin payment review changes, and responsive small-screen UI behavior.
 
@@ -11,6 +11,11 @@ This checklist covers the recent guest access, Google login persistence, monthly
   - `users`
   - `user_monthly_usage`
   - `payment_requests`
+  - `chatbot_knowledge`
+  - `chatbot_knowledge_workflows`
+  - `knowledge_sources`
+  - `knowledge_drafts`
+  - `chatbot_suggested_questions` with `domain`, `source_id`, `draft_id`, and `workflow_id`
 - If the environment previously used `standard`, run the migration in `scripts/sql/20260404_merge_standard_into_pro.sql` before testing package management flows.
 - Google login is configured and working.
 - Use one browser profile for guest tests and another incognito profile for clean user tests when possible.

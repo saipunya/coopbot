@@ -2,20 +2,60 @@ const { getDbPool } = require("../config/db");
 const { normalizeForSearch } = require("../services/thaiTextUtils");
 
 const memorySuggestedQuestions = [];
+const SUGGESTED_QUESTION_SELECT_COLUMNS = `
+  id,
+  domain,
+  target,
+  question_text,
+  normalized_question,
+  answer_text,
+  source_reference,
+  source_id,
+  draft_id,
+  workflow_id,
+  display_order,
+  is_active,
+  created_at,
+  updated_at
+`;
 
 function normalizeQuestionText(value) {
   return normalizeForSearch(String(value || "")).toLowerCase();
+}
+
+function normalizeSuggestedQuestionDomain(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["legal", "general", "mixed"].includes(normalized) ? normalized : "general";
+}
+
+function normalizeSuggestedQuestionSourceId(value) {
+  const normalized = Number(value || 0);
+  return normalized > 0 ? normalized : null;
+}
+
+function normalizeSuggestedQuestionDraftId(value) {
+  const normalized = Number(value || 0);
+  return normalized > 0 ? normalized : null;
+}
+
+function normalizeSuggestedQuestionWorkflowId(value) {
+  const normalized = Number(value || 0);
+  return normalized > 0 ? normalized : null;
 }
 
 function normalizeEntry(entry = {}) {
   const rawDisplayOrder = Number(entry.displayOrder);
 
   return {
+    domain: normalizeSuggestedQuestionDomain(entry.domain),
     target:
       entry.target === "coop" ? "coop" : entry.target === "group" ? "group" : "all",
     questionText: String(entry.questionText || entry.question || "").trim().slice(0, 255),
     answerText: String(entry.answerText || entry.answer || "").trim(),
     sourceReference: String(entry.sourceReference || entry.reference || "").trim(),
+    sourceId: normalizeSuggestedQuestionSourceId(entry.sourceId || entry.source_id),
+    draftId: normalizeSuggestedQuestionDraftId(entry.draftId || entry.draft_id),
+    workflowId: normalizeSuggestedQuestionWorkflowId(entry.workflowId || entry.workflow_id),
     displayOrder: Number.isFinite(rawDisplayOrder) ? Math.max(0, Math.floor(rawDisplayOrder)) : 0,
     isActive:
       entry.isActive === false ||
@@ -30,11 +70,15 @@ function normalizeEntry(entry = {}) {
 function mapRow(row = {}) {
   return {
     id: row.id,
+    domain: row.domain || "general",
     target: row.target === "coop" ? "coop" : row.target === "group" ? "group" : "all",
     questionText: row.question_text || row.questionText || "",
     normalizedQuestion: row.normalized_question || row.normalizedQuestion || "",
     answerText: row.answer_text || row.answerText || "",
     sourceReference: row.source_reference || row.sourceReference || "",
+    sourceId: Number(row.source_id || row.sourceId || 0) || null,
+    draftId: Number(row.draft_id || row.draftId || 0) || null,
+    workflowId: Number(row.workflow_id || row.workflowId || 0) || null,
     displayOrder: Number(row.display_order ?? row.displayOrder ?? 0) || 0,
     isActive:
       row.is_active === undefined
@@ -54,23 +98,109 @@ async function ensureTable() {
   }
 
   if (!tableReadyPromise) {
-    tableReadyPromise = pool.query(`
-      CREATE TABLE IF NOT EXISTS chatbot_suggested_questions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        target ENUM('all', 'coop', 'group') NOT NULL DEFAULT 'all',
-        question_text VARCHAR(255) NOT NULL,
-        normalized_question VARCHAR(255) NOT NULL,
-        answer_text TEXT NOT NULL,
-        source_reference TEXT DEFAULT NULL,
-        display_order INT NOT NULL DEFAULT 0,
-        is_active TINYINT(1) NOT NULL DEFAULT 1,
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_chatbot_suggested_questions_active_order (is_active, display_order, id),
-        INDEX idx_chatbot_suggested_questions_target_active (target, is_active),
-        INDEX idx_chatbot_suggested_questions_normalized (normalized_question)
-      )
-    `);
+    tableReadyPromise = pool
+      .query(`
+        CREATE TABLE IF NOT EXISTS chatbot_suggested_questions (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          domain ENUM('legal', 'general', 'mixed') NOT NULL DEFAULT 'general',
+          target ENUM('all', 'coop', 'group') NOT NULL DEFAULT 'all',
+          question_text VARCHAR(255) NOT NULL,
+          normalized_question VARCHAR(255) NOT NULL,
+          answer_text TEXT NOT NULL,
+          source_reference TEXT DEFAULT NULL,
+          source_id INT(11) DEFAULT NULL,
+          draft_id INT(11) DEFAULT NULL,
+          workflow_id INT(11) DEFAULT NULL,
+          display_order INT NOT NULL DEFAULT 0,
+          is_active TINYINT(1) NOT NULL DEFAULT 1,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_chatbot_suggested_questions_active_order (is_active, display_order, id),
+          INDEX idx_chatbot_suggested_questions_target_active (target, is_active),
+          INDEX idx_chatbot_suggested_questions_normalized (normalized_question),
+          INDEX idx_chatbot_suggested_questions_domain (domain),
+          INDEX idx_chatbot_suggested_questions_source_id (source_id),
+          INDEX idx_chatbot_suggested_questions_draft_id (draft_id),
+          INDEX idx_chatbot_suggested_questions_workflow_id (workflow_id)
+        )
+      `)
+      .then(async () => {
+      const [domainColumns] = await pool.query(
+        "SHOW COLUMNS FROM chatbot_suggested_questions LIKE 'domain'",
+      );
+      if (!Array.isArray(domainColumns) || domainColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE chatbot_suggested_questions ADD COLUMN domain enum('legal','general','mixed') NOT NULL DEFAULT 'general' AFTER id",
+        );
+      }
+
+      const [sourceIdColumns] = await pool.query(
+        "SHOW COLUMNS FROM chatbot_suggested_questions LIKE 'source_id'",
+      );
+      if (!Array.isArray(sourceIdColumns) || sourceIdColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE chatbot_suggested_questions ADD COLUMN source_id int(11) DEFAULT NULL AFTER source_reference",
+        );
+      }
+
+      const [draftIdColumns] = await pool.query(
+        "SHOW COLUMNS FROM chatbot_suggested_questions LIKE 'draft_id'",
+      );
+      if (!Array.isArray(draftIdColumns) || draftIdColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE chatbot_suggested_questions ADD COLUMN draft_id int(11) DEFAULT NULL AFTER source_id",
+        );
+      }
+
+      const [workflowIdColumns] = await pool.query(
+        "SHOW COLUMNS FROM chatbot_suggested_questions LIKE 'workflow_id'",
+      );
+      if (!Array.isArray(workflowIdColumns) || workflowIdColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE chatbot_suggested_questions ADD COLUMN workflow_id int(11) DEFAULT NULL AFTER draft_id",
+        );
+      }
+
+      const [domainIndexColumns] = await pool.query(
+        "SHOW INDEX FROM chatbot_suggested_questions WHERE Key_name = 'idx_chatbot_suggested_questions_domain'",
+      );
+      if (!Array.isArray(domainIndexColumns) || domainIndexColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_domain (domain)",
+        );
+      }
+
+      const [sourceIdIndexColumns] = await pool.query(
+        "SHOW INDEX FROM chatbot_suggested_questions WHERE Key_name = 'idx_chatbot_suggested_questions_source_id'",
+      );
+      if (!Array.isArray(sourceIdIndexColumns) || sourceIdIndexColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_source_id (source_id)",
+        );
+      }
+
+      const [draftIdIndexColumns] = await pool.query(
+        "SHOW INDEX FROM chatbot_suggested_questions WHERE Key_name = 'idx_chatbot_suggested_questions_draft_id'",
+      );
+      if (!Array.isArray(draftIdIndexColumns) || draftIdIndexColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_draft_id (draft_id)",
+        );
+      }
+
+      const [workflowIdIndexColumns] = await pool.query(
+        "SHOW INDEX FROM chatbot_suggested_questions WHERE Key_name = 'idx_chatbot_suggested_questions_workflow_id'",
+      );
+      if (!Array.isArray(workflowIdIndexColumns) || workflowIdIndexColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE chatbot_suggested_questions ADD KEY idx_chatbot_suggested_questions_workflow_id (workflow_id)",
+        );
+      }
+    })
+      .catch((error) => {
+        tableReadyPromise = null;
+        throw error;
+      });
   }
 
   await tableReadyPromise;
@@ -89,11 +219,15 @@ class LawChatbotSuggestedQuestionModel {
     if (!pool) {
       const record = {
         id: memorySuggestedQuestions.length + 1,
+        domain: normalized.domain,
         target: normalized.target,
         questionText: normalized.questionText,
         normalizedQuestion,
         answerText: normalized.answerText,
         sourceReference: normalized.sourceReference,
+        sourceId: normalized.sourceId,
+        draftId: normalized.draftId,
+        workflowId: normalized.workflowId,
         displayOrder: normalized.displayOrder,
         isActive: normalized.isActive === 1,
         createdAt: new Date().toISOString(),
@@ -106,14 +240,18 @@ class LawChatbotSuggestedQuestionModel {
     await ensureTable();
     const [result] = await pool.query(
       `INSERT INTO chatbot_suggested_questions
-        (target, question_text, normalized_question, answer_text, source_reference, display_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (domain, target, question_text, normalized_question, answer_text, source_reference, source_id, draft_id, workflow_id, display_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        normalized.domain,
         normalized.target,
         normalized.questionText,
         normalizedQuestion,
         normalized.answerText,
         normalized.sourceReference || null,
+        normalized.sourceId,
+        normalized.draftId,
+        normalized.workflowId,
         normalized.displayOrder,
         normalized.isActive,
       ],
@@ -121,11 +259,15 @@ class LawChatbotSuggestedQuestionModel {
 
     return mapRow({
       id: result.insertId,
+      domain: normalized.domain,
       target: normalized.target,
       question_text: normalized.questionText,
       normalized_question: normalizedQuestion,
       answer_text: normalized.answerText,
       source_reference: normalized.sourceReference,
+      source_id: normalized.sourceId,
+      draft_id: normalized.draftId,
+      workflow_id: normalized.workflowId,
       display_order: normalized.displayOrder,
       is_active: normalized.isActive,
       created_at: new Date().toISOString(),
@@ -171,7 +313,7 @@ class LawChatbotSuggestedQuestionModel {
 
     await ensureTable();
     const [rows] = await pool.query(
-      `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
+      `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
          FROM chatbot_suggested_questions
         WHERE id = ?
         LIMIT 1`,
@@ -208,7 +350,7 @@ class LawChatbotSuggestedQuestionModel {
 
     await ensureTable();
     const [rows] = await pool.query(
-      `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
+      `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
          FROM chatbot_suggested_questions
         ORDER BY is_active DESC, display_order ASC, id DESC
         LIMIT ? OFFSET ?`,
@@ -252,7 +394,7 @@ class LawChatbotSuggestedQuestionModel {
     const [rows] =
       normalizedTarget === "all"
         ? await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
+            `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
               ORDER BY display_order ASC, id DESC
@@ -260,7 +402,7 @@ class LawChatbotSuggestedQuestionModel {
             [normalizedLimit],
           )
         : await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
+            `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND target IN ('all', ?)
@@ -278,7 +420,24 @@ class LawChatbotSuggestedQuestionModel {
       return false;
     }
 
-    const normalized = normalizeEntry(patch);
+    const existing = await this.findById(normalizedId);
+    if (!existing) {
+      return false;
+    }
+
+    const normalized = normalizeEntry({
+      domain: patch.domain !== undefined ? patch.domain : existing.domain,
+      target: patch.target !== undefined ? patch.target : existing.target,
+      questionText: patch.questionText !== undefined ? patch.questionText : existing.questionText,
+      answerText: patch.answerText !== undefined ? patch.answerText : existing.answerText,
+      sourceReference: patch.sourceReference !== undefined ? patch.sourceReference : existing.sourceReference,
+      sourceId: patch.sourceId !== undefined ? patch.sourceId : existing.sourceId,
+      draftId: patch.draftId !== undefined ? patch.draftId : existing.draftId,
+      workflowId: patch.workflowId !== undefined ? patch.workflowId : existing.workflowId,
+      displayOrder: patch.displayOrder !== undefined ? patch.displayOrder : existing.displayOrder,
+      isActive: patch.isActive !== undefined ? patch.isActive : existing.isActive,
+    });
+
     if (!normalized.questionText || !normalized.answerText) {
       return false;
     }
@@ -293,11 +452,15 @@ class LawChatbotSuggestedQuestionModel {
       }
 
       Object.assign(found, {
+        domain: normalized.domain,
         target: normalized.target,
         questionText: normalized.questionText,
         normalizedQuestion,
         answerText: normalized.answerText,
         sourceReference: normalized.sourceReference,
+        sourceId: normalized.sourceId,
+        draftId: normalized.draftId,
+        workflowId: normalized.workflowId,
         displayOrder: normalized.displayOrder,
         isActive: normalized.isActive === 1,
         updatedAt: new Date().toISOString(),
@@ -308,22 +471,30 @@ class LawChatbotSuggestedQuestionModel {
     await ensureTable();
     const [result] = await pool.query(
       `UPDATE chatbot_suggested_questions
-          SET target = ?,
+          SET domain = ?,
+              target = ?,
               question_text = ?,
               normalized_question = ?,
               answer_text = ?,
               source_reference = ?,
+              source_id = ?,
+              draft_id = ?,
+              workflow_id = ?,
               display_order = ?,
               is_active = ?,
               updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         LIMIT 1`,
       [
+        normalized.domain,
         normalized.target,
         normalized.questionText,
         normalizedQuestion,
         normalized.answerText,
         normalized.sourceReference || null,
+        normalized.sourceId,
+        normalized.draftId,
+        normalized.workflowId,
         normalized.displayOrder,
         normalized.isActive,
         normalizedId,
@@ -445,7 +616,7 @@ class LawChatbotSuggestedQuestionModel {
     const [rows] =
       normalizedTarget === "all"
         ? await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
+            `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND normalized_question = ?
@@ -454,7 +625,7 @@ class LawChatbotSuggestedQuestionModel {
             [normalizedQuestion],
           )
         : await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
+            `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND normalized_question = ?
@@ -475,14 +646,14 @@ class LawChatbotSuggestedQuestionModel {
     const [rows] =
       normalizedTarget === "all"
         ? await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
+            `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
               ORDER BY display_order ASC, id DESC
               LIMIT 50`,
           )
         : await pool.query(
-            `SELECT id, target, question_text, normalized_question, answer_text, source_reference, display_order, is_active, created_at, updated_at
+            `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND target IN ('all', ?)

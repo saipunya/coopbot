@@ -131,10 +131,14 @@ async function getKnowledgeAdminSummaryData() {
 
 async function saveSuggestedQuestionEntry(payload = {}) {
   const entry = await LawChatbotSuggestedQuestionModel.create({
+    domain: payload.domain,
     target: payload.target,
     questionText: payload.questionText || payload.question,
     answerText: payload.answerText || payload.answer,
     sourceReference: payload.sourceReference || payload.reference,
+    sourceId: payload.sourceId || payload.source_id,
+    draftId: payload.draftId || payload.draft_id,
+    workflowId: payload.workflowId || payload.workflow_id,
     displayOrder: payload.displayOrder,
     isActive: payload.isActive,
   });
@@ -158,10 +162,14 @@ async function updateSuggestedQuestionEntry(id, payload = {}) {
   }
 
   const updated = await LawChatbotSuggestedQuestionModel.updateById(id, {
+    domain: payload.domain,
     target: payload.target,
     questionText: payload.questionText || payload.question,
     answerText: payload.answerText || payload.answer,
     sourceReference: payload.sourceReference || payload.reference,
+    sourceId: payload.sourceId || payload.source_id,
+    draftId: payload.draftId || payload.draft_id,
+    workflowId: payload.workflowId || payload.workflow_id,
     displayOrder: payload.displayOrder,
     isActive: payload.isActive,
   });
@@ -238,10 +246,14 @@ async function approveKnowledgeSuggestion(id, reviewMeta = {}) {
   }
 
   const entryResult = await saveSuggestedQuestionEntry({
+    domain: suggestion.domain,
     target: suggestion.target,
     questionText: suggestion.title,
     answerText: suggestion.content,
     sourceReference: suggestion.sourceReference,
+    sourceId: suggestion.sourceId || suggestion.source_id,
+    draftId: suggestion.draftId || suggestion.draft_id,
+    workflowId: suggestion.workflowId || suggestion.workflow_id,
     displayOrder: 0,
     isActive: 1,
   });
@@ -305,11 +317,14 @@ async function saveKnowledgeEntry(payload) {
   clearAnswerCache();
 
   return LawChatbotKnowledgeModel.create({
+    domain: payload.domain,
     target,
     title: payload.title || "",
     lawNumber: payload.lawNumber || "",
     content: payload.content || "",
     sourceNote: payload.sourceNote || payload.note || "",
+    sourceId: payload.sourceId || payload.source_id,
+    reviewStatus: payload.reviewStatus || payload.review_status,
   });
 }
 
@@ -327,10 +342,12 @@ async function saveKnowledgeSuggestionAsKnowledgeEntry(id, reviewMeta = {}) {
     .join(" | ");
 
   const entry = await saveKnowledgeEntry({
+    domain: suggestion.domain,
     target: suggestion.target,
     title: suggestion.title,
     content: suggestion.content,
     sourceNote: mergedSourceNote,
+    sourceId: suggestion.sourceId || suggestion.source_id,
   });
 
   if (!entry) {
@@ -364,11 +381,14 @@ async function updateKnowledgeEntry(id, payload = {}) {
   clearAnswerCache();
 
   const updated = await LawChatbotKnowledgeModel.updateById(id, {
+    domain: payload.domain,
     target,
     title: payload.title || "",
     lawNumber: payload.lawNumber || "",
     content: payload.content || "",
     sourceNote: payload.sourceNote || payload.note || "",
+    sourceId: payload.sourceId || payload.source_id,
+    reviewStatus: payload.reviewStatus || payload.review_status,
   });
 
   if (!updated) {
