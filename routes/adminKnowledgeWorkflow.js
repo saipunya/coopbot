@@ -35,6 +35,10 @@ function requireAdminWorkflowAuth(req, res, next) {
 
 router.use(requireAdminWorkflowAuth);
 
+router.get("/knowledge-workflow", controller.renderWorkflowIndex);
+router.post("/knowledge-workflow", controller.submitWorkflow);
+router.get("/knowledge-workflow/:sourceId", controller.renderWorkflowSourceDetail);
+
 router.post("/knowledge-sources", controller.createSource);
 router.post("/knowledge-sources/:id/generate-drafts", controller.generateDrafts);
 router.get("/knowledge-sources/:id/drafts", controller.listDraftsBySource);

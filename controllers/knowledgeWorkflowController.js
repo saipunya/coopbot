@@ -1,4 +1,36 @@
+const KnowledgeSourceModel = require("../models/knowledgeSourceModel");
+const KnowledgeDraftModel = require("../models/knowledgeDraftModel");
 const knowledgeDraftService = require("../services/knowledgeDraftService");
+
+const WORKFLOW_DOMAIN_OPTIONS = [
+  { value: "general", label: "ทั่วไป" },
+  { value: "legal", label: "กฎหมาย" },
+  { value: "mixed", label: "ผสม" },
+];
+
+const WORKFLOW_TARGET_OPTIONS = [
+  { value: "general", label: "ทั่วไป" },
+  { value: "all", label: "ทุกประเภท" },
+  { value: "coop", label: "สหกรณ์" },
+  { value: "group", label: "กลุ่มเกษตรกร" },
+];
+
+const WORKFLOW_SOURCE_STATUS_OPTIONS = [
+  { value: "draft", label: "ร่าง" },
+  { value: "approved", label: "อนุมัติแล้ว" },
+  { value: "archived", label: "จัดเก็บแล้ว" },
+];
+
+const WORKFLOW_DRAFT_STATUS_OPTIONS = [
+  { value: "draft", label: "ร่าง" },
+  { value: "approved", label: "อนุมัติแล้ว" },
+  { value: "rejected", label: "ปฏิเสธแล้ว" },
+];
+
+const WORKFLOW_APPROVED_RECORD_TYPE_OPTIONS = [
+  { value: "knowledge", label: "ฐานความรู้" },
+  { value: "suggested_question", label: "คำถามแนะนำ" },
+];
 
 const ERROR_STATUS_BY_REASON = {
   admin_auth_required: 401,
@@ -52,6 +84,169 @@ function getAdminActor(req) {
   );
 }
 
+function appendQueryParam(path, key, value) {
+  const normalizedPath = String(path || "").trim();
+  const normalizedKey = String(key || "").trim();
+  if (!normalizedPath || !normalizedKey) {
+    return normalizedPath || "/";
+  }
+
+  const hashIndex = normalizedPath.indexOf("#");
+  const basePath = hashIndex >= 0 ? normalizedPath.slice(0, hashIndex) : normalizedPath;
+  const hash = hashIndex >= 0 ? normalizedPath.slice(hashIndex) : "";
+  const separator = basePath.includes("?") ? "&" : "?";
+  return `${basePath}${separator}${encodeURIComponent(normalizedKey)}=${encodeURIComponent(String(value || ""))}${hash}`;
+}
+
+function normalizeBooleanFlag(value, fallback = false) {
+  if (value === undefined || value === null) {
+    return Boolean(fallback);
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) {
+    return Boolean(fallback);
+  }
+
+  if (["true", "1", "yes", "y", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["false", "0", "no", "n", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return Boolean(value);
+}
+
+function truncateText(value, limit = 220) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(1, limit - 1)).trim()}…`;
+}
+
+function labelFromOptions(options, value, fallback = "ไม่ระบุ") {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  const matched = options.find((item) => item.value === normalizedValue);
+  return matched ? matched.label : fallback;
+}
+
+function getWorkflowDomainLabel(value) {
+  return labelFromOptions(WORKFLOW_DOMAIN_OPTIONS, value, "ทั่วไป");
+}
+
+function getWorkflowTargetLabel(value) {
+  return labelFromOptions(WORKFLOW_TARGET_OPTIONS, value, "ทั่วไป");
+}
+
+function getWorkflowSourceStatusLabel(value) {
+  return labelFromOptions(WORKFLOW_SOURCE_STATUS_OPTIONS, value, "ร่าง");
+}
+
+function getWorkflowDraftStatusLabel(value) {
+  return labelFromOptions(WORKFLOW_DRAFT_STATUS_OPTIONS, value, "ร่าง");
+}
+
+function getWorkflowApprovedRecordTypeLabel(value) {
+  return labelFromOptions(WORKFLOW_APPROVED_RECORD_TYPE_OPTIONS, value, "ยังไม่เชื่อม");
+}
+
+function summarizeDrafts(drafts = []) {
+  return drafts.reduce(
+    (summary, draft) => {
+      summary.total += 1;
+
+      const status = String(draft?.status || "").trim().toLowerCase();
+      if (status === "draft") {
+        summary.draft += 1;
+      } else if (status === "approved") {
+        summary.approved += 1;
+      } else if (status === "rejected") {
+        summary.rejected += 1;
+      }
+
+      return summary;
+    },
+    {
+      total: 0,
+      draft: 0,
+      approved: 0,
+      rejected: 0,
+    },
+  );
+}
+
+function summarizeSources(sources = []) {
+  return sources.reduce(
+    (summary, source) => {
+      summary.total += 1;
+
+      const status = String(source?.status || "").trim().toLowerCase();
+      if (status === "draft") {
+        summary.draft += 1;
+      } else if (status === "approved") {
+        summary.approved += 1;
+      } else if (status === "archived") {
+        summary.archived += 1;
+      }
+
+      const draftSummary = source?.draftSummary || {};
+      summary.draftTotal += Number(draftSummary.total || 0);
+      summary.draftPending += Number(draftSummary.draft || 0);
+      summary.draftApproved += Number(draftSummary.approved || 0);
+      summary.draftRejected += Number(draftSummary.rejected || 0);
+
+      return summary;
+    },
+    {
+      total: 0,
+      draft: 0,
+      approved: 0,
+      archived: 0,
+      draftTotal: 0,
+      draftPending: 0,
+      draftApproved: 0,
+      draftRejected: 0,
+    },
+  );
+}
+
+function buildWorkflowSourceRecord(source, drafts = []) {
+  const draftSummary = summarizeDrafts(drafts);
+  return {
+    ...source,
+    sourcePreviewText: truncateText(source?.sourceText || "", 260),
+    domainLabel: getWorkflowDomainLabel(source?.domain),
+    targetLabel: getWorkflowTargetLabel(source?.target),
+    statusLabel: getWorkflowSourceStatusLabel(source?.status),
+    draftSummary,
+  };
+}
+
+function buildWorkflowDraftRecord(draft) {
+  return {
+    ...draft,
+    statusLabel: getWorkflowDraftStatusLabel(draft?.status),
+    approvedTargetLabel: getWorkflowTargetLabel(draft?.approvedTarget || "general"),
+    approvedRecordTypeLabel: getWorkflowApprovedRecordTypeLabel(draft?.approvedRecordType),
+  };
+}
+
 function sendServiceResult(res, result, successStatus = 200) {
   if (result && result.ok) {
     return res.status(successStatus).json(result);
@@ -63,6 +258,156 @@ function sendServiceResult(res, result, successStatus = 200) {
     reason,
     message: ERROR_MESSAGE_BY_REASON[reason] || "ไม่สามารถดำเนินการได้",
     error: result?.error || null,
+  });
+}
+
+async function renderWorkflowIndex(req, res) {
+  const recentSources = await KnowledgeSourceModel.listRecent(12);
+  const recentSourcesWithDrafts = await Promise.all(
+    recentSources.map(async (source) => {
+      const drafts = await KnowledgeDraftModel.listBySourceId(source.id, {
+        status: "all",
+        limit: 500,
+      });
+
+      return buildWorkflowSourceRecord(source, drafts);
+    }),
+  );
+
+  res.render("admin/knowledgeWorkflow", {
+    title: "Knowledge Workflow",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data: {
+      recentSources: recentSourcesWithDrafts,
+      summary: summarizeSources(recentSourcesWithDrafts),
+    },
+    domainOptions: WORKFLOW_DOMAIN_OPTIONS,
+    targetOptions: WORKFLOW_TARGET_OPTIONS,
+    sourceStatusOptions: WORKFLOW_SOURCE_STATUS_OPTIONS,
+    draftStatusOptions: WORKFLOW_DRAFT_STATUS_OPTIONS,
+    getWorkflowDomainLabel,
+    getWorkflowTargetLabel,
+    getWorkflowSourceStatusLabel,
+    getWorkflowDraftStatusLabel,
+    getWorkflowApprovedRecordTypeLabel,
+    returnPath: req.originalUrl || "/admin/knowledge-workflow",
+  });
+}
+
+async function submitWorkflow(req, res) {
+  const title = pickText(req.body?.title, req.body?.name);
+  const sourceText = pickText(
+    req.body?.sourceText,
+    req.body?.source_text,
+    req.body?.source,
+    req.body?.content,
+  );
+
+  if (!title || !sourceText) {
+    return res.redirect(appendQueryParam("/admin/knowledge-workflow", "error", ERROR_MESSAGE_BY_REASON.invalid_payload));
+  }
+
+  const createResult = await knowledgeDraftService.createKnowledgeSource({
+    domain: req.body?.domain,
+    target: req.body?.target,
+    title,
+    sourceText,
+    sourceReference: req.body?.sourceReference || req.body?.source_reference,
+    documentType: req.body?.documentType || req.body?.document_type,
+    createdBy: getAdminActor(req),
+  });
+
+  if (!createResult.ok || !createResult.source) {
+    return res.redirect(
+      appendQueryParam(
+        "/admin/knowledge-workflow",
+        "error",
+        ERROR_MESSAGE_BY_REASON[createResult.reason] || ERROR_MESSAGE_BY_REASON.invalid_payload,
+      ),
+    );
+  }
+
+  const source = createResult.source;
+  const detailPath = `/admin/knowledge-workflow/${source.id}`;
+  const generateDraftsNow = normalizeBooleanFlag(req.body?.generateDraftsNow, false);
+
+  if (!generateDraftsNow) {
+    return res.redirect(
+      appendQueryParam(detailPath, "success", `บันทึกต้นฉบับ "${source.title}" เรียบร้อยแล้ว`),
+    );
+  }
+
+  const generationResult = await knowledgeDraftService.generateDraftsFromSource(source.id, {
+    forceRegenerate: false,
+  });
+
+  if (!generationResult.ok) {
+    return res.redirect(
+      appendQueryParam(
+        detailPath,
+        "error",
+        ERROR_MESSAGE_BY_REASON[generationResult.reason] || ERROR_MESSAGE_BY_REASON.generation_failed,
+      ),
+    );
+  }
+
+  const generatedCount = Array.isArray(generationResult.drafts) ? generationResult.drafts.length : 0;
+  const successMessage = generationResult.reusedExistingDrafts
+    ? `บันทึกต้นฉบับ "${source.title}" เรียบร้อยแล้ว และใช้ draft เดิม`
+    : `บันทึกต้นฉบับ "${source.title}" และสร้าง draft ${generatedCount} รายการเรียบร้อยแล้ว`;
+
+  return res.redirect(appendQueryParam(detailPath, "success", successMessage));
+}
+
+async function renderWorkflowSourceDetail(req, res) {
+  const sourceId = normalizeId(req.params.sourceId);
+  if (!sourceId) {
+    return res.redirect(
+      appendQueryParam("/admin/knowledge-workflow", "error", ERROR_MESSAGE_BY_REASON.invalid_source_id),
+    );
+  }
+
+  const source = await KnowledgeSourceModel.findById(sourceId);
+  if (!source) {
+    return res.redirect(
+      appendQueryParam("/admin/knowledge-workflow", "error", ERROR_MESSAGE_BY_REASON.source_not_found),
+    );
+  }
+
+  const drafts = await KnowledgeDraftModel.listBySourceId(source.id, {
+    status: "all",
+    limit: 500,
+  });
+  const draftRecords = drafts.map(buildWorkflowDraftRecord);
+  const draftSummary = summarizeDrafts(draftRecords);
+
+  res.render("admin/knowledgeWorkflowDetail", {
+    title: `Knowledge Workflow - ${source.title}`,
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data: {
+      source: {
+        ...source,
+        domainLabel: getWorkflowDomainLabel(source.domain),
+        targetLabel: getWorkflowTargetLabel(source.target),
+        statusLabel: getWorkflowSourceStatusLabel(source.status),
+      },
+      drafts: draftRecords,
+      draftSummary,
+    },
+    domainOptions: WORKFLOW_DOMAIN_OPTIONS,
+    targetOptions: WORKFLOW_TARGET_OPTIONS,
+    sourceStatusOptions: WORKFLOW_SOURCE_STATUS_OPTIONS,
+    draftStatusOptions: WORKFLOW_DRAFT_STATUS_OPTIONS,
+    getWorkflowDomainLabel,
+    getWorkflowTargetLabel,
+    getWorkflowSourceStatusLabel,
+    getWorkflowDraftStatusLabel,
+    getWorkflowApprovedRecordTypeLabel,
+    returnPath: req.originalUrl || `/admin/knowledge-workflow/${source.id}`,
   });
 }
 
@@ -176,5 +521,8 @@ module.exports = {
   createSource,
   generateDrafts,
   listDraftsBySource,
+  renderWorkflowIndex,
+  renderWorkflowSourceDetail,
   rejectDraft,
+  submitWorkflow,
 };
