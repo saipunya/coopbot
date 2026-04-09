@@ -10,6 +10,11 @@ const {
 
 const memoryKnowledgeEntries = [];
 
+function invalidateAnswerCache() {
+  const { clearAnswerCache } = require("../services/answerStateService");
+  clearAnswerCache();
+}
+
 function normalizeKnowledgeDomain(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return ["legal", "general", "mixed"].includes(normalized) ? normalized : "general";
@@ -184,29 +189,19 @@ function mapRow(row) {
 class LawChatbotKnowledgeModel {
   static async create(entry) {
     const normalized = normalizeEntry(entry);
+    const createdAt = new Date().toISOString();
     const pool = getDbPool();
 
     if (!pool) {
       const record = {
         id: memoryKnowledgeEntries.length + 1,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt,
+        updatedAt: createdAt,
         ...normalized,
       };
       memoryKnowledgeEntries.unshift(record);
-      return mapRow({
-        id: record.id,
-        domain: record.domain,
-        target: record.target,
-        title: record.title,
-        law_number: record.lawNumber,
-        content: record.content,
-        source_note: record.sourceNote,
-        source_id: record.sourceId,
-        review_status: record.reviewStatus,
-        created_at: record.createdAt,
-        updated_at: record.updatedAt,
-      });
+      invalidateAnswerCache();
+      return mapRow(record);
     }
 
     const [result] = await pool.query(
@@ -225,14 +220,21 @@ class LawChatbotKnowledgeModel {
       ],
     );
 
-    return {
+    invalidateAnswerCache();
+
+    return mapRow({
       id: result.insertId,
-      ...normalized,
-      source: "admin_knowledge",
-      reference: normalized.lawNumber || normalized.title || "ฐานความรู้ภายในระบบ",
-      comment: normalized.sourceNote || "",
-      score: 0,
-    };
+      domain: normalized.domain,
+      target: normalized.target,
+      title: normalized.title,
+      law_number: normalized.lawNumber,
+      content: normalized.content,
+      source_note: normalized.sourceNote,
+      source_id: normalized.sourceId,
+      review_status: normalized.reviewStatus,
+      created_at: createdAt,
+      updated_at: createdAt,
+    });
   }
 
   static async count() {
@@ -331,6 +333,7 @@ class LawChatbotKnowledgeModel {
         reviewStatus: normalizedPatch.reviewStatus,
         updatedAt: new Date().toISOString(),
       });
+      invalidateAnswerCache();
       return true;
     }
 
@@ -360,7 +363,12 @@ class LawChatbotKnowledgeModel {
       ],
     );
 
-    return Number(result.affectedRows || 0) > 0;
+    const updated = Number(result.affectedRows || 0) > 0;
+    if (updated) {
+      invalidateAnswerCache();
+    }
+
+    return updated;
   }
 
   static async removeById(id) {
@@ -378,6 +386,7 @@ class LawChatbotKnowledgeModel {
       }
 
       memoryKnowledgeEntries.splice(index, 1);
+      invalidateAnswerCache();
       return true;
     }
 
@@ -386,7 +395,12 @@ class LawChatbotKnowledgeModel {
       [normalizedId],
     );
 
-    return Number(result.affectedRows || 0) > 0;
+    const removed = Number(result.affectedRows || 0) > 0;
+    if (removed) {
+      invalidateAnswerCache();
+    }
+
+    return removed;
   }
 
   static async listRecent(limit = 10, offset = 0) {

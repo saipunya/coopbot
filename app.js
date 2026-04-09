@@ -7,6 +7,7 @@ const path = require("path");
 const { connectDb } = require("./config/db");
 const adminController = require("./controllers/adminController");
 const adminRoutes = require("./routes/admin");
+const adminKnowledgeWorkflowRoutes = require("./routes/adminKnowledgeWorkflow");
 const lawChatbotRoutes = require("./routes/lawChatbot");
 const userRoutes = require("./routes/user");
 const { attachCurrentUser, redirectIfAuthenticated } = require("./middlewares/authMiddleware");
@@ -86,6 +87,7 @@ app.get("/auth/google", redirectIfAuthenticated, adminController.redirectToGoogl
 app.get("/auth/google/callback", adminController.handleGoogleCallback);
 
 app.use("/admin", adminRoutes);
+app.use("/admin", adminKnowledgeWorkflowRoutes);
 app.use("/law-chatbot", lawChatbotRoutes);
 app.use("/user", userRoutes);
 

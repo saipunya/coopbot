@@ -40,6 +40,35 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function normalizeBooleanFlag(value, fallback = false) {
+  if (value === undefined || value === null) {
+    return Boolean(fallback);
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) {
+    return Boolean(fallback);
+  }
+
+  if (["true", "1", "yes", "y", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["false", "0", "no", "n", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return Boolean(value);
+}
+
 function extractKeywordsFromText(text, limit = 8) {
   return uniqueTokens(segmentWords(normalizeForSearch(String(text || "")).toLowerCase()))
     .map((token) => String(token || "").trim())
@@ -157,6 +186,25 @@ async function generateDraftsFromSource(sourceId, options = {}) {
       return { ok: false, reason: "source_not_found" };
     }
 
+    const forceRegenerate = normalizeBooleanFlag(options.forceRegenerate, false);
+    const existingDrafts = await KnowledgeDraftModel.listBySourceId(source.id, {
+      status: "draft",
+      limit: Math.max(1, Number(options.existingDraftLimit ?? 100)),
+      offset: 0,
+    });
+
+    if (existingDrafts.length > 0 && !forceRegenerate) {
+      return {
+        ok: true,
+        source,
+        drafts: existingDrafts,
+        reusedExistingDrafts: true,
+        reused: true,
+        generated: false,
+        reason: "existing_drafts",
+      };
+    }
+
     const generator = typeof options.generator === "function" ? options.generator : null;
     let candidates = Array.isArray(options.drafts) ? options.drafts : null;
 
@@ -173,6 +221,30 @@ async function generateDraftsFromSource(sourceId, options = {}) {
 
     if (!Array.isArray(candidates) || candidates.length === 0) {
       candidates = [buildFallbackDraftCandidate(source)];
+    }
+
+    const retiredDraftIds = [];
+    if (existingDrafts.length > 0 && forceRegenerate) {
+      for (const existingDraft of existingDrafts) {
+        const retired = await KnowledgeDraftModel.updateById(existingDraft.id, {
+          status: "rejected",
+          approvedTarget: null,
+          approvedRecordType: null,
+          approvedRecordId: null,
+        });
+
+        if (!retired) {
+          return {
+            ok: false,
+            reason: "retire_failed",
+            source,
+            drafts: existingDrafts,
+            retiredDraftIds,
+          };
+        }
+
+        retiredDraftIds.push(existingDraft.id);
+      }
     }
 
     const createdDrafts = [];
@@ -202,6 +274,11 @@ async function generateDraftsFromSource(sourceId, options = {}) {
       ok: true,
       source,
       drafts: createdDrafts,
+      reusedExistingDrafts: false,
+      reused: false,
+      generated: true,
+      regenerated: retiredDraftIds.length > 0,
+      retiredDraftIds,
     };
   } catch (error) {
     return {

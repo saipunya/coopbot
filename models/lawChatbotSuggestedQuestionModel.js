@@ -19,6 +19,11 @@ const SUGGESTED_QUESTION_SELECT_COLUMNS = `
 `;
 const SUGGESTED_QUESTION_TARGETS = new Set(["all", "coop", "group", "general"]);
 
+function invalidateAnswerCache() {
+  const { clearAnswerCache } = require("../services/answerStateService");
+  clearAnswerCache();
+}
+
 function normalizeQuestionText(value) {
   return normalizeForSearch(String(value || "")).toLowerCase();
 }
@@ -266,6 +271,7 @@ class LawChatbotSuggestedQuestionModel {
         updatedAt: new Date().toISOString(),
       };
       memorySuggestedQuestions.unshift(record);
+      invalidateAnswerCache();
       return mapRow(record);
     }
 
@@ -287,6 +293,8 @@ class LawChatbotSuggestedQuestionModel {
         normalized.isActive,
       ],
     );
+
+    invalidateAnswerCache();
 
     return mapRow({
       id: result.insertId,
@@ -508,6 +516,7 @@ class LawChatbotSuggestedQuestionModel {
         isActive: normalized.isActive === 1,
         updatedAt: new Date().toISOString(),
       });
+      invalidateAnswerCache();
       return true;
     }
 
@@ -542,7 +551,12 @@ class LawChatbotSuggestedQuestionModel {
       ],
     );
 
-    return Number(result.affectedRows || 0) > 0;
+    const updated = Number(result.affectedRows || 0) > 0;
+    if (updated) {
+      invalidateAnswerCache();
+    }
+
+    return updated;
   }
 
   static async removeById(id) {
@@ -559,6 +573,7 @@ class LawChatbotSuggestedQuestionModel {
       }
 
       memorySuggestedQuestions.splice(index, 1);
+      invalidateAnswerCache();
       return true;
     }
 
@@ -568,7 +583,12 @@ class LawChatbotSuggestedQuestionModel {
       [normalizedId],
     );
 
-    return Number(result.affectedRows || 0) > 0;
+    const removed = Number(result.affectedRows || 0) > 0;
+    if (removed) {
+      invalidateAnswerCache();
+    }
+
+    return removed;
   }
 
   static async findAnswerMatch(question, target = "all") {
