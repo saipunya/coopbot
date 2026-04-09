@@ -15,5 +15,6 @@ CREATE TABLE IF NOT EXISTS knowledge_sources (
   updated_at timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_knowledge_sources_domain_target_status (domain, target, status),
-  KEY idx_knowledge_sources_status (status)
+  KEY idx_knowledge_sources_status (status),
+  KEY idx_knowledge_sources_target_status (target, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

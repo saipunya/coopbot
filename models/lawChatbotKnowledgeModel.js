@@ -12,7 +12,7 @@ const memoryKnowledgeEntries = [];
 
 function normalizeKnowledgeDomain(value) {
   const normalized = String(value || "").trim().toLowerCase();
-  return ["legal", "general", "mixed"].includes(normalized) ? normalized : "legal";
+  return ["legal", "general", "mixed"].includes(normalized) ? normalized : "general";
 }
 
 function normalizeKnowledgeReviewStatus(value) {
@@ -164,7 +164,7 @@ function hasKnowledgeRelevance(query, row) {
 function mapRow(row) {
   return {
     id: row.id,
-    domain: row.domain || "legal",
+    domain: row.domain || "general",
     target: normalizeKnowledgeTarget(row.target, "general"),
     title: row.title || "ฐานความรู้ภายในระบบ",
     lawNumber: row.law_number || row.lawNumber || "",

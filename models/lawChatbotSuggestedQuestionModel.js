@@ -17,6 +17,7 @@ const SUGGESTED_QUESTION_SELECT_COLUMNS = `
   created_at,
   updated_at
 `;
+const SUGGESTED_QUESTION_TARGETS = new Set(["all", "coop", "group", "general"]);
 
 function normalizeQuestionText(value) {
   return normalizeForSearch(String(value || "")).toLowerCase();
@@ -37,13 +38,69 @@ function normalizeSuggestedQuestionDraftId(value) {
   return normalized > 0 ? normalized : null;
 }
 
+function normalizeSuggestedQuestionTarget(value, fallback = "all") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return SUGGESTED_QUESTION_TARGETS.has(normalized) ? normalized : fallback;
+}
+
+function getSuggestedQuestionTargetPriority(candidateTarget, requestedTarget) {
+  const candidate = normalizeSuggestedQuestionTarget(candidateTarget);
+  const requested = normalizeSuggestedQuestionTarget(requestedTarget);
+
+  if (requested === "all") {
+    if (candidate === "all") {
+      return 0;
+    }
+    if (candidate === "general") {
+      return 1;
+    }
+    return 2;
+  }
+
+  if (candidate === requested) {
+    return 0;
+  }
+
+  if (candidate === "general") {
+    return 1;
+  }
+
+  if (candidate === "all") {
+    return 2;
+  }
+
+  return 3;
+}
+
+function getSuggestedQuestionLookupTargets(target) {
+  const normalizedTarget = normalizeSuggestedQuestionTarget(target);
+
+  if (normalizedTarget === "all") {
+    return {
+      normalizedTarget,
+      lookupTargets: null,
+    };
+  }
+
+  if (normalizedTarget === "general") {
+    return {
+      normalizedTarget,
+      lookupTargets: ["general", "all"],
+    };
+  }
+
+  return {
+    normalizedTarget,
+    lookupTargets: [normalizedTarget, "general", "all"],
+  };
+}
+
 function normalizeEntry(entry = {}) {
   const rawDisplayOrder = Number(entry.displayOrder);
 
   return {
     domain: normalizeSuggestedQuestionDomain(entry.domain),
-    target:
-      entry.target === "coop" ? "coop" : entry.target === "group" ? "group" : "all",
+    target: normalizeSuggestedQuestionTarget(entry.target),
     questionText: String(entry.questionText || entry.question || "").trim().slice(0, 255),
     answerText: String(entry.answerText || entry.answer || "").trim(),
     sourceReference: String(entry.sourceReference || entry.reference || "").trim(),
@@ -64,7 +121,7 @@ function mapRow(row = {}) {
   return {
     id: row.id,
     domain: row.domain || "general",
-    target: row.target === "coop" ? "coop" : row.target === "group" ? "group" : "all",
+    target: normalizeSuggestedQuestionTarget(row.target),
     questionText: row.question_text || row.questionText || "",
     normalizedQuestion: row.normalized_question || row.normalizedQuestion || "",
     answerText: row.answer_text || row.answerText || "",
@@ -95,7 +152,7 @@ async function ensureTable() {
         CREATE TABLE IF NOT EXISTS chatbot_suggested_questions (
           id INT AUTO_INCREMENT PRIMARY KEY,
           domain ENUM('legal', 'general', 'mixed') NOT NULL DEFAULT 'general',
-          target ENUM('all', 'coop', 'group') NOT NULL DEFAULT 'all',
+          target ENUM('all', 'coop', 'group', 'general') NOT NULL DEFAULT 'all',
           question_text VARCHAR(255) NOT NULL,
           normalized_question VARCHAR(255) NOT NULL,
           answer_text TEXT NOT NULL,
@@ -115,6 +172,10 @@ async function ensureTable() {
         )
       `)
       .then(async () => {
+      await pool.query(
+        "ALTER TABLE chatbot_suggested_questions MODIFY COLUMN target enum('all','coop','group','general') NOT NULL DEFAULT 'all'",
+      );
+
       const [domainColumns] = await pool.query(
         "SHOW COLUMNS FROM chatbot_suggested_questions LIKE 'domain'",
       );
@@ -331,8 +392,7 @@ class LawChatbotSuggestedQuestionModel {
 
   static async listActive(limit = 30, target = "all") {
     const normalizedLimit = Math.max(1, Number(limit || 30));
-    const normalizedTarget =
-      target === "coop" ? "coop" : target === "group" ? "group" : "all";
+    const { normalizedTarget, lookupTargets } = getSuggestedQuestionLookupTargets(target);
     const pool = getDbPool();
 
     if (!pool) {
@@ -346,9 +406,19 @@ class LawChatbotSuggestedQuestionModel {
             return true;
           }
 
-          return item.target === "all" || item.target === normalizedTarget;
+          const itemTarget = normalizeSuggestedQuestionTarget(item.target);
+          return lookupTargets.includes(itemTarget);
         })
         .sort((left, right) => {
+          if (normalizedTarget !== "all") {
+            const targetDiff =
+              getSuggestedQuestionTargetPriority(left.target, normalizedTarget) -
+              getSuggestedQuestionTargetPriority(right.target, normalizedTarget);
+            if (targetDiff !== 0) {
+              return targetDiff;
+            }
+          }
+
           const orderDiff = Number(left.displayOrder || 0) - Number(right.displayOrder || 0);
           if (orderDiff !== 0) {
             return orderDiff;
@@ -374,10 +444,16 @@ class LawChatbotSuggestedQuestionModel {
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
-                AND target IN ('all', ?)
-              ORDER BY CASE WHEN target = ? THEN 0 ELSE 1 END, display_order ASC, id DESC
+                AND target IN (${lookupTargets.map(() => "?").join(", ")})
+              ORDER BY CASE
+                         WHEN target = ? THEN 0
+                         WHEN target = 'general' THEN 1
+                         WHEN target = 'all' THEN 2
+                         ELSE 3
+                       END,
+                       display_order ASC, id DESC
               LIMIT ?`,
-            [normalizedTarget, normalizedTarget, normalizedLimit],
+            [...lookupTargets, normalizedTarget, normalizedLimit],
           );
 
     return rows.map(mapRow);
@@ -501,32 +577,14 @@ class LawChatbotSuggestedQuestionModel {
       return null;
     }
 
-    const normalizedTarget =
-      target === "coop" ? "coop" : target === "group" ? "group" : "all";
+    const { normalizedTarget, lookupTargets } = getSuggestedQuestionLookupTargets(target);
     const pool = getDbPool();
 
     const sortMatches = (items) =>
       items.sort((left, right) => {
-        const leftTarget = left.target === "coop" ? "coop" : left.target === "group" ? "group" : "all";
-        const rightTarget = right.target === "coop" ? "coop" : right.target === "group" ? "group" : "all";
-
-        const getPriority = (targetValue) => {
-          if (normalizedTarget === "all") {
-            return targetValue === "all" ? 0 : 1;
-          }
-
-          if (targetValue === normalizedTarget) {
-            return 0;
-          }
-
-          if (targetValue === "all") {
-            return 1;
-          }
-
-          return 2;
-        };
-
-        const priorityDiff = getPriority(leftTarget) - getPriority(rightTarget);
+        const priorityDiff =
+          getSuggestedQuestionTargetPriority(left.target, normalizedTarget) -
+          getSuggestedQuestionTargetPriority(right.target, normalizedTarget);
         if (priorityDiff !== 0) {
           return priorityDiff;
         }
@@ -555,7 +613,7 @@ class LawChatbotSuggestedQuestionModel {
               return true;
             }
 
-            return item.target === "all" || item.target === normalizedTarget;
+            return lookupTargets.includes(normalizeSuggestedQuestionTarget(item.target));
           })
           .map(mapRow),
       )[0];
@@ -578,14 +636,20 @@ class LawChatbotSuggestedQuestionModel {
     if (!pool) return null;
 
     await ensureTable();
+    const { normalizedTarget: resolvedTarget, lookupTargets } =
+      getSuggestedQuestionLookupTargets(normalizedTarget);
     const [rows] =
-      normalizedTarget === "all"
+      resolvedTarget === "all"
         ? await pool.query(
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND normalized_question = ?
-              ORDER BY CASE WHEN target = 'all' THEN 0 ELSE 1 END, display_order ASC, id DESC
+              ORDER BY CASE
+                         WHEN target = 'all' THEN 0
+                         WHEN target = 'general' THEN 1
+                         ELSE 2
+                       END, display_order ASC, id DESC
               LIMIT 5`,
             [normalizedQuestion],
           )
@@ -594,10 +658,19 @@ class LawChatbotSuggestedQuestionModel {
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND normalized_question = ?
-                AND target IN ('all', ?)
-              ORDER BY CASE WHEN target = ? THEN 0 ELSE 1 END, display_order ASC, id DESC
+                AND target IN (${lookupTargets.map(() => "?").join(", ")})
+              ORDER BY CASE
+                         WHEN target = ? THEN 0
+                         WHEN target = 'general' THEN 1
+                         WHEN target = 'all' THEN 2
+                         ELSE 3
+                       END, display_order ASC, id DESC
               LIMIT 5`,
-            [normalizedQuestion, normalizedTarget, normalizedTarget],
+            [
+              normalizedQuestion,
+              ...lookupTargets,
+              resolvedTarget,
+            ],
           );
 
     return rows[0] ? mapRow(rows[0]) : null;
@@ -608,8 +681,10 @@ class LawChatbotSuggestedQuestionModel {
     if (!pool) return null;
 
     await ensureTable();
+    const { normalizedTarget: resolvedTarget, lookupTargets } =
+      getSuggestedQuestionLookupTargets(normalizedTarget);
     const [rows] =
-      normalizedTarget === "all"
+      resolvedTarget === "all"
         ? await pool.query(
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
@@ -621,10 +696,18 @@ class LawChatbotSuggestedQuestionModel {
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
-                AND target IN ('all', ?)
-              ORDER BY CASE WHEN target = ? THEN 0 ELSE 1 END, display_order ASC, id DESC
+                AND target IN (${lookupTargets.map(() => "?").join(", ")})
+              ORDER BY CASE
+                         WHEN target = ? THEN 0
+                         WHEN target = 'general' THEN 1
+                         WHEN target = 'all' THEN 2
+                         ELSE 3
+                       END, display_order ASC, id DESC
               LIMIT 50`,
-            [normalizedTarget, normalizedTarget],
+            [
+              ...lookupTargets,
+              resolvedTarget,
+            ],
           );
 
     if (rows.length === 0) {

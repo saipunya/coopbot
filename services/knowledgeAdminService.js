@@ -104,6 +104,7 @@ async function getKnowledgeAdminData(options = {}) {
     ],
     suggestedQuestionTargets: [
       { value: "all", label: "ทุกประเภท" },
+      { value: "general", label: "ทั่วไป" },
       { value: "coop", label: "สหกรณ์" },
       { value: "group", label: "กลุ่มเกษตรกร" },
     ],

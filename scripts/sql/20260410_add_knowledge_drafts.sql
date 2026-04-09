@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS knowledge_sources (
   updated_at timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_knowledge_sources_domain_target_status (domain, target, status),
-  KEY idx_knowledge_sources_status (status)
+  KEY idx_knowledge_sources_status (status),
+  KEY idx_knowledge_sources_target_status (target, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS knowledge_drafts (
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS knowledge_drafts (
   PRIMARY KEY (id),
   KEY idx_knowledge_drafts_source_id (source_id),
   KEY idx_knowledge_drafts_status (status),
+  KEY idx_knowledge_drafts_source_status (source_id, status),
   KEY idx_knowledge_drafts_approved_record_type_id (approved_record_type, approved_record_id),
   CONSTRAINT fk_knowledge_drafts_source
     FOREIGN KEY (source_id) REFERENCES knowledge_sources(id)

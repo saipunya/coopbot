@@ -159,7 +159,7 @@
             <li>
               <strong class="list-item-title"><%= item.questionText %></strong>
               <div class="knowledge-meta">
-                ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : item.target === 'coop' ? 'สหกรณ์' : 'ทุกประเภท' %>
+                ใช้กับ: <%= item.target === 'group' ? 'กลุ่มเกษตรกร' : item.target === 'coop' ? 'สหกรณ์' : item.target === 'general' ? 'ทั่วไป' : 'ทุกประเภท' %>
                 | สถานะ: <%= item.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน' %>
                 | ลำดับ: <%= Number(item.displayOrder || 0) %>
                 <% if (item.updatedAt) { %> | แก้ไขล่าสุด: <%= item.updatedAt %><% } %>

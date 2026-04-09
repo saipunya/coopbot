@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS chatbot_suggested_questions (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  target ENUM('all', 'coop', 'group') NOT NULL DEFAULT 'all',
+  target ENUM('all', 'coop', 'group', 'general') NOT NULL DEFAULT 'all',
   question_text VARCHAR(255) NOT NULL,
   normalized_question VARCHAR(255) NOT NULL,
   answer_text TEXT NOT NULL,

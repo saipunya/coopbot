@@ -304,7 +304,7 @@ async function ensureSchema() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chatbot_knowledge (
       id int(11) NOT NULL AUTO_INCREMENT,
-      domain enum('legal','general','mixed') NOT NULL DEFAULT 'legal',
+      domain enum('legal','general','mixed') NOT NULL DEFAULT 'general',
       target enum('coop','group','all','general') NOT NULL DEFAULT 'general',
       title varchar(255) NOT NULL,
       law_number varchar(100) DEFAULT NULL,
@@ -347,9 +347,14 @@ async function ensureSchema() {
       updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
       PRIMARY KEY (id),
       KEY idx_knowledge_sources_domain_target_status (domain, target, status),
-      KEY idx_knowledge_sources_status (status)
+      KEY idx_knowledge_sources_status (status),
+      KEY idx_knowledge_sources_target_status (target, status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
   `);
+
+  try {
+    await pool.query("ALTER TABLE knowledge_sources ADD KEY idx_knowledge_sources_target_status (target, status)");
+  } catch (_) {}
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS knowledge_drafts (
@@ -370,12 +375,17 @@ async function ensureSchema() {
       PRIMARY KEY (id),
       KEY idx_knowledge_drafts_source_id (source_id),
       KEY idx_knowledge_drafts_status (status),
+      KEY idx_knowledge_drafts_source_status (source_id, status),
       KEY idx_knowledge_drafts_approved_record_type_id (approved_record_type, approved_record_id),
       CONSTRAINT fk_knowledge_drafts_source
         FOREIGN KEY (source_id) REFERENCES knowledge_sources(id)
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
   `);
+
+  try {
+    await pool.query("ALTER TABLE knowledge_drafts ADD KEY idx_knowledge_drafts_source_status (source_id, status)");
+  } catch (_) {}
 
   try {
     await pool.query("ALTER TABLE knowledge_drafts ADD COLUMN approved_record_type enum('knowledge','suggested_question') DEFAULT NULL AFTER approved_target");
@@ -389,7 +399,7 @@ async function ensureSchema() {
     CREATE TABLE IF NOT EXISTS chatbot_suggested_questions (
       id int(11) NOT NULL AUTO_INCREMENT,
       domain enum('legal','general','mixed') NOT NULL DEFAULT 'general',
-      target enum('all','coop','group') NOT NULL DEFAULT 'all',
+      target enum('all','coop','group','general') NOT NULL DEFAULT 'all',
       question_text varchar(255) NOT NULL,
       normalized_question varchar(255) NOT NULL,
       answer_text text NOT NULL,
@@ -464,7 +474,11 @@ async function ensureSchema() {
   } catch (_) {}
 
   try {
-    await pool.query("ALTER TABLE chatbot_knowledge ADD COLUMN domain enum('legal','general','mixed') NOT NULL DEFAULT 'legal' AFTER id");
+    await pool.query("ALTER TABLE chatbot_knowledge MODIFY COLUMN domain enum('legal','general','mixed') NOT NULL DEFAULT 'general'");
+  } catch (_) {}
+
+  try {
+    await pool.query("ALTER TABLE chatbot_knowledge ADD COLUMN domain enum('legal','general','mixed') NOT NULL DEFAULT 'general' AFTER id");
   } catch (_) {}
 
   try {
@@ -488,7 +502,9 @@ async function ensureSchema() {
   } catch (_) {}
 
   try {
-    await pool.query("ALTER TABLE chatbot_suggested_questions ADD COLUMN target enum('all','coop','group') NOT NULL DEFAULT 'all'");
+    await pool.query(
+      "ALTER TABLE chatbot_suggested_questions MODIFY COLUMN target enum('all','coop','group','general') NOT NULL DEFAULT 'all'",
+    );
   } catch (_) {}
 
   try {

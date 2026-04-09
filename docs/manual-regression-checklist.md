@@ -11,10 +11,10 @@ This checklist covers the recent guest access, Google login persistence, monthly
   - `users`
   - `user_monthly_usage`
   - `payment_requests`
-  - `chatbot_knowledge` with `target` in `coop`, `group`, `all`, `general`
-  - `knowledge_sources`
-  - `knowledge_drafts` with `approved_record_type` and `approved_record_id`
-  - `chatbot_suggested_questions` with `domain`, `source_id`, and `draft_id`
+  - `chatbot_knowledge` with `domain` defaulting to `general` and `target` in `coop`, `group`, `all`, `general`
+  - `knowledge_sources` with `idx_knowledge_sources_target_status`
+  - `knowledge_drafts` with `approved_record_type`, `approved_record_id`, and `idx_knowledge_drafts_source_status`
+  - `chatbot_suggested_questions` with `domain`, `target` in `all`, `coop`, `group`, `general`, `source_id`, and `draft_id`
 - If the environment previously used `standard`, run the migration in `scripts/sql/20260404_merge_standard_into_pro.sql` before testing package management flows.
 - Google login is configured and working.
 - Use one browser profile for guest tests and another incognito profile for clean user tests when possible.
