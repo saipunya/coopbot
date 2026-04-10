@@ -2448,6 +2448,12 @@ function finalizeGeneratedAnswer(answerText, explainMode, options = {}) {
     return "";
   }
 
+  const cleanupSources = Array.isArray(options.sources)
+    ? options.sources
+    : Array.isArray(options.answerSources)
+      ? options.answerSources
+      : [];
+
   const referenceMatch = raw.match(/\n\s*\nแหล่งอ้างอิง:\s*\n([\s\S]*)$/i);
   const bodyText = referenceMatch ? raw.slice(0, referenceMatch.index).trim() : raw.trim();
   const referenceText = referenceMatch ? String(referenceMatch[1] || "").trim() : "";
@@ -2498,7 +2504,7 @@ function finalizeGeneratedAnswer(answerText, explainMode, options = {}) {
     ]
       .filter(Boolean)
       .join("\n\n"),
-    sources,
+    cleanupSources,
     options,
   );
 }
@@ -3986,6 +3992,7 @@ async function generateChatSummary(message, sources, options = {}) {
   const finalizeSummary = (text) => finalizeGeneratedAnswer(text, explainMode, {
     ...options,
     promptProfile,
+    sources: focusedAnswerSources,
   });
   const aiSourceLimit = Math.max(1, Number(promptProfile.aiSourceLimit || (explainMode ? 5 : 4)));
   const databaseOnlyMode = Boolean(options.databaseOnlyMode) || !aiEnabled || !openAiConfig;

@@ -2,7 +2,14 @@ const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
 const OPENAI_EMBEDDING_TIMEOUT_MS = Number(process.env.OPENAI_EMBEDDING_TIMEOUT_MS || 4000);
+const EMBEDDING_RATE_LIMIT_COOLDOWN_MS = Number(process.env.OPENAI_EMBEDDING_RATE_LIMIT_COOLDOWN_MS || 60000);
 const { isAiEnabled } = require("./runtimeSettingsService");
+
+let rateLimitCooldownUntil = 0;
+
+function getRateLimitCooldownRemainingMs() {
+  return Math.max(0, rateLimitCooldownUntil - Date.now());
+}
 
 function getOpenAiEmbeddingConfig() {
   const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
@@ -26,6 +33,10 @@ function getOpenAiEmbeddingConfig() {
  */
 async function createEmbedding(text) {
   if (!(await isAiEnabled())) {
+    return null;
+  }
+
+  if (getRateLimitCooldownRemainingMs() > 0) {
     return null;
   }
 
@@ -61,6 +72,13 @@ async function createEmbedding(text) {
     });
 
     if (!response.ok) {
+      if (response.status === 429) {
+        rateLimitCooldownUntil = Date.now() + EMBEDDING_RATE_LIMIT_COOLDOWN_MS;
+        const retryAfterHeader = Number(response.headers.get("retry-after") || 0);
+        if (Number.isFinite(retryAfterHeader) && retryAfterHeader > 0) {
+          rateLimitCooldownUntil = Date.now() + retryAfterHeader * 1000;
+        }
+      }
       throw new Error(`OpenAI embedding failed with status ${response.status}`);
     }
 
@@ -77,6 +95,14 @@ async function createEmbedding(text) {
     if (err?.name === "AbortError") {
       console.error(
         `[EmbeddingService] Embedding request timed out after ${OPENAI_EMBEDDING_TIMEOUT_MS}ms`,
+      );
+      return null;
+    }
+
+    if (String(err?.message || "").includes("status 429")) {
+      const cooldownSeconds = Math.ceil(getRateLimitCooldownRemainingMs() / 1000);
+      console.error(
+        `[EmbeddingService] Embedding rate limited (429). Cooling down for ${cooldownSeconds}s before retrying.`,
       );
       return null;
     }

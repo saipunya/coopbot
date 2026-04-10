@@ -125,6 +125,7 @@ async function chat(req, res) {
     ]);
     res.json(result);
   } catch (error) {
+    console.error("[law-chatbot/chat] Failed to reply:", error);
     const errorMessage = String(error?.message || "").trim().toLowerCase();
     const answer = errorMessage.includes("timed out")
       ? "ระบบใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง"

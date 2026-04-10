@@ -358,7 +358,8 @@ async function enforceLawChatbotMonthlyUsageLimit(req, res, next) {
     await UserMonthlyUsageModel.incrementQuestionCount(userId, usageMonth);
     return next();
   } catch (error) {
-    return next(error);
+    console.error("[law-chatbot] Failed to enforce monthly usage limit:", error.message || error);
+    return next();
   }
 }
 
