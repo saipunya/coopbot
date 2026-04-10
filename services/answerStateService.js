@@ -171,13 +171,17 @@ async function attachAiPreviewState(result = {}, options = {}) {
   let usedPremiumThisAnswer = false;
 
   if (options.consumePreview === true && Number(options.userId || 0) > 0 && options.usageMonth) {
-    const incrementFn = options.consumePremiumPreview
-      ? UserMonthlyUsageModel.incrementAiPreviewPremiumCount.bind(UserMonthlyUsageModel)
-      : UserMonthlyUsageModel.incrementAiPreviewCount.bind(UserMonthlyUsageModel);
-    const updatedUsage = await incrementFn(options.userId, options.usageMonth);
-    effectiveMeta = buildAiPreviewMeta({ code: "free" }, updatedUsage);
-    usedThisAnswer = true;
-    usedPremiumThisAnswer = Boolean(options.consumePremiumPreview);
+    try {
+      const incrementFn = options.consumePremiumPreview
+        ? UserMonthlyUsageModel.incrementAiPreviewPremiumCount.bind(UserMonthlyUsageModel)
+        : UserMonthlyUsageModel.incrementAiPreviewCount.bind(UserMonthlyUsageModel);
+      const updatedUsage = await incrementFn(options.userId, options.usageMonth);
+      effectiveMeta = buildAiPreviewMeta({ code: "free" }, updatedUsage);
+      usedThisAnswer = true;
+      usedPremiumThisAnswer = Boolean(options.consumePremiumPreview);
+    } catch (error) {
+      console.error("[answer-state] Failed to persist AI preview usage:", error.message || error);
+    }
   }
 
   return {

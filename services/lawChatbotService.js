@@ -317,6 +317,19 @@ function normalizeContinuationText(text = "") {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
+async function getMonthlyUsageSafe(userId, usageMonth) {
+  if (!Number(userId || 0) || !String(usageMonth || "").trim()) {
+    return null;
+  }
+
+  try {
+    return await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth);
+  } catch (error) {
+    console.error("[law-chatbot] Failed to load monthly usage:", error.message || error);
+    return null;
+  }
+}
+
 function getContinuationCharBudget(promptProfile = {}) {
   return Math.max(280, Number(promptProfile.aiSourceContextCharLimit || 700));
 }
@@ -642,9 +655,7 @@ async function replyToChat(payload, session) {
   const sessionUser = session?.user || null;
   const userId = Number(sessionUser?.userId || sessionUser?.id || 0);
   const usageMonth = UserMonthlyUsageModel.getYearMonth();
-  const monthlyUsage = userId
-    ? await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth)
-    : null;
+  const monthlyUsage = await getMonthlyUsageSafe(userId, usageMonth);
   const freeAiPreviewUsage =
     userId && canUseAiPreview(basePlanContext.code)
       ? monthlyUsage
@@ -1197,9 +1208,7 @@ async function summarizeChat(payload, session) {
   const sessionUser = session?.user || null;
   const userId = Number(sessionUser?.userId || sessionUser?.id || 0);
   const usageMonth = UserMonthlyUsageModel.getYearMonth();
-  const monthlyUsage = userId
-    ? await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth)
-    : null;
+  const monthlyUsage = await getMonthlyUsageSafe(userId, usageMonth);
 
   const target =
     payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
