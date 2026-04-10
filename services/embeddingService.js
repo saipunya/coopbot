@@ -1,5 +1,5 @@
 const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
-const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large";
+const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 const EMBEDDING_DIMENSIONS = 3072;
 const OPENAI_EMBEDDING_TIMEOUT_MS = Number(process.env.OPENAI_EMBEDDING_TIMEOUT_MS || 4000);
 const EMBEDDING_RATE_LIMIT_COOLDOWN_MS = Number(process.env.OPENAI_EMBEDDING_RATE_LIMIT_COOLDOWN_MS || 60000);
@@ -9,6 +9,11 @@ let rateLimitCooldownUntil = 0;
 
 function getRateLimitCooldownRemainingMs() {
   return Math.max(0, rateLimitCooldownUntil - Date.now());
+}
+
+function isEmbeddingEnabled() {
+  // Allow temporarily disabling embeddings to control API cost.
+  return String(process.env.ENABLE_EMBEDDING || "").trim().toLowerCase() === "true";
 }
 
 function getOpenAiEmbeddingConfig() {
@@ -33,6 +38,10 @@ function getOpenAiEmbeddingConfig() {
  */
 async function createEmbedding(text) {
   if (!(await isAiEnabled())) {
+    return null;
+  }
+
+  if (!isEmbeddingEnabled()) {
     return null;
   }
 
@@ -225,4 +234,5 @@ module.exports = {
   bufferToEmbedding,
   cosineSimilarity,
   findTopKSimilar,
+  isEmbeddingEnabled,
 };

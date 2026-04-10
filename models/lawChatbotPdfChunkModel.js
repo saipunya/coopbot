@@ -11,6 +11,7 @@ const {
   createEmbedding,
   bufferToEmbedding,
   cosineSimilarity,
+  isEmbeddingEnabled,
 } = require("../services/embeddingService");
 
 // Cache for embeddings to avoid repeated DB queries
@@ -756,6 +757,11 @@ class LawChatbotPdfChunkModel {
    * @returns {Promise<Array>} - Semantically similar chunks
    */
   static async semanticSearch(message, limit = 10) {
+    // Allow temporarily disabling embeddings to control API cost.
+    if (!isEmbeddingEnabled()) {
+      return [];
+    }
+
     // Create embedding for query
     const queryEmbedding = await createEmbedding(message);
     if (!queryEmbedding) {
