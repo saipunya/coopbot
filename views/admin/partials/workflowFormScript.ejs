@@ -32,8 +32,11 @@
 
     function showInlineNotice(form, type, message) {
       const card = form.closest(".card") || form.parentElement || document.body;
+      const existingNotices = card.querySelectorAll(".inline-workflow-notice");
+      existingNotices.forEach((existingNotice) => existingNotice.remove());
+
       const notice = document.createElement("div");
-      notice.className = `alert ${type}`;
+      notice.className = `alert ${type} inline-workflow-notice`;
       notice.setAttribute("role", "alert");
       notice.setAttribute("aria-live", "polite");
       notice.textContent = message;
@@ -80,7 +83,10 @@
       }
 
       if (!response.ok || payload.ok === false) {
-        reloadPage();
+        const errorMessage = String(payload.message || "ไม่สามารถดำเนินการได้").trim();
+        showInlineNotice(form, "error", errorMessage);
+        clearSubmitting(form);
+        resetButton(getSubmitButton(form));
         return;
       }
 

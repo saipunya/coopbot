@@ -304,6 +304,14 @@
       .danger-btn {
         background: linear-gradient(145deg, #b63d2f, #922f24);
       }
+      .primary-btn:disabled,
+      .secondary-btn:disabled,
+      .danger-btn:disabled {
+        opacity: 0.62;
+        cursor: not-allowed;
+        box-shadow: 0 4px 12px rgba(15, 70, 103, 0.1);
+        transform: none;
+      }
       .note-box,
       .answer-box,
       .source-box {

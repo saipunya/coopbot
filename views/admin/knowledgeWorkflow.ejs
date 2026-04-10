@@ -221,6 +221,20 @@
       .danger-btn {
         background: linear-gradient(145deg, #b63d2f, #922f24);
       }
+      .primary-btn:disabled,
+      .secondary-btn:disabled,
+      .danger-btn:disabled {
+        opacity: 0.62;
+        cursor: not-allowed;
+        box-shadow: 0 4px 12px rgba(15, 70, 103, 0.1);
+        transform: none;
+      }
+      .field-help {
+        margin: 0.38rem 0 0;
+        color: var(--text-sub);
+        line-height: 1.55;
+        font-size: 0.92rem;
+      }
       .section-note,
       .workflow-meta,
       .workflow-body,
@@ -462,6 +476,7 @@
           <div class="field" style="margin-top: 0.9rem;">
             <label for="workflowTitle">หัวข้อ / ชื่อต้นฉบับ</label>
             <input id="workflowTitle" name="title" type="text" minlength="3" maxlength="255" placeholder="เช่น สิทธิสมาชิกสหกรณ์ในการกู้ยืม" required />
+            <p class="field-help">ตั้งชื่อให้สื่อหัวข้อชัดเจน เช่น ประเด็นกฎหมาย นโยบาย หรือเอกสารอ้างอิงชุดนั้น</p>
           </div>
 
           <div class="field" style="margin-top: 0.9rem;">
@@ -472,6 +487,7 @@
           <div class="field" style="margin-top: 0.9rem;">
             <label for="workflowSourceText">ต้นฉบับ</label>
             <textarea id="workflowSourceText" name="sourceText" minlength="10" placeholder="วางข้อความต้นฉบับที่ผ่านการคัดแล้วตรงนี้" required></textarea>
+            <p class="field-help">ควรเป็นข้อความที่ผ่านการคัดแล้วและพร้อมให้ AI แตกเป็น draft ต่อได้ทันที</p>
           </div>
 
           <div class="field" style="margin-top: 0.9rem;">

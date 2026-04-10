@@ -85,6 +85,19 @@ function getAdminActor(req) {
   );
 }
 
+function wantsJsonResponse(req) {
+  const acceptHeader = String(req?.headers?.accept || "").toLowerCase();
+  return Boolean(
+    req?.xhr ||
+      req?.is?.("application/json") ||
+      acceptHeader.includes("application/json")
+  );
+}
+
+function shouldPersistFlash(req) {
+  return !wantsJsonResponse(req);
+}
+
 function normalizeBooleanFlag(value, fallback = false) {
   if (value === undefined || value === null) {
     return Boolean(fallback);
@@ -262,7 +275,7 @@ function sendServiceResult(req, res, result, successStatus = 200, flashOptions =
   }
 
   const reason = String(result?.reason || "unknown_error").trim();
-  if (flashOptions.flashError !== false) {
+  if (flashOptions.flashError !== false && shouldPersistFlash(req)) {
     const errorMessage =
       typeof flashOptions.errorMessage === "function"
         ? flashOptions.errorMessage(result)
@@ -546,7 +559,9 @@ async function createSource(req, res) {
   );
 
   if (!title || !sourceText) {
-    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_payload);
+    if (shouldPersistFlash(req)) {
+      pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_payload);
+    }
     return res.status(400).json({
       ok: false,
       reason: "invalid_payload",
@@ -568,7 +583,9 @@ async function createSource(req, res) {
 async function generateDrafts(req, res) {
   const sourceId = normalizeId(req.params.id);
   if (!sourceId) {
-    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_source_id);
+    if (shouldPersistFlash(req)) {
+      pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_source_id);
+    }
     return res.status(400).json({
       ok: false,
       reason: "invalid_source_id",
@@ -593,13 +610,16 @@ async function generateDrafts(req, res) {
         : `สร้าง draft ใหม่ ${generatedCount} รายการเรียบร้อยแล้ว`;
     },
     successType: (serviceResult) => (serviceResult.reusedExistingDrafts ? "info" : "success"),
+    flashError: false,
   });
 }
 
 async function listDraftsBySource(req, res) {
   const sourceId = normalizeId(req.params.id);
   if (!sourceId) {
-    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_source_id);
+    if (shouldPersistFlash(req)) {
+      pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_source_id);
+    }
     return res.status(400).json({
       ok: false,
       reason: "invalid_source_id",
@@ -621,7 +641,9 @@ async function listDraftsBySource(req, res) {
 async function approveDraftToSuggestedQuestion(req, res) {
   const draftId = normalizeId(req.params.id);
   if (!draftId) {
-    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_draft_id);
+    if (shouldPersistFlash(req)) {
+      pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_draft_id);
+    }
     return res.status(400).json({
       ok: false,
       reason: "invalid_draft_id",
@@ -632,13 +654,16 @@ async function approveDraftToSuggestedQuestion(req, res) {
   const result = await knowledgeDraftService.approveDraftToSuggestedQuestion(draftId, req.body || {});
   return sendServiceResult(req, res, result, 200, {
     successMessage: "อนุมัติ draft เป็นคำถามแนะนำเรียบร้อยแล้ว",
+    flashError: false,
   });
 }
 
 async function approveDraftToKnowledge(req, res) {
   const draftId = normalizeId(req.params.id);
   if (!draftId) {
-    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_draft_id);
+    if (shouldPersistFlash(req)) {
+      pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_draft_id);
+    }
     return res.status(400).json({
       ok: false,
       reason: "invalid_draft_id",
@@ -649,13 +674,16 @@ async function approveDraftToKnowledge(req, res) {
   const result = await knowledgeDraftService.approveDraftToKnowledge(draftId, req.body || {});
   return sendServiceResult(req, res, result, 200, {
     successMessage: "อนุมัติ draft เป็นฐานความรู้เรียบร้อยแล้ว",
+    flashError: false,
   });
 }
 
 async function rejectDraft(req, res) {
   const draftId = normalizeId(req.params.id);
   if (!draftId) {
-    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_draft_id);
+    if (shouldPersistFlash(req)) {
+      pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_draft_id);
+    }
     return res.status(400).json({
       ok: false,
       reason: "invalid_draft_id",
@@ -666,6 +694,7 @@ async function rejectDraft(req, res) {
   const result = await knowledgeDraftService.rejectDraft(draftId, req.body || {});
   return sendServiceResult(req, res, result, 200, {
     successMessage: "ปฏิเสธ draft เรียบร้อยแล้ว",
+    flashError: false,
   });
 }
 
