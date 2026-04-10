@@ -6,6 +6,7 @@ const {
   scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,
+  detectTopicFamily,
 } = require("../services/thaiTextUtils");
 const {
   createEmbedding,
@@ -86,15 +87,164 @@ function scoreAmountSignals(query, rawText) {
   return score;
 }
 
+function countRegexMatches(text, pattern) {
+  return (String(text || "").match(pattern) || []).length;
+}
+
+function isOpposingTopicConflict(query, rowText) {
+  const normalizedQuery = normalizeForSearch(query).toLowerCase();
+  const normalizedRowText = normalizeForSearch(rowText).toLowerCase();
+  if (!normalizedQuery || !normalizedRowText) {
+    return false;
+  }
+
+  const asksFormation = /จัดตั้ง/.test(normalizedQuery);
+  const asksDissolution = /(?:เลิก|ชำระบัญชี|ผู้ชำระบัญชี|สั่งเลิก)/.test(normalizedQuery);
+  const rowHasFormation = /จัดตั้ง/.test(normalizedRowText);
+  const rowHasDissolution = /(?:เลิก|ชำระบัญชี|ผู้ชำระบัญชี|สั่งเลิก)/.test(normalizedRowText);
+
+  if (asksFormation && rowHasDissolution) {
+    return true;
+  }
+
+  if (asksDissolution && rowHasFormation) {
+    return true;
+  }
+
+  return false;
+}
+
+function classifyChunkQuality(row = {}) {
+  const rawKeyword = String(row.keyword || "");
+  const rawChunkText = String(row.chunk_text || "");
+  const rawText = `${rawKeyword} ${rawChunkText}`.trim();
+  const normalizedText = normalizeForSearch(rawText).toLowerCase();
+  const thaiChars = countRegexMatches(rawText, /[ก-๙]/g);
+  const asciiWordChars = countRegexMatches(rawText, /[a-zA-Z]/g);
+  const digitChars = countRegexMatches(rawText, /\d/g);
+  const replacementGlyphHits = countRegexMatches(rawChunkText, /[\uFFFD\uF700-\uF8FF]/g);
+  const controlCharHits = countRegexMatches(rawChunkText, /[\x00-\x1F]/g);
+  const garbledHits = countRegexMatches(
+    rawChunkText,
+    /[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/g,
+  );
+  const punctuationHits = countRegexMatches(rawChunkText, /[^\p{L}\p{N}\s]/gu);
+  const metadataPattern =
+    /(?:^|[\s|])(?:หน้า\s*\d+|page\s*\d+|เอกสารแนบ|สิ่งที่ส่งมาด้วย|หมายเหตุ|โทร\.?|โทรสาร|fax|email|www\.|https?:\/\/|เลขที่หนังสือ|ลงวันที่|ที่ตั้งสำนักงาน|ผู้สแกน|scan|scanner)(?:$|[\s|])/i;
+  const sourceLabelPattern =
+    /(เอกสารที่อัปโหลด|ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม\/แก้ไข|พรบ\.สหกรณ์ พ\.ศ\. 2542|หนังสือวินิจฉัย\/ตีความ|Q&A ที่ผู้ดูแลเตรียมไว้)\s*:/i;
+  const fragmentedLineCount = String(rawChunkText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => line.length <= 24 && !/[.!?ฯ:]$/.test(line)).length;
+  const sentenceLikeCount = countRegexMatches(rawChunkText, /[.!?ฯ:]/g);
+
+  const tooManyReplacementGlyphs = replacementGlyphHits >= 3 || (rawChunkText.length > 0 && replacementGlyphHits / rawChunkText.length > 0.01);
+  const tooManyControlChars = controlCharHits >= 3;
+  const tooManyGarbledHits = garbledHits >= 2;
+  const punctuationHeavy = rawChunkText.length > 0 && punctuationHits / rawChunkText.length > 0.2;
+  const metadataOnly =
+    sourceLabelPattern.test(rawChunkText) ||
+    sourceLabelPattern.test(rawKeyword) ||
+    metadataPattern.test(rawChunkText) ||
+    metadataPattern.test(rawKeyword) ||
+    (normalizedText.length > 0 && thaiChars < 12 && sentenceLikeCount === 0 && fragmentedLineCount >= 2);
+  const fragmentedText =
+    rawChunkText.length > 0 &&
+    fragmentedLineCount >= 4 &&
+    sentenceLikeCount === 0 &&
+    thaiChars < Math.max(40, asciiWordChars + digitChars + 10);
+
+  return {
+    rawText,
+    normalizedText,
+    isHardFiltered:
+      !normalizedText ||
+      tooManyReplacementGlyphs ||
+      tooManyControlChars ||
+      tooManyGarbledHits ||
+      punctuationHeavy ||
+      metadataOnly ||
+      fragmentedText,
+  };
+}
+
+function isCoopFormationQuery(query = "") {
+  const normalizedQuery = normalizeForSearch(query).toLowerCase();
+  if (!normalizedQuery) {
+    return false;
+  }
+
+  return /(?:การ)?จัดตั้ง(?:สหกรณ์)?|จดทะเบียนจัดตั้ง|ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|ประชุมจัดตั้ง/.test(normalizedQuery);
+}
+
+function countFamilyTermHits(text = "", terms = []) {
+  const normalizedText = String(text || "");
+  if (!normalizedText || !Array.isArray(terms) || terms.length === 0) {
+    return 0;
+  }
+
+  let hits = 0;
+  for (const term of terms) {
+    const cleaned = normalizeForSearch(String(term || "")).toLowerCase();
+    if (cleaned && normalizedText.includes(cleaned)) {
+      hits += 1;
+    }
+  }
+  return hits;
+}
+
+function applyTopicBoost(row, family, query, baseScore) {
+  if (!family || typeof family !== "object") {
+    return baseScore;
+  }
+
+  const rowText = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
+  const queryText = normalizeForSearch(query).toLowerCase();
+  if (!rowText || !queryText) {
+    return baseScore;
+  }
+
+  let score = baseScore;
+  const boostTerms = Array.isArray(family.boostTerms) ? family.boostTerms : [];
+  const penaltyTerms = Array.isArray(family.penaltyTerms) ? family.penaltyTerms : [];
+  const weights = family.weights || {};
+  const boostPerHit = Number(weights.boostPerHit || 12);
+  const penaltyPerHit = Number(weights.penaltyPerHit || 16);
+
+  const boostHits = countFamilyTermHits(rowText, boostTerms);
+  const penaltyHits = countFamilyTermHits(rowText, penaltyTerms);
+  if (boostHits > 0) {
+    score += Math.min(80, boostHits * boostPerHit);
+  }
+  if (penaltyHits > 0) {
+    score -= Math.min(110, penaltyHits * penaltyPerHit);
+  }
+
+  // For PDF chunk retrieval, only apply preferredSources when "pdf_chunks" is explicitly preferred.
+  const preferredSources = Array.isArray(family.preferredSources) ? family.preferredSources : [];
+  if (preferredSources.some((source) => String(source || "").trim().toLowerCase() === "pdf_chunks")) {
+    score += 10;
+  }
+
+  return score;
+}
+
 function scoreChunkMatch(query, row) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const rowText = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
   const rawKeyword = String(row.keyword || "");
   const rawChunkText = String(row.chunk_text || "");
+  const quality = classifyChunkQuality(row);
   const queryTokens = uniqueTokens(segmentWords(query));
   const rowTokens = uniqueTokens(segmentWords(rowText));
   const rowTokenSet = new Set(rowTokens);
   const queryBigrams = makeBigrams(queryTokens);
+
+  if (quality.isHardFiltered) {
+    return Number.NEGATIVE_INFINITY;
+  }
 
   let score = 0;
 
@@ -127,6 +277,10 @@ function scoreChunkMatch(query, row) {
     score -= 120;
   }
 
+  if (isOpposingTopicConflict(query, `${row.keyword || ""} ${row.chunk_text || ""}`)) {
+    score -= 140;
+  }
+
   if (rawKeyword.trim()) {
     score += 12;
   } else {
@@ -150,8 +304,15 @@ function scoreChunkMatch(query, row) {
   const keywordLower = rawKeyword.toLowerCase();
   const chunkLower = rawChunkText.toLowerCase();
   const queryLower = normalizedQuery;
+  const combinedLower = `${keywordLower} ${chunkLower}`;
 
-  if (queryLower.includes("บำรุง") || queryLower.includes("สันนิบาต")) {
+  const topicFamily = detectTopicFamily(query);
+  if (topicFamily) {
+    score = applyTopicBoost(row, topicFamily, query, score);
+  }
+
+  // Legacy, keep for safety: union-fee keyword shaping (family-driven rules also apply).
+  if (!topicFamily && (queryLower.includes("บำรุง") || queryLower.includes("สันนิบาต"))) {
     // Strong boost for chunks directly about ค่าบำรุงสันนิบาต
     if (keywordLower.includes("บำรุง") && keywordLower.includes("สันนิบาต")) {
       score += 40;
@@ -180,6 +341,55 @@ function scoreChunkMatch(query, row) {
     }
     if (keywordLower.includes("องค์ความรู้") || keywordLower.includes("km")) {
       score -= 25;
+    }
+  }
+
+  // Legacy, keep for safety: coop formation shaping (family-driven rules also apply).
+  if (!topicFamily && isCoopFormationQuery(query)) {
+    const strongFormationPatterns = [
+      /ผู้เริ่มก่อการ/,
+      /สมาชิกผู้ก่อการ/,
+      /จดทะเบียนจัดตั้ง/,
+      /คำขอจดทะเบียน/,
+      /ประชุมจัดตั้ง/,
+      /จัดตั้งสหกรณ์/,
+    ];
+    const supportingFormationPatterns = [
+      /ข้อบังคับ/,
+      /ผู้จัดตั้งสหกรณ์/,
+      /เพื่อดำเนินการจัดตั้งสหกรณ์/,
+      /ขอจดทะเบียน/,
+      /ยื่นจดทะเบียน/,
+    ];
+    const registrarPowerPatterns = [
+      /นายทะเบียน(?:สหกรณ์)?มีอำนาจหน้าที่/,
+      /ตรวจสอบ/,
+      /ไต่สวน/,
+      /ระงับการดำเนินงาน/,
+      /เลิกสหกรณ์/,
+      /ถอนชื่อออกจากทะเบียน/,
+      /ชำระบัญชี/,
+    ];
+
+    const strongFormationHits = strongFormationPatterns.filter((pattern) => pattern.test(combinedLower)).length;
+    const supportingFormationHits = supportingFormationPatterns.filter((pattern) => pattern.test(combinedLower)).length;
+    const registrarPowerHits = registrarPowerPatterns.filter((pattern) => pattern.test(combinedLower)).length;
+
+    if (strongFormationHits > 0) {
+      score += strongFormationHits * 26;
+    }
+
+    if (supportingFormationHits > 0) {
+      score += supportingFormationHits * 12;
+    }
+
+    // If this chunk mainly mentions registrar powers without formation details, push it down hard.
+    if (/นายทะเบียน/.test(combinedLower) && strongFormationHits === 0 && supportingFormationHits === 0) {
+      score -= 42;
+    }
+
+    if (registrarPowerHits > 0) {
+      score -= registrarPowerHits * 28;
     }
   }
 
@@ -505,6 +715,10 @@ class LawChatbotPdfChunkModel {
             return null;
           }
 
+          if (classifyChunkQuality(row).isHardFiltered) {
+            return null;
+          }
+
           const score = scoreChunkMatch(message, row) + coarseScore;
           const document = memoryDocuments.find((item) => item.id === row.document_id);
           if (document && document.isSearchable === 0) {
@@ -603,6 +817,10 @@ class LawChatbotPdfChunkModel {
           tokenHits < minTokenHits &&
           coarseScore < 1
         ) {
+          return null;
+        }
+
+        if (classifyChunkQuality(row).isHardFiltered) {
           return null;
         }
 

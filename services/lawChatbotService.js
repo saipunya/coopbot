@@ -317,6 +317,20 @@ function normalizeContinuationText(text = "") {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
+function isShortExplainFollowUpMessage(message = "") {
+  const text = String(message || "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  // Keep this strict: only for short follow-ups that should expand prior context.
+  if (text.length > 22) {
+    return false;
+  }
+
+  return /^(?:อธิบาย|ช่วยอธิบาย|รายละเอียด|แสดงรายละเอียด|รายละเอียดหน่อย|ฉันไม่เข้าใจ|ไม่เข้าใจ|แจ้งเพิ่มเติม)$/.test(text);
+}
+
 async function getMonthlyUsageSafe(userId, usageMonth) {
   if (!Number(userId || 0) || !String(usageMonth || "").trim()) {
     return null;
@@ -544,16 +558,24 @@ async function collectAnswerSources(message, target, session, options = {}) {
     initialCarrySources.length > 0
       ? await expandCarrySourcesForContinuation(initialCarrySources, options.promptProfile || {})
       : [];
-  const databaseMatches = mergeUniqueSources(
-    carrySources,
-    Array.isArray(searchPlan.matches) ? searchPlan.matches : [],
-  );
+  const shouldNarrowToCarrySources =
+    carrySources.length > 0 &&
+    searchPlan.resolvedContext?.usedContext === true &&
+    wantsExplanation(message) &&
+    isShortExplainFollowUpMessage(message);
+  const databaseMatches = shouldNarrowToCarrySources
+    ? mergeUniqueSources(carrySources)
+    : mergeUniqueSources(
+        carrySources,
+        Array.isArray(searchPlan.matches) ? searchPlan.matches : [],
+      );
   const suppressInternetForFollowUpExplanation =
     carrySources.length > 0 &&
     searchPlan.resolvedContext?.usedContext === true &&
     wantsExplanation(message);
   const shouldSearchInternet =
     allowInternetFallback &&
+    !shouldNarrowToCarrySources &&
     !suppressInternetForFollowUpExplanation &&
     shouldSearchInternetForPlan(options.planCode || "free", resolvedEffectiveMessage, databaseMatches, questionIntent);
   let internetMatches = [];

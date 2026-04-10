@@ -26,11 +26,24 @@ const SEARCH_CONCEPT_EXPANSIONS = [
     ],
   },
   {
-    triggers: ["จัดตั้งกลุ่มเกษตรกร", "การจัดตั้งกลุ่มเกษตรกร", "จดทะเบียนจัดตั้งกลุ่มเกษตรกร"],
-    additions: [
+    triggers: [
       "จัดตั้งกลุ่มเกษตรกร",
       "การจัดตั้งกลุ่มเกษตรกร",
       "จดทะเบียนจัดตั้งกลุ่มเกษตรกร",
+      // Alias: users often say "ตั้งกลุ่มเกษตรกร" meaning "จัดตั้งกลุ่มเกษตรกร"
+      "ตั้งกลุ่มเกษตรกร",
+      "การตั้งกลุ่มเกษตรกร",
+    ],
+    additions: [
+      "ตั้งกลุ่มเกษตรกร",
+      "การตั้งกลุ่มเกษตรกร",
+      "จัดตั้งกลุ่มเกษตรกร",
+      "การจัดตั้งกลุ่มเกษตรกร",
+      "จดทะเบียนจัดตั้งกลุ่มเกษตรกร",
+      // Help keyword retrieval land on the right provision (cost-controlled; embeddings disabled).
+      "มาตรา 5",
+      "พรฎ กลุ่มเกษตรกร",
+      "พระราชกฤษฎีกากลุ่มเกษตรกร",
     ],
   },
   {
@@ -61,6 +74,19 @@ const SEARCH_CONCEPT_EXPANSIONS = [
     ],
   },
 ];
+
+let QUERY_SYNONYMS = [];
+let TOPIC_FAMILIES = [];
+try {
+  // Optional config-driven expansions/rules. Keep existing logic as fallback.
+  // eslint-disable-next-line global-require
+  QUERY_SYNONYMS = require("../config/querySynonyms");
+  // eslint-disable-next-line global-require
+  TOPIC_FAMILIES = require("../config/topicFamilies");
+} catch (_err) {
+  QUERY_SYNONYMS = [];
+  TOPIC_FAMILIES = [];
+}
 const { normalizeThaiNumberSearchText } = require("./thaiNumberNormalizer");
 const EXCLUSIVE_MEANING_RULES = [
   {
@@ -373,6 +399,8 @@ const QUERY_TOPIC_RULES = [
       "จัดตั้งกลุ่มเกษตรกร",
       "การจัดตั้งกลุ่มเกษตรกร",
       "จดทะเบียนจัดตั้งกลุ่มเกษตรกร",
+      "ตั้งกลุ่มเกษตรกร",
+      "การตั้งกลุ่มเกษตรกร",
     ],
     conflicts: [],
     contextSignals: [
@@ -381,6 +409,13 @@ const QUERY_TOPIC_RULES = [
       "ใบทะเบียนจัดตั้งกลุ่มเกษตรกร",
       "สมาชิกผู้เริ่มจัดตั้ง",
       "ข้อบังคับ",
+      // Section 5 formation criteria signals (พรฎ กลุ่มเกษตรกร)
+      "มาตรา 5",
+      "บุคคลผู้ประกอบอาชีพเกษตรกรรม",
+      "ไม่น้อยกว่าสามสิบคน",
+      "ช่วยเหลือซึ่งกันและกัน",
+      "บรรลุนิติภาวะ",
+      "ภูมิลำเนาหรือกิจการ",
     ],
   },
   {
@@ -681,6 +716,27 @@ function expandSearchConcepts(text) {
 
   const phrases = [normalized];
 
+  // Config-driven synonym expansion (non-destructive): append additions when any trigger matches.
+  for (const rule of Array.isArray(QUERY_SYNONYMS) ? QUERY_SYNONYMS : []) {
+    const triggers = Array.isArray(rule?.triggers) ? rule.triggers : [];
+    const additions = Array.isArray(rule?.additions) ? rule.additions : [];
+    if (triggers.length === 0 || additions.length === 0) {
+      continue;
+    }
+
+    const matched = triggers.some((trigger) => normalized.includes(String(trigger || "").trim().toLowerCase()));
+    if (!matched) {
+      continue;
+    }
+
+    additions.forEach((phrase) => {
+      const cleaned = normalizeForSearch(phrase).toLowerCase();
+      if (cleaned) {
+        phrases.push(cleaned);
+      }
+    });
+  }
+
   for (const rule of SEARCH_CONCEPT_EXPANSIONS) {
     const triggers = Array.isArray(rule.triggers) ? rule.triggers : [];
     const unless = Array.isArray(rule.unless) ? rule.unless : [];
@@ -705,6 +761,35 @@ function expandSearchConcepts(text) {
   }
 
   return [...new Set(phrases)].join(" ");
+}
+
+function resolveQuerySynonyms(query = "") {
+  // Public helper: returns a single expanded search string (safe for keyword retrieval).
+  return expandSearchConcepts(query);
+}
+
+function detectTopicFamily(query = "") {
+  const normalized = normalizeForSearch(String(query || "")).toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  for (const family of Array.isArray(TOPIC_FAMILIES) ? TOPIC_FAMILIES : []) {
+    const matchAny = Array.isArray(family?.matchAny) ? family.matchAny : [];
+    if (matchAny.length === 0) {
+      continue;
+    }
+
+    const matched = matchAny.some((term) => {
+      const cleaned = normalizeForSearch(String(term || "")).toLowerCase();
+      return cleaned && normalized.includes(cleaned);
+    });
+    if (matched) {
+      return family;
+    }
+  }
+
+  return null;
 }
 
 function getQueryFocusProfile(query) {
@@ -971,6 +1056,8 @@ function makeBigrams(tokens) {
 
 module.exports = {
   expandSearchConcepts,
+  resolveQuerySynonyms,
+  detectTopicFamily,
   extractExplicitTopicHints,
   getQueryFocusProfile,
   hasExclusiveMeaningMismatch,

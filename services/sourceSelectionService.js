@@ -14,6 +14,7 @@ const {
   isTaxQuestion,
   scoreQueryFocusAlignment,
   uniqueTokens,
+  detectTopicFamily,
 } = require("./thaiTextUtils");
 const {
   normalizeThaiNumberSearchText,
@@ -303,9 +304,72 @@ function getGroupBylawStructuredLawFocusBoost(message = "", item = {}) {
   return boost;
 }
 
+function getGroupFormationStructuredLawFocusBoost(message = "", item = {}) {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  if (sourceName !== "tbl_glaws") {
+    return 0;
+  }
+
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalizedMessage || !/กลุ่มเกษตรกร/.test(normalizedMessage)) {
+    return 0;
+  }
+
+  const family = detectTopicFamily(normalizedMessage);
+  if (!family || String(family.id || "").trim().toLowerCase() !== "group_formation") {
+    return 0;
+  }
+
+  // Avoid mixing with dissolution questions.
+  if (/(เลิกกลุ่มเกษตรกร|สั่งเลิกกลุ่มเกษตรกร|ชำระบัญชี|ผู้ชำระบัญชี|ถอนชื่อออกจากทะเบียน)/.test(normalizedMessage)) {
+    return 0;
+  }
+
+  const sourceText = buildSourceFocusSearchText(item);
+  if (!sourceText) {
+    return 0;
+  }
+
+  let boost = 18;
+
+  // Strongly prefer the formation criteria section.
+  if (/(มาตรา 5|มาตรา5)\b/.test(sourceText)) {
+    boost += 22;
+  }
+
+  if (
+    /(บุคคลผู้ประกอบอาชีพเกษตรกรรม|ประกอบอาชีพเกษตรกรรม)/.test(sourceText) &&
+    /(ไม่น้อยกว่าสามสิบคน|สามสิบคน|30\s*คน)/.test(sourceText)
+  ) {
+    boost += 18;
+  }
+
+  if (/(วัตถุประสงค์เพื่อช่วยเหลือซึ่งกันและกัน|ช่วยเหลือซึ่งกันและกัน)/.test(sourceText)) {
+    boost += 12;
+  }
+
+  if (/(บรรลุนิติภาวะ|ภูมิลำเนา|กิจการในท้องที่)/.test(sourceText)) {
+    boost += 10;
+  }
+
+  // Penalize broad/general administrative content that is not about formation criteria.
+  if (
+    /(ตรวจสอบ|ไต่สวน|ระงับ|อำนาจหน้าที่|สั่งเลิก|เลิกกลุ่มเกษตรกร|ชำระบัญชี|ถอนชื่อออกจากทะเบียน)/.test(sourceText) &&
+    !/(มาตรา 5|มาตรา5|ไม่น้อยกว่าสามสิบคน|บุคคลผู้ประกอบอาชีพเกษตรกรรม|ช่วยเหลือซึ่งกันและกัน)/.test(sourceText)
+  ) {
+    boost -= 26;
+  }
+
+  return boost;
+}
+
 function getSourceAwareFocusScore(message = "", item = {}) {
   const baseFocusScore = Number(scoreQueryFocusAlignment(message, buildSourceFocusSearchText(item)) || 0);
-  return baseFocusScore + getGroupBylawStructuredLawFocusBoost(message, item);
+  return (
+    baseFocusScore +
+    getGroupBylawStructuredLawFocusBoost(message, item) +
+    getGroupFormationStructuredLawFocusBoost(message, item)
+  );
 }
 
 function getFocusAlignmentTrace(item = {}, message = "") {

@@ -5,7 +5,7 @@ const {
   scoreMatchSet,
   sortByScore,
 } = require("./sourceSelectionService");
-const { extractExplicitTopicHints, normalizeForSearch } = require("./thaiTextUtils");
+const { extractExplicitTopicHints, normalizeForSearch, detectTopicFamily } = require("./thaiTextUtils");
 
 const AUTHORITATIVE_SOURCES = new Set([
   "tbl_laws",
@@ -112,6 +112,41 @@ function scaleTo(value, minInput, maxInput, maxOutput) {
 
 function normalizeSourceName(sourceName = "") {
   return String(sourceName || "").trim().toLowerCase();
+}
+
+function isGroupFormationQuestion(message = "") {
+  const family = detectTopicFamily(message);
+  return Boolean(family && String(family.id || "").trim().toLowerCase() === "group_formation");
+}
+
+function hasStrongGroupFormationEvidence(payload = {}) {
+  const message = payload.effectiveMessage || payload.message || "";
+  if (!isGroupFormationQuestion(message)) {
+    return false;
+  }
+
+  const selectedSources = sortByScore(payload.selectedSources || payload.sources || []);
+  return selectedSources.some((item) => {
+    const sourceName = normalizeSourceName(item?.source);
+    if (sourceName !== "tbl_glaws") {
+      return false;
+    }
+
+    const text = normalizeForSearch(
+      [item?.reference, item?.title, item?.keyword, item?.content, item?.comment, item?.chunk_text].filter(Boolean).join(" "),
+    ).toLowerCase();
+    if (!text) {
+      return false;
+    }
+
+    const hasSection5 = /(มาตรา 5|มาตรา5)\b/.test(text);
+    const hasCoreCriteria =
+      /(บุคคลผู้ประกอบอาชีพเกษตรกรรม|ประกอบอาชีพเกษตรกรรม)/.test(text) &&
+      /(ไม่น้อยกว่าสามสิบคน|สามสิบคน|30\s*คน)/.test(text) &&
+      /(ช่วยเหลือซึ่งกันและกัน|วัตถุประสงค์เพื่อช่วยเหลือซึ่งกันและกัน)/.test(text);
+
+    return hasSection5 && hasCoreCriteria;
+  });
 }
 
 function uniqueTerms(values = []) {
@@ -529,6 +564,7 @@ function buildHumanReadableDecision(policy = "no_answer", metrics = {}, payload 
 function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability(payload)) {
   const profile = answerability.profile || resolveRetrievalThresholdProfile(payload.questionIntent, payload);
   const metrics = answerability.metrics || collectRetrievalMetrics(payload, profile);
+  const strongGroupFormationEvidence = hasStrongGroupFormationEvidence(payload);
 
   const meetsTopScore = metrics.topScore >= profile.minTopScore;
   const meetsAggregateScore =
@@ -546,6 +582,13 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
     metrics.documentCount > 0 ||
     metrics.strongSingleSource ||
     metrics.topFocusScore >= 24;
+  const lowTrustShortQuery =
+    (metrics.shortQuery || metrics.lowContextQuery) &&
+    metrics.matchedReferenceCount === 0 &&
+    metrics.primaryLawCount === 0 &&
+    metrics.authoritativeCount === 0 &&
+    (metrics.documentCount > 0 || metrics.selectedCount <= 1) &&
+    (metrics.topFocusScore < Math.max(18, profile.minTopFocusScore) || metrics.selectedConfidence < Math.max(8, profile.minSelectedConfidence));
   const meetsAnswerThresholds =
     metrics.selectedCount > 0 &&
     answerability.answerabilityScore >= profile.minAnswerability &&
@@ -554,14 +597,22 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
     meetsAggregateScore &&
     meetsFocus &&
     meetsPrimaryLawRequirement &&
-    meetsDocumentPreference;
+    meetsDocumentPreference &&
+    !lowTrustShortQuery;
 
   let policy = "no_answer";
 
-  if (meetsAnswerThresholds) {
+  // If we clearly found พ.ร.ฎ. กลุ่มเกษตรกร มาตรา 5 with the core criteria, do not fall back to clarify.
+  if (strongGroupFormationEvidence && metrics.selectedCount > 0 && metrics.primaryLawCount > 0) {
     policy = "answer";
-  } else {
+  }
+
+  if (policy !== "answer") {
+    if (meetsAnswerThresholds) {
+      policy = "answer";
+    } else {
     const shouldClarify =
+      lowTrustShortQuery ||
       metrics.ambiguousFollowUp ||
       metrics.shortQuery ||
       metrics.lowContextQuery ||
@@ -578,6 +629,7 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
       )
     ) {
       policy = "clarify";
+    }
     }
   }
 

@@ -1,0 +1,106 @@
+// Config-driven topic family rules for retrieval/ranking and answer shaping.
+// Keep weights conservative to avoid behavior regressions; prefer additive boosts over hard filters.
+
+module.exports = [
+  {
+    id: "coop_formation",
+    matchAny: [
+      "จัดตั้งสหกรณ์",
+      "การจัดตั้งสหกรณ์",
+      "จดทะเบียนจัดตั้ง",
+      "ผู้เริ่มก่อการ",
+      "สมาชิกผู้ก่อการ",
+      "ประชุมจัดตั้ง",
+      "คำขอจดทะเบียน",
+    ],
+    preferredSources: ["tbl_laws", "admin_knowledge", "knowledge_suggestion"],
+    boostTerms: [
+      "ผู้เริ่มก่อการ",
+      "สมาชิกผู้ก่อการ",
+      "จดทะเบียนจัดตั้ง",
+      "คำขอจดทะเบียน",
+      "ประชุมจัดตั้ง",
+      "จัดตั้งสหกรณ์",
+      "ข้อบังคับ",
+      "ผู้จัดตั้งสหกรณ์",
+    ],
+    penaltyTerms: [
+      "นายทะเบียนมีอำนาจหน้าที่",
+      "ตรวจสอบ",
+      "ไต่สวน",
+      "ระงับการดำเนินงาน",
+      "เลิกสหกรณ์",
+      "ถอนชื่อออกจากทะเบียน",
+      "ชำระบัญชี",
+    ],
+    weights: {
+      boostPerHit: 14,
+      penaltyPerHit: 18,
+    },
+    answerStyle: "steps",
+  },
+  {
+    id: "group_formation",
+    matchAny: [
+      "ตั้งกลุ่มเกษตรกร",
+      "การตั้งกลุ่มเกษตรกร",
+      "จัดตั้งกลุ่มเกษตรกร",
+      "การจัดตั้งกลุ่มเกษตรกร",
+      "จดทะเบียนจัดตั้งกลุ่มเกษตรกร",
+    ],
+    preferredSources: ["tbl_glaws"],
+    boostTerms: [
+      "มาตรา 5",
+      "บุคคลผู้ประกอบอาชีพเกษตรกรรม",
+      "ประกอบอาชีพเกษตรกรรม",
+      "ไม่น้อยกว่าสามสิบคน",
+      "สามสิบคน",
+      "ช่วยเหลือซึ่งกันและกัน",
+      "วัตถุประสงค์เพื่อช่วยเหลือซึ่งกันและกัน",
+      "บรรลุนิติภาวะ",
+      "ภูมิลำเนา",
+      "กิจการในท้องที่",
+      "จัดตั้งเป็นกลุ่มเกษตรกร",
+    ],
+    penaltyTerms: [
+      "ตรวจสอบ",
+      "ไต่สวน",
+      "ระงับการดำเนินงาน",
+      "เลิกกลุ่มเกษตรกร",
+      "สั่งเลิกกลุ่มเกษตรกร",
+      "ชำระบัญชี",
+      "ผู้ชำระบัญชี",
+      "ถอนชื่อออกจากทะเบียน",
+    ],
+    weights: {
+      boostPerHit: 12,
+      penaltyPerHit: 18,
+    },
+    answerStyle: "summary",
+  },
+  {
+    id: "group_bylaw",
+    matchAny: ["ข้อบังคับกลุ่มเกษตรกร", "ข้อบังคับของกลุ่มเกษตรกร"],
+    preferredSources: ["tbl_glaws"],
+    boostTerms: ["ข้อบังคับกลุ่มเกษตรกร", "รายการที่ต้องมี", "อย่างน้อยต้องมีรายการ", "วัตถุประสงค์", "ที่ตั้งสำนักงาน"],
+    penaltyTerms: ["เลิกกลุ่มเกษตรกร", "ชำระบัญชี"],
+    weights: {
+      boostPerHit: 10,
+      penaltyPerHit: 16,
+    },
+    answerStyle: "summary",
+  },
+  {
+    id: "union_fee",
+    matchAny: ["ค่าบำรุงสันนิบาต", "บำรุงสันนิบาต"],
+    preferredSources: ["tbl_laws", "admin_knowledge", "knowledge_suggestion"],
+    boostTerms: ["ค่าบำรุง", "สันนิบาต", "อัตรา", "กฎกระทรวง", "ร้อยละ", "เปอร์เซ็นต์", "%", "บาท"],
+    penaltyTerms: ["เดินทาง", "ฝึกอบรม", "องค์ความรู้", "km", "ชำระบัญชี"],
+    weights: {
+      boostPerHit: 10,
+      penaltyPerHit: 14,
+    },
+    answerStyle: "summary",
+  },
+];
+

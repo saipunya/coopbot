@@ -8,6 +8,7 @@ const {
   scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,
+  detectTopicFamily,
 } = require("./thaiTextUtils");
 
 const SOURCE_LABELS = {
@@ -356,6 +357,17 @@ function cleanupAnswerText(answerText, sources = [], options = {}) {
     return "";
   }
 
+  const bannedBodyLabelPattern =
+    /^(?:เอกสารที่อัปโหลด|ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม\/แก้ไข|พรบ\.สหกรณ์ พ\.ศ\. 2542|หนังสือวินิจฉัย\/ตีความ|Q&A ที่ผู้ดูแลเตรียมไว้)(?:\s*\([^)]*\))?\s*:?\s*$/i;
+  const bannedBodyLabelPrefixPattern =
+    /^(?:เอกสารที่อัปโหลด|ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม\/แก้ไข|พรบ\.สหกรณ์ พ\.ศ\. 2542|หนังสือวินิจฉัย\/ตีความ|Q&A ที่ผู้ดูแลเตรียมไว้)(?:\s*\([^)]*\))?\s*:/i;
+  const looksLikeBareSourceLabel =
+    (line) =>
+      bannedBodyLabelPattern.test(cleanLine(line)) ||
+      bannedBodyLabelPattern.test(String(line || "").trim()) ||
+      bannedBodyLabelPrefixPattern.test(cleanLine(line)) ||
+      bannedBodyLabelPrefixPattern.test(String(line || "").trim());
+
   const cleanedLines = [];
   const seen = [];
 
@@ -365,6 +377,10 @@ function cleanupAnswerText(answerText, sources = [], options = {}) {
       .map((item) => cleanLine(item))
       .filter(Boolean),
   )) {
+    if (looksLikeBareSourceLabel(line) || isNoisyLine(line)) {
+      continue;
+    }
+
     if (isSectionHeading(line)) {
       if (cleanedLines.some((existing) => normalizeComparisonText(existing) === normalizeComparisonText(line))) {
         continue;
@@ -933,6 +949,207 @@ function buildCoopDissolutionFocusedAnswer(sources, options = {}) {
       summaryLimit: normalizedSummaryLines.length,
     }),
     buildReferenceSection(references, Math.min(references.length || 1, 5)),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function isGroupFormationQuestion(message) {
+  const family = detectTopicFamily(message);
+  if (!family || String(family.id || "").trim().toLowerCase() !== "group_formation") {
+    return false;
+  }
+
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  return !/(เลิกกลุ่มเกษตรกร|สั่งเลิกกลุ่มเกษตรกร|ชำระบัญชี|ผู้ชำระบัญชี|ถอนชื่อออกจากทะเบียน)/.test(text);
+}
+
+function buildGroupFormationFocusedAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isGroupFormationQuestion(message)) {
+    return "";
+  }
+
+  const allowedSources = ["tbl_glaws"];
+  const references = [];
+  const summaryLines = [];
+  const detailLines = [];
+  const explainMode = wantsExplanation(String(options.message || "").trim());
+
+  const section5Source = selectBestLawSourceByNumbers(sources, ["5"], allowedSources);
+  if (!section5Source) {
+    return "";
+  }
+
+  references.push(section5Source);
+  const sourceText = normalizeForSearch(buildSourceSearchText(section5Source)).toLowerCase();
+
+  const hasFarmer = /(บุคคลผู้ประกอบอาชีพเกษตรกรรม|ประกอบอาชีพเกษตรกรรม)/.test(sourceText);
+  const hasThirty = /(ไม่น้อยกว่าสามสิบคน|สามสิบคน|30\s*คน)/.test(sourceText);
+  const hasMutual = /(วัตถุประสงค์เพื่อช่วยเหลือซึ่งกันและกัน|ช่วยเหลือซึ่งกันและกัน)/.test(sourceText);
+  const hasAdultLocal = /(บรรลุนิติภาวะ|ภูมิลำเนา|กิจการในท้องที่)/.test(sourceText);
+
+  if (hasFarmer && hasThirty) {
+    summaryLines.push("ต้องมีบุคคลผู้ประกอบอาชีพเกษตรกรรมเป็นหลักไม่น้อยกว่า 30 คน จัดตั้งเป็นกลุ่มเกษตรกร");
+  } else {
+    summaryLines.push("มาตรา 5 กำหนดเงื่อนไขหลักของการจัดตั้งกลุ่มเกษตรกร (จำนวน/คุณสมบัติสมาชิกและวัตถุประสงค์)");
+  }
+
+  if (hasMutual) {
+    summaryLines.push("ต้องมีวัตถุประสงค์เพื่อช่วยเหลือซึ่งกันและกันในการประกอบอาชีพเกษตรกรรม");
+  }
+
+  if (hasAdultLocal) {
+    summaryLines.push("สมาชิกต้องบรรลุนิติภาวะ และมีภูมิลำเนาหรือกิจการอยู่ในท้องที่ที่กลุ่มเกษตรกรดำเนินการ");
+  }
+
+  if (explainMode) {
+    detailLines.push("คำว่า “ตั้งกลุ่มเกษตรกร” ในทางกฎหมายโดยทั่วไปหมายถึง “จัดตั้ง/จดทะเบียนจัดตั้งกลุ่มเกษตรกร” ตามเงื่อนไขในมาตรา 5");
+  }
+
+  const normalizedSummaryLines = uniqueCleanLines(summaryLines, 4);
+  const normalizedDetailLines = explainMode ? uniqueCleanLines(detailLines, 3) : [];
+
+  if (normalizedSummaryLines.length === 0) {
+    return "";
+  }
+
+  return [
+    buildParagraphSummary(normalizedSummaryLines, normalizedDetailLines, explainMode, {
+      summaryLimit: normalizedSummaryLines.length,
+      detailLimit: normalizedDetailLines.length || 0,
+    }),
+    buildReferenceSection(references, 1),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function isCoopFormationQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return /(?:การ)?จัดตั้ง(?:สหกรณ์)?|จดทะเบียนจัดตั้ง|ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|ประชุมจัดตั้ง/.test(text);
+}
+
+function buildCoopFormationFocusedAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isCoopFormationQuestion(message)) {
+    return "";
+  }
+
+  const explainMode = wantsExplanation(String(options.message || "").trim());
+
+  const candidateSources = dedupeSources(sources, 10).filter((source) => {
+    const sourceText = normalizeForSearch(buildSourceSearchText(source)).toLowerCase();
+    if (!sourceText) {
+      return false;
+    }
+
+    const hasStrongFormationSignal =
+      /ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|จดทะเบียนจัดตั้ง|คำขอจดทะเบียน|ประชุมจัดตั้ง/.test(sourceText);
+    const hasSupportingFormationSignal =
+      /จัดตั้งสหกรณ์|ผู้จัดตั้งสหกรณ์|ข้อบังคับ|ขอจดทะเบียน|ยื่นจดทะเบียน/.test(sourceText);
+    const hasFormationSignal = hasStrongFormationSignal || hasSupportingFormationSignal;
+
+    const hasRegistrarPowerSignal =
+      /นายทะเบียน(?:สหกรณ์)?มีอำนาจหน้าที่|ตรวจสอบ|ไต่สวน|ระงับการดำเนินงาน|ถอนชื่อออกจากทะเบียน|เลิกสหกรณ์|ชำระบัญชี/.test(
+        sourceText,
+      );
+    // If the source is mainly about registrar powers (e.g. mentions "เกี่ยวกับการจัดตั้ง" in passing),
+    // do not let it drive "การจัดตั้งสหกรณ์" answers.
+    const mostlyRegistrarPower = hasRegistrarPowerSignal && !hasStrongFormationSignal;
+
+    return hasFormationSignal && !mostlyRegistrarPower;
+  });
+
+  if (candidateSources.length === 0) {
+    const normalized = normalizeForSearch(message).toLowerCase();
+    const hints = /สหกรณ์/.test(normalized)
+      ? " เช่น ประเภทสหกรณ์, จำนวนสมาชิกผู้ก่อการ, เอกสารที่ต้องยื่น หรือขั้นตอนจดทะเบียน"
+      : " เช่น จัดตั้งสหกรณ์ประเภทใด, ต้องการทราบขั้นตอน, เอกสาร หรือคุณสมบัติของผู้ก่อการ";
+    return `เพื่อสรุปขั้นตอนการจัดตั้งให้ตรงขึ้น รบกวนระบุรายละเอียดเพิ่มเติมอีกนิด${hints}`;
+  }
+
+  const references = [];
+  const summaryLines = [];
+  const detailLines = [];
+  const pushUniqueReference = (source) => {
+    if (!source) {
+      return;
+    }
+
+    if (!references.find((item) => String(item?.source || "") === String(source?.source || "") && String(item?.reference || item?.title || "") === String(source?.reference || source?.title || ""))) {
+      references.push(source);
+    }
+  };
+
+  let hasFormationLead = false;
+  let hasApplicationStep = false;
+  let hasMeetingStep = false;
+  let hasBylawStep = false;
+
+  for (const source of candidateSources) {
+    const sourceText = normalizeForSearch(buildSourceSearchText(source)).toLowerCase();
+    if (!sourceText) {
+      continue;
+    }
+
+    if (!hasFormationLead && /ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|ผู้จัดตั้งสหกรณ์/.test(sourceText)) {
+      summaryLines.push("การจัดตั้งสหกรณ์โดยหลักต้องมีผู้เริ่มก่อการหรือสมาชิกผู้ก่อการตามเกณฑ์ที่กฎหมายกำหนด เพื่อดำเนินการขอจดทะเบียนจัดตั้ง");
+      hasFormationLead = true;
+      pushUniqueReference(source);
+    }
+
+    if (!hasBylawStep && /ข้อบังคับ/.test(sourceText)) {
+      summaryLines.push("ก่อนยื่นขอจัดตั้ง ต้องจัดทำข้อบังคับและสาระสำคัญของการดำเนินงานให้ครบถ้วนตามหลักเกณฑ์ของกฎหมาย");
+      hasBylawStep = true;
+      pushUniqueReference(source);
+    }
+
+    if (!hasMeetingStep && /ประชุมจัดตั้ง/.test(sourceText)) {
+      summaryLines.push("เมื่อเตรียมการครบแล้ว ต้องมีการประชุมจัดตั้งเพื่อรับรองการจัดตั้งและเอกสารสำคัญที่ใช้ประกอบการจดทะเบียน");
+      hasMeetingStep = true;
+      pushUniqueReference(source);
+    }
+
+    if (!hasApplicationStep && /จดทะเบียนจัดตั้ง|คำขอจดทะเบียน|ขอจดทะเบียน|ยื่นจดทะเบียน/.test(sourceText)) {
+      summaryLines.push("ขั้นตอนสำคัญถัดมาคือยื่นคำขอจดทะเบียนจัดตั้งสหกรณ์พร้อมเอกสารประกอบต่อนายทะเบียนสหกรณ์");
+      if (explainMode) {
+        detailLines.push("ผู้เริ่มก่อการ/สมาชิกผู้ก่อการ: ตรวจคุณสมบัติและจำนวนให้ครบตามเกณฑ์ที่กฎหมายกำหนด");
+        detailLines.push("ข้อบังคับ: จัดทำสาระสำคัญและรายการที่กฎหมายกำหนดให้ครบถ้วนก่อนยื่นคำขอ");
+        detailLines.push("ประชุมจัดตั้ง: รับรองมติและเอกสารสำคัญที่ใช้ประกอบการจดทะเบียนให้ถูกต้องครบถ้วน");
+        detailLines.push("ยื่นคำขอจดทะเบียน: ตรวจรายการเอกสารแนบและความถูกต้องของข้อมูลก่อนยื่นต่อนายทะเบียน");
+        detailLines.push("การรับจดทะเบียน: นายทะเบียนพิจารณาตามเงื่อนไขและเอกสารที่ถูกต้องครบถ้วน (ควรยืนยันจากมาตราที่เกี่ยวข้อง)");
+      } else {
+        detailLines.push("ประเด็นที่ควรตรวจจากแหล่งอ้างอิงคือคุณสมบัติของผู้ก่อการ รายการเอกสาร และเนื้อหาข้อบังคับที่ต้องยื่นพร้อมคำขอจดทะเบียน");
+      }
+      hasApplicationStep = true;
+      pushUniqueReference(source);
+    }
+  }
+
+  const normalizedSummaryLines = uniqueCleanLines(summaryLines, 5);
+  if (normalizedSummaryLines.length === 0) {
+    return "เพื่อสรุปขั้นตอนการจัดตั้งสหกรณ์ให้ตรงขึ้น รบกวนระบุว่าต้องการทราบ \"ขั้นตอน\", \"เอกสารที่ต้องยื่น\", หรือ \"คุณสมบัติ/จำนวนผู้ก่อการ\"";
+  }
+
+  const normalizedDetailLines = explainMode ? uniqueCleanLines(detailLines, 6) : [];
+  const summaryHeading = explainMode ? "สรุปสาระสำคัญ:" : "ขั้นตอนสำคัญ:";
+  const answerBody = [
+    `${summaryHeading}\n- ${normalizedSummaryLines.join("\n- ")}`,
+    explainMode && normalizedDetailLines.length > 0
+      ? `รายละเอียดเพิ่มเติม:\n- ${normalizedDetailLines.join("\n- ")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return [
+    decorateConversationalAnswer(answerBody, options),
+    buildReferenceSection(references, Math.min(references.length || 1, 4)),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -1643,15 +1860,18 @@ function cleanLine(text) {
     .replace(/^#{1,6}\s*/, "")
     .replace(/^[*-]\s*/, "")
     .replace(/^สรุป:\s*/i, "")
-    .replace(/^สรุปสาระสำคัญ:\s*/i, "")
-    .replace(/^อธิบายเพิ่มเติม:\s*/i, "")
-    .replace(/^รายละเอียดเพิ่มเติม:\s*/i, "")
+    // Only strip these headings when they appear inline with content.
+    .replace(/^สรุปสาระสำคัญ:\s*(?=\S)/i, "")
+    .replace(/^อธิบายเพิ่มเติม:\s*(?=\S)/i, "")
+    .replace(/^รายละเอียดเพิ่มเติม:\s*(?=\S)/i, "")
     .replace(/^สรุปคำตอบดังนี้:?\s*/i, "")
-    .replace(/^คำตอบ(?:สรุป)?ดังนี้:?\s*/i, "")
-    .replace(/^ข้อมูลที่พบจากฐานข้อมูลกฎหมาย(?:\s*\([^)]*\))?:?\s*/u, "")
-    .replace(/\s*แหล่งอ้างอิง\s*:.*$/iu, "")
-    .replace(/\s+/g, " ")
-    .trim();
+	    .replace(/^คำตอบ(?:สรุป)?ดังนี้:?\s*/i, "")
+	    .replace(/^(?:เอกสารที่อัปโหลด|ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม\/แก้ไข|พรบ\.สหกรณ์ พ\.ศ\. 2542|หนังสือวินิจฉัย\/ตีความ|Q&A ที่ผู้ดูแลเตรียมไว้)(?:\s*\([^)]*\))?\s*:\s*/i, "")
+	    .replace(/^ข้อมูลที่พบจากฐานข้อมูลกฎหมาย(?:\s*\([^)]*\))?:?\s*/u, "")
+	    // Only strip inline "แหล่งอ้างอิง:" when it is followed by content on the same line.
+	    .replace(/^แหล่งอ้างอิง\s*:\s*(?=\S)/iu, "")
+	    .replace(/\s+/g, " ")
+	    .trim();
 }
 
 function normalizeProtectedLineBreaks(text) {
@@ -1706,6 +1926,13 @@ function isNoisyLine(text) {
     return true;
   }
 
+  if (
+    /^(?:เอกสารที่อัปโหลด|ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม\/แก้ไข|พรบ\.สหกรณ์ พ\.ศ\. 2542|หนังสือวินิจฉัย\/ตีความ|Q&A ที่ผู้ดูแลเตรียมไว้)(?:\s*\([^)]*\))?\s*:?\s*$/i.test(line) ||
+    /^(?:เอกสารที่อัปโหลด|ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม\/แก้ไข|พรบ\.สหกรณ์ พ\.ศ\. 2542|หนังสือวินิจฉัย\/ตีความ|Q&A ที่ผู้ดูแลเตรียมไว้)(?:\s*\([^)]*\))?\s*:/i.test(line)
+  ) {
+    return true;
+  }
+
   if (GARBLED_TEXT_PATTERN.test(line)) {
     return true;
   }
@@ -1727,6 +1954,14 @@ function isNoisyLine(text) {
 
   const disallowed = line.replace(/[\u0E00-\u0E7Fa-zA-Z0-9\s.,:%()\-\/]/g, "");
   const ratio = disallowed.length / Math.max(line.length, 1);
+  if (
+    line.length <= 14 &&
+    !hasSubstantiveAnswerSignal(line) &&
+    !/[.!?ฯ:]$/.test(line) &&
+    /(เอกสาร|ฐานความรู้|พรบ\.|วินิจฉัย|Q&A|นายทะเบียน|สหกรณ์)/i.test(line)
+  ) {
+    return true;
+  }
   return ratio > 0.22;
 }
 
@@ -1778,8 +2013,8 @@ function linesLookSemanticallyDuplicate(left, right) {
   }
 
   if (
-    normalizedLeft.length >= 18 &&
-    normalizedRight.length >= 18 &&
+    normalizedLeft.length >= 14 &&
+    normalizedRight.length >= 14 &&
     (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft))
   ) {
     return true;
@@ -1794,7 +2029,7 @@ function linesLookSemanticallyDuplicate(left, right) {
   const rightSet = new Set(rightTokens);
   const overlapCount = leftTokens.filter((token) => rightSet.has(token)).length;
   const overlapRatio = overlapCount / Math.max(Math.min(leftTokens.length, rightTokens.length), 1);
-  return overlapRatio >= 0.88;
+  return overlapRatio >= 0.8;
 }
 
 function getQueryTokens(message) {
@@ -2725,6 +2960,59 @@ function extractClauseNumberFromLine(line) {
   return normalizeClauseNumber(match?.[1] || match?.[2] || "");
 }
 
+function looksLikeBrokenClauseDetail(detail) {
+  const text = cleanLine(detail);
+  if (!text) return true;
+  if (isNoisyLine(text)) return true;
+  if (GARBLED_TEXT_PATTERN.test(text)) return true;
+
+  // Prevent dangling markers like "หรือ", "และ", or very short tails from leaking into the answer body.
+  if (/^(?:หรือ|และ)\s*$/u.test(text)) return true;
+  if (/^(?:หรือ|และ)\b/u.test(text) && text.length < 18) return true;
+  if (/(?:หรือ|และ)\s*$/u.test(text) && text.length < 24) return true;
+
+  // If a clause detail is too short, it is usually an OCR split (e.g., "3. หรือ").
+  if (text.length < 10) return true;
+
+  // Pure punctuation or separators are not meaningful content.
+  if (/^[;:,.()\[\]\-–—\s]+$/u.test(text)) return true;
+
+  return false;
+}
+
+function extractClauseDetailFromLine(line) {
+  const cleaned = cleanLine(line);
+  const match = cleaned.match(/^(?:ข้อ\s*)?(?:\(?[0-9๐-๙]{1,3}\)|[0-9๐-๙]{1,3}[.)])\s*(.*)$/);
+  return cleanLine(match?.[1] || "");
+}
+
+function shouldDisplayStructuredLawClauses(clauses = []) {
+  if (!Array.isArray(clauses) || clauses.length < 2) {
+    return false;
+  }
+
+  // Reject if any clause looks incomplete/broken.
+  for (const line of clauses) {
+    const detail = extractClauseDetailFromLine(line);
+    if (looksLikeBrokenClauseDetail(detail)) {
+      return false;
+    }
+  }
+
+  // Basic sanity-check: most legal enumerations start at 1; if we only see a partial tail, avoid showing it.
+  const numbers = clauses
+    .map((line) => Number(extractClauseNumberFromLine(line)))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (numbers.length >= 2) {
+    const sorted = [...numbers].sort((a, b) => a - b);
+    if (sorted[0] !== 1 && sorted.length <= 4) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function extractNumberedClauses(text) {
   const normalizedText = String(text || "")
     .replace(/\r/g, "\n")
@@ -2746,7 +3034,7 @@ function extractNumberedClauses(text) {
     const formattedLine = number && detail ? `${number}. ${detail}` : "";
     const dedupeKey = `${number}::${detail.toLowerCase()}`;
 
-    if (!number || !detail || isNoisyLine(detail) || seen.has(dedupeKey)) {
+    if (!number || !detail || looksLikeBrokenClauseDetail(detail) || seen.has(dedupeKey)) {
       continue;
     }
 
@@ -2855,20 +3143,72 @@ function buildStructuredLawSectionDisplayLines(source, options = {}) {
     .map((item) => item.line)
     .filter((line) => !isNoisyLine(line));
 
-  if (clauses.length > 0) {
-    return uniqueCleanLines([...leadLines.slice(0, 1), ...clauses], Math.max(clauses.length + 1, 8));
+  const safeClauses = clauses.filter((line) => !looksLikeBrokenClauseDetail(extractClauseDetailFromLine(line)));
+  const canDisplayClauses = shouldDisplayStructuredLawClauses(safeClauses);
+
+  // Always show a short, readable summary first for law-section questions.
+  const summaryCandidates = [];
+  if (leadLines[0]) summaryCandidates.push(leadLines[0]);
+  summaryCandidates.push(
+    ...segments
+      .filter((segment) => !extractClauseNumberFromLine(segment))
+      .filter((segment) => cleanLine(segment).length >= 18)
+      .slice(0, 6),
+  );
+
+  // If the statute body is mostly a list, pull a few clause details as summary prose (without numbering).
+  if (summaryCandidates.length < 2 && safeClauses.length > 0) {
+    summaryCandidates.push(
+      ...safeClauses
+        .slice(0, 3)
+        .map((line) =>
+          cleanLine(
+            extractClauseDetailFromLine(line)
+              .replace(/\s*[;,.]\s*$/u, "")
+              .replace(/\s*(?:หรือ|และ)\s*$/u, "")
+              .trim(),
+          ),
+        )
+        .filter(Boolean),
+    );
+  }
+
+  const summaryLines = uniqueCleanLines(summaryCandidates, 5);
+  const displayLines = [];
+  if (summaryLines.length > 0) {
+    displayLines.push("สรุปสาระสำคัญ:");
+    displayLines.push(...summaryLines.slice(0, 5));
+  }
+
+  if (canDisplayClauses) {
+    displayLines.push("รายละเอียดตามตัวบท:");
+    displayLines.push(...safeClauses);
+    return displayLines;
   }
 
   const completeSegments = uniqueCleanLines(
-    [...leadLines, ...segments],
+    [...leadLines, ...segments]
+      .filter((segment) => !extractClauseNumberFromLine(segment))
+      .filter((segment) => cleanLine(segment).length >= 18),
     Math.max(leadLines.length + segments.length, 12),
   );
   if (completeSegments.length > 0) {
-    return completeSegments;
+    if (displayLines.length > 0) {
+      // Avoid dumping raw statute when list parsing is incomplete; keep it as a clean summary.
+      return displayLines;
+    }
+    return ["สรุปสาระสำคัญ:", ...completeSegments.slice(0, 5)];
   }
 
   const fallbackText = cleanLine(normalizeProtectedLineBreaks(rawText));
-  return fallbackText ? [fallbackText] : [];
+  if (fallbackText && !isNoisyLine(fallbackText)) {
+    const trimmed = fallbackText.slice(0, 360);
+    if (displayLines.length > 0) {
+      return displayLines;
+    }
+    return ["สรุปสาระสำคัญ:", trimmed];
+  }
+  return displayLines.length > 0 ? displayLines : [];
 }
 
 function shouldUseDirectStructuredLawDatabaseAnswer(sources, options = {}) {
@@ -3629,7 +3969,8 @@ function decorateConversationalAnswer(answerText, options = {}) {
 
   return text
     .replace(/^สรุปสาระสำคัญ:\s*/i, `สรุปสาระสำคัญ:\n${intro}`)
-    .replace(/\n\nรายละเอียดเพิ่มเติม:\s*/i, "\n\nรายละเอียดเพิ่มเติม: ")
+    // Keep the heading on its own line so downstream shaping can split sections reliably.
+    .replace(/\n\nรายละเอียดเพิ่มเติม:\s*/i, "\n\nรายละเอียดเพิ่มเติม:\n")
     .trim();
 }
 
@@ -3836,7 +4177,9 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
   const focusMessage = String(options.focusMessage || options.originalMessage || "").trim();
   const promptProfile = options.promptProfile || {};
   const referenceLimit = Math.max(1, Number(promptProfile.referenceLimit || 5));
-  const stepMode = options.stepMode === true;
+  const familyStyle = String(options.topicFamily?.answerStyle || "").trim().toLowerCase();
+  const familyStepMode = familyStyle === "steps";
+  const stepMode = options.stepMode === true || familyStepMode;
   if (options.databaseOnlyMode) {
     return buildDatabaseOnlyAnswer(sources, {
       ...options,
@@ -3979,6 +4322,7 @@ async function generateChatSummary(message, sources, options = {}) {
   const decisionMode = wantsDecisionAnswer(message);
   const stepMode = wantsStepAnswer(message);
   const focusMessage = String(options.focusMessage || message || "").trim() || String(message || "").trim();
+  const topicFamily = detectTopicFamily(focusMessage);
   const openAiConfig = getOpenAiConfig();
   const aiEnabled = await isAiEnabled();
   const promptProfile = options.promptProfile || {
@@ -4082,6 +4426,32 @@ async function generateChatSummary(message, sources, options = {}) {
     return finalizeSummary(liquidationFocusedAnswer);
   }
 
+  const groupFormationFocusedAnswer = buildGroupFormationFocusedAnswer(
+    focusedAnswerSources,
+    {
+      ...options,
+      originalMessage: focusMessage,
+      message,
+    },
+  );
+
+  if (groupFormationFocusedAnswer) {
+    return finalizeSummary(groupFormationFocusedAnswer);
+  }
+
+  const coopFormationFocusedAnswer = buildCoopFormationFocusedAnswer(
+    focusedAnswerSources,
+    {
+      ...options,
+      originalMessage: focusMessage,
+      message,
+    },
+  );
+
+  if (coopFormationFocusedAnswer) {
+    return finalizeSummary(coopFormationFocusedAnswer);
+  }
+
   const coopDissolutionFocusedAnswer = buildCoopDissolutionFocusedAnswer(
     focusedAnswerSources,
     {
@@ -4134,11 +4504,12 @@ async function generateChatSummary(message, sources, options = {}) {
       ...options,
       amountMode,
       decisionMode,
-      stepMode,
+      stepMode: stepMode || String(topicFamily?.answerStyle || "").toLowerCase() === "steps",
       databaseOnlyMode: true,
       promptProfile,
       originalMessage: message,
       focusMessage,
+      topicFamily,
     });
   }
 
@@ -4151,11 +4522,12 @@ async function generateChatSummary(message, sources, options = {}) {
       ...options,
       amountMode,
       decisionMode,
-      stepMode,
+      stepMode: stepMode || String(topicFamily?.answerStyle || "").toLowerCase() === "steps",
       databaseOnlyMode: true,
       promptProfile,
       originalMessage: message,
       focusMessage,
+      topicFamily,
     }));
   }
 
@@ -4164,11 +4536,12 @@ async function generateChatSummary(message, sources, options = {}) {
       ...options,
       amountMode,
       decisionMode,
-      stepMode,
+      stepMode: stepMode || String(topicFamily?.answerStyle || "").toLowerCase() === "steps",
       databaseOnlyMode,
       promptProfile,
       originalMessage: message,
       focusMessage,
+      topicFamily,
     }));
   }
 
@@ -4248,8 +4621,11 @@ async function generateChatSummary(message, sources, options = {}) {
         ...options,
         amountMode,
         decisionMode,
+        stepMode: stepMode || String(topicFamily?.answerStyle || "").toLowerCase() === "steps",
         promptProfile,
         originalMessage: message,
+        focusMessage,
+        topicFamily,
       }));
     }
     return finalizeSummary([
@@ -4264,8 +4640,11 @@ async function generateChatSummary(message, sources, options = {}) {
       ...options,
       amountMode,
       decisionMode,
+      stepMode: stepMode || String(topicFamily?.answerStyle || "").toLowerCase() === "steps",
       promptProfile,
       originalMessage: message,
+      focusMessage,
+      topicFamily,
     }));
   }
 }
