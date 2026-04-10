@@ -73,6 +73,7 @@ const {
   submitPaymentRequest,
   updatePaymentRequestPlan,
 } = require("./userAdminPaymentService");
+const { isTimeFollowUpQuestion, normalizeForSearch } = require("./thaiTextUtils");
 const {
   classifyQuestionIntent,
   selectTieredSources,
@@ -569,6 +570,32 @@ async function collectAnswerSources(message, target, session, options = {}) {
         carrySources,
         Array.isArray(searchPlan.matches) ? searchPlan.matches : [],
       );
+  const topicFamilyId = String(searchPlan?.resolvedContext?.topicFamilyId || "").trim().toLowerCase();
+  const timeFollowUpBound = searchPlan?.resolvedContext?.usedContext === true && isTimeFollowUpQuestion(message);
+  const guardedDatabaseMatches =
+    timeFollowUpBound && topicFamilyId === "coop_dissolution"
+      ? databaseMatches.filter((source) => {
+          const text = normalizeForSearch(
+            [source?.reference, source?.title, source?.keyword, source?.content, source?.chunk_text, source?.comment]
+              .filter(Boolean)
+              .join(" "),
+          ).toLowerCase();
+          if (!text) {
+            return false;
+          }
+
+          const looksLikeMeetingTimeline =
+            /(150 วัน|วันสิ้นปีทางบัญชี|ประชุมใหญ่|มาตรา 54|มาตรา 56|มาตรา 57|มาตรา 58)/.test(text);
+          const hasDissolutionSignal =
+            /(เลิกสหกรณ์|สหกรณ์(?:ย่อม)?เลิก|สั่งเลิกสหกรณ์|มาตรา 70|มาตรา 71|ชำระบัญชี|ผู้ชำระบัญชี|แจ้ง)/.test(text);
+
+          if (looksLikeMeetingTimeline && !hasDissolutionSignal) {
+            return false;
+          }
+
+          return true;
+        })
+      : databaseMatches;
   const suppressInternetForFollowUpExplanation =
     carrySources.length > 0 &&
     searchPlan.resolvedContext?.usedContext === true &&
@@ -599,15 +626,15 @@ async function collectAnswerSources(message, target, session, options = {}) {
   const afterInternetSearchAt = nowMs();
 
   const grouped = {
-    structured_laws: databaseMatches.filter(
+    structured_laws: guardedDatabaseMatches.filter(
       (item) => item && (item.source === "tbl_laws" || item.source === "tbl_glaws"),
     ),
-    admin_knowledge: databaseMatches.filter((item) => item && item.source === "admin_knowledge"),
-    knowledge_suggestion: databaseMatches.filter((item) => item && item.source === "knowledge_suggestion"),
-    vinichai: databaseMatches.filter((item) => item && item.source === "tbl_vinichai"),
-    documents: databaseMatches.filter((item) => item && item.source === "documents"),
-    pdf_chunks: databaseMatches.filter((item) => item && item.source === "pdf_chunks"),
-    knowledge_base: databaseMatches.filter((item) => item && item.source === "knowledge_base"),
+    admin_knowledge: guardedDatabaseMatches.filter((item) => item && item.source === "admin_knowledge"),
+    knowledge_suggestion: guardedDatabaseMatches.filter((item) => item && item.source === "knowledge_suggestion"),
+    vinichai: guardedDatabaseMatches.filter((item) => item && item.source === "tbl_vinichai"),
+    documents: guardedDatabaseMatches.filter((item) => item && item.source === "documents"),
+    pdf_chunks: guardedDatabaseMatches.filter((item) => item && item.source === "pdf_chunks"),
+    knowledge_base: guardedDatabaseMatches.filter((item) => item && item.source === "knowledge_base"),
     internet: internetMatches,
   };
 
@@ -840,8 +867,17 @@ async function replyToChat(payload, session) {
     monthlyUsage,
   );
   const cacheScope = buildAnswerCacheScope(planContext);
-  const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(message, target, cacheScope);
-  const cacheKey = buildAnswerCacheKey(message, target, planContext);
+  const shouldBindCacheToContext =
+    searchPlan?.resolvedContext?.usedContext === true && isTimeFollowUpQuestion(message);
+  const cacheContextKey = shouldBindCacheToContext
+    ? String(searchPlan?.resolvedContext?.topicFamilyId || searchPlan?.resolvedContext?.topicHints?.[0] || "").trim()
+    : "";
+  const cacheMessage = shouldBindCacheToContext
+    ? String(searchPlan.effectiveMessage || message).trim()
+    : message;
+  const cachePlanContext = cacheContextKey ? { ...planContext, cacheContextKey } : planContext;
+  const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(cacheMessage, target, cacheScope);
+  const cacheKey = buildAnswerCacheKey(cacheMessage, target, cachePlanContext);
   const canUseCache = shouldUseAnswerCache(message) && !debugMode;
   const cachedAnswer = canUseCache ? getCachedAnswer(cacheKey, classifyQuestionIntent(message)) : null;
   if (cachedAnswer) {

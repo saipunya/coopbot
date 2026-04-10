@@ -3,6 +3,78 @@
 
 module.exports = [
   {
+    id: "coop_dissolution",
+    matchAny: [
+      "การเลิกสหกรณ์",
+      "เลิกสหกรณ์",
+      "สั่งเลิกสหกรณ์",
+      "สหกรณ์ย่อมเลิก",
+      "มาตรา 70",
+      "มาตรา 71",
+      "ผู้ชำระบัญชี",
+      "ชำระบัญชีสหกรณ์",
+    ],
+    preferredSources: ["tbl_laws", "tbl_vinichai", "admin_knowledge", "knowledge_suggestion"],
+    boostTerms: [
+      "มาตรา 70",
+      "มาตรา 71",
+      "เลิกสหกรณ์",
+      "สหกรณ์ย่อมเลิก",
+      "สั่งเลิกสหกรณ์",
+      "ชำระบัญชี",
+      "ผู้ชำระบัญชี",
+      "แจ้งการเลิก",
+      "แจ้งเลิก",
+      "ภายใน",
+      "วัน",
+    ],
+    penaltyTerms: [
+      // Guard against meeting-annual timeline leaking into dissolution answers.
+      "ประชุมใหญ่สามัญประจำปี",
+      "ประชุมใหญ่",
+      "150 วัน",
+      "วันสิ้นปีทางบัญชี",
+      "มาตรา 54",
+      "มาตรา 56",
+      "มาตรา 57",
+      "มาตรา 58",
+    ],
+    weights: {
+      boostPerHit: 10,
+      penaltyPerHit: 22,
+    },
+    answerStyle: "summary",
+  },
+  {
+    id: "meeting_annual",
+    matchAny: [
+      "ประชุมใหญ่สามัญประจำปี",
+      "150 วัน",
+      "วันสิ้นปีทางบัญชี",
+      "มาตรา 54",
+      "มาตรา 56",
+      "มาตรา 57",
+      "มาตรา 58",
+    ],
+    preferredSources: ["tbl_laws", "admin_knowledge", "knowledge_suggestion"],
+    boostTerms: [
+      "ประชุมใหญ่สามัญประจำปี",
+      "150 วัน",
+      "วันสิ้นปีทางบัญชี",
+      "องค์ประชุม",
+      "มาตรา 54",
+      "มาตรา 56",
+      "มาตรา 57",
+      "มาตรา 58",
+    ],
+    penaltyTerms: ["เลิกสหกรณ์", "ชำระบัญชี", "ผู้ชำระบัญชี", "มาตรา 70", "มาตรา 71"],
+    weights: {
+      boostPerHit: 10,
+      penaltyPerHit: 14,
+    },
+    answerStyle: "summary",
+  },
+  {
     id: "coop_formation",
     matchAny: [
       "จัดตั้งสหกรณ์",
@@ -103,4 +175,3 @@ module.exports = [
     answerStyle: "summary",
   },
 ];
-

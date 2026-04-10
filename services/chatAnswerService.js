@@ -9,6 +9,7 @@ const {
   segmentWords,
   uniqueTokens,
   detectTopicFamily,
+  isTimeFollowUpQuestion,
 } = require("./thaiTextUtils");
 
 const SOURCE_LABELS = {
@@ -949,6 +950,100 @@ function buildCoopDissolutionFocusedAnswer(sources, options = {}) {
       summaryLimit: normalizedSummaryLines.length,
     }),
     buildReferenceSection(references, Math.min(references.length || 1, 5)),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function buildCoopDissolutionDeadlineFocusedAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!message || !isTimeFollowUpQuestion(message)) {
+    return "";
+  }
+
+  const family = detectTopicFamily(message);
+  if (!family || String(family.id || "").trim().toLowerCase() !== "coop_dissolution") {
+    return "";
+  }
+
+  const references = [];
+  const summaryLines = [];
+  const detailLines = [];
+  const explainMode = wantsExplanation(String(options.message || "").trim());
+
+  const allowedSourceNames = new Set(["tbl_laws", "tbl_vinichai", "admin_knowledge", "knowledge_suggestion"]);
+  const candidateSources = dedupeSources(sources, 12).filter((source) => {
+    const sourceName = String(source?.source || "").trim().toLowerCase();
+    if (!allowedSourceNames.has(sourceName)) {
+      return false;
+    }
+
+    const text = normalizeForSearch(buildSourceSearchText(source)).toLowerCase();
+    if (!text) {
+      return false;
+    }
+
+    // Drop meeting-timeline sources hard.
+    if (/(150 วัน|วันสิ้นปีทางบัญชี|ประชุมใหญ่|มาตรา 54|มาตรา 56|มาตรา 57|มาตรา 58)/.test(text)) {
+      return /(เลิกสหกรณ์|มาตรา 70|มาตรา 71|ชำระบัญชี|ผู้ชำระบัญชี|สั่งเลิกสหกรณ์)/.test(text);
+    }
+
+    return /(เลิกสหกรณ์|สหกรณ์(?:ย่อม)?เลิก|เลิก\b|มาตรา 70|มาตรา 71|ชำระบัญชี|ผู้ชำระบัญชี|สั่งเลิกสหกรณ์|แจ้ง)/.test(
+      text,
+    );
+  });
+
+  const notifyEvidence = candidateSources
+    .map((source) => ({
+      source,
+      text: normalizeForSearch(buildSourceSearchText(source)).toLowerCase(),
+      score: Number(source?.score || 0),
+    }))
+    .filter((item) => /แจ้ง/.test(item.text) || /ภายใน/.test(item.text))
+    .sort((a, b) => b.score - a.score)[0];
+
+  const fifteenDayEvidence = candidateSources
+    .map((source) => ({
+      source,
+      text: normalizeForSearch(buildSourceSearchText(source)).toLowerCase(),
+      score: Number(source?.score || 0),
+    }))
+    .filter((item) => /(15\s*วัน|สิบห้า\s*วัน)/.test(item.text))
+    .sort((a, b) => b.score - a.score)[0];
+
+  const section70 = selectBestLawSourceByNumbers(sources, ["70"], ["tbl_laws"]);
+  const section71 = selectBestLawSourceByNumbers(sources, ["71"], ["tbl_laws"]);
+
+  if (fifteenDayEvidence) {
+    summaryLines.push("ต้องแจ้งภายใน 15 วัน นับแต่วันที่เลิก");
+    references.push(fifteenDayEvidence.source);
+  } else if (notifyEvidence) {
+    summaryLines.push("ในแหล่งอ้างอิงที่ดึงมา พบว่า “ต้องมีการแจ้งการเลิก/การดำเนินการที่เกี่ยวข้องภายในกำหนดเวลา” แต่ไม่พบตัวเลขจำนวนวันชัดเจน");
+    references.push(notifyEvidence.source);
+  } else {
+    // Safe fallback: avoid drifting to other families.
+    summaryLines.push("ในแหล่งอ้างอิงที่ดึงมา ยังไม่พบกำหนด “ภายในกี่วัน/ภายในวันที่เท่าไร” เกี่ยวกับการแจ้งการเลิกอย่างชัดเจน");
+  }
+
+  if (section70) {
+    detailLines.push("มาตรา 70: ระบุเหตุที่สหกรณ์ย่อมเลิก (ใช้ประกอบการยืนยันจุดเริ่มนับเหตุเลิก)");
+    references.push(section70);
+  }
+  if (section71) {
+    detailLines.push("มาตรา 71: ระบุกรณีนายทะเบียนสั่งให้เลิก (ใช้ประกอบการยืนยันเงื่อนไข/คำสั่งที่เกี่ยวข้อง)");
+    references.push(section71);
+  }
+
+  const normalizedSummary = uniqueCleanLines(summaryLines, 3);
+  const normalizedDetail = explainMode ? uniqueCleanLines(detailLines, 2) : [];
+  const uniqueRefs = dedupeSources(references, 4);
+
+  return [
+    buildParagraphSummary(normalizedSummary, normalizedDetail, explainMode, {
+      summaryLimit: normalizedSummary.length,
+      detailLimit: normalizedDetail.length || 0,
+    }),
+    buildReferenceSection(uniqueRefs, Math.min(uniqueRefs.length || 1, 4)),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -2283,7 +2378,15 @@ function sourceMatchesCoopDissolutionFocus(source, message) {
   }
 
   if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion") {
-    return scoreQueryFocusAlignment(message, sourceText) >= 18;
+    const focusScore = scoreQueryFocusAlignment(message, sourceText);
+    if (focusScore >= 18) {
+      return true;
+    }
+
+    // If the source explicitly talks about dissolution/notification timelines, keep it even when focus scoring is weak.
+    return /(สหกรณ์(?:ย่อม)?เลิก|สั่งเลิกสหกรณ์|เลิกสหกรณ์|ชำระบัญชี|ผู้ชำระบัญชี|แจ้ง(?:การ)?เลิก|แจ้ง.*ภายใน|ภายใน\s*(?:15|สิบห้า)\s*วัน)/.test(
+      sourceText,
+    );
   }
 
   return scoreQueryFocusAlignment(message, sourceText) >= 24;
@@ -4450,6 +4553,19 @@ async function generateChatSummary(message, sources, options = {}) {
 
   if (coopFormationFocusedAnswer) {
     return finalizeSummary(coopFormationFocusedAnswer);
+  }
+
+  const coopDissolutionDeadlineAnswer = buildCoopDissolutionDeadlineFocusedAnswer(
+    focusedAnswerSources,
+    {
+      ...options,
+      originalMessage: focusMessage,
+      message,
+    },
+  );
+
+  if (coopDissolutionDeadlineAnswer) {
+    return finalizeSummary(coopDissolutionDeadlineAnswer);
   }
 
   const coopDissolutionFocusedAnswer = buildCoopDissolutionFocusedAnswer(

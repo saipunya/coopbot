@@ -36,7 +36,9 @@ function buildAnswerCacheScope(planContext = {}) {
 }
 
 function buildAnswerCacheKey(message, target, planContext = {}) {
-  return `${target}::${buildAnswerCacheScope(planContext)}::${normalizeForSearch(message).toLowerCase()}`;
+  const cacheContextKey = String(planContext.cacheContextKey || "").trim().toLowerCase();
+  const contextPart = cacheContextKey ? `::ctx=${cacheContextKey}` : "";
+  return `${target}::${buildAnswerCacheScope(planContext)}${contextPart}::${normalizeForSearch(message).toLowerCase()}`;
 }
 
 function getCachedAnswer(cacheKey, questionIntent = "general") {

@@ -792,6 +792,38 @@ function detectTopicFamily(query = "") {
   return null;
 }
 
+function isTimeFollowUpQuestion(message = "") {
+  const text = normalizeForSearch(String(message || "")).toLowerCase().replace(/\s+/g, " ").trim();
+  if (!text) {
+    return false;
+  }
+
+  // Time/deadline follow-ups that are often ambiguous without topic context.
+  return /(ภายใน\s*(?:กี่วัน|วันใด|วันไหน|วันที่เท่าไร)|ต้องแจ้ง.*ภายใน|แจ้ง.*ภายใน|เมื่อไร|เมื่อไหร่|กำหนดเวลา(?:เท่าไร|กี่วัน)?|ภายในกี่วัน|กี่วัน)/.test(
+    text,
+  );
+}
+
+function isStandaloneLegalQuery(message = "") {
+  const text = normalizeForSearch(String(message || "")).toLowerCase().replace(/\s+/g, " ").trim();
+  if (!text) {
+    return false;
+  }
+
+  // Treat explicit legal references as a fresh query by default.
+  if (/(?:^|\s)(?:มาตรา|ข้อ|วรรค|อนุมาตรา|หมวด|ตอน)\s*\d+\b/.test(text)) {
+    return true;
+  }
+
+  // Act names or decree names signal a standalone legal question even when short.
+  // Note: avoid `\b` here because Thai characters are not "word chars" in JS regex boundaries.
+  if (/(พรบ|พระราชบัญญัติ|พรฎ|พระราชกฤษฎีกา|พ\s*ร\s*บ|พ\s*ร\s*ฎ)/.test(text)) {
+    return true;
+  }
+
+  return false;
+}
+
 function getQueryFocusProfile(query) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const matchedTopics = QUERY_TOPIC_RULES.filter((rule) => {
@@ -1058,6 +1090,8 @@ module.exports = {
   expandSearchConcepts,
   resolveQuerySynonyms,
   detectTopicFamily,
+  isTimeFollowUpQuestion,
+  isStandaloneLegalQuery,
   extractExplicitTopicHints,
   getQueryFocusProfile,
   hasExclusiveMeaningMismatch,

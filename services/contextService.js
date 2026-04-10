@@ -2,6 +2,9 @@ const { wantsExplanation } = require("./chatAnswerService");
 const {
   extractExplicitTopicHints,
   normalizeForSearch,
+  detectTopicFamily,
+  isTimeFollowUpQuestion,
+  isStandaloneLegalQuery,
   segmentWords,
   uniqueTokens,
 } = require("./thaiTextUtils");
@@ -10,8 +13,7 @@ const CHAT_CONTEXT_KEY = "lawChatbotContext";
 const CONTEXT_HISTORY_LIMIT = 8;
 
 function isStandaloneLawLookup(message) {
-  const text = normalizeForSearch(String(message || "")).toLowerCase();
-  return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+\b/.test(text);
+  return isStandaloneLegalQuery(message);
 }
 
 function getSessionContext(session) {
@@ -167,7 +169,8 @@ function looksLikeFollowUpQuestion(message, recentTopic = "") {
   }
 
   if (isStandaloneLawLookup(text)) {
-    return Boolean(recentTopic);
+    // Explicit legal references (e.g., "มาตรา 45") should be treated as a fresh question by default.
+    return false;
   }
 
   if (text.length <= 18) {
@@ -187,6 +190,11 @@ function looksLikeFollowUpQuestion(message, recentTopic = "") {
     extractExplicitTopicHints(text).length === 0
   ) {
     return true;
+  }
+
+  // Time/deadline follow-ups: treat as follow-up unless user already provided explicit topic.
+  if (isTimeFollowUpQuestion(text) && extractExplicitTopicHints(text).length === 0) {
+    return Boolean(recentTopic) || text.length <= 48;
   }
 
   return /^(คืออะไร|คือ|เมื่อไร|เมื่อไหร่|อย่างไร|ยังไง|ได้หรือไม่|ได้ไหม|ได้หรือเปล่า|หรือไม่|หรือเปล่า|กี่วัน|กี่ครั้ง|เท่าไร|ไหม|มั้ย)\s*[\?？]*$/.test(
@@ -224,7 +232,7 @@ function extractTopicHints(message, matches) {
 function resolveMessageWithContext(message, target, session) {
   const text = String(message || "").trim();
   if (!text) {
-    return { effectiveMessage: "", usedContext: false, topicHints: [] };
+    return { effectiveMessage: "", usedContext: false, topicHints: [], topicFamilyId: "" };
   }
 
   const baseTopic = stripQuestionTail(text);
@@ -233,12 +241,15 @@ function resolveMessageWithContext(message, target, session) {
     .slice(0, CONTEXT_HISTORY_LIMIT);
   const recent = history[0];
   const recentTopic = Array.isArray(recent?.topicHints) ? recent.topicHints[0] : "";
+  const recentTopicFamilyId =
+    String(recent?.topicFamilyId || detectTopicFamily(recentTopic)?.id || "").trim();
 
   if (history.length === 0 || !looksLikeFollowUpQuestion(text, recentTopic)) {
     return {
       effectiveMessage: text,
       usedContext: false,
       topicHints: baseTopic ? [baseTopic] : [],
+      topicFamilyId: detectTopicFamily(baseTopic || text)?.id || "",
     };
   }
 
@@ -247,6 +258,7 @@ function resolveMessageWithContext(message, target, session) {
       effectiveMessage: text,
       usedContext: false,
       topicHints: baseTopic ? [baseTopic] : [],
+      topicFamilyId: detectTopicFamily(baseTopic || text)?.id || "",
     };
   }
 
@@ -257,6 +269,7 @@ function resolveMessageWithContext(message, target, session) {
     effectiveMessage,
     usedContext: effectiveMessage !== text,
     topicHints: [recentTopic, ...(baseTopic ? [baseTopic] : [])].filter(Boolean),
+    topicFamilyId: recentTopicFamilyId,
   };
 }
 
@@ -303,6 +316,7 @@ function storeConversationContext(session, target, originalMessage, effectiveMes
     originalMessage,
     effectiveMessage,
     topicHints,
+    topicFamilyId: String(detectTopicFamily(topicHints[0] || effectiveMessage || originalMessage)?.id || "").trim(),
     focusSources: storedFocusSources,
     createdAt: new Date().toISOString(),
   };

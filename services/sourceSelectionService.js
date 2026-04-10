@@ -365,11 +365,28 @@ function getGroupFormationStructuredLawFocusBoost(message = "", item = {}) {
 
 function getSourceAwareFocusScore(message = "", item = {}) {
   const baseFocusScore = Number(scoreQueryFocusAlignment(message, buildSourceFocusSearchText(item)) || 0);
-  return (
+  let score =
     baseFocusScore +
     getGroupBylawStructuredLawFocusBoost(message, item) +
-    getGroupFormationStructuredLawFocusBoost(message, item)
-  );
+    getGroupFormationStructuredLawFocusBoost(message, item);
+
+  // Family guard: prevent unrelated timeline topics (e.g., meeting 150 days) from leaking into dissolution answers.
+  const family = detectTopicFamily(message);
+  const familyId = String(family?.id || "").trim().toLowerCase();
+  if (familyId === "coop_dissolution") {
+    const sourceText = buildSourceFocusSearchText(item);
+    const looksLikeMeetingTimeline = /(150 วัน|วันสิ้นปีทางบัญชี|ประชุมใหญ่|มาตรา 54|มาตรา 56|มาตรา 57|มาตรา 58)/.test(
+      sourceText,
+    );
+    const hasDissolutionSignal = /(เลิกสหกรณ์|สั่งเลิกสหกรณ์|มาตรา 70|มาตรา 71|ชำระบัญชี|ผู้ชำระบัญชี)/.test(
+      sourceText,
+    );
+    if (looksLikeMeetingTimeline && !hasDissolutionSignal) {
+      score -= 80;
+    }
+  }
+
+  return score;
 }
 
 function getFocusAlignmentTrace(item = {}, message = "") {
