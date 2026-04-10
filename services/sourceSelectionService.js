@@ -14,6 +14,10 @@ const {
   scoreQueryFocusAlignment,
   uniqueTokens,
 } = require("./thaiTextUtils");
+const {
+  normalizeThaiNumberSearchText,
+  thaiDigitsToArabic,
+} = require("./thaiNumberNormalizer");
 
 const HYBRID_SEARCH_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_HYBRID_SEARCH_TIMEOUT_MS || 4000);
 
@@ -1530,19 +1534,7 @@ function scoreDissolutionSourceFocus(item = {}) {
 }
 
 function normalizeLawFocusDigits(text) {
-  const digitMap = {
-    "๐": "0",
-    "๑": "1",
-    "๒": "2",
-    "๓": "3",
-    "๔": "4",
-    "๕": "5",
-    "๖": "6",
-    "๗": "7",
-    "๘": "8",
-    "๙": "9",
-  };
-  return String(text || "").replace(/[๐-๙]/g, (character) => digitMap[character] || character);
+  return normalizeThaiNumberSearchText(thaiDigitsToArabic(String(text || "")));
 }
 
 function extractPrimaryLawFocusNumber(item = {}) {

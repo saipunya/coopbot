@@ -61,6 +61,7 @@ const SEARCH_CONCEPT_EXPANSIONS = [
     ],
   },
 ];
+const { normalizeThaiNumberSearchText } = require("./thaiNumberNormalizer");
 const EXCLUSIVE_MEANING_RULES = [
   {
     primary: "นายทะเบียนสหกรณ์",
@@ -566,11 +567,13 @@ const RIGHTS_INTENT_PATTERNS = [
 ];
 
 function normalizeForSearch(text) {
-  return String(text || "")
+  return normalizeThaiNumberSearchText(
+    String(text || "")
     .replace(/\u0000/g, " ")
     .replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim(),
+  );
 }
 
 function expandSearchConcepts(text) {

@@ -9,6 +9,10 @@ const {
   segmentWords,
   uniqueTokens,
 } = require("../services/thaiTextUtils");
+const {
+  buildThaiNumberSearchVariants,
+  normalizeThaiNumberSearchText,
+} = require("../services/thaiNumberNormalizer");
 
 const STRUCTURED_LAW_SEARCH_FIELD_CACHE = new Map();
 const GENERIC_QUERY_TOKENS = new Set([
@@ -28,7 +32,8 @@ const GENERIC_QUERY_TOKENS = new Set([
 ]);
 
 function extractLawNumber(text) {
-  const match = String(text || "").match(/\d+/);
+  const normalized = normalizeThaiNumberSearchText(String(text || ""));
+  const match = normalized.match(/\d+/);
   return match ? match[0] : null;
 }
 
@@ -64,15 +69,21 @@ function detectLawScope(text) {
 }
 
 function buildLawNumberPatterns(number) {
-  if (!number) {
+  const normalizedNumber = normalizeThaiNumberSearchText(String(number || ""));
+  if (!normalizedNumber) {
     return [];
   }
 
-  return uniqueTokens([
-    `มาตรา ${number}`,
-    `มาตรา${number}`,
-    number,
-  ]);
+  const numberVariants = buildThaiNumberSearchVariants(normalizedNumber);
+  return uniqueTokens(
+    numberVariants.flatMap((variant) => [
+      `มาตรา ${variant}`,
+      `มาตรา${variant}`,
+      `ข้อ ${variant}`,
+      `ข้อ${variant}`,
+      variant,
+    ]),
+  );
 }
 
 function isDirectLawNumberQuery(text) {
@@ -152,6 +163,7 @@ function buildStructuredSearchTerms(message, queryLawNumber = null) {
   const normalizedMessage = normalizeForSearch(message).toLowerCase();
   const explicitTopics = extractExplicitTopicHints(message);
   const lawNumberPatterns = buildLawNumberPatterns(queryLawNumber);
+  const numberVariants = buildThaiNumberSearchVariants(queryLawNumber);
   const abbreviationTerms = extractAbbreviationTerms(message);
 
   return uniqueTokens([
@@ -159,6 +171,7 @@ function buildStructuredSearchTerms(message, queryLawNumber = null) {
     ...segmentWords(message),
     ...explicitTopics,
     ...lawNumberPatterns,
+    ...numberVariants,
     ...abbreviationTerms,
   ]).filter(Boolean);
 }
@@ -196,13 +209,15 @@ async function findExactLawRows(pool, tableConfig, queryLawNumber) {
     return [];
   }
 
-  const exactTerms = [
-    `มาตรา ${number}`,
-    `มาตรา${number}`,
-    `ข้อ ${number}`,
-    `ข้อ${number}`,
-    number,
-  ];
+  const exactTerms = uniqueTokens(
+    buildThaiNumberSearchVariants(number).flatMap((variant) => [
+      `มาตรา ${variant}`,
+      `มาตรา${variant}`,
+      `ข้อ ${variant}`,
+      `ข้อ${variant}`,
+      variant,
+    ]),
+  );
 
   const [rows] = await pool.query(
     `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
@@ -210,8 +225,10 @@ async function findExactLawRows(pool, tableConfig, queryLawNumber) {
               searchField ? `, ${searchField} AS law_search` : ", NULL AS law_search"
             }
        FROM ${tableName}
-      WHERE TRIM(${numberField}) IN (?, ?, ?, ?, ?)
-         OR REPLACE(TRIM(${numberField}), ' ', '') IN (?, ?, ?, ?, ?)
+      WHERE TRIM(${numberField}) IN (${exactTerms.map(() => "?").join(", ")})
+         OR REPLACE(TRIM(${numberField}), ' ', '') IN (${exactTerms
+           .map(() => "?")
+           .join(", ")})
       LIMIT 20`,
     [...exactTerms, ...exactTerms.map((term) => term.replace(/\s+/g, ""))],
   );
