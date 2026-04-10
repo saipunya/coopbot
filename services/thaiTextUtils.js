@@ -313,6 +313,8 @@ const QUERY_TOPIC_RULES = [
       "ที่ประชุมใหญ่ลงมติให้เลิก",
       "ล้มละลาย",
       "นายทะเบียนสหกรณ์สั่งให้เลิก",
+      "นายทะเบียนสหกรณ์สั่งให้เลิกสหกรณ์",
+      "สั่งให้เลิกสหกรณ์",
       "ไม่เริ่มดำเนินกิจการภายในหนึ่งปี",
       "หยุดดำเนินกิจการติดต่อกันเป็นเวลาสองปี",
       "ไม่ส่งสำเนารายงานประจำปี",
@@ -566,6 +568,35 @@ const RIGHTS_INTENT_PATTERNS = [
   "กู้ยืมเงิน",
 ];
 
+const DISSOLUTION_TOPIC_STRONG_SIGNALS = [
+  "การเลิกสหกรณ์",
+  "เลิกสหกรณ์",
+  "สหกรณ์ย่อมเลิก",
+  "สหกรณ์ต้องเลิก",
+  "มาตรา 70",
+  "มาตรา 71",
+];
+
+const DISSOLUTION_TOPIC_SUPPORTING_SIGNALS = [
+  "นายทะเบียนสหกรณ์สั่งให้เลิก",
+  "นายทะเบียนสหกรณ์สั่งให้เลิกสหกรณ์",
+  "นายทะเบียนสั่งให้เลิกสหกรณ์",
+  "สั่งให้เลิกสหกรณ์",
+  "สั่งเลิกสหกรณ์",
+];
+
+const DISSOLUTION_GENERIC_REGISTRAR_SIGNALS = [
+  "ให้นายทะเบียนสหกรณ์มีอำนาจหน้าที่",
+  "รับจดทะเบียน",
+  "กำหนดระบบบัญชี",
+  "แต่งตั้งผู้สอบบัญชี",
+  "ออกระเบียบ",
+  "ออกคำสั่ง",
+  "มีอำนาจหน้าที่",
+  "อนุญาต",
+  "มอบอำนาจ",
+];
+
 function normalizeForSearch(text) {
   return normalizeThaiNumberSearchText(
     String(text || "")
@@ -574,6 +605,54 @@ function normalizeForSearch(text) {
     .replace(/\s+/g, " ")
     .trim(),
   );
+}
+
+function scoreDissolutionTopicPreference(query, text) {
+  const profile = getQueryFocusProfile(query);
+  const normalizedText = normalizeForSearch(text).toLowerCase();
+  if (!profile.normalizedQuery || !normalizedText || !profile.topics.length) {
+    return 0;
+  }
+
+  const hasDissolutionTopic = profile.topics.some((topic) => {
+    const primary = String(topic.primary || "").trim();
+    const aliases = Array.isArray(topic.aliases) ? topic.aliases : [];
+    return primary === "การเลิกสหกรณ์" || aliases.includes("เลิกสหกรณ์") || aliases.includes("สั่งเลิกสหกรณ์");
+  });
+
+  if (!hasDissolutionTopic) {
+    return 0;
+  }
+
+  const strongHits = DISSOLUTION_TOPIC_STRONG_SIGNALS.filter((phrase) => normalizedText.includes(phrase)).length;
+  const supportingHits = DISSOLUTION_TOPIC_SUPPORTING_SIGNALS.filter((phrase) => normalizedText.includes(phrase)).length;
+  const genericHits = DISSOLUTION_GENERIC_REGISTRAR_SIGNALS.filter((phrase) => normalizedText.includes(phrase)).length;
+
+  let score = 0;
+
+  if (strongHits > 0) {
+    score += Math.min(42, strongHits * 14);
+  }
+
+  if (supportingHits > 0) {
+    score += Math.min(18, supportingHits * 6);
+  }
+
+  if (/มาตรา\s*70\b/.test(normalizedText)) {
+    score += 10;
+  }
+
+  if (/มาตรา\s*71\b/.test(normalizedText)) {
+    score += 10;
+  }
+
+  if (genericHits > 0 && strongHits === 0) {
+    score -= Math.min(28, genericHits * 7);
+  } else if (genericHits > 0) {
+    score -= Math.min(10, genericHits * 2);
+  }
+
+  return score;
 }
 
 function expandSearchConcepts(text) {
@@ -758,6 +837,8 @@ function scoreQueryFocusAlignment(query, text) {
     }
   }
 
+  score += scoreDissolutionTopicPreference(query, normalizedText);
+
   return score;
 }
 
@@ -859,4 +940,5 @@ module.exports = {
   segmentWords,
   uniqueTokens,
   RIGHTS_INTENT_PATTERNS,
+  scoreDissolutionTopicPreference,
 };

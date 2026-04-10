@@ -68,6 +68,47 @@ function detectLawScope(text) {
   return "all";
 }
 
+function scoreDissolutionTopicPriority(query, text) {
+  const profile = getQueryFocusProfile(query);
+  const normalizedText = normalizeForSearch(text).toLowerCase();
+  if (!profile.normalizedQuery || !normalizedText || !profile.topics.length) {
+    return 0;
+  }
+
+  const hasDissolutionTopic = profile.topics.some((topic) => {
+    const primary = String(topic.primary || "").trim();
+    const aliases = Array.isArray(topic.aliases) ? topic.aliases : [];
+    return primary === "การเลิกสหกรณ์" || aliases.includes("เลิกสหกรณ์") || aliases.includes("สั่งเลิกสหกรณ์");
+  });
+
+  if (!hasDissolutionTopic) {
+    return 0;
+  }
+
+  const hasStrongSignal = /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สหกรณ์ย่อมเลิก|สหกรณ์ต้องเลิก|มาตรา\s*70\b|มาตรา\s*71\b)/.test(normalizedText);
+  const hasGenericRegistrarPower = /(?:ให้นายทะเบียนสหกรณ์มีอำนาจหน้าที่|รับจดทะเบียน|กำหนดระบบบัญชี|แต่งตั้งผู้สอบบัญชี|ออกระเบียบ|ออกคำสั่ง|มีอำนาจหน้าที่|อนุญาต|มอบอำนาจ)/.test(
+    normalizedText,
+  );
+
+  let score = 0;
+
+  if (hasStrongSignal) {
+    score += 18;
+  }
+
+  if (/มาตรา\s*70\b/.test(normalizedText) || /มาตรา\s*71\b/.test(normalizedText)) {
+    score += 10;
+  }
+
+  if (hasGenericRegistrarPower && !hasStrongSignal) {
+    score -= 18;
+  } else if (hasGenericRegistrarPower) {
+    score -= 6;
+  }
+
+  return score;
+}
+
 function buildLawNumberPatterns(number) {
   const normalizedNumber = normalizeThaiNumberSearchText(String(number || ""));
   if (!normalizedNumber) {
@@ -759,6 +800,7 @@ class LawSearchModel {
             scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`) +
             scoreQueryFocusAlignment(message, combinedText) +
             scoreStructuredLawKeywordMatch(message, row.law_search) +
+            scoreDissolutionTopicPriority(message, combinedText) +
             80,
         };
       })
@@ -834,6 +876,7 @@ class LawSearchModel {
 
         let score = scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`);
         score += scoreStructuredLawKeywordMatch(message, row.law_search);
+        score += scoreDissolutionTopicPriority(message, combinedText);
 
         if (queryLawNumber && extractLawNumber(row.law_number) === queryLawNumber) {
           score += 90;
