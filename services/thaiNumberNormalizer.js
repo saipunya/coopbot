@@ -199,13 +199,73 @@ function buildThaiNumberSearchVariants(text) {
   return [...new Set(variants.map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
-function formatThaiLegalNumberForDisplay(value, options = {}) {
-  const normalized = String(value ?? "").trim();
-  const converted = options.useThaiDigits ? arabicDigitsToThai(normalized) : thaiDigitsToArabic(normalized);
+function applyDisplayAffixes(value, options = {}) {
   const prefix = String(options.prefix || "");
   const suffix = String(options.suffix || "");
-  const rendered = prefix && converted.startsWith(prefix) ? converted : `${prefix}${converted}`;
+
+  let rendered = String(value ?? "").trim();
+  if (prefix && !rendered.startsWith(prefix)) {
+    rendered = `${prefix}${rendered}`;
+  }
+
   return `${rendered}${suffix}`;
+}
+
+function buildDualDisplay(primary, secondary, options = {}) {
+  const separator = String(options.separator || " / ");
+  const left = String(primary ?? "").trim();
+  const right = String(secondary ?? "").trim();
+
+  if (!left) {
+    return right;
+  }
+
+  if (!right || left === right) {
+    return left;
+  }
+
+  return `${left}${separator}${right}`;
+}
+
+function formatThaiLegalNumberForDisplay(value, options = {}) {
+  const normalized = String(value ?? "").trim();
+  const mode = String(options.mode || "").trim();
+
+  const inferredMode = mode || (options.useThaiDigits === true ? "thai" : "arabic");
+  const normalizedSearchText = normalizeThaiNumberSearchText(normalized);
+  const parsedNumericText = /^\d+$/.test(normalizedSearchText) ? normalizedSearchText : null;
+  const thaiDigitsText = arabicDigitsToThai(normalizedSearchText);
+  const arabicDigitsText = thaiDigitsToArabic(normalizedSearchText);
+
+  let rendered;
+  switch (inferredMode) {
+    case "original":
+      rendered = normalized;
+      break;
+    case "thai":
+      rendered = thaiDigitsText || normalized;
+      break;
+    case "dual_arabic_first":
+      rendered = buildDualDisplay(
+        parsedNumericText || arabicDigitsText || normalized,
+        parsedNumericText ? thaiDigitsText : normalized,
+        options,
+      );
+      break;
+    case "dual_thai_first":
+      rendered = buildDualDisplay(
+        parsedNumericText ? thaiDigitsText : normalized,
+        parsedNumericText || arabicDigitsText || normalized,
+        options,
+      );
+      break;
+    case "arabic":
+    default:
+      rendered = arabicDigitsText || normalized;
+      break;
+  }
+
+  return applyDisplayAffixes(rendered, options);
 }
 
 module.exports = {
