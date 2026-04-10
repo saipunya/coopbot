@@ -11,6 +11,7 @@ const adminKnowledgeWorkflowRoutes = require("./routes/adminKnowledgeWorkflow");
 const lawChatbotRoutes = require("./routes/lawChatbot");
 const userRoutes = require("./routes/user");
 const { attachCurrentUser, redirectIfAuthenticated } = require("./middlewares/authMiddleware");
+const { flashMessageMiddleware } = require("./middlewares/flashMessageMiddleware");
 const { createSessionStore } = require("./services/mysqlSessionStore");
 const { refreshAiSetting } = require("./services/runtimeSettingsService");
 
@@ -66,6 +67,7 @@ app.use(
   })
 );
 app.use(attachCurrentUser);
+app.use(flashMessageMiddleware);
 
 app.get("/", (req, res) => {
   res.redirect("/law-chatbot");

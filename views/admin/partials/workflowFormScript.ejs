@@ -1,0 +1,136 @@
+<script>
+  (function () {
+    function getSubmitButton(form) {
+      return form.querySelector('[data-workflow-submit-button]') || form.querySelector('button[type="submit"]');
+    }
+
+    function setButtonLoading(button, loadingText) {
+      if (!button) {
+        return;
+      }
+
+      if (typeof button.dataset.originalText === "undefined") {
+        button.dataset.originalText = button.textContent;
+      }
+
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      button.textContent = loadingText || button.dataset.loadingText || "กำลังดำเนินการ...";
+    }
+
+    function resetButton(button) {
+      if (!button) {
+        return;
+      }
+
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      if (typeof button.dataset.originalText !== "undefined") {
+        button.textContent = button.dataset.originalText;
+      }
+    }
+
+    function showInlineNotice(form, type, message) {
+      const card = form.closest(".card") || form.parentElement || document.body;
+      const notice = document.createElement("div");
+      notice.className = `alert ${type}`;
+      notice.setAttribute("role", "alert");
+      notice.setAttribute("aria-live", "polite");
+      notice.textContent = message;
+      card.insertBefore(notice, card.firstChild);
+    }
+
+    function markSubmitting(form) {
+      form.dataset.submitting = "1";
+    }
+
+    function clearSubmitting(form) {
+      delete form.dataset.submitting;
+    }
+
+    function isSubmitting(form) {
+      return form.dataset.submitting === "1";
+    }
+
+    function reloadPage() {
+      window.location.reload();
+    }
+
+    async function submitFetchForm(form) {
+      const response = await fetch(form.action, {
+        method: form.method || "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          Accept: "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: new URLSearchParams(new FormData(form)).toString(),
+      });
+
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch (_) {
+        payload = {};
+      }
+
+      if (response.status === 401) {
+        window.location.href = payload.loginPath || "/admin/login";
+        return;
+      }
+
+      if (!response.ok || payload.ok === false) {
+        reloadPage();
+        return;
+      }
+
+      reloadPage();
+    }
+
+    document.querySelectorAll("form[data-workflow-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        if (isSubmitting(form)) {
+          event.preventDefault();
+          return;
+        }
+
+        const submitButton = getSubmitButton(form);
+        const loadingText = submitButton?.dataset.loadingText || "กำลังดำเนินการ...";
+        const confirmMessage = String(form.dataset.confirmMessage || "").trim();
+        if (confirmMessage && !window.confirm(confirmMessage)) {
+          event.preventDefault();
+          return;
+        }
+
+        if (form.dataset.workflowForm === "fetch") {
+          event.preventDefault();
+
+          if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+          }
+
+          markSubmitting(form);
+          setButtonLoading(submitButton, loadingText);
+
+          try {
+            await submitFetchForm(form);
+          } catch (error) {
+            clearSubmitting(form);
+            resetButton(submitButton);
+            showInlineNotice(form, "error", error.message || "ไม่สามารถดำเนินการได้");
+          }
+
+          return;
+        }
+
+        if (!form.checkValidity()) {
+          return;
+        }
+
+        markSubmitting(form);
+        setButtonLoading(submitButton, loadingText);
+      });
+    });
+  })();
+</script>

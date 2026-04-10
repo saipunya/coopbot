@@ -137,6 +137,11 @@
         border-color: #f1b8b1;
         color: #9b2c22;
       }
+      .alert.info {
+        background: #e9f3fb;
+        border-color: #bfd7eb;
+        color: #174d70;
+      }
       .tab-row {
         display: flex;
         gap: 0.75rem;
@@ -327,6 +332,32 @@
         color: var(--text-sub);
         line-height: 1.7;
       }
+      .workflow-empty-state {
+        padding: 1.1rem 1.1rem 1rem;
+        border-radius: 18px;
+        border: 1px dashed #b9cfe0;
+        background: rgba(241, 246, 251, 0.72);
+        color: var(--text-sub);
+        line-height: 1.75;
+      }
+      .workflow-empty-state h3 {
+        margin: 0 0 0.35rem;
+        color: var(--primary-strong);
+      }
+      .workflow-empty-state p {
+        margin: 0;
+      }
+      .workflow-empty-actions {
+        display: flex;
+        gap: 0.55rem;
+        flex-wrap: wrap;
+        margin-top: 0.9rem;
+      }
+      .workflow-empty-actions .detail-link,
+      .workflow-empty-actions .primary-btn,
+      .workflow-empty-actions .secondary-btn {
+        text-decoration: none;
+      }
       @media (max-width: 820px) {
         .shell {
           width: min(100%, calc(100% - 1rem));
@@ -357,6 +388,7 @@
         }
         .source-actions form,
         .source-actions button,
+        .workflow-empty-actions,
         .detail-link {
           width: 100%;
         }
@@ -365,8 +397,7 @@
   </head>
   <body>
     <div class="shell">
-      <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
-      <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
+      <%- include("partials/flashMessages") %>
 
       <section class="topbar">
         <div>
@@ -376,7 +407,7 @@
         <a class="detail-link" href="/admin">กลับหน้าแดชบอร์ด</a>
       </section>
 
-      <section class="card">
+      <section class="card" id="workflow-create-source">
         <%- include("partials/knowledgeAdminTabs", { activeTab: "knowledge-workflow" }) %>
       </section>
 
@@ -404,7 +435,7 @@
         <p class="section-note">
           หน้านี้เก็บต้นฉบับที่ผ่านการคัดแล้วก่อนส่งต่อให้ AI สร้าง draft จาก source เดียว โดยถ้าติ๊กสร้าง draft ทันที ระบบจะพาคุณไปหน้า detail ของ source นั้นหลังบันทึกเสร็จ
         </p>
-        <form action="/admin/knowledge-workflow" method="post">
+        <form action="/admin/knowledge-workflow" method="post" data-workflow-form="native">
           <div class="form-grid">
             <div class="field">
               <label for="workflowDomain">Domain</label>
@@ -424,23 +455,23 @@
             </div>
             <div class="field">
               <label for="workflowDocumentType">Document type</label>
-              <input id="workflowDocumentType" name="documentType" type="text" placeholder="เช่น FAQ, ระเบียบ, บันทึกประชุม" />
+              <input id="workflowDocumentType" name="documentType" type="text" maxlength="100" placeholder="เช่น FAQ, ระเบียบ, บันทึกประชุม" />
             </div>
           </div>
 
           <div class="field" style="margin-top: 0.9rem;">
             <label for="workflowTitle">หัวข้อ / ชื่อต้นฉบับ</label>
-            <input id="workflowTitle" name="title" type="text" placeholder="เช่น สิทธิสมาชิกสหกรณ์ในการกู้ยืม" required />
+            <input id="workflowTitle" name="title" type="text" minlength="3" maxlength="255" placeholder="เช่น สิทธิสมาชิกสหกรณ์ในการกู้ยืม" required />
           </div>
 
           <div class="field" style="margin-top: 0.9rem;">
             <label for="workflowSourceReference">แหล่งอ้างอิง</label>
-            <input id="workflowSourceReference" name="sourceReference" type="text" placeholder="เช่น มาตรา 15 หรือเอกสารประชุมคณะกรรมการ" />
+            <input id="workflowSourceReference" name="sourceReference" type="text" maxlength="500" placeholder="เช่น มาตรา 15 หรือเอกสารประชุมคณะกรรมการ" />
           </div>
 
           <div class="field" style="margin-top: 0.9rem;">
             <label for="workflowSourceText">ต้นฉบับ</label>
-            <textarea id="workflowSourceText" name="sourceText" placeholder="วางข้อความต้นฉบับที่ผ่านการคัดแล้วตรงนี้" required></textarea>
+            <textarea id="workflowSourceText" name="sourceText" minlength="10" placeholder="วางข้อความต้นฉบับที่ผ่านการคัดแล้วตรงนี้" required></textarea>
           </div>
 
           <div class="field" style="margin-top: 0.9rem;">
@@ -451,7 +482,7 @@
           </div>
 
           <div style="margin-top: 1rem;">
-            <button class="primary-btn" type="submit">บันทึก knowledge source</button>
+            <button class="primary-btn" type="submit" data-workflow-submit-button data-loading-text="กำลังบันทึก...">บันทึก knowledge source</button>
           </div>
         </form>
       </section>
@@ -459,42 +490,59 @@
       <section class="card">
         <h2 style="margin-top: 0; color: var(--primary-strong);">knowledge sources ล่าสุด</h2>
         <p class="section-note">คลิกเข้าไปดูรายละเอียด source ที่ต้องการรีวิว draft หรือกดสร้าง draft ใหม่จากต้นฉบับเดิมได้ทันที</p>
-        <ul class="soft-list">
-          <% if (!data.recentSources || data.recentSources.length === 0) { %>
-            <li class="workflow-note">ยังไม่มี knowledge source ใน workflow นี้</li>
-          <% } %>
-          <% (data.recentSources || []).forEach((item) => { %>
-            <li class="workflow-item">
-              <div class="workflow-header">
-                <div>
-                  <strong class="list-item-title"><%= item.title %></strong>
-                  <div class="workflow-meta" style="margin-top: 0.35rem;">
-                    <span class="status-badge <%= item.status %>"><%= item.statusLabel %></span>
-                    <span class="pill">Domain: <%= item.domainLabel %></span>
-                    <span class="pill">Target: <%= item.targetLabel %></span>
-                    <% if (item.documentType) { %><span class="pill">Type: <%= item.documentType %></span><% } %>
-                    <% if (item.createdAt) { %><span class="pill">สร้างเมื่อ: <%= item.createdAt %></span><% } %>
+        <% if (typeof pageErrorMessage !== "undefined" && pageErrorMessage) { %>
+          <div class="workflow-empty-state">
+            <h3>เกิดปัญหาในการโหลดรายการ</h3>
+            <p><%= pageErrorMessage %></p>
+            <div class="workflow-empty-actions">
+              <a class="detail-link" href="/admin/knowledge-workflow">ลองโหลดใหม่</a>
+              <a class="secondary-btn" href="/admin">กลับหน้าแดชบอร์ด</a>
+            </div>
+          </div>
+        <% } else if (!data.recentSources || data.recentSources.length === 0) { %>
+          <div class="workflow-empty-state">
+            <h3>ยังไม่มี knowledge source</h3>
+            <p>เริ่มจากเพิ่มต้นฉบับที่ผ่านการคัดแล้ว และค่อยสร้าง draft จากต้นฉบับนั้นเพื่อเข้าสู่ขั้น review</p>
+            <div class="workflow-empty-actions">
+              <a class="detail-link" href="#workflow-create-source">สร้าง source ใหม่</a>
+            </div>
+          </div>
+        <% } else { %>
+          <ul class="soft-list">
+            <% (data.recentSources || []).forEach((item) => { %>
+              <li class="workflow-item">
+                <div class="workflow-header">
+                  <div>
+                    <strong class="list-item-title"><%= item.title %></strong>
+                    <div class="workflow-meta" style="margin-top: 0.35rem;">
+                      <span class="status-badge <%= item.status %>"><%= item.statusLabel %></span>
+                      <span class="pill">Domain: <%= item.domainLabel %></span>
+                      <span class="pill">Target: <%= item.targetLabel %></span>
+                      <% if (item.documentType) { %><span class="pill">Type: <%= item.documentType %></span><% } %>
+                      <% if (item.createdAt) { %><span class="pill">สร้างเมื่อ: <%= item.createdAt %></span><% } %>
+                    </div>
                   </div>
+                  <a class="detail-link" href="/admin/knowledge-workflow/<%= item.id %>">ดู drafts</a>
                 </div>
-                <a class="detail-link" href="/admin/knowledge-workflow/<%= item.id %>">ดู drafts</a>
-              </div>
 
-              <% if (item.sourceReference) { %>
-                <div class="workflow-meta">แหล่งอ้างอิง: <%= item.sourceReference %></div>
-              <% } %>
+                <% if (item.sourceReference) { %>
+                  <div class="workflow-meta">แหล่งอ้างอิง: <%= item.sourceReference %></div>
+                <% } %>
 
-              <div class="source-preview"><%= item.sourcePreviewText || item.sourceText %></div>
+                <div class="source-preview"><%= item.sourcePreviewText || item.sourceText %></div>
 
-              <div class="tag-list">
-                <span class="pill">ร่างทั้งหมด <%= item.draftSummary.total %></span>
-                <span class="pill">ร่างรอ review <%= item.draftSummary.draft %></span>
-                <span class="pill">อนุมัติแล้ว <%= item.draftSummary.approved %></span>
-                <span class="pill">ปฏิเสธแล้ว <%= item.draftSummary.rejected %></span>
-              </div>
-            </li>
-          <% }) %>
-        </ul>
+                <div class="tag-list">
+                  <span class="pill">ร่างทั้งหมด <%= item.draftSummary.total %></span>
+                  <span class="pill">ร่างรอ review <%= item.draftSummary.draft %></span>
+                  <span class="pill">อนุมัติแล้ว <%= item.draftSummary.approved %></span>
+                  <span class="pill">ปฏิเสธแล้ว <%= item.draftSummary.rejected %></span>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
       </section>
     </div>
+    <%- include("partials/workflowFormScript") %>
   </body>
 </html>

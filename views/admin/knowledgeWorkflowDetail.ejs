@@ -134,6 +134,11 @@
         border-color: #f1b8b1;
         color: #9b2c22;
       }
+      .alert.info {
+        background: #e9f3fb;
+        border-color: #bfd7eb;
+        color: #174d70;
+      }
       .tab-row {
         display: flex;
         gap: 0.75rem;
@@ -333,6 +338,33 @@
         color: var(--text-sub);
         line-height: 1.7;
       }
+      .workflow-empty-state {
+        padding: 1.1rem 1.1rem 1rem;
+        border-radius: 18px;
+        border: 1px dashed #b9cfe0;
+        background: rgba(241, 246, 251, 0.72);
+        color: var(--text-sub);
+        line-height: 1.75;
+      }
+      .workflow-empty-state h3 {
+        margin: 0 0 0.35rem;
+        color: var(--primary-strong);
+      }
+      .workflow-empty-state p {
+        margin: 0;
+      }
+      .workflow-empty-actions {
+        display: flex;
+        gap: 0.55rem;
+        flex-wrap: wrap;
+        margin-top: 0.9rem;
+      }
+      .workflow-empty-actions .detail-link,
+      .workflow-empty-actions .primary-btn,
+      .workflow-empty-actions .secondary-btn,
+      .workflow-empty-actions .danger-btn {
+        text-decoration: none;
+      }
       .draft-card {
         display: grid;
         gap: 0.85rem;
@@ -391,6 +423,7 @@
         .draft-actions form,
         .source-actions button,
         .draft-actions button,
+        .workflow-empty-actions,
         .detail-link {
           width: 100%;
         }
@@ -399,246 +432,190 @@
   </head>
   <body>
     <div class="shell">
-      <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
-      <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
+      <%- include("partials/flashMessages") %>
 
-      <section class="topbar">
-        <div>
-          <h1 class="hero-title"><%= data.source.title %></h1>
-          <p class="hero-subtitle">ดูต้นฉบับ ตรวจ draft จาก AI และส่งต่อไปยังคำถามแนะนำหรือฐานความรู้ได้จากหน้านี้</p>
-        </div>
-        <a class="detail-link" href="/admin/knowledge-workflow">กลับหน้ารายการ</a>
-      </section>
+      <% if (typeof data !== "undefined" && data && data.source) { %>
+        <section class="topbar">
+          <div>
+            <h1 class="hero-title"><%= data.source.title %></h1>
+            <p class="hero-subtitle">ดูต้นฉบับ ตรวจ draft จาก AI และส่งต่อไปยังคำถามแนะนำหรือฐานความรู้ได้จากหน้านี้</p>
+          </div>
+          <a class="detail-link" href="/admin/knowledge-workflow">กลับหน้ารายการ</a>
+        </section>
+      <% } else { %>
+        <section class="topbar">
+          <div>
+            <h1 class="hero-title">Knowledge Workflow</h1>
+            <p class="hero-subtitle">ไม่พบต้นฉบับหรือไม่สามารถโหลดรายละเอียดได้ในตอนนี้</p>
+          </div>
+          <a class="detail-link" href="/admin/knowledge-workflow">กลับหน้ารายการ</a>
+        </section>
+      <% } %>
 
       <section class="card">
         <%- include("partials/knowledgeAdminTabs", { activeTab: "knowledge-workflow" }) %>
       </section>
 
-      <section class="grid">
-        <article class="card metric-card draft">
-          <p class="metric-label">ร่างทั้งหมด</p>
-          <div class="metric"><%= data.draftSummary.total %></div>
-        </article>
-        <article class="card metric-card draft">
-          <p class="metric-label">ร่างรอ review</p>
-          <div class="metric"><%= data.draftSummary.draft %></div>
-        </article>
-        <article class="card metric-card approved">
-          <p class="metric-label">อนุมัติแล้ว</p>
-          <div class="metric"><%= data.draftSummary.approved %></div>
-        </article>
-        <article class="card metric-card rejected">
-          <p class="metric-label">ปฏิเสธแล้ว</p>
-          <div class="metric"><%= data.draftSummary.rejected %></div>
-        </article>
-      </section>
+        <% if (!(typeof data !== "undefined" && data && data.source)) { %>
+          <section class="card">
+            <div class="workflow-empty-state">
+              <h3>ไม่สามารถแสดงรายละเอียดได้</h3>
+              <p><%= pageErrorMessage || "ไม่พบต้นฉบับหรือไม่สามารถโหลดข้อมูลได้ในขณะนี้" %></p>
+              <div class="workflow-empty-actions">
+                <a class="detail-link" href="/admin/knowledge-workflow">กลับไปหน้ารายการ</a>
+              </div>
+            </div>
+          </section>
+        <% } else { %>
+        <section class="grid">
+          <article class="card metric-card draft">
+            <p class="metric-label">ร่างทั้งหมด</p>
+            <div class="metric"><%= data.draftSummary.total %></div>
+          </article>
+          <article class="card metric-card draft">
+            <p class="metric-label">ร่างรอ review</p>
+            <div class="metric"><%= data.draftSummary.draft %></div>
+          </article>
+          <article class="card metric-card approved">
+            <p class="metric-label">อนุมัติแล้ว</p>
+            <div class="metric"><%= data.draftSummary.approved %></div>
+          </article>
+          <article class="card metric-card rejected">
+            <p class="metric-label">ปฏิเสธแล้ว</p>
+            <div class="metric"><%= data.draftSummary.rejected %></div>
+          </article>
+        </section>
 
-      <section class="card">
-        <h2 style="margin-top: 0; color: var(--primary-strong);">ข้อมูลต้นฉบับ</h2>
-        <div class="pill-row" style="margin-bottom: 0.75rem;">
-          <span class="status-badge <%= data.source.status %>"><%= data.source.statusLabel %></span>
-          <span class="pill">Domain: <%= data.source.domainLabel %></span>
-          <span class="pill">Target: <%= data.source.targetLabel %></span>
-          <% if (data.source.documentType) { %><span class="pill">Type: <%= data.source.documentType %></span><% } %>
-          <% if (data.source.createdAt) { %><span class="pill">สร้างเมื่อ: <%= data.source.createdAt %></span><% } %>
-          <% if (data.source.updatedAt) { %><span class="pill">อัปเดตล่าสุด: <%= data.source.updatedAt %></span><% } %>
-        </div>
-        <% if (data.source.sourceReference) { %>
-          <div class="workflow-meta" style="margin-bottom: 0.75rem;">แหล่งอ้างอิง: <%= data.source.sourceReference %></div>
-        <% } %>
-        <% if (data.source.approvedBy || data.source.approvedAt) { %>
-          <div class="workflow-meta" style="margin-bottom: 0.75rem;">
-            <% if (data.source.approvedBy) { %>อนุมัติโดย: <%= data.source.approvedBy %><% } %>
-            <% if (data.source.approvedAt) { %><% if (data.source.approvedBy) { %> | <% } %>อนุมัติเมื่อ: <%= data.source.approvedAt %><% } %>
+        <section class="card">
+          <h2 style="margin-top: 0; color: var(--primary-strong);">ข้อมูลต้นฉบับ</h2>
+          <div class="pill-row" style="margin-bottom: 0.75rem;">
+            <span class="status-badge <%= data.source.status %>"><%= data.source.statusLabel %></span>
+            <span class="pill">Domain: <%= data.source.domainLabel %></span>
+            <span class="pill">Target: <%= data.source.targetLabel %></span>
+            <% if (data.source.documentType) { %><span class="pill">Type: <%= data.source.documentType %></span><% } %>
+            <% if (data.source.createdAt) { %><span class="pill">สร้างเมื่อ: <%= data.source.createdAt %></span><% } %>
+            <% if (data.source.updatedAt) { %><span class="pill">อัปเดตล่าสุด: <%= data.source.updatedAt %></span><% } %>
           </div>
-        <% } %>
-        <div class="source-box"><%= data.source.sourceText %></div>
-      </section>
-
-      <section class="card">
-        <h2 style="margin-top: 0; color: var(--primary-strong);">สร้าง draft จากต้นฉบับนี้</h2>
-        <p class="section-note">
-          ถ้ามี draft เดิมอยู่แล้ว ระบบจะไม่สร้างซ้ำจนกว่าจะสั่ง force regenerate เพื่อป้องกันรายการรกและลดความสับสนในหน้าตรวจทาน
-        </p>
-        <div class="source-actions">
-          <form action="/admin/knowledge-sources/<%= data.source.id %>/generate-drafts" method="post" data-workflow-fetch data-action-type="generate" data-success-message="สร้าง draft จากต้นฉบับเรียบร้อยแล้ว">
-            <input type="hidden" name="forceRegenerate" value="0" />
-            <button class="primary-btn" type="submit">Generate drafts</button>
-          </form>
-          <form action="/admin/knowledge-sources/<%= data.source.id %>/generate-drafts" method="post" data-workflow-fetch data-action-type="generate" data-success-message="สร้าง draft ใหม่เรียบร้อยแล้ว">
-            <input type="hidden" name="forceRegenerate" value="1" />
-            <button class="secondary-btn" type="submit">Force regenerate</button>
-          </form>
-        </div>
-        <div class="workflow-note" style="margin-top: 0.9rem;">
-          เมื่อกด force regenerate ระบบจะยกเลิกร่างเดิมก่อนสร้างชุดใหม่ให้ทันที โดยทำงานผ่าน backend endpoint เดิมที่มีอยู่แล้ว
-        </div>
-      </section>
-
-      <section class="card">
-        <h2 style="margin-top: 0; color: var(--primary-strong);">drafts ของ source นี้</h2>
-        <p class="section-note">รายการด้านล่างรวมทั้ง draft ที่รอ review, รายการที่อนุมัติแล้ว และรายการที่ปฏิเสธแล้ว</p>
-        <ul class="soft-list">
-          <% if (!data.drafts || data.drafts.length === 0) { %>
-            <li class="workflow-note">ยังไม่มี draft สำหรับ source นี้ ลองกด Generate drafts ด้านบนได้เลย</li>
+          <% if (data.source.sourceReference) { %>
+            <div class="workflow-meta" style="margin-bottom: 0.75rem;">แหล่งอ้างอิง: <%= data.source.sourceReference %></div>
           <% } %>
-          <% (data.drafts || []).forEach((draft) => { %>
-            <li class="workflow-item draft-card">
-              <div class="draft-header">
-                <div>
-                  <strong class="list-item-title"><%= draft.question %></strong>
-                  <div class="workflow-meta" style="margin-top: 0.35rem;">
-                    <span class="status-badge <%= draft.status %>"><%= draft.statusLabel %></span>
-                    <span class="pill">Confidence: <%= draft.confidence %></span>
-                    <span class="pill">Target: <%= draft.approvedTargetLabel %></span>
-                    <% if (draft.createdAt) { %><span class="pill">สร้างเมื่อ: <%= draft.createdAt %></span><% } %>
-                    <% if (draft.updatedAt) { %><span class="pill">อัปเดตล่าสุด: <%= draft.updatedAt %></span><% } %>
-                  </div>
-                </div>
-                <% if (draft.approvedRecordType) { %>
-                  <span class="status-badge approved"><%= draft.approvedRecordTypeLabel %> #<%= draft.approvedRecordId %></span>
-                <% } %>
+          <% if (data.source.approvedBy || data.source.approvedAt) { %>
+            <div class="workflow-meta" style="margin-bottom: 0.75rem;">
+              <% if (data.source.approvedBy) { %>อนุมัติโดย: <%= data.source.approvedBy %><% } %>
+              <% if (data.source.approvedAt) { %><% if (data.source.approvedBy) { %> | <% } %>อนุมัติเมื่อ: <%= data.source.approvedAt %><% } %>
+            </div>
+          <% } %>
+          <div class="source-box"><%= data.source.sourceText %></div>
+        </section>
+
+        <section class="card" id="workflow-generate-actions">
+          <h2 style="margin-top: 0; color: var(--primary-strong);">สร้าง draft จากต้นฉบับนี้</h2>
+          <p class="section-note">
+            ถ้ามี draft เดิมอยู่แล้ว ระบบจะไม่สร้างซ้ำจนกว่าจะสั่ง force regenerate เพื่อป้องกันรายการรกและลดความสับสนในหน้าตรวจทาน
+          </p>
+          <div class="source-actions">
+            <form action="/admin/knowledge-sources/<%= data.source.id %>/generate-drafts" method="post" data-workflow-form="fetch" data-action-type="generate">
+              <input type="hidden" name="forceRegenerate" value="0" />
+              <button class="primary-btn" type="submit" data-workflow-submit-button data-loading-text="กำลังสร้าง...">Generate drafts</button>
+            </form>
+            <form action="/admin/knowledge-sources/<%= data.source.id %>/generate-drafts" method="post" data-workflow-form="fetch" data-action-type="generate">
+              <input type="hidden" name="forceRegenerate" value="1" />
+              <button class="secondary-btn" type="submit" data-workflow-submit-button data-loading-text="กำลังสร้างชุดใหม่...">Force regenerate</button>
+            </form>
+          </div>
+          <div class="workflow-note" style="margin-top: 0.9rem;">
+            เมื่อกด force regenerate ระบบจะยกเลิกร่างเดิมก่อนสร้างชุดใหม่ให้ทันที โดยทำงานผ่าน backend endpoint เดิมที่มีอยู่แล้ว
+          </div>
+        </section>
+
+        <section class="card">
+          <h2 style="margin-top: 0; color: var(--primary-strong);">drafts ของ source นี้</h2>
+          <p class="section-note">รายการด้านล่างรวมทั้ง draft ที่รอ review, รายการที่อนุมัติแล้ว และรายการที่ปฏิเสธแล้ว</p>
+          <% if (!data.drafts || data.drafts.length === 0) { %>
+            <div class="workflow-empty-state">
+              <h3>ยังไม่มี draft สำหรับ source นี้</h3>
+              <p>ลองกด Generate drafts ด้านบน เพื่อสร้างร่างจากต้นฉบับชุดนี้ก่อน</p>
+              <div class="workflow-empty-actions">
+                <a class="detail-link" href="#workflow-generate-actions">ไปที่ปุ่ม Generate drafts</a>
               </div>
-
-              <div class="answer-box">
-                <strong>คำตอบย่อ</strong>
-                <div class="workflow-body"><%= draft.shortAnswer %></div>
-              </div>
-
-              <% if (draft.detailedAnswer && draft.detailedAnswer !== draft.shortAnswer) { %>
-                <details class="answer-box">
-                  <summary class="subtle-text" style="cursor: pointer; font-weight: 700; color: var(--primary-strong);">ดูคำตอบละเอียด</summary>
-                  <div class="workflow-body" style="margin-top: 0.75rem;"><%= draft.detailedAnswer %></div>
-                </details>
-              <% } %>
-
-              <% if (draft.notes) { %>
-                <div class="note-box">
-                  <strong>หมายเหตุ</strong>
-                  <div class="workflow-body"><%= draft.notes %></div>
-                </div>
-              <% } %>
-
-              <% if (draft.keywords && draft.keywords.length) { %>
-                <div class="tag-list">
-                  <% draft.keywords.forEach((keyword) => { %>
-                    <span class="keyword"><%= keyword %></span>
-                  <% }) %>
-                </div>
-              <% } %>
-
-              <% if (draft.status === 'draft') { %>
-                <div class="draft-actions">
-                  <form action="/admin/knowledge-drafts/<%= draft.id %>/approve-suggested" method="post" data-workflow-fetch data-action-type="approve-suggested" data-success-message="อนุมัติ draft เป็นคำถามแนะนำเรียบร้อยแล้ว">
-                    <button class="primary-btn" type="submit">อนุมัติเป็นคำถามแนะนำ</button>
-                  </form>
-                  <form action="/admin/knowledge-drafts/<%= draft.id %>/approve-knowledge" method="post" data-workflow-fetch data-action-type="approve-knowledge" data-success-message="อนุมัติ draft เป็นฐานความรู้เรียบร้อยแล้ว">
-                    <button class="secondary-btn" type="submit">อนุมัติเป็นฐานความรู้</button>
-                  </form>
-                  <form action="/admin/knowledge-drafts/<%= draft.id %>/reject" method="post" data-workflow-fetch data-action-type="reject" data-confirm-message="ยืนยันการปฏิเสธ draft นี้ใช่หรือไม่" data-success-message="ปฏิเสธ draft เรียบร้อยแล้ว">
-                    <button class="danger-btn" type="submit">ปฏิเสธร่างนี้</button>
-                  </form>
-                </div>
-              <% } else { %>
-                <div class="workflow-note">
-                  <div>
-                    รายการนี้ถูกดำเนินการแล้ว
-                    <% if (draft.approvedRecordType && draft.approvedRecordId) { %>
-                      โดยเชื่อมกับ <strong><%= draft.approvedRecordTypeLabel %> #<%= draft.approvedRecordId %></strong>
+            </div>
+          <% } else { %>
+            <ul class="soft-list">
+              <% (data.drafts || []).forEach((draft) => { %>
+                <li class="workflow-item draft-card">
+                  <div class="draft-header">
+                    <div>
+                      <strong class="list-item-title"><%= draft.question %></strong>
+                      <div class="workflow-meta" style="margin-top: 0.35rem;">
+                        <span class="status-badge <%= draft.status %>"><%= draft.statusLabel %></span>
+                        <span class="pill">Confidence: <%= draft.confidence %></span>
+                        <span class="pill">Target: <%= draft.approvedTargetLabel %></span>
+                        <% if (draft.createdAt) { %><span class="pill">สร้างเมื่อ: <%= draft.createdAt %></span><% } %>
+                        <% if (draft.updatedAt) { %><span class="pill">อัปเดตล่าสุด: <%= draft.updatedAt %></span><% } %>
+                      </div>
+                    </div>
+                    <% if (draft.approvedRecordType) { %>
+                      <span class="status-badge approved"><%= draft.approvedRecordTypeLabel %> #<%= draft.approvedRecordId %></span>
                     <% } %>
                   </div>
-                  <div style="margin-top: 0.35rem;">สถานะปัจจุบัน: <strong><%= draft.statusLabel %></strong></div>
-                </div>
-              <% } %>
-            </li>
-          <% }) %>
-        </ul>
-      </section>
+
+                  <div class="answer-box">
+                    <strong>คำตอบย่อ</strong>
+                    <div class="workflow-body"><%= draft.shortAnswer %></div>
+                  </div>
+
+                  <% if (draft.detailedAnswer && draft.detailedAnswer !== draft.shortAnswer) { %>
+                    <details class="answer-box">
+                      <summary class="subtle-text" style="cursor: pointer; font-weight: 700; color: var(--primary-strong);">ดูคำตอบละเอียด</summary>
+                      <div class="workflow-body" style="margin-top: 0.75rem;"><%= draft.detailedAnswer %></div>
+                    </details>
+                  <% } %>
+
+                  <% if (draft.notes) { %>
+                    <div class="note-box">
+                      <strong>หมายเหตุ</strong>
+                      <div class="workflow-body"><%= draft.notes %></div>
+                    </div>
+                  <% } %>
+
+                  <% if (draft.keywords && draft.keywords.length) { %>
+                    <div class="tag-list">
+                      <% draft.keywords.forEach((keyword) => { %>
+                        <span class="keyword"><%= keyword %></span>
+                      <% }) %>
+                    </div>
+                  <% } %>
+
+                  <% if (draft.status === 'draft') { %>
+                    <div class="draft-actions">
+                      <form action="/admin/knowledge-drafts/<%= draft.id %>/approve-suggested" method="post" data-workflow-form="fetch" data-action-type="approve-suggested">
+                        <button class="primary-btn" type="submit" data-workflow-submit-button data-loading-text="กำลังอนุมัติ...">อนุมัติเป็นคำถามแนะนำ</button>
+                      </form>
+                      <form action="/admin/knowledge-drafts/<%= draft.id %>/approve-knowledge" method="post" data-workflow-form="fetch" data-action-type="approve-knowledge">
+                        <button class="secondary-btn" type="submit" data-workflow-submit-button data-loading-text="กำลังอนุมัติ...">อนุมัติเป็นฐานความรู้</button>
+                      </form>
+                      <form action="/admin/knowledge-drafts/<%= draft.id %>/reject" method="post" data-workflow-form="fetch" data-action-type="reject" data-confirm-message="ยืนยันการปฏิเสธ draft นี้ใช่หรือไม่">
+                        <button class="danger-btn" type="submit" data-workflow-submit-button data-loading-text="กำลังปฏิเสธ...">ปฏิเสธร่างนี้</button>
+                      </form>
+                    </div>
+                  <% } else { %>
+                    <div class="workflow-note">
+                      <div>
+                        รายการนี้ถูกดำเนินการแล้ว
+                        <% if (draft.approvedRecordType && draft.approvedRecordId) { %>
+                          โดยเชื่อมกับ <strong><%= draft.approvedRecordTypeLabel %> #<%= draft.approvedRecordId %></strong>
+                        <% } %>
+                      </div>
+                      <div style="margin-top: 0.35rem;">สถานะปัจจุบัน: <strong><%= draft.statusLabel %></strong></div>
+                    </div>
+                  <% } %>
+                </li>
+              <% }) %>
+            </ul>
+          <% } %>
+        </section>
+      <% } %>
     </div>
-
-    <script>
-      (function () {
-        function appendQueryParam(url, key, value) {
-          const nextUrl = new URL(url, window.location.origin);
-          nextUrl.searchParams.delete("success");
-          nextUrl.searchParams.delete("error");
-          nextUrl.searchParams.set(key, value);
-          return nextUrl.toString();
-        }
-
-        async function submitWorkflowForm(form) {
-          const response = await fetch(form.action, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-              Accept: "application/json",
-              "X-Requested-With": "XMLHttpRequest",
-            },
-            body: new URLSearchParams(new FormData(form)).toString(),
-          });
-
-          let payload = {};
-          try {
-            payload = await response.json();
-          } catch (_) {
-            payload = {};
-          }
-
-          if (response.status === 401) {
-            window.location.href = payload.loginPath || "/admin/login";
-            return;
-          }
-
-          if (!response.ok || !payload.ok) {
-            throw new Error(payload.message || payload.reason || "ไม่สามารถดำเนินการได้");
-          }
-
-          if (form.dataset.actionType === "generate") {
-            let message = payload.reusedExistingDrafts
-              ? "มี draft เดิมอยู่แล้ว ระบบจึงใช้ชุดเดิม"
-              : `สร้าง draft ใหม่ ${Array.isArray(payload.drafts) ? payload.drafts.length : 0} รายการแล้ว`;
-
-            if (payload.regenerated) {
-              message += " และแทนที่ draft เดิมเรียบร้อยแล้ว";
-            }
-
-            window.location.href = appendQueryParam(window.location.href, "success", message);
-            return;
-          }
-
-          const successMessage = form.dataset.successMessage || "ดำเนินการเรียบร้อยแล้ว";
-          window.location.href = appendQueryParam(window.location.href, "success", successMessage);
-        }
-
-        document.querySelectorAll("form[data-workflow-fetch]").forEach((form) => {
-          form.addEventListener("submit", async (event) => {
-            event.preventDefault();
-
-            if (form.dataset.confirmMessage && !window.confirm(form.dataset.confirmMessage)) {
-              return;
-            }
-
-            const submitButton = form.querySelector('button[type="submit"]');
-            if (submitButton) {
-              submitButton.disabled = true;
-            }
-
-            try {
-              await submitWorkflowForm(form);
-            } catch (error) {
-              window.location.href = appendQueryParam(
-                window.location.href,
-                "error",
-                error.message || "ไม่สามารถดำเนินการได้",
-              );
-            } finally {
-              if (submitButton) {
-                submitButton.disabled = false;
-              }
-            }
-          });
-        });
-      })();
-    </script>
+    <%- include("partials/workflowFormScript") %>
   </body>
 </html>

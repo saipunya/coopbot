@@ -1,5 +1,6 @@
 const KnowledgeSourceModel = require("../models/knowledgeSourceModel");
 const KnowledgeDraftModel = require("../models/knowledgeDraftModel");
+const { pushFlashMessage } = require("../middlewares/flashMessageMiddleware");
 const knowledgeDraftService = require("../services/knowledgeDraftService");
 
 const WORKFLOW_DOMAIN_OPTIONS = [
@@ -82,20 +83,6 @@ function getAdminActor(req) {
     String(adminUser.email || adminUser.username || adminUser.name || "admin")
       .trim() || "admin"
   );
-}
-
-function appendQueryParam(path, key, value) {
-  const normalizedPath = String(path || "").trim();
-  const normalizedKey = String(key || "").trim();
-  if (!normalizedPath || !normalizedKey) {
-    return normalizedPath || "/";
-  }
-
-  const hashIndex = normalizedPath.indexOf("#");
-  const basePath = hashIndex >= 0 ? normalizedPath.slice(0, hashIndex) : normalizedPath;
-  const hash = hashIndex >= 0 ? normalizedPath.slice(hashIndex) : "";
-  const separator = basePath.includes("?") ? "&" : "?";
-  return `${basePath}${separator}${encodeURIComponent(normalizedKey)}=${encodeURIComponent(String(value || ""))}${hash}`;
 }
 
 function normalizeBooleanFlag(value, fallback = false) {
@@ -247,12 +234,42 @@ function buildWorkflowDraftRecord(draft) {
   };
 }
 
-function sendServiceResult(res, result, successStatus = 200) {
+function flashAndRedirect(req, res, type, message, targetPath) {
+  pushFlashMessage(req, type, message);
+  return res.redirect(targetPath);
+}
+
+function getFlashMessageByReason(reason) {
+  return ERROR_MESSAGE_BY_REASON[reason] || "ไม่สามารถดำเนินการได้";
+}
+
+function sendServiceResult(req, res, result, successStatus = 200, flashOptions = {}) {
   if (result && result.ok) {
+    const successMessage =
+      typeof flashOptions.successMessage === "function"
+        ? flashOptions.successMessage(result)
+        : flashOptions.successMessage;
+    const successType =
+      typeof flashOptions.successType === "function"
+        ? flashOptions.successType(result)
+        : flashOptions.successType;
+
+    if (successMessage) {
+      pushFlashMessage(req, successType || "success", successMessage);
+    }
+
     return res.status(successStatus).json(result);
   }
 
   const reason = String(result?.reason || "unknown_error").trim();
+  if (flashOptions.flashError !== false) {
+    const errorMessage =
+      typeof flashOptions.errorMessage === "function"
+        ? flashOptions.errorMessage(result)
+        : flashOptions.errorMessage || getFlashMessageByReason(reason);
+    pushFlashMessage(req, flashOptions.errorType || "error", errorMessage);
+  }
+
   return res.status(ERROR_STATUS_BY_REASON[reason] || 500).json({
     ok: false,
     reason,
@@ -262,38 +279,67 @@ function sendServiceResult(res, result, successStatus = 200) {
 }
 
 async function renderWorkflowIndex(req, res) {
-  const recentSources = await KnowledgeSourceModel.listRecent(12);
-  const recentSourcesWithDrafts = await Promise.all(
-    recentSources.map(async (source) => {
-      const drafts = await KnowledgeDraftModel.listBySourceId(source.id, {
-        status: "all",
-        limit: 500,
-      });
+  try {
+    const recentSources = await KnowledgeSourceModel.listRecent(12);
+    const recentSourcesWithDrafts = await Promise.all(
+      recentSources.map(async (source) => {
+        const drafts = await KnowledgeDraftModel.listBySourceId(source.id, {
+          status: "all",
+          limit: 500,
+        });
 
-      return buildWorkflowSourceRecord(source, drafts);
-    }),
-  );
+        return buildWorkflowSourceRecord(source, drafts);
+      }),
+    );
 
-  res.render("admin/knowledgeWorkflow", {
-    title: "Knowledge Workflow",
-    user: req.session.adminUser,
-    errorMessage: req.query.error || "",
-    successMessage: req.query.success || "",
-    data: {
-      recentSources: recentSourcesWithDrafts,
-      summary: summarizeSources(recentSourcesWithDrafts),
-    },
-    domainOptions: WORKFLOW_DOMAIN_OPTIONS,
-    targetOptions: WORKFLOW_TARGET_OPTIONS,
-    sourceStatusOptions: WORKFLOW_SOURCE_STATUS_OPTIONS,
-    draftStatusOptions: WORKFLOW_DRAFT_STATUS_OPTIONS,
-    getWorkflowDomainLabel,
-    getWorkflowTargetLabel,
-    getWorkflowSourceStatusLabel,
-    getWorkflowDraftStatusLabel,
-    getWorkflowApprovedRecordTypeLabel,
-    returnPath: req.originalUrl || "/admin/knowledge-workflow",
-  });
+    res.render("admin/knowledgeWorkflow", {
+      title: "Knowledge Workflow",
+      user: req.session.adminUser,
+      pageErrorMessage: "",
+      data: {
+        recentSources: recentSourcesWithDrafts,
+        summary: summarizeSources(recentSourcesWithDrafts),
+      },
+      domainOptions: WORKFLOW_DOMAIN_OPTIONS,
+      targetOptions: WORKFLOW_TARGET_OPTIONS,
+      sourceStatusOptions: WORKFLOW_SOURCE_STATUS_OPTIONS,
+      draftStatusOptions: WORKFLOW_DRAFT_STATUS_OPTIONS,
+      getWorkflowDomainLabel,
+      getWorkflowTargetLabel,
+      getWorkflowSourceStatusLabel,
+      getWorkflowDraftStatusLabel,
+      getWorkflowApprovedRecordTypeLabel,
+    });
+  } catch (error) {
+    console.error("Failed to render knowledge workflow index:", error);
+    res.status(500).render("admin/knowledgeWorkflow", {
+      title: "Knowledge Workflow",
+      user: req.session.adminUser,
+      pageErrorMessage: "ไม่สามารถโหลดรายการ knowledge workflow ได้ในขณะนี้",
+      data: {
+        recentSources: [],
+        summary: {
+          total: 0,
+          draft: 0,
+          approved: 0,
+          archived: 0,
+          draftTotal: 0,
+          draftPending: 0,
+          draftApproved: 0,
+          draftRejected: 0,
+        },
+      },
+      domainOptions: WORKFLOW_DOMAIN_OPTIONS,
+      targetOptions: WORKFLOW_TARGET_OPTIONS,
+      sourceStatusOptions: WORKFLOW_SOURCE_STATUS_OPTIONS,
+      draftStatusOptions: WORKFLOW_DRAFT_STATUS_OPTIONS,
+      getWorkflowDomainLabel,
+      getWorkflowTargetLabel,
+      getWorkflowSourceStatusLabel,
+      getWorkflowDraftStatusLabel,
+      getWorkflowApprovedRecordTypeLabel,
+    });
+  }
 }
 
 async function submitWorkflow(req, res) {
@@ -306,7 +352,13 @@ async function submitWorkflow(req, res) {
   );
 
   if (!title || !sourceText) {
-    return res.redirect(appendQueryParam("/admin/knowledge-workflow", "error", ERROR_MESSAGE_BY_REASON.invalid_payload));
+    return flashAndRedirect(
+      req,
+      res,
+      "error",
+      ERROR_MESSAGE_BY_REASON.invalid_payload,
+      "/admin/knowledge-workflow",
+    );
   }
 
   const createResult = await knowledgeDraftService.createKnowledgeSource({
@@ -320,12 +372,12 @@ async function submitWorkflow(req, res) {
   });
 
   if (!createResult.ok || !createResult.source) {
-    return res.redirect(
-      appendQueryParam(
-        "/admin/knowledge-workflow",
-        "error",
-        ERROR_MESSAGE_BY_REASON[createResult.reason] || ERROR_MESSAGE_BY_REASON.invalid_payload,
-      ),
+    return flashAndRedirect(
+      req,
+      res,
+      "error",
+      ERROR_MESSAGE_BY_REASON[createResult.reason] || ERROR_MESSAGE_BY_REASON.invalid_payload,
+      "/admin/knowledge-workflow",
     );
   }
 
@@ -334,8 +386,12 @@ async function submitWorkflow(req, res) {
   const generateDraftsNow = normalizeBooleanFlag(req.body?.generateDraftsNow, false);
 
   if (!generateDraftsNow) {
-    return res.redirect(
-      appendQueryParam(detailPath, "success", `บันทึกต้นฉบับ "${source.title}" เรียบร้อยแล้ว`),
+    return flashAndRedirect(
+      req,
+      res,
+      "info",
+      `บันทึกต้นฉบับ "${source.title}" เรียบร้อยแล้ว`,
+      detailPath,
     );
   }
 
@@ -344,71 +400,140 @@ async function submitWorkflow(req, res) {
   });
 
   if (!generationResult.ok) {
-    return res.redirect(
-      appendQueryParam(
-        detailPath,
-        "error",
-        ERROR_MESSAGE_BY_REASON[generationResult.reason] || ERROR_MESSAGE_BY_REASON.generation_failed,
-      ),
+    return flashAndRedirect(
+      req,
+      res,
+      "error",
+      ERROR_MESSAGE_BY_REASON[generationResult.reason] || ERROR_MESSAGE_BY_REASON.generation_failed,
+      detailPath,
     );
   }
 
   const generatedCount = Array.isArray(generationResult.drafts) ? generationResult.drafts.length : 0;
+  const flashType = generationResult.reusedExistingDrafts ? "info" : "success";
   const successMessage = generationResult.reusedExistingDrafts
     ? `บันทึกต้นฉบับ "${source.title}" เรียบร้อยแล้ว และใช้ draft เดิม`
     : `บันทึกต้นฉบับ "${source.title}" และสร้าง draft ${generatedCount} รายการเรียบร้อยแล้ว`;
 
-  return res.redirect(appendQueryParam(detailPath, "success", successMessage));
+  return flashAndRedirect(req, res, flashType, successMessage, detailPath);
 }
 
 async function renderWorkflowSourceDetail(req, res) {
-  const sourceId = normalizeId(req.params.sourceId);
-  if (!sourceId) {
-    return res.redirect(
-      appendQueryParam("/admin/knowledge-workflow", "error", ERROR_MESSAGE_BY_REASON.invalid_source_id),
-    );
-  }
+  try {
+    const sourceId = normalizeId(req.params.sourceId);
+    if (!sourceId) {
+      return res.status(400).render("admin/knowledgeWorkflowDetail", {
+        title: "Knowledge Workflow",
+        user: req.session.adminUser,
+        pageErrorMessage: ERROR_MESSAGE_BY_REASON.invalid_source_id,
+        data: {
+          source: null,
+          drafts: [],
+          draftSummary: {
+            total: 0,
+            draft: 0,
+            approved: 0,
+            rejected: 0,
+          },
+        },
+        domainOptions: WORKFLOW_DOMAIN_OPTIONS,
+        targetOptions: WORKFLOW_TARGET_OPTIONS,
+        sourceStatusOptions: WORKFLOW_SOURCE_STATUS_OPTIONS,
+        draftStatusOptions: WORKFLOW_DRAFT_STATUS_OPTIONS,
+        getWorkflowDomainLabel,
+        getWorkflowTargetLabel,
+        getWorkflowSourceStatusLabel,
+        getWorkflowDraftStatusLabel,
+        getWorkflowApprovedRecordTypeLabel,
+      });
+    }
 
-  const source = await KnowledgeSourceModel.findById(sourceId);
-  if (!source) {
-    return res.redirect(
-      appendQueryParam("/admin/knowledge-workflow", "error", ERROR_MESSAGE_BY_REASON.source_not_found),
-    );
-  }
+    const source = await KnowledgeSourceModel.findById(sourceId);
+    if (!source) {
+      return res.status(404).render("admin/knowledgeWorkflowDetail", {
+        title: "Knowledge Workflow",
+        user: req.session.adminUser,
+        pageErrorMessage: ERROR_MESSAGE_BY_REASON.source_not_found,
+        data: {
+          source: null,
+          drafts: [],
+          draftSummary: {
+            total: 0,
+            draft: 0,
+            approved: 0,
+            rejected: 0,
+          },
+        },
+        domainOptions: WORKFLOW_DOMAIN_OPTIONS,
+        targetOptions: WORKFLOW_TARGET_OPTIONS,
+        sourceStatusOptions: WORKFLOW_SOURCE_STATUS_OPTIONS,
+        draftStatusOptions: WORKFLOW_DRAFT_STATUS_OPTIONS,
+        getWorkflowDomainLabel,
+        getWorkflowTargetLabel,
+        getWorkflowSourceStatusLabel,
+        getWorkflowDraftStatusLabel,
+        getWorkflowApprovedRecordTypeLabel,
+      });
+    }
 
-  const drafts = await KnowledgeDraftModel.listBySourceId(source.id, {
-    status: "all",
-    limit: 500,
-  });
-  const draftRecords = drafts.map(buildWorkflowDraftRecord);
-  const draftSummary = summarizeDrafts(draftRecords);
+    const drafts = await KnowledgeDraftModel.listBySourceId(source.id, {
+      status: "all",
+      limit: 500,
+    });
+    const draftRecords = drafts.map(buildWorkflowDraftRecord);
+    const draftSummary = summarizeDrafts(draftRecords);
 
-  res.render("admin/knowledgeWorkflowDetail", {
-    title: `Knowledge Workflow - ${source.title}`,
-    user: req.session.adminUser,
-    errorMessage: req.query.error || "",
-    successMessage: req.query.success || "",
-    data: {
-      source: {
-        ...source,
-        domainLabel: getWorkflowDomainLabel(source.domain),
-        targetLabel: getWorkflowTargetLabel(source.target),
-        statusLabel: getWorkflowSourceStatusLabel(source.status),
+    res.render("admin/knowledgeWorkflowDetail", {
+      title: `Knowledge Workflow - ${source.title}`,
+      user: req.session.adminUser,
+      pageErrorMessage: "",
+      data: {
+        source: {
+          ...source,
+          domainLabel: getWorkflowDomainLabel(source.domain),
+          targetLabel: getWorkflowTargetLabel(source.target),
+          statusLabel: getWorkflowSourceStatusLabel(source.status),
+        },
+        drafts: draftRecords,
+        draftSummary,
       },
-      drafts: draftRecords,
-      draftSummary,
-    },
-    domainOptions: WORKFLOW_DOMAIN_OPTIONS,
-    targetOptions: WORKFLOW_TARGET_OPTIONS,
-    sourceStatusOptions: WORKFLOW_SOURCE_STATUS_OPTIONS,
-    draftStatusOptions: WORKFLOW_DRAFT_STATUS_OPTIONS,
-    getWorkflowDomainLabel,
-    getWorkflowTargetLabel,
-    getWorkflowSourceStatusLabel,
-    getWorkflowDraftStatusLabel,
-    getWorkflowApprovedRecordTypeLabel,
-    returnPath: req.originalUrl || `/admin/knowledge-workflow/${source.id}`,
-  });
+      domainOptions: WORKFLOW_DOMAIN_OPTIONS,
+      targetOptions: WORKFLOW_TARGET_OPTIONS,
+      sourceStatusOptions: WORKFLOW_SOURCE_STATUS_OPTIONS,
+      draftStatusOptions: WORKFLOW_DRAFT_STATUS_OPTIONS,
+      getWorkflowDomainLabel,
+      getWorkflowTargetLabel,
+      getWorkflowSourceStatusLabel,
+      getWorkflowDraftStatusLabel,
+      getWorkflowApprovedRecordTypeLabel,
+    });
+  } catch (error) {
+    console.error("Failed to render knowledge workflow detail:", error);
+    return res.status(500).render("admin/knowledgeWorkflowDetail", {
+      title: "Knowledge Workflow",
+      user: req.session.adminUser,
+      pageErrorMessage: "ไม่สามารถโหลดรายละเอียด knowledge workflow ได้ในขณะนี้",
+      data: {
+        source: null,
+        drafts: [],
+        draftSummary: {
+          total: 0,
+          draft: 0,
+          approved: 0,
+          rejected: 0,
+        },
+      },
+      domainOptions: WORKFLOW_DOMAIN_OPTIONS,
+      targetOptions: WORKFLOW_TARGET_OPTIONS,
+      sourceStatusOptions: WORKFLOW_SOURCE_STATUS_OPTIONS,
+      draftStatusOptions: WORKFLOW_DRAFT_STATUS_OPTIONS,
+      getWorkflowDomainLabel,
+      getWorkflowTargetLabel,
+      getWorkflowSourceStatusLabel,
+      getWorkflowDraftStatusLabel,
+      getWorkflowApprovedRecordTypeLabel,
+    });
+  }
 }
 
 async function createSource(req, res) {
@@ -421,6 +546,7 @@ async function createSource(req, res) {
   );
 
   if (!title || !sourceText) {
+    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_payload);
     return res.status(400).json({
       ok: false,
       reason: "invalid_payload",
@@ -433,12 +559,16 @@ async function createSource(req, res) {
     createdBy: getAdminActor(req),
   });
 
-  return sendServiceResult(res, result, 201);
+  return sendServiceResult(req, res, result, 201, {
+    successMessage: (serviceResult) =>
+      `บันทึก knowledge source "${serviceResult.source?.title || title}" เรียบร้อยแล้ว`,
+  });
 }
 
 async function generateDrafts(req, res) {
   const sourceId = normalizeId(req.params.id);
   if (!sourceId) {
+    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_source_id);
     return res.status(400).json({
       ok: false,
       reason: "invalid_source_id",
@@ -451,12 +581,25 @@ async function generateDrafts(req, res) {
     existingDraftLimit: req.body?.existingDraftLimit,
   });
 
-  return sendServiceResult(res, result);
+  return sendServiceResult(req, res, result, 200, {
+    successMessage: (serviceResult) => {
+      if (serviceResult.reusedExistingDrafts) {
+        return "มี draft เดิมอยู่แล้ว ระบบจึงใช้ชุดเดิม";
+      }
+
+      const generatedCount = Array.isArray(serviceResult.drafts) ? serviceResult.drafts.length : 0;
+      return serviceResult.regenerated
+        ? `สร้าง draft ใหม่ ${generatedCount} รายการ และแทนที่ draft เดิมเรียบร้อยแล้ว`
+        : `สร้าง draft ใหม่ ${generatedCount} รายการเรียบร้อยแล้ว`;
+    },
+    successType: (serviceResult) => (serviceResult.reusedExistingDrafts ? "info" : "success"),
+  });
 }
 
 async function listDraftsBySource(req, res) {
   const sourceId = normalizeId(req.params.id);
   if (!sourceId) {
+    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_source_id);
     return res.status(400).json({
       ok: false,
       reason: "invalid_source_id",
@@ -470,12 +613,15 @@ async function listDraftsBySource(req, res) {
     offset: req.query.offset,
   });
 
-  return sendServiceResult(res, result);
+  return sendServiceResult(req, res, result, 200, {
+    flashError: false,
+  });
 }
 
 async function approveDraftToSuggestedQuestion(req, res) {
   const draftId = normalizeId(req.params.id);
   if (!draftId) {
+    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_draft_id);
     return res.status(400).json({
       ok: false,
       reason: "invalid_draft_id",
@@ -484,12 +630,15 @@ async function approveDraftToSuggestedQuestion(req, res) {
   }
 
   const result = await knowledgeDraftService.approveDraftToSuggestedQuestion(draftId, req.body || {});
-  return sendServiceResult(res, result);
+  return sendServiceResult(req, res, result, 200, {
+    successMessage: "อนุมัติ draft เป็นคำถามแนะนำเรียบร้อยแล้ว",
+  });
 }
 
 async function approveDraftToKnowledge(req, res) {
   const draftId = normalizeId(req.params.id);
   if (!draftId) {
+    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_draft_id);
     return res.status(400).json({
       ok: false,
       reason: "invalid_draft_id",
@@ -498,12 +647,15 @@ async function approveDraftToKnowledge(req, res) {
   }
 
   const result = await knowledgeDraftService.approveDraftToKnowledge(draftId, req.body || {});
-  return sendServiceResult(res, result);
+  return sendServiceResult(req, res, result, 200, {
+    successMessage: "อนุมัติ draft เป็นฐานความรู้เรียบร้อยแล้ว",
+  });
 }
 
 async function rejectDraft(req, res) {
   const draftId = normalizeId(req.params.id);
   if (!draftId) {
+    pushFlashMessage(req, "error", ERROR_MESSAGE_BY_REASON.invalid_draft_id);
     return res.status(400).json({
       ok: false,
       reason: "invalid_draft_id",
@@ -512,7 +664,9 @@ async function rejectDraft(req, res) {
   }
 
   const result = await knowledgeDraftService.rejectDraft(draftId, req.body || {});
-  return sendServiceResult(res, result);
+  return sendServiceResult(req, res, result, 200, {
+    successMessage: "ปฏิเสธ draft เรียบร้อยแล้ว",
+  });
 }
 
 module.exports = {

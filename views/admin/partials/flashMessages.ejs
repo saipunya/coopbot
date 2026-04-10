@@ -1,0 +1,30 @@
+<%
+  const items = [];
+
+  if (typeof flashMessages !== "undefined" && Array.isArray(flashMessages)) {
+    items.push(...flashMessages);
+  }
+
+  if (typeof pageErrorMessage !== "undefined" && pageErrorMessage) {
+    items.push({ type: "error", message: pageErrorMessage });
+  }
+
+  if (typeof pageInfoMessage !== "undefined" && pageInfoMessage) {
+    items.push({ type: "info", message: pageInfoMessage });
+  }
+
+  if (typeof successMessage !== "undefined" && successMessage) {
+    items.push({ type: "success", message: successMessage });
+  }
+
+  if (typeof errorMessage !== "undefined" && errorMessage) {
+    items.push({ type: "error", message: errorMessage });
+  }
+
+  if (typeof infoMessage !== "undefined" && infoMessage) {
+    items.push({ type: "info", message: infoMessage });
+  }
+%>
+<% items.forEach((item) => { %>
+  <div class="alert <%= item.type %>" role="alert" aria-live="polite"><%= item.message %></div>
+<% }) %>
