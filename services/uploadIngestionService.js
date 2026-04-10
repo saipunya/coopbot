@@ -13,7 +13,8 @@ const { extractDocumentMetadata } = require("./documentMetadataService");
 const { uniqueTokens } = require("./thaiTextUtils");
 
 const KEYWORD_CONCURRENCY = Number(process.env.KEYWORD_CONCURRENCY || 4);
-const PDF_CHUNK_MIN_QUALITY_SCORE = Number(process.env.PDF_CHUNK_MIN_QUALITY_SCORE || 25);
+const PDF_CHUNK_ACCEPTED_QUALITY_SCORE = Number(process.env.PDF_CHUNK_ACCEPTED_QUALITY_SCORE || 60);
+const PDF_CHUNK_LOW_QUALITY_SCORE = Number(process.env.PDF_CHUNK_LOW_QUALITY_SCORE || 45);
 
 function getExtractionMethodLabel(method) {
   switch (String(method || "").trim()) {
@@ -109,48 +110,68 @@ function analyzeChunkQuality(chunkText) {
 function filterChunksByQuality(chunks) {
   const analyzedChunks = chunks.map((chunk, index) => {
     const analysis = analyzeChunkQuality(chunk);
+    const qualityScore = Number(analysis.qualityScore || 0);
+    let qualityBand = "rejected";
+
+    if (qualityScore >= PDF_CHUNK_ACCEPTED_QUALITY_SCORE) {
+      qualityBand = "accepted";
+    } else if (qualityScore >= PDF_CHUNK_LOW_QUALITY_SCORE) {
+      qualityBand = "lowQuality";
+    }
+
     return {
       index,
       chunk,
       analysis,
+      qualityBand,
     };
   });
 
-  const kept = analyzedChunks.filter((item) => item.analysis.qualityScore >= PDF_CHUNK_MIN_QUALITY_SCORE);
-  let fallbackKept = false;
-  let finalKept = kept;
+  const acceptedChunks = analyzedChunks.filter((item) => item.qualityBand === "accepted");
+  const lowQualityChunks = analyzedChunks.filter((item) => item.qualityBand === "lowQuality");
+  const rejectedChunks = analyzedChunks.filter((item) => item.qualityBand === "rejected");
 
-  if (finalKept.length === 0 && analyzedChunks.length > 0) {
-    fallbackKept = true;
-    finalKept = analyzedChunks
-      .slice()
-      .sort((left, right) => {
-        const rightScore = Number(right.analysis?.qualityScore || 0);
-        const leftScore = Number(left.analysis?.qualityScore || 0);
-        return rightScore - leftScore;
-      })
-      .slice(0, Math.min(3, analyzedChunks.length));
+  const notes = [];
+  if (acceptedChunks.length === 0 && analyzedChunks.length > 0) {
+    notes.push("ไม่มี chunk ที่ผ่านเกณฑ์ accepted");
+  }
+  if (lowQualityChunks.length > 0) {
+    notes.push(`มี low quality ${lowQualityChunks.length} chunk`);
+  }
+  if (rejectedChunks.length > 0) {
+    notes.push(`มี rejected ${rejectedChunks.length} chunk`);
   }
 
-  const keptIndexSet = new Set(finalKept.map((item) => item.index));
-  const removed = analyzedChunks.filter((item) => !keptIndexSet.has(item.index));
+  const summarizePreview = (items) =>
+    items.slice(0, 5).map((item) => ({
+      score: Number(item.analysis?.qualityScore || 0),
+      notes: Array.isArray(item.analysis?.notes) ? item.analysis.notes.slice(0, 3) : [],
+    }));
 
   return {
-    filteredChunks: finalKept
+    acceptedChunks: acceptedChunks
+      .slice()
+      .sort((left, right) => left.index - right.index)
+      .map((item) => item.chunk),
+    lowQualityChunks: lowQualityChunks
+      .slice()
+      .sort((left, right) => left.index - right.index)
+      .map((item) => item.chunk),
+    rejectedChunks: rejectedChunks
       .slice()
       .sort((left, right) => left.index - right.index)
       .map((item) => item.chunk),
     summary: {
-      beforeCount: analyzedChunks.length,
-      afterCount: finalKept.length,
-      removedCount: removed.length,
-      threshold: PDF_CHUNK_MIN_QUALITY_SCORE,
-      fallbackKept,
-      keptScores: finalKept.map((item) => Number(item.analysis?.qualityScore || 0)),
-      removedPreview: removed.slice(0, 5).map((item) => ({
-        score: Number(item.analysis?.qualityScore || 0),
-        notes: Array.isArray(item.analysis?.notes) ? item.analysis.notes.slice(0, 3) : [],
-      })),
+      chunk_total: analyzedChunks.length,
+      chunk_accepted: acceptedChunks.length,
+      chunk_low_quality: lowQualityChunks.length,
+      chunk_rejected: rejectedChunks.length,
+      acceptedThreshold: PDF_CHUNK_ACCEPTED_QUALITY_SCORE,
+      lowQualityThreshold: PDF_CHUNK_LOW_QUALITY_SCORE,
+      notes,
+      acceptedPreview: summarizePreview(acceptedChunks),
+      lowQualityPreview: summarizePreview(lowQualityChunks),
+      rejectedPreview: summarizePreview(rejectedChunks),
     },
   };
 }
@@ -183,7 +204,7 @@ async function processUploadInBackground(file, uploadRecord) {
     const extractedText = extractionResult.text;
     const chunks = chunkText(extractedText, Number(process.env.CHUNK_SIZE || 1400));
     const chunkFilterResult = filterChunksByQuality(chunks);
-    const filteredChunks = chunkFilterResult.filteredChunks;
+    const acceptedChunks = chunkFilterResult.acceptedChunks;
     const documentMetadata = await extractDocumentMetadata(extractedText, file);
     const extractionMethodLabel = getExtractionMethodLabel(extractionResult.extractionMethod);
     const extractionNoteLabel = (extractionResult.notes || [])
@@ -197,15 +218,16 @@ async function processUploadInBackground(file, uploadRecord) {
         : "",
       extractionNoteLabel,
       indexingDecision.reason || "",
-      chunkFilterResult.summary.removedCount > 0
-        ? `กรอง chunk: ${chunkFilterResult.summary.afterCount}/${chunkFilterResult.summary.beforeCount}`
-        : "",
+      `chunk_total: ${chunkFilterResult.summary.chunk_total}`,
+      `chunk_accepted: ${chunkFilterResult.summary.chunk_accepted}`,
+      `chunk_low_quality: ${chunkFilterResult.summary.chunk_low_quality}`,
+      `chunk_rejected: ${chunkFilterResult.summary.chunk_rejected}`,
     ]
       .filter(Boolean)
       .join(" | ");
 
     LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
-      processingMessage: `กำลังสร้างดัชนีเอกสาร ${filteredChunks.length} ส่วน${extractionSummary ? ` | ${extractionSummary}` : ""}`,
+      processingMessage: `กำลังสร้างดัชนีเอกสาร ${acceptedChunks.length} ส่วน${extractionSummary ? ` | ${extractionSummary}` : ""}`,
       title: documentMetadata.title || file.originalname,
       documentNumber: documentMetadata.documentNumber || "",
       documentDateText: documentMetadata.documentDateText || "",
@@ -225,11 +247,14 @@ async function processUploadInBackground(file, uploadRecord) {
       extractionMethod: extractionResult.extractionMethod || "",
       extractionQualityScore: extractionResult.qualityScore,
       extractionNotes: (extractionResult.notes || []).filter(Boolean).join(" | "),
-      isSearchable: indexingDecision.isSearchable,
-      qualityStatus: indexingDecision.qualityStatus,
+      isSearchable: indexingDecision.isSearchable && acceptedChunks.length > 0,
+      qualityStatus:
+        indexingDecision.isSearchable && acceptedChunks.length > 0
+          ? indexingDecision.qualityStatus
+          : "quarantined",
     });
 
-    if (!indexingDecision.isSearchable) {
+    if (!indexingDecision.isSearchable || acceptedChunks.length === 0) {
       LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
         status: "quarantined",
         processingMessage: `นำเข้าแบบกักกันแล้ว ยังไม่ถูกใช้ค้นหา${extractionSummary ? ` | ${extractionSummary}` : ""}`,
@@ -239,12 +264,17 @@ async function processUploadInBackground(file, uploadRecord) {
         documentDateText: documentRecord.documentDateText || "",
         documentSource: documentRecord.documentSource || "",
       });
+      console.info("PDF chunk quality filter summary:", {
+        filename: file.originalname,
+        documentId: documentRecord.id,
+        ...chunkFilterResult.summary,
+      });
       return;
     }
 
     const documentKeywords = await extractDocumentKeywords(extractedText);
     const chunkRecords = await mapWithConcurrency(
-      filteredChunks,
+      acceptedChunks,
       KEYWORD_CONCURRENCY,
       async (chunk) => {
         const chunkKeywords = await extractKeywords(chunk);
@@ -263,13 +293,7 @@ async function processUploadInBackground(file, uploadRecord) {
     console.info("PDF chunk quality filter summary:", {
       filename: file.originalname,
       documentId: documentRecord.id,
-      beforeCount: chunkFilterResult.summary.beforeCount,
-      afterCount: chunkFilterResult.summary.afterCount,
-      removedCount: chunkFilterResult.summary.removedCount,
-      threshold: chunkFilterResult.summary.threshold,
-      fallbackKept: chunkFilterResult.summary.fallbackKept,
-      keptScores: chunkFilterResult.summary.keptScores,
-      removedPreview: chunkFilterResult.summary.removedPreview,
+      ...chunkFilterResult.summary,
     });
 
     LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
