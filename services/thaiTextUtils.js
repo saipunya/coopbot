@@ -568,6 +568,15 @@ const RIGHTS_INTENT_PATTERNS = [
   "กู้ยืมเงิน",
 ];
 
+const TAX_QUERY_PATTERNS = [
+  "ภาษี",
+  "อากร",
+  "ภาษีเงินได้",
+  "ภาษีมูลค่าเพิ่ม",
+  "ภาษีธุรกิจเฉพาะ",
+  "ภาษีหัก ณ ที่จ่าย",
+];
+
 const DISSOLUTION_TOPIC_STRONG_SIGNALS = [
   "การเลิกสหกรณ์",
   "เลิกสหกรณ์",
@@ -605,6 +614,15 @@ function normalizeForSearch(text) {
     .replace(/\s+/g, " ")
     .trim(),
   );
+}
+
+function isTaxQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return TAX_QUERY_PATTERNS.some((phrase) => text.includes(normalizeForSearch(phrase).toLowerCase()));
 }
 
 function scoreDissolutionTopicPreference(query, text) {
@@ -753,11 +771,33 @@ function extractExplicitTopicHints(query) {
 function scoreQueryFocusAlignment(query, text) {
   const profile = getQueryFocusProfile(query);
   const normalizedText = normalizeForSearch(text).toLowerCase();
-  if (!profile.normalizedQuery || !normalizedText || !profile.topics.length) {
+  if (!profile.normalizedQuery || !normalizedText) {
     return 0;
   }
 
   let score = 0;
+
+  if (isTaxQuestion(query)) {
+    const hasTaxSignals = /(ภาษี|อากร|ภาษีเงินได้|ภาษีมูลค่าเพิ่ม|ภาษีธุรกิจเฉพาะ|ภาษีหัก ณ ที่จ่าย)/.test(normalizedText);
+    const hasFeeSignals = /(ค่าธรรมเนียม|ค่าจดทะเบียน|ยกเว้นค่าธรรมเนียม|ค่าธรรมเนียมการจดทะเบียน|ค่าธรรมเนียมการโอน|ค่าธรรมเนียมการจดทะเบียนอสังหาริมทรัพย์)/.test(
+      normalizedText,
+    );
+
+    if (hasTaxSignals) {
+      score += 26;
+    }
+
+    if (hasFeeSignals && !hasTaxSignals) {
+      score -= 34;
+    } else if (hasFeeSignals) {
+      score -= 8;
+    }
+  }
+
+  if (!profile.topics.length) {
+    score += 0;
+    return score;
+  }
 
   for (const topic of profile.topics) {
     const topicPhrases = [topic.primary, ...(topic.aliases || [])].filter(Boolean);
@@ -940,5 +980,6 @@ module.exports = {
   segmentWords,
   uniqueTokens,
   RIGHTS_INTENT_PATTERNS,
+  isTaxQuestion,
   scoreDissolutionTopicPreference,
 };

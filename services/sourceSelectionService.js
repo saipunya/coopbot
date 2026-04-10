@@ -11,6 +11,7 @@ const { normalizePlanCode } = require("./planService");
 const {
   getQueryFocusProfile,
   normalizeForSearch,
+  isTaxQuestion,
   scoreQueryFocusAlignment,
   uniqueTokens,
 } = require("./thaiTextUtils");
@@ -1327,6 +1328,47 @@ function isUnionFeeQuestion(message) {
   return /(ค่าบำรุง|บำรุง)/.test(normalized) && /สันนิบาต/.test(normalized);
 }
 
+function scoreTaxSourceFocus(item = {}, message = "") {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  const sourceText = buildSourceFocusSearchText(item);
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!sourceText || !isTaxQuestion(normalizedMessage)) {
+    return -80;
+  }
+
+  const hasTaxSignals = /(ภาษี|อากร|ภาษีเงินได้|ภาษีมูลค่าเพิ่ม|ภาษีธุรกิจเฉพาะ|ภาษีหัก ณ ที่จ่าย)/.test(sourceText);
+  const hasFeeSignals = /(ค่าธรรมเนียม|ค่าจดทะเบียน|ยกเว้นค่าธรรมเนียม|ค่าธรรมเนียมการจดทะเบียน|ค่าธรรมเนียมการโอน|ค่าธรรมเนียมการจดทะเบียนอสังหาริมทรัพย์)/.test(
+    sourceText,
+  );
+  const hasStrongTaxFeeContext =
+    /(ยกเว้นภาษี|ลดหย่อนภาษี|ได้รับยกเว้นภาษี|ภาษีของสหกรณ์|อากรแสตมป์|ภาษีมูลค่าเพิ่ม|ภาษีเงินได้)/.test(
+      sourceText,
+    );
+
+  let score = 0;
+
+  if (hasStrongTaxFeeContext) {
+    score += 60;
+  }
+
+  if (hasTaxSignals) {
+    score += 42;
+  }
+
+  if (hasFeeSignals && !hasTaxSignals) {
+    score -= 60;
+  } else if (hasFeeSignals) {
+    score -= 14;
+  }
+
+  if (sourceName === "tbl_laws" || sourceName === "tbl_glaws" || sourceName === "pdf_chunks" || sourceName === "documents") {
+    score += 8;
+  }
+
+  score += getMatchBaseScore(item) * 0.12;
+  return score;
+}
+
 function scoreUnionFeeSourceFocus(item = {}) {
   const sourceName = String(item.source || "").trim().toLowerCase();
   const sourceText = buildSourceFocusSearchText(item);
@@ -1642,6 +1684,27 @@ function rankSourcesForMessageFocus(items, message = "") {
         ...item,
         __messageFocusRank: scoreCompensationGovernanceSourceFocus(item, message),
       }))
+      .sort((left, right) => {
+        const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+        if (focusDiff !== 0) {
+          return focusDiff;
+        }
+        return Number(right.score || 0) - Number(left.score || 0);
+      })
+      .map((item) => {
+        const normalized = { ...item };
+        delete normalized.__messageFocusRank;
+        return normalized;
+      });
+  }
+
+  if (isTaxQuestion(message)) {
+    return ranked
+      .map((item) => ({
+        ...item,
+        __messageFocusRank: scoreTaxSourceFocus(item, message),
+      }))
+      .filter((item) => Number.isFinite(Number(item.__messageFocusRank)))
       .sort((left, right) => {
         const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
         if (focusDiff !== 0) {

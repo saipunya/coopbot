@@ -4,6 +4,7 @@ const {
   getQueryFocusProfile,
   hasExclusiveMeaningMismatch,
   normalizeForSearch,
+  isTaxQuestion: isTaxQuestionQuery,
   scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,
@@ -288,6 +289,116 @@ function isCoopDissolutionQuestion(message) {
   }
 
   return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก)/.test(text);
+}
+
+function isTaxQuestion(message) {
+  return isTaxQuestionQuery(message);
+}
+
+function buildTaxCautiousAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isTaxQuestion(message)) {
+    return "";
+  }
+
+  const candidateSources = dedupeSources(sources, 8);
+  const taxSignals = /(ภาษี|อากร|ภาษีเงินได้|ภาษีมูลค่าเพิ่ม|ภาษีธุรกิจเฉพาะ|ภาษีหัก ณ ที่จ่าย)/;
+  const feeSignals = /(ค่าธรรมเนียม|ค่าจดทะเบียน|ยกเว้นค่าธรรมเนียม|ค่าธรรมเนียมการจดทะเบียน|ค่าธรรมเนียมการโอน|ค่าธรรมเนียมการจดทะเบียนอสังหาริมทรัพย์)/;
+
+  let directTaxEvidence = null;
+  let feeOnlyEvidence = null;
+
+  for (const source of candidateSources) {
+    const text = normalizeForSearch(buildSourceSearchText(source)).toLowerCase();
+    if (!text) {
+      continue;
+    }
+
+    if (taxSignals.test(text)) {
+      directTaxEvidence = source;
+      break;
+    }
+
+    if (!feeOnlyEvidence && feeSignals.test(text)) {
+      feeOnlyEvidence = source;
+    }
+  }
+
+  if (directTaxEvidence) {
+    return "";
+  }
+
+  const cautionLines = [
+    "จากข้อมูลที่พบ ยังไม่พบข้อความที่ระบุเรื่องภาษีของสหกรณ์โดยตรง",
+  ];
+
+  if (feeOnlyEvidence) {
+    cautionLines.push("แต่พบข้อความเกี่ยวกับค่าธรรมเนียมหรือการยกเว้นค่าธรรมเนียม ซึ่งไม่ใช่เรื่องภาษีโดยตรง");
+  } else {
+    cautionLines.push("จึงยังสรุปเรื่องภาษีของสหกรณ์จากหลักฐานชุดนี้ไม่ได้");
+  }
+
+  cautionLines.push("หากต้องการ ผมสามารถช่วยค้นบทบัญญัติเรื่องภาษีหรืออากรที่ตรงประเด็นต่อได้");
+
+  const referenceSources = feeOnlyEvidence ? [feeOnlyEvidence] : [];
+
+  return [
+    buildParagraphSummary(cautionLines, [], false, { summaryLimit: 3 }),
+    buildReferenceSection(referenceSources, 1),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function cleanupAnswerText(answerText, sources = [], options = {}) {
+  const raw = normalizeParagraph(answerText);
+  if (!raw) {
+    return "";
+  }
+
+  const cleanedLines = [];
+  const seen = [];
+
+  for (const line of mergeProtectedYearLines(
+    raw
+      .split("\n")
+      .map((item) => cleanLine(item))
+      .filter(Boolean),
+  )) {
+    if (isSectionHeading(line)) {
+      if (cleanedLines.some((existing) => normalizeComparisonText(existing) === normalizeComparisonText(line))) {
+        continue;
+      }
+      cleanedLines.push(line);
+      seen.push(line);
+      continue;
+    }
+
+    if (seen.some((existing) => linesLookSemanticallyDuplicate(existing, line))) {
+      continue;
+    }
+
+    cleanedLines.push(line);
+    seen.push(line);
+  }
+
+  while (cleanedLines.length > 0) {
+    const lastLine = cleanedLines[cleanedLines.length - 1];
+    const normalizedLast = normalizeComparisonText(lastLine);
+    const looksLikeFragment =
+      normalizedLast.length > 0 &&
+      normalizedLast.length < 14 &&
+      !/[.!?。:]$/.test(lastLine) &&
+      !/(มาตรา|ข้อ|ภาษี|อากร|ค่าธรรมเนียม|สรุปสาระสำคัญ|รายละเอียดเพิ่มเติม)/.test(lastLine);
+
+    if (!looksLikeFragment) {
+      break;
+    }
+
+    cleanedLines.pop();
+  }
+
+  return cleanedLines.join("\n").trim();
 }
 
 function isBroadVinichaiListingQuestion(message) {
@@ -2052,6 +2163,16 @@ function filterSourcesByAnswerFocus(sources, options = {}) {
     }
   }
 
+  if (isTaxQuestion(message)) {
+    const taxFocusedSources = normalizedSources.filter((source) => {
+      return scoreQueryFocusAlignment(message, buildSourceSearchText(source)) >= 14;
+    });
+
+    if (taxFocusedSources.length > 0) {
+      return taxFocusedSources;
+    }
+  }
+
   if (options.amountMode) {
     const amountFocused = normalizedSources.filter((source) => sourceMatchesAmountFocus(source, message));
     if (amountFocused.length > 0) {
@@ -2370,13 +2491,16 @@ function finalizeGeneratedAnswer(answerText, explainMode, options = {}) {
     followUpPrompt: shape.followUpPrompt,
   });
 
-  return [
-    rebuilt,
-    referenceText ? `แหล่งอ้างอิง:\n${referenceText}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
+  return cleanupAnswerText(
+    [
+      rebuilt,
+      referenceText ? `แหล่งอ้างอิง:\n${referenceText}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    sources,
+    options,
+  );
 }
 
 function extractAmountHighlights(sources, limit = 4) {
@@ -3239,15 +3363,19 @@ function buildCompactDatabaseOnlyAnswer(sources, options = {}) {
     return getSourceDisplayPriority(right?.source, options.questionIntent) - getSourceDisplayPriority(left?.source, options.questionIntent);
   });
 
-  return [
-    buildParagraphSummary(orderedSummaryLines, detailLines, explainMode, {
-      summaryLimit,
-      detailLimit: Math.max(detailLimit, 1),
-    }),
-    buildReferenceSection(referenceSources, Math.min(referenceSources.length, effectiveReferenceLimit)),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  return cleanupAnswerText(
+    [
+      buildParagraphSummary(orderedSummaryLines, detailLines, explainMode, {
+        summaryLimit,
+        detailLimit: Math.max(detailLimit, 1),
+      }),
+      buildReferenceSection(referenceSources, Math.min(referenceSources.length, effectiveReferenceLimit)),
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    summarySources,
+    options,
+  );
 }
 
 function buildDatabaseOnlyAnswer(sources, options = {}) {
@@ -3764,9 +3892,13 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
     },
   );
 
-  return [decorateConversationalAnswer(answerText, options), buildReferenceSection(topSources, referenceLimit)]
-    .filter(Boolean)
-    .join("\n\n");
+  return cleanupAnswerText(
+    [decorateConversationalAnswer(answerText, options), buildReferenceSection(topSources, referenceLimit)]
+      .filter(Boolean)
+      .join("\n\n"),
+    topSources,
+    options,
+  );
 }
 
 function filterHighQualitySources(sources, topScore, limit = 4, options = {}) {
@@ -3880,6 +4012,16 @@ async function generateChatSummary(message, sources, options = {}) {
   captureContinuationDiagnostics(options.answerDiagnostics, effectiveSources, promptProfile);
   const focusedAnswerSources =
     answerInputSources.length > 0 ? answerInputSources : effectiveSources;
+
+  const taxGuardAnswer = buildTaxCautiousAnswer(focusedAnswerSources, {
+    ...options,
+    originalMessage: focusMessage,
+    message,
+  });
+  if (taxGuardAnswer) {
+    return finalizeSummary(taxGuardAnswer);
+  }
+
   const unionFeeFocusedAnswer = buildUnionFeeFocusedAnswer(
     focusedAnswerSources,
     {
