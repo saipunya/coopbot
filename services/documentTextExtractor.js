@@ -7,6 +7,7 @@ const mammoth = require("mammoth");
 const WordExtractor = require("word-extractor");
 const { createCanvas } = require("@napi-rs/canvas");
 const { createWorker } = require("tesseract.js");
+const { normalizeThaiPdfText } = require("./thaiPdfTextNormalizer");
 
 const extractor = new WordExtractor();
 const execFileAsync = promisify(execFile);
@@ -158,17 +159,158 @@ function shouldFallbackToPdfOcr(text) {
   return analyzeExtractedText(text).shouldFallbackToOcr;
 }
 
-function chunkText(text, maxLength = 1400) {
-  const paragraphs = normalizeText(text)
+function splitTextIntoLegalSections(text) {
+  const normalized = normalizeText(text);
+  if (!normalized) {
+    return [];
+  }
+
+  const headingPattern = /(มาตรา\s*[0-9๐-๙]+(?:\s*(?:ทวิ|ตรี|จัตวา|เบญจ))?|ข้อ\s*[0-9๐-๙]+(?:\s*(?:ทวิ|ตรี|จัตวา|เบญจ))?)/g;
+  const headings = [];
+  let match = headingPattern.exec(normalized);
+
+  while (match) {
+    headings.push({
+      index: match.index,
+      text: String(match[0] || "").trim(),
+    });
+    match = headingPattern.exec(normalized);
+  }
+
+  if (headings.length === 0) {
+    return [];
+  }
+
+  const sections = [];
+  if (headings[0].index > 0) {
+    const intro = normalized.slice(0, headings[0].index).trim();
+    if (intro) {
+      sections.push(intro);
+    }
+  }
+
+  for (let index = 0; index < headings.length; index += 1) {
+    const current = headings[index];
+    const next = headings[index + 1];
+    const start = current.index;
+    const end = next ? next.index : normalized.length;
+    const sectionText = normalized.slice(start, end).trim();
+    if (sectionText) {
+      sections.push(sectionText);
+    }
+  }
+
+  return sections.filter(Boolean);
+}
+
+function splitLargeSection(section, maxLength) {
+  const paragraphs = String(section || "")
     .split(/\n{2,}/)
     .map((part) => part.trim())
     .filter(Boolean);
 
+  if (paragraphs.length === 0) {
+    return [];
+  }
+
+  const chunks = [];
+
+  for (const paragraph of paragraphs) {
+    if (paragraph.length <= maxLength) {
+      chunks.push(paragraph);
+      continue;
+    }
+
+    const sentenceParts = paragraph
+      .split(/(?<=[.!?。！？])\s+|\n+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (sentenceParts.length > 1) {
+      let currentSentenceChunk = "";
+
+      for (const sentence of sentenceParts) {
+        if (sentence.length > maxLength) {
+          if (currentSentenceChunk) {
+            chunks.push(currentSentenceChunk.trim());
+            currentSentenceChunk = "";
+          }
+
+          for (let offset = 0; offset < sentence.length; offset += maxLength) {
+            chunks.push(sentence.slice(offset, offset + maxLength).trim());
+          }
+          continue;
+        }
+
+        const candidate = currentSentenceChunk
+          ? `${currentSentenceChunk}\n${sentence}`
+          : sentence;
+
+        if (candidate.length > maxLength) {
+          if (currentSentenceChunk) {
+            chunks.push(currentSentenceChunk.trim());
+          }
+          currentSentenceChunk = sentence;
+        } else {
+          currentSentenceChunk = candidate;
+        }
+      }
+
+      if (currentSentenceChunk) {
+        chunks.push(currentSentenceChunk.trim());
+      }
+      continue;
+    }
+
+    for (let offset = 0; offset < paragraph.length; offset += maxLength) {
+      chunks.push(paragraph.slice(offset, offset + maxLength).trim());
+    }
+  }
+
+  return chunks.filter(Boolean);
+}
+
+function chunkText(text, maxLength = 1400) {
+  const normalizedText = normalizeText(text);
+  const legalSections = splitTextIntoLegalSections(normalizedText);
+  const sourceBlocks = legalSections.length > 0
+    ? legalSections
+    : normalizedText
+        .split(/\n{2,}/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+  if (legalSections.length > 0) {
+    const chunks = [];
+
+    for (const block of sourceBlocks) {
+      if (block.length <= maxLength) {
+        chunks.push(block);
+        continue;
+      }
+
+      chunks.push(...splitLargeSection(block, maxLength));
+    }
+
+    return chunks.filter(Boolean);
+  }
+
   const chunks = [];
   let currentChunk = "";
 
-  for (const paragraph of paragraphs) {
+  for (const paragraph of sourceBlocks) {
     if (paragraph.length > maxLength) {
+      if (legalSections.length > 0) {
+        if (currentChunk) {
+          chunks.push(currentChunk.trim());
+          currentChunk = "";
+        }
+
+        const sectionChunks = splitLargeSection(paragraph, maxLength);
+        chunks.push(...sectionChunks);
+        continue;
+      }
+
       if (currentChunk) {
         chunks.push(currentChunk.trim());
         currentChunk = "";
@@ -240,7 +382,7 @@ async function extractPdfTextLayer(document) {
     pages.push(lines.map((line) => line.parts.join(" ")).join("\n"));
   }
 
-  return normalizeText(pages.join("\n\n"));
+  return normalizeThaiPdfText(normalizeText(pages.join("\n\n")));
 }
 
 async function getOcrWorker() {
@@ -279,7 +421,7 @@ async function extractPdfTextWithOcr(document) {
     pages.push(result?.data?.text || "");
   }
 
-  return normalizeText(pages.join("\n\n"));
+  return normalizeThaiPdfText(normalizeText(pages.join("\n\n")));
 }
 
 function buildOcrmypdfArgs(inputPath, outputPath) {
@@ -391,10 +533,11 @@ async function extractPdfTextDetailed(filePath) {
 
     if (parseBooleanEnv("PDF_FORCE_OCR")) {
       const ocrText = await extractPdfTextWithOcr(document);
-      const ocrAnalysis = analyzeExtractedText(ocrText);
+      const normalizedOcrText = normalizeThaiPdfText(ocrText);
+      const ocrAnalysis = analyzeExtractedText(normalizedOcrText);
 
       return {
-        text: ocrText,
+        text: normalizedOcrText,
         extractionMethod: preprocessing.applied ? "ocrmypdf+tesseract_ocr" : "tesseract_ocr",
         qualityScore: ocrAnalysis.qualityScore,
         notes: [...notes, ...ocrAnalysis.notes],
@@ -402,11 +545,12 @@ async function extractPdfTextDetailed(filePath) {
     }
 
     const textLayer = await extractPdfTextLayer(document);
-    const textLayerAnalysis = analyzeExtractedText(textLayer);
+    const normalizedTextLayer = normalizeThaiPdfText(textLayer);
+    const textLayerAnalysis = analyzeExtractedText(normalizedTextLayer);
 
     if (!textLayerAnalysis.shouldFallbackToOcr) {
       return {
-        text: textLayerAnalysis.normalizedText,
+        text: normalizedTextLayer,
         extractionMethod: preprocessing.applied ? "ocrmypdf_text_layer" : "pdf_text_layer",
         qualityScore: textLayerAnalysis.qualityScore,
         notes: [...notes, ...textLayerAnalysis.notes],
@@ -414,11 +558,12 @@ async function extractPdfTextDetailed(filePath) {
     }
 
     const ocrText = await extractPdfTextWithOcr(document);
-    const ocrAnalysis = analyzeExtractedText(ocrText);
+    const normalizedOcrText = normalizeThaiPdfText(ocrText);
+    const ocrAnalysis = analyzeExtractedText(normalizedOcrText);
     const shouldPreferOcr = ocrAnalysis.qualityScore >= textLayerAnalysis.qualityScore;
 
     return {
-      text: shouldPreferOcr ? ocrText : textLayerAnalysis.normalizedText,
+      text: shouldPreferOcr ? normalizedOcrText : normalizedTextLayer,
       extractionMethod: shouldPreferOcr
         ? preprocessing.applied
           ? "ocrmypdf+tesseract_ocr"
@@ -491,6 +636,7 @@ async function extractTextFromFile(file) {
 
 module.exports = {
   chunkText,
+  analyzeExtractedText,
   extractTextFromFile,
   extractTextResultFromFile,
   normalizeText,
