@@ -128,6 +128,14 @@ function isAmbiguousFollowUpQuestion(message, contextualCandidate = {}) {
     return false;
   }
 
+  if (
+    /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|ทั่วไปเกี่ยวกับ|เกี่ยวกับสหกรณ์|เบื้องต้น|ภาพรวม|สรุป|นิยาม|ความหมาย|หมายถึง|คืออะไร|สหกรณ์คืออะไร|ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+
   if (contextualCandidate?.usedContext) {
     return true;
   }

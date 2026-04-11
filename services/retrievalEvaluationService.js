@@ -5,7 +5,12 @@ const {
   scoreMatchSet,
   sortByScore,
 } = require("./sourceSelectionService");
-const { extractExplicitTopicHints, normalizeForSearch, detectTopicFamily } = require("./thaiTextUtils");
+const {
+  extractExplicitTopicHints,
+  normalizeForSearch,
+  detectTopicFamily,
+  scoreQueryFocusAlignment,
+} = require("./thaiTextUtils");
 
 const AUTHORITATIVE_SOURCES = new Set([
   "tbl_laws",
@@ -84,6 +89,43 @@ const THRESHOLD_PROFILES = {
     preferDocumentSource: false,
   },
 };
+
+function isOverviewQuery(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|ทั่วไปเกี่ยวกับ|เกี่ยวกับสหกรณ์|เบื้องต้น|ภาพรวม|สรุป|นิยาม|ความหมาย|หมายถึง|สหกรณ์คืออะไร|ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(
+    normalized,
+  );
+}
+
+function hasExplicitLegalIntent(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+|นายทะเบียน|อำนาจหน้าที่|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|พ\.ศ\./.test(
+    normalized,
+  );
+}
+
+function buildSourceFocusText(item = {}) {
+  return normalizeForSearch(
+    [
+      item?.reference,
+      item?.title,
+      item?.keyword,
+      item?.content,
+      item?.comment,
+      item?.chunk_text,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -197,6 +239,8 @@ function getMessageProfile(message = "") {
 function resolveRetrievalThresholdProfile(questionIntent = "general", options = {}) {
   const profile = THRESHOLD_PROFILES[questionIntent] || THRESHOLD_PROFILES.general;
   const messageProfile = getMessageProfile(options.effectiveMessage || options.message || "");
+  const overviewQuery = isOverviewQuery(options.effectiveMessage || options.message || "");
+  const legalQuery = hasExplicitLegalIntent(options.effectiveMessage || options.message || "");
 
   return {
     intent: questionIntent || "general",
@@ -209,10 +253,16 @@ function resolveRetrievalThresholdProfile(questionIntent = "general", options = 
     minTopScore: profile.minTopScore,
     minAggregateScore: profile.minAggregateScore,
     minSelectedConfidence: profile.minSelectedConfidence,
-    minTopFocusScore: profile.minTopFocusScore,
+    minTopFocusScore:
+      overviewQuery && !legalQuery && (questionIntent === "general" || questionIntent === "short_answer")
+        ? Math.max(profile.minTopFocusScore, 18)
+        : profile.minTopFocusScore,
     strongSingleSourceTopScore: profile.strongSingleSourceTopScore,
     requirePrimaryLawSource: Boolean(profile.requirePrimaryLawSource),
-    preferDocumentSource: Boolean(profile.preferDocumentSource),
+    preferDocumentSource:
+      overviewQuery && !legalQuery && (questionIntent === "general" || questionIntent === "short_answer")
+        ? true
+        : Boolean(profile.preferDocumentSource),
   };
 }
 
@@ -246,7 +296,14 @@ function collectRetrievalMetrics(payload = {}, profile = resolveRetrievalThresho
     selectedSources.map((item) => item?.rankingTrace?.matchedReference || ""),
   );
   const focusScores = selectedSources
-    .map((item) => toNumber(item?.rankingTrace?.focusAlignmentRaw, NaN))
+    .map((item) => {
+      const traced = toNumber(item?.rankingTrace?.focusAlignmentRaw, NaN);
+      if (Number.isFinite(traced)) {
+        return traced;
+      }
+
+      return toNumber(scoreQueryFocusAlignment(payload.effectiveMessage || payload.message || "", buildSourceFocusText(item)), 0);
+    })
     .filter((value) => Number.isFinite(value));
   const topFocusScore = focusScores.length > 0 ? Math.max(...focusScores) : 0;
   const avgFocusScore =
@@ -572,7 +629,7 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
   const meetsFocus =
     metrics.topFocusScore >= profile.minTopFocusScore ||
     metrics.matchedReferenceCount > 0 ||
-    metrics.authoritativeCount > 0;
+    (profile.preferDocumentSource ? metrics.documentCount > 0 && metrics.topFocusScore >= Math.max(18, profile.minTopFocusScore) : metrics.authoritativeCount > 0);
   const meetsPrimaryLawRequirement =
     !profile.requirePrimaryLawSource ||
     metrics.primaryLawCount > 0 ||

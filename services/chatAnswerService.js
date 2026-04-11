@@ -2635,6 +2635,9 @@ function shouldDisplayContentHeading(heading, options = {}) {
 function buildSourceContentFallbackLines(sources, limit = 5, options = {}) {
   const lines = [];
   const unionFeeQuestion = options.amountMode === true && isUnionFeeQuestion(options.originalMessage || options.message || "");
+  const overviewQuery =
+    isOverviewGroundingQuery(options.originalMessage || options.message || "") &&
+    !hasExplicitLegalGroundingIntent(options.originalMessage || options.message || "");
 
   for (const source of dedupeSources(sources, Math.max(limit * 2, 8))) {
     if (!sourceHasSubstantiveContent(source)) {
@@ -2653,18 +2656,24 @@ function buildSourceContentFallbackLines(sources, limit = 5, options = {}) {
     );
 
     if (extractedSegments.length > 0) {
-      lines.push(...extractedSegments);
+      lines.push(
+        ...extractedSegments
+          .map((segment) => (overviewQuery ? trimOverviewLegalTail(segment) : segment))
+          .filter((segment) => segment && (!overviewQuery || !lineLooksLikeOverviewLegalNoise(segment))),
+      );
       continue;
     }
 
     const fallbackText = cleanLine(String(source.content || source.chunk_text || "").slice(0, options.explainMode ? 320 : 220));
+    const normalizedFallbackText = overviewQuery ? trimOverviewLegalTail(fallbackText) : fallbackText;
     if (
-      fallbackText &&
-      !isNoisyLine(fallbackText) &&
-      !lineLooksLikeSourceMetadata(fallbackText, [source]) &&
+      normalizedFallbackText &&
+      (!overviewQuery || !lineLooksLikeOverviewLegalNoise(normalizedFallbackText)) &&
+      !isNoisyLine(normalizedFallbackText) &&
+      !lineLooksLikeSourceMetadata(normalizedFallbackText, [source]) &&
       (!unionFeeQuestion || lineMatchesUnionFeeFocus(fallbackText))
     ) {
-      lines.push(fallbackText);
+      lines.push(normalizedFallbackText);
     }
   }
 
@@ -3954,31 +3963,37 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
   const focusTokens = getFocusQueryTokens(message);
   const focusProfile = getQueryFocusProfile(message);
   const unionFeeQuestion = isUnionFeeQuestion(message);
+  const overviewQuery = isOverviewGroundingQuery(message) && !hasExplicitLegalGroundingIntent(message);
 
   for (const source of dedupeSources(sources, 10)) {
     const joined = [source.content, source.chunk_text, source.comment].filter(Boolean).join("\n");
     const segments = splitContentSegments(joined);
 
     for (const segment of segments) {
-      if (segment.length < 18 || isNoisyLine(segment)) {
+      const candidateSegment = overviewQuery ? trimOverviewLegalTail(segment) : segment;
+      if (candidateSegment.length < 18 || isNoisyLine(candidateSegment)) {
         continue;
       }
 
-      if (lineLooksLikeSourceMetadata(segment, [source])) {
+      if (lineLooksLikeSourceMetadata(candidateSegment, [source])) {
         continue;
       }
 
-      if (unionFeeQuestion && !lineMatchesUnionFeeFocus(segment)) {
+      if (overviewQuery && lineLooksLikeOverviewLegalNoise(candidateSegment)) {
+        continue;
+      }
+
+      if (unionFeeQuestion && !lineMatchesUnionFeeFocus(candidateSegment)) {
         continue;
       }
 
       let score = 0;
-      const queryScore = scoreLineByQuery(segment, message);
-      const focusHit = focusTokens.length > 0 ? hasFocusTokenMatch(segment, message) : false;
+      const queryScore = scoreLineByQuery(candidateSegment, message);
+      const focusHit = focusTokens.length > 0 ? hasFocusTokenMatch(candidateSegment, message) : false;
       if (source.source === "admin_knowledge") score += 10;
-      if (/ต้อง|ไม่ต้อง|ให้.*ชำระ|ให้.*จ่าย|มีหน้าที่|ต้องชำระ|ต้องจ่าย|จำเป็นต้อง/.test(segment)) score += 8;
-      if (/ค่าบำรุง|สันนิบาต/.test(segment)) score += 7;
-      if (/บาท|ร้อยละ|เปอร์เซ็นต์|%/.test(segment)) score += 5;
+      if (/ต้อง|ไม่ต้อง|ให้.*ชำระ|ให้.*จ่าย|มีหน้าที่|ต้องชำระ|ต้องจ่าย|จำเป็นต้อง/.test(candidateSegment)) score += 8;
+      if (/ค่าบำรุง|สันนิบาต/.test(candidateSegment)) score += 7;
+      if (/บาท|ร้อยละ|เปอร์เซ็นต์|%/.test(candidateSegment)) score += 5;
       if (source.reference || source.title || source.keyword) score += 2;
       if (focusHit) score += 8;
       score += queryScore;
@@ -3989,8 +4004,8 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
 
       if (
         focusProfile.intent === "qualification" &&
-        !/(คุณสมบัติ|ลักษณะต้องห้าม|วิธีการรับสมัคร|ขาดจากการเป็น|ขาดคุณสมบัติ|ไม่มีสิทธิ)/.test(segment) &&
-        scoreQueryFocusAlignment(message, segment) < 30
+        !/(คุณสมบัติ|ลักษณะต้องห้าม|วิธีการรับสมัคร|ขาดจากการเป็น|ขาดคุณสมบัติ|ไม่มีสิทธิ)/.test(candidateSegment) &&
+        scoreQueryFocusAlignment(message, candidateSegment) < 30
       ) {
         continue;
       }
@@ -3998,9 +4013,9 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
       if (
         focusProfile.intent === "duty" &&
         !/(อำนาจหน้าที่|มีหน้าที่|หน้าที่ของ|หน้าที่ในการ|รายงานเสนอต่อที่ประชุมใหญ่|ทำรายงานเสนอต่อที่ประชุมใหญ่|ตรวจสอบกิจการของสหกรณ์)/.test(
-          segment,
+          candidateSegment,
         ) &&
-        scoreQueryFocusAlignment(message, segment) < 30
+        scoreQueryFocusAlignment(message, candidateSegment) < 30
       ) {
         continue;
       }
@@ -4008,22 +4023,22 @@ function extractSubstantiveSegments(sources, limit = 5, options = {}) {
       if (
         focusProfile.intent === "rights" &&
         !/(สิทธิ|สิทธิออกเสียง|องค์ประชุม|เป็นกรรมการ|กู้ยืมเงิน|สิทธิและหน้าที่|ถือหุ้นได้|รับเลือกตั้ง)/.test(
-          segment,
+          candidateSegment,
         ) &&
-        scoreQueryFocusAlignment(message, segment) < 30
+        scoreQueryFocusAlignment(message, candidateSegment) < 30
       ) {
         continue;
       }
 
       if (requireFocus && source.source !== "admin_knowledge") {
-        if (queryScore < 2 && !hasCoreLegalSignal(segment)) {
+        if (queryScore < 2 && !hasCoreLegalSignal(candidateSegment)) {
           continue;
         }
       }
 
       scored.push({
         score,
-        text: segment,
+        text: candidateSegment,
       });
     }
   }
@@ -4448,6 +4463,7 @@ function hasExplicitLegalGroundingIntent(message = "") {
 }
 
 function sourceLooksLikeLegalSection(source = {}) {
+  const sourceName = String(source?.source || "").trim().toLowerCase();
   const text = normalizeForSearch(
     [
       source?.title,
@@ -4462,6 +4478,11 @@ function sourceLooksLikeLegalSection(source = {}) {
   ).toLowerCase();
 
   if (!text) {
+    return false;
+  }
+
+  if ((sourceName === "documents" || sourceName === "pdf_chunks") && sourceLooksOverviewFriendly(source)) {
+    // Avoid dropping definition/benefit chunks that mention the governing law in passing.
     return false;
   }
 
@@ -4488,9 +4509,39 @@ function sourceLooksOverviewFriendly(source = {}) {
     return false;
   }
 
-  return /(ความรู้ทั่วไป|ภาพรวม|เบื้องต้น|นิยาม|ความหมาย|หมายถึง|คือ|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ)/.test(
+  return /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|ภาพรวม|เบื้องต้น|นิยาม|ความหมาย|หมายถึง|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ|สรุป)/.test(
     text,
   );
+}
+
+function lineLooksLikeOverviewLegalNoise(line = "") {
+  const normalized = normalizeForSearch(String(line || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  if (/^(?:พ\.?ศ\.?\s*)?\d{4}\b/.test(normalized)) {
+    return true;
+  }
+
+  return /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|นายทะเบียน|อำนาจหน้าที่|พระราชบัญญัติ|กฎกระทรวง|ข้อบังคับ|ระเบียบ)/.test(
+    normalized,
+  );
+}
+
+function trimOverviewLegalTail(line = "") {
+  const text = cleanLine(String(line || ""));
+  if (!text) {
+    return "";
+  }
+
+  const splitIndex = text.search(/(?:มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|นายทะเบียน|อำนาจหน้าที่|พระราชบัญญัติ|กฎกระทรวง|ข้อบังคับ|ระเบียบ)/);
+  if (splitIndex <= 0) {
+    return text;
+  }
+
+  const trimmed = cleanLine(text.slice(0, splitIndex)).replace(/(?:ตาม|โดย|ต่อ|แห่ง|เรื่อง)\s*$/u, "").trim();
+  return trimmed.length >= 24 ? trimmed : "";
 }
 
 function narrowSourcesForFocusedGrounding(sources, message = "", options = {}) {

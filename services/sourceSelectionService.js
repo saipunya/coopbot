@@ -745,24 +745,35 @@ function rerankRetrievedMatches(matches, message, options = {}) {
       // This reduces "มาตรา 16"/"นายทะเบียน" chunks contaminating general answers.
       const sourceName = String(item.source || "").trim().toLowerCase();
       const focusText = normalizeForSearch(buildSourceFocusSearchText(item)).toLowerCase();
+      const normalizedTitle = normalizeForSearch(String(item.title || item.reference || "")).toLowerCase();
       const isLegalishChunk =
         /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(
           focusText,
         );
       const isOverviewFriendlyChunk =
-        /(ความรู้ทั่วไป|ภาพรวม|เบื้องต้น|นิยาม|ความหมาย|หมายถึง|คือ|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ)/.test(
+        /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|ภาพรวม|เบื้องต้น|นิยาม|ความหมาย|หมายถึง|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ|สรุป)/.test(
           focusText,
         );
+      const mixedOverviewDocument =
+        ["documents", "pdf_chunks"].includes(sourceName) && isOverviewFriendlyChunk;
       const legalContaminationPenalty =
         overviewStrict && (sourceName === "tbl_laws" || sourceName === "tbl_glaws" || sourceName === "tbl_vinichai")
           ? -120
-          : overviewStrict && isLegalishChunk
+          : overviewStrict && isLegalishChunk && !mixedOverviewDocument
             ? -70
             : 0;
       const overviewBoost = overviewStrict && isOverviewFriendlyChunk ? 18 : 0;
+      const overviewTitleBoost =
+        overviewStrict && /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|เกี่ยวกับสหกรณ์|ภาพรวม|เบื้องต้น)/.test(normalizedTitle)
+          ? 14
+          : 0;
+      const overviewTopicMismatchPenalty =
+        overviewStrict && /(เลิกสหกรณ์|ชำระบัญชี|เลิกกลุ่มเกษตรกร|ชำระบัญชีกลุ่มเกษตรกร)/.test(normalizedTitle)
+          ? -36
+          : 0;
       const titleBoost =
         overviewStrict && /ความรู้ทั่วไป/.test(normalizeForSearch(String(message || "")).toLowerCase()) &&
-        /ความรู้ทั่วไป/.test(normalizeForSearch(String(item.title || item.reference || "")).toLowerCase())
+        /ความรู้ทั่วไป/.test(normalizedTitle)
           ? 12
           : 0;
       const finalScore = Math.round(
@@ -777,6 +788,8 @@ function rerankRetrievedMatches(matches, message, options = {}) {
   offTopicPenalty +
   legalContaminationPenalty +
   overviewBoost +
+  overviewTitleBoost +
+  overviewTopicMismatchPenalty +
   titleBoost,
 );
 
@@ -790,6 +803,8 @@ function rerankRetrievedMatches(matches, message, options = {}) {
           offTopicPenalty,
           legalContaminationPenalty,
           overviewBoost,
+          overviewTitleBoost,
+          overviewTopicMismatchPenalty,
           titleBoost,
           retrievalPriority: Number(item.retrievalPriority || 0),
           retrievalWeight,
@@ -945,6 +960,44 @@ function hasLegalIntent(message = "") {
   return /มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+|นายทะเบียน|อำนาจหน้าที่|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|พ\.ศ\./.test(
     text,
   );
+}
+
+function isStrongLegalMarkerText(text = "") {
+  return /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(
+    normalizeForSearch(String(text || "")).toLowerCase(),
+  );
+}
+
+function isOverviewFriendlyText(text = "") {
+  return /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|ภาพรวม|เบื้องต้น|นิยาม|ความหมาย|หมายถึง|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ|สรุป)/.test(
+    normalizeForSearch(String(text || "")).toLowerCase(),
+  );
+}
+
+function isOverviewSafeCandidate(item = {}) {
+  const text = buildSourceFocusSearchText(item);
+  if (!text) {
+    return false;
+  }
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  const overviewFriendly = isOverviewFriendlyText(text);
+  const strongLegalMarker = isStrongLegalMarkerText(text);
+
+  if (sourceName === "documents" || sourceName === "pdf_chunks") {
+    // Mixed Thai source docs often mention the law in a definition paragraph.
+    // Keep overview-friendly document chunks; hard legal sections are already penalized in ranking.
+    return overviewFriendly || !strongLegalMarker;
+  }
+
+  if (strongLegalMarker) {
+    return false;
+  }
+
+  if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion" || sourceName === "knowledge_base") {
+    return overviewFriendly;
+  }
+
+  return true;
 }
 
 function isLawPrioritySearch(message) {
@@ -2247,29 +2300,6 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
     ? plan.totalLimit
     : Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
-  const isStrongLegalMarker = (text = "") =>
-    /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(
-      normalizeForSearch(String(text || "")).toLowerCase(),
-    );
-  const isOverviewFriendly = (text = "") =>
-    /(ความรู้ทั่วไป|ภาพรวม|เบื้องต้น|นิยาม|ความหมาย|หมายถึง|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ|สรุป)/.test(
-      normalizeForSearch(String(text || "")).toLowerCase(),
-    );
-  const isOverviewSafeCandidate = (item = {}) => {
-    const text = buildSourceFocusSearchText(item);
-    if (!text) {
-      return false;
-    }
-    if (isStrongLegalMarker(text)) {
-      return false;
-    }
-    // For overview queries, only accept "knowledge-like" entries if they look like definitions/benefits/overview.
-    const sourceName = String(item.source || "").trim().toLowerCase();
-    if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion" || sourceName === "knowledge_base") {
-      return isOverviewFriendly(text);
-    }
-    return true;
-  };
   const pushUnique = (items, limit) => {
     const filtered = overviewStrict ? (items || []).filter((item) => isOverviewSafeCandidate(item)) : items;
     rankSourcesForMessageFocus(filtered, focusMessage)
@@ -2358,6 +2388,8 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
 
 function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
   const focusMessage = options.originalMessage || options.message || "";
+  const overviewQuery = isGeneralOverviewQuery(focusMessage);
+  const legalQuery = hasLegalIntent(focusMessage);
   const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(
     focusMessage,
     options.target || "all",
@@ -2413,6 +2445,21 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
       },
     };
   case "short_answer":
+    if (overviewQuery && !legalQuery) {
+      return {
+        totalLimit: 3,
+        quotas: {
+          admin_knowledge: 1,
+          knowledge_suggestion: 0,
+          tbl_laws: 0,
+          tbl_glaws: 0,
+          pdf_chunks: 2,
+          tbl_vinichai: 0,
+          documents: 1,
+          knowledge_base: 0,
+        },
+      };
+    }
     return {
       totalLimit: 5,
       quotas: {
@@ -2484,6 +2531,21 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
       },
     };
   default:
+    if (overviewQuery && !legalQuery) {
+      return {
+        totalLimit: 3,
+        quotas: {
+          admin_knowledge: 1,
+          knowledge_suggestion: 0,
+          tbl_laws: 0,
+          tbl_glaws: 0,
+          pdf_chunks: 2,
+          tbl_vinichai: 0,
+          documents: 1,
+          knowledge_base: 0,
+        },
+      };
+    }
     return {
       totalLimit: 8,
       quotas: {
@@ -2510,6 +2572,8 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
   );
 
   const focusMessage = options.originalMessage || options.message || "";
+  const overviewQuery = isGeneralOverviewQuery(focusMessage);
+  const legalQuery = hasLegalIntent(focusMessage);
 
   if (
     isDissolutionPrioritySearch(focusMessage) ||
@@ -2554,6 +2618,18 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
   }
 
   if (intent === "short_answer") {
+    if (overviewQuery && !legalQuery) {
+      return [
+        "pdf_chunks",
+        "documents",
+        "admin_knowledge",
+        "knowledge_suggestion",
+        "knowledge_base",
+        "tbl_vinichai",
+        "tbl_laws",
+        "tbl_glaws",
+      ];
+    }
     return [
       "admin_knowledge",
       "knowledge_suggestion",
@@ -2592,6 +2668,19 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
     ];
   }
 
+  if (overviewQuery && !legalQuery) {
+    return [
+      "pdf_chunks",
+      "documents",
+      "admin_knowledge",
+      "knowledge_suggestion",
+      "knowledge_base",
+      "tbl_vinichai",
+      "tbl_laws",
+      "tbl_glaws",
+    ];
+  }
+
   return [
     "admin_knowledge",
     "knowledge_suggestion",
@@ -2609,6 +2698,10 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   const selected = [];
   const usedTiers = [];
   const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const overviewStrict =
+    isGeneralOverviewQuery(focusMessage) &&
+    !hasLegalIntent(focusMessage) &&
+    (intent === "general" || intent === "short_answer");
   const broadFollowUpExplainMessage = isBroadFollowUpExplainMessage(focusMessage);
   const strictStructuredLawFocus =
     isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage);
@@ -2655,7 +2748,9 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
 
           return itemScore >= 84;
         })
-      : items;
+      : overviewStrict
+        ? (Array.isArray(items) ? items : []).filter((item) => isOverviewSafeCandidate(item))
+        : items;
     const ranked = rankSourcesForMessageFocus(normalizedItems, focusMessage).slice(0, limit);
     const tierTrace = {
       tier: tierName,
@@ -2712,16 +2807,24 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   ) {
     selectionTrace.fallbackUsed = true;
     const fallbackOrder = new Map(sourceOrder.map((sourceName, index) => [sourceName, index]));
-    const fallbackPool = rankSourcesForMessageFocus([
-      ...(groups.admin_knowledge || []),
-      ...(groups.knowledge_suggestion || []),
-      ...structuredLaws.filter((item) => item && item.source === "tbl_laws"),
-      ...structuredLaws.filter((item) => item && item.source === "tbl_glaws"),
-      ...(groups.vinichai || []),
-      ...(groups.documents || []),
-      ...(groups.pdf_chunks || []),
-      ...(groups.knowledge_base || []),
-    ], focusMessage).sort((left, right) => {
+    const fallbackCandidates = overviewStrict
+      ? [
+          ...(groups.pdf_chunks || []),
+          ...(groups.documents || []),
+          ...(groups.admin_knowledge || []),
+          ...(groups.knowledge_base || []),
+        ].filter((item) => isOverviewSafeCandidate(item))
+      : [
+          ...(groups.admin_knowledge || []),
+          ...(groups.knowledge_suggestion || []),
+          ...structuredLaws.filter((item) => item && item.source === "tbl_laws"),
+          ...structuredLaws.filter((item) => item && item.source === "tbl_glaws"),
+          ...(groups.vinichai || []),
+          ...(groups.documents || []),
+          ...(groups.pdf_chunks || []),
+          ...(groups.knowledge_base || []),
+        ];
+    const fallbackPool = rankSourcesForMessageFocus(fallbackCandidates, focusMessage).sort((left, right) => {
       const leftOrder = fallbackOrder.get(String(left?.source || "").trim().toLowerCase());
       const rightOrder = fallbackOrder.get(String(right?.source || "").trim().toLowerCase());
       if (leftOrder !== rightOrder) {
@@ -2742,6 +2845,62 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
 
       selected.push(item);
     });
+  }
+
+  if (overviewStrict) {
+    let overviewSelected = selected.slice();
+    let anchor = overviewSelected.find((item) => item && (item.source === "documents" || item.source === "pdf_chunks"));
+    let anchorDocumentId = Number(anchor?.documentId || anchor?.document_id || 0);
+    let anchorTitle = normalizeForSearch(String(anchor?.title || anchor?.reference || "")).toLowerCase();
+    const hasPdfChunkSelected = overviewSelected.some((item) => String(item?.source || "").trim().toLowerCase() === "pdf_chunks");
+    if (!hasPdfChunkSelected && anchor) {
+      const matchingPdfChunk = rankSourcesForMessageFocus(groups.pdf_chunks || [], focusMessage).find((item) => {
+        if (!item) return false;
+        if (!isOverviewSafeCandidate(item)) return false;
+        const docId = Number(item.documentId || item.document_id || 0);
+        if (anchorDocumentId && docId) {
+          return docId === anchorDocumentId;
+        }
+        const title = normalizeForSearch(String(item.title || item.reference || "")).toLowerCase();
+        return Boolean(anchorTitle) && title === anchorTitle;
+      });
+
+      if (matchingPdfChunk) {
+        overviewSelected = [matchingPdfChunk, ...overviewSelected.filter((item) => item !== anchor)];
+        anchor = matchingPdfChunk;
+        anchorDocumentId = Number(anchor?.documentId || anchor?.document_id || 0);
+        anchorTitle = normalizeForSearch(String(anchor?.title || anchor?.reference || "")).toLowerCase();
+      }
+    }
+
+    const narrowed = overviewSelected.filter((item) => {
+      if (!item) return false;
+      const sourceName = String(item.source || "").trim().toLowerCase();
+      if (sourceName === "documents" || sourceName === "pdf_chunks") {
+        const docId = Number(item.documentId || item.document_id || 0);
+        if (anchorDocumentId && docId) {
+          return docId === anchorDocumentId;
+        }
+        const title = normalizeForSearch(String(item.title || item.reference || "")).toLowerCase();
+        return Boolean(anchorTitle) && title === anchorTitle;
+      }
+      return isOverviewSafeCandidate(item);
+    });
+
+    return {
+      selectedSourceTier: usedTiers.join(" > ") || "none",
+      selectedSources: narrowed.slice(0, targetLimit || plan.totalLimit),
+      selectionTrace: {
+        ...selectionTrace,
+        selectedCount: Math.min(narrowed.length, targetLimit || plan.totalLimit),
+      },
+      selectionDiagnostics: buildSelectionDiagnostics(
+        groups,
+        narrowed.slice(0, targetLimit || plan.totalLimit),
+        intent,
+        options,
+      ),
+    };
   }
 
   return {

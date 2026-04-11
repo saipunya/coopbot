@@ -247,6 +247,7 @@ function scoreChunkMatch(query, row) {
     /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|ทั่วไปเกี่ยวกับ|เกี่ยวกับสหกรณ์|เบื้องต้น|ภาพรวม|สรุป|นิยาม|ความหมาย|หมายถึง|สหกรณ์คืออะไร|คืออะไร|ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(
       normalizedQuery,
     );
+  const benefitQuery = /(ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(normalizedQuery);
   const legalIntentQuery =
     /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+|นายทะเบียน|อำนาจหน้าที่|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|พ\\.ศ\\.)/.test(
       normalizedQuery,
@@ -311,6 +312,16 @@ function scoreChunkMatch(query, row) {
     }
     if (/(นิยาม|ความหมาย|หมายถึง|คือ|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ|ทั่วไป|เบื้องต้น|ภาพรวม)/.test(rowText)) {
       score += 22;
+    }
+  }
+
+  if (benefitQuery) {
+    if (/(ประโยชน์|ข้อดี|ผลดี|ช่วยเหลือ|ได้รับจากสหกรณ์)/.test(rowText)) {
+      score += 32;
+    }
+    if (/(ผลประโยชน์ของสหกรณ์หรือสมาชิก|เสื่อมเสียผลประโยชน์|รักษาผลประโยชน์)/.test(rowText)) {
+      // Risk note: legal/admin passages often mention "ผลประโยชน์" in a supervisory context, not member benefits.
+      score -= 24;
     }
   }
 

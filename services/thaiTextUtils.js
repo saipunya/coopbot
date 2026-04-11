@@ -87,6 +87,19 @@ try {
   QUERY_SYNONYMS = [];
   TOPIC_FAMILIES = [];
 }
+const LOW_VALUE_FOCUS_TOKENS = new Set([
+  "ความ",
+  "รู้",
+  "เกี่ยว",
+  "กับ",
+  "ทั่วไป",
+  "เรื่อง",
+  "ของ",
+  "อะไร",
+  "ไหม",
+  "หรือ",
+  "ที่",
+]);
 const { normalizeThaiNumberSearchText } = require("./thaiNumberNormalizer");
 const EXCLUSIVE_MEANING_RULES = [
   {
@@ -912,7 +925,25 @@ function scoreQueryFocusAlignment(query, text) {
   }
 
   if (!profile.topics.length) {
-    score += 0;
+    if (normalizedText.includes(profile.normalizedQuery)) {
+      score += 24;
+    } else {
+      const queryTokens = uniqueTokens(segmentWords(profile.normalizedQuery)).filter((token) => {
+        const normalizedToken = normalizeForSearch(token).toLowerCase();
+        return normalizedToken && !LOW_VALUE_FOCUS_TOKENS.has(normalizedToken) && normalizedToken.length >= 2;
+      });
+      const tokenHits = queryTokens.filter((token) => normalizedText.includes(token)).length;
+      if (tokenHits > 0) {
+        // Deterministic fallback for broad Thai queries that have no topic-family rule.
+        score += Math.min(20, tokenHits * 8);
+        const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
+        if (coverage >= 0.75) {
+          score += 8;
+        } else if (coverage >= 0.5) {
+          score += 4;
+        }
+      }
+    }
     return score;
   }
 
