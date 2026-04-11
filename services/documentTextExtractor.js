@@ -62,7 +62,8 @@ function analyzeExtractedText(text) {
   const thaiGarbledHits = (
     normalized.match(/[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/g) || []
   ).length;
-  const controlCharHits = (normalized.match(/[\x00-\x1F]/g) || []).length;
+  // Exclude common whitespace controls (\t,\n,\r) which are normal in extracted documents.
+  const controlCharHits = (normalized.match(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g) || []).length;
   const digitChars = (normalized.match(/[0-9๐-๙]/g) || []).length;
   const commonThaiTermHits = COMMON_THAI_DOCUMENT_TERMS.reduce(
     (sum, term) => sum + (normalized.includes(term) ? 1 : 0),

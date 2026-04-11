@@ -16,6 +16,41 @@ const KEYWORD_CONCURRENCY = Number(process.env.KEYWORD_CONCURRENCY || 4);
 const PDF_CHUNK_ACCEPTED_QUALITY_SCORE = Number(process.env.PDF_CHUNK_ACCEPTED_QUALITY_SCORE || 60);
 const PDF_CHUNK_LOW_QUALITY_SCORE = Number(process.env.PDF_CHUNK_LOW_QUALITY_SCORE || 45);
 
+function getFileExtension(file = null) {
+  return String(file?.originalname || file?.filename || "")
+    .toLowerCase()
+    .split(".")
+    .pop();
+}
+
+function getChunkQualityThresholds(file = null) {
+  const extension = getFileExtension(file);
+
+  if (extension === "pdf") {
+    return {
+      acceptedThreshold: PDF_CHUNK_ACCEPTED_QUALITY_SCORE,
+      lowQualityThreshold: PDF_CHUNK_LOW_QUALITY_SCORE,
+    };
+  }
+
+  // DOC/DOCX are typically clean text, but can be short/bullet-y and score lower under PDF-oriented heuristics.
+  // Use document-level minimum extraction score as a safer default to avoid dropping most chunks.
+  const acceptedThreshold = Number(
+    process.env.DOCUMENT_CHUNK_ACCEPTED_QUALITY_SCORE ||
+      process.env.DOCUMENT_MIN_EXTRACTION_QUALITY_SCORE ||
+      45,
+  );
+  const lowQualityThreshold = Number(
+    process.env.DOCUMENT_CHUNK_LOW_QUALITY_SCORE ||
+      Math.max(20, acceptedThreshold - 10),
+  );
+
+  return {
+    acceptedThreshold,
+    lowQualityThreshold,
+  };
+}
+
 function getExtractionMethodLabel(method) {
   switch (String(method || "").trim()) {
     case "pdf_text_layer":
@@ -107,15 +142,18 @@ function analyzeChunkQuality(chunkText) {
   };
 }
 
-function filterChunksByQuality(chunks) {
+function filterChunksByQuality(chunks, thresholds = {}) {
+  const acceptedThreshold = Number(thresholds.acceptedThreshold ?? PDF_CHUNK_ACCEPTED_QUALITY_SCORE);
+  const lowQualityThreshold = Number(thresholds.lowQualityThreshold ?? PDF_CHUNK_LOW_QUALITY_SCORE);
+
   const analyzedChunks = chunks.map((chunk, index) => {
     const analysis = analyzeChunkQuality(chunk);
     const qualityScore = Number(analysis.qualityScore || 0);
     let qualityBand = "rejected";
 
-    if (qualityScore >= PDF_CHUNK_ACCEPTED_QUALITY_SCORE) {
+    if (qualityScore >= acceptedThreshold) {
       qualityBand = "accepted";
-    } else if (qualityScore >= PDF_CHUNK_LOW_QUALITY_SCORE) {
+    } else if (qualityScore >= lowQualityThreshold) {
       qualityBand = "lowQuality";
     }
 
@@ -166,8 +204,8 @@ function filterChunksByQuality(chunks) {
       chunk_accepted: acceptedChunks.length,
       chunk_low_quality: lowQualityChunks.length,
       chunk_rejected: rejectedChunks.length,
-      acceptedThreshold: PDF_CHUNK_ACCEPTED_QUALITY_SCORE,
-      lowQualityThreshold: PDF_CHUNK_LOW_QUALITY_SCORE,
+      acceptedThreshold,
+      lowQualityThreshold,
       notes,
       acceptedPreview: summarizePreview(acceptedChunks),
       lowQualityPreview: summarizePreview(lowQualityChunks),
@@ -203,8 +241,13 @@ async function processUploadInBackground(file, uploadRecord) {
     const extractionResult = await extractTextResultFromFile(file);
     const extractedText = extractionResult.text;
     const chunks = chunkText(extractedText, Number(process.env.CHUNK_SIZE || 1400));
-    const chunkFilterResult = filterChunksByQuality(chunks);
+    const chunkQualityThresholds = getChunkQualityThresholds(file);
+    const chunkFilterResult = filterChunksByQuality(chunks, chunkQualityThresholds);
     const acceptedChunks = chunkFilterResult.acceptedChunks;
+    const extension = getFileExtension(file);
+    const indexableChunks = extension === "pdf"
+      ? acceptedChunks
+      : [...acceptedChunks, ...(chunkFilterResult.lowQualityChunks || [])];
     const documentMetadata = await extractDocumentMetadata(extractedText, file);
     const extractionMethodLabel = getExtractionMethodLabel(extractionResult.extractionMethod);
     const extractionNoteLabel = (extractionResult.notes || [])
@@ -227,7 +270,7 @@ async function processUploadInBackground(file, uploadRecord) {
       .join(" | ");
 
     LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
-      processingMessage: `กำลังสร้างดัชนีเอกสาร ${acceptedChunks.length} ส่วน${extractionSummary ? ` | ${extractionSummary}` : ""}`,
+      processingMessage: `กำลังสร้างดัชนีเอกสาร ${indexableChunks.length} ส่วน${extractionSummary ? ` | ${extractionSummary}` : ""}`,
       title: documentMetadata.title || file.originalname,
       documentNumber: documentMetadata.documentNumber || "",
       documentDateText: documentMetadata.documentDateText || "",
@@ -247,14 +290,14 @@ async function processUploadInBackground(file, uploadRecord) {
       extractionMethod: extractionResult.extractionMethod || "",
       extractionQualityScore: extractionResult.qualityScore,
       extractionNotes: (extractionResult.notes || []).filter(Boolean).join(" | "),
-      isSearchable: indexingDecision.isSearchable && acceptedChunks.length > 0,
+      isSearchable: indexingDecision.isSearchable && indexableChunks.length > 0,
       qualityStatus:
-        indexingDecision.isSearchable && acceptedChunks.length > 0
+        indexingDecision.isSearchable && indexableChunks.length > 0
           ? indexingDecision.qualityStatus
           : "quarantined",
     });
 
-    if (!indexingDecision.isSearchable || acceptedChunks.length === 0) {
+    if (!indexingDecision.isSearchable || indexableChunks.length === 0) {
       LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
         status: "quarantined",
         processingMessage: `นำเข้าแบบกักกันแล้ว ยังไม่ถูกใช้ค้นหา${extractionSummary ? ` | ${extractionSummary}` : ""}`,
@@ -274,7 +317,7 @@ async function processUploadInBackground(file, uploadRecord) {
 
     const documentKeywords = await extractDocumentKeywords(extractedText);
     const chunkRecords = await mapWithConcurrency(
-      acceptedChunks,
+      indexableChunks,
       KEYWORD_CONCURRENCY,
       async (chunk) => {
         const chunkKeywords = await extractKeywords(chunk);

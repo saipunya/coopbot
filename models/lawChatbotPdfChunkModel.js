@@ -123,12 +123,14 @@ function classifyChunkQuality(row = {}) {
   const asciiWordChars = countRegexMatches(rawText, /[a-zA-Z]/g);
   const digitChars = countRegexMatches(rawText, /\d/g);
   const replacementGlyphHits = countRegexMatches(rawChunkText, /[\uFFFD\uF700-\uF8FF]/g);
-  const controlCharHits = countRegexMatches(rawChunkText, /[\x00-\x1F]/g);
+  // Exclude normal whitespace controls (\t,\n,\r) from "control character" filtering.
+  const controlCharHits = countRegexMatches(rawChunkText, /[\x00-\x08\x0B\x0C\x0E-\x1F]/g);
   const garbledHits = countRegexMatches(
     rawChunkText,
     /[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/g,
   );
-  const punctuationHits = countRegexMatches(rawChunkText, /[^\p{L}\p{N}\s]/gu);
+  // Treat combining marks (\p{M}) as part of letters; Thai text uses them heavily.
+  const punctuationHits = countRegexMatches(rawChunkText, /[^\p{L}\p{M}\p{N}\s]/gu);
   const metadataPattern =
     /(?:^|[\s|])(?:หน้า\s*\d+|page\s*\d+|เอกสารแนบ|สิ่งที่ส่งมาด้วย|หมายเหตุ|โทร\.?|โทรสาร|fax|email|www\.|https?:\/\/|เลขที่หนังสือ|ลงวันที่|ที่ตั้งสำนักงาน|ผู้สแกน|scan|scanner)(?:$|[\s|])/i;
   const sourceLabelPattern =
@@ -295,7 +297,7 @@ function scoreChunkMatch(query, row) {
   }
 
   // Penalize chunks with control characters or garbled OCR text
-  const controlCharHits = (rawChunkText.match(/[\x00-\x1F]/g) || []).length;
+  const controlCharHits = (rawChunkText.match(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g) || []).length;
   if (controlCharHits > 5) {
     score -= Math.min(controlCharHits, 30) * 2;
   }
