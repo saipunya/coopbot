@@ -244,7 +244,7 @@ function scoreChunkMatch(query, row) {
   const rowTokenSet = new Set(rowTokens);
   const queryBigrams = makeBigrams(queryTokens);
   const overviewStyleQuery =
-    /(ความรู้ทั่วไป|ทั่วไปเกี่ยวกับ|เบื้องต้น|ภาพรวม|สรุป|นิยาม|ความหมาย|หมายถึง|สหกรณ์คืออะไร|คืออะไร|ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(
+    /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|ทั่วไปเกี่ยวกับ|เกี่ยวกับสหกรณ์|เบื้องต้น|ภาพรวม|สรุป|นิยาม|ความหมาย|หมายถึง|สหกรณ์คืออะไร|คืออะไร|ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(
       normalizedQuery,
     );
   const legalIntentQuery =

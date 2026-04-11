@@ -13,6 +13,15 @@ const QUERY_REWRITE_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_QUERY_REWRITE_TI
 const QUERY_REWRITE_AI_ENABLED = String(process.env.LAW_CHATBOT_QUERY_REWRITE_AI_ENABLED || "1") !== "0";
 const QUERY_REWRITE_MAX_KEYWORDS = 8;
 const QUERY_REWRITE_MAX_ALIASES = 6;
+const LOW_VALUE_REWRITE_TOKENS = new Set([
+  "ความ",
+  "รู้",
+  "เกี่ยว",
+  "กับ",
+  "ของ",
+  "เรื่อง",
+  "ทั่วไป",
+]);
 
 const QUERY_REWRITE_SYSTEM_PROMPT = [
   "คุณเป็นระบบ rewrite คำค้นสำหรับ chatbot กฎหมายสหกรณ์ไทย",
@@ -249,7 +258,14 @@ function buildHeuristicQueryRewrite(message, context = {}) {
     ...(context.sourceAnchors || []),
     ...extractExplicitTopicHints(expandedQueryText),
     ...(groupBylawBoost.expandedKeywords || []),
-    ...segmentWords(stripFollowUpLeadText(expandedQueryText)).filter((token) => String(token || "").trim().length >= 3),
+    ...segmentWords(stripFollowUpLeadText(expandedQueryText)).filter((token) => {
+      const normalizedToken = String(token || "").trim().toLowerCase();
+      if (normalizedToken.length < 3) {
+        return false;
+      }
+
+      return !LOW_VALUE_REWRITE_TOKENS.has(normalizedToken);
+    }),
     ...contextSignals,
   ], getAllowedLawReferenceTokens(message, context), QUERY_REWRITE_MAX_KEYWORDS)
     .filter((keyword) => {
