@@ -243,6 +243,14 @@ function scoreChunkMatch(query, row) {
   const rowTokens = uniqueTokens(segmentWords(rowText));
   const rowTokenSet = new Set(rowTokens);
   const queryBigrams = makeBigrams(queryTokens);
+  const overviewStyleQuery =
+    /(ความรู้ทั่วไป|ทั่วไปเกี่ยวกับ|เบื้องต้น|ภาพรวม|สรุป|นิยาม|ความหมาย|หมายถึง|สหกรณ์คืออะไร|คืออะไร|ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(
+      normalizedQuery,
+    );
+  const legalIntentQuery =
+    /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+|นายทะเบียน|อำนาจหน้าที่|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|พ\\.ศ\\.)/.test(
+      normalizedQuery,
+    );
 
   if (quality.isHardFiltered) {
     return Number.NEGATIVE_INFINITY;
@@ -294,6 +302,16 @@ function scoreChunkMatch(query, row) {
 
   if (rawChunkText.length > 0 && replacementGlyphHits / rawChunkText.length > 0.02) {
     score -= 20;
+  }
+
+  // Overview queries should avoid pulling statute-by-section chunks unless users clearly ask legal questions.
+  if (overviewStyleQuery && !legalIntentQuery) {
+    if (/(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(rowText)) {
+      score -= 90;
+    }
+    if (/(นิยาม|ความหมาย|หมายถึง|คือ|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ|ทั่วไป|เบื้องต้น|ภาพรวม)/.test(rowText)) {
+      score += 22;
+    }
   }
 
   // Penalize chunks with control characters or garbled OCR text

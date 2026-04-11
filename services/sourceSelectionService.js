@@ -57,13 +57,17 @@ function prioritizeMatches(matches, options = {}) {
   const retrievalPriority = Number(options.retrievalPriority || 0);
   const scoreBoost = Number(options.scoreBoost || 0);
   const sourceOverride = options.sourceOverride || "";
+  const toSafeNumber = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+  };
 
   return (Array.isArray(matches) ? matches : []).map((item) => ({
     ...item,
     source: sourceOverride || item.source,
     retrievalPriority,
-    rawScore: Number(item.rawScore ?? item.baseScore ?? item.score ?? 0) + scoreBoost,
-    score: Number(item.rawScore ?? item.baseScore ?? item.score ?? 0) + scoreBoost,
+    rawScore: toSafeNumber(item.rawScore ?? item.baseScore ?? item.score ?? 0) + scoreBoost,
+    score: toSafeNumber(item.rawScore ?? item.baseScore ?? item.score ?? 0) + scoreBoost,
   }));
 }
 
@@ -72,7 +76,8 @@ function clamp(value, min, max) {
 }
 
 function getMatchBaseScore(item = {}) {
-  return Number(item.rawScore ?? item.baseScore ?? item.score ?? 0);
+  const numeric = Number(item.rawScore ?? item.baseScore ?? item.score ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 function parseSourceTimestamp(value) {
@@ -709,6 +714,9 @@ function buildSelectionDiagnostics(groups, selectedSources, intent = "general", 
 function rerankRetrievedMatches(matches, message, options = {}) {
   const intent = options.intent || "general";
   const feedbackTarget = options.target || "all";
+  const overviewQuery = isGeneralOverviewQuery(message);
+  const legalQuery = hasLegalIntent(message);
+  const overviewStrict = overviewQuery && !legalQuery && (intent === "general" || intent === "short_answer");
 
   return (Array.isArray(matches) ? matches : [])
     .filter(Boolean)
@@ -732,6 +740,31 @@ function rerankRetrievedMatches(matches, message, options = {}) {
   Number(focusTrace.rawFocusScore || 0) < 18
     ? -18
     : 0;
+
+      // Penalize statute-by-section context for broad overview/definition/benefit queries.
+      // This reduces "มาตรา 16"/"นายทะเบียน" chunks contaminating general answers.
+      const sourceName = String(item.source || "").trim().toLowerCase();
+      const focusText = normalizeForSearch(buildSourceFocusSearchText(item)).toLowerCase();
+      const isLegalishChunk =
+        /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(
+          focusText,
+        );
+      const isOverviewFriendlyChunk =
+        /(ความรู้ทั่วไป|ภาพรวม|เบื้องต้น|นิยาม|ความหมาย|หมายถึง|คือ|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ)/.test(
+          focusText,
+        );
+      const legalContaminationPenalty =
+        overviewStrict && (sourceName === "tbl_laws" || sourceName === "tbl_glaws" || sourceName === "tbl_vinichai")
+          ? -120
+          : overviewStrict && isLegalishChunk
+            ? -70
+            : 0;
+      const overviewBoost = overviewStrict && isOverviewFriendlyChunk ? 18 : 0;
+      const titleBoost =
+        overviewStrict && /ความรู้ทั่วไป/.test(normalizeForSearch(String(message || "")).toLowerCase()) &&
+        /ความรู้ทั่วไป/.test(normalizeForSearch(String(item.title || item.reference || "")).toLowerCase())
+          ? 12
+          : 0;
       const finalScore = Math.round(
   baseScore +
   retrievalWeight +
@@ -741,7 +774,10 @@ function rerankRetrievedMatches(matches, message, options = {}) {
   Number(freshnessTrace.score || 0) +
   helpfulBoost +
   contextWeight +
-  offTopicPenalty,
+  offTopicPenalty +
+  legalContaminationPenalty +
+  overviewBoost +
+  titleBoost,
 );
 
       return {
@@ -752,6 +788,9 @@ function rerankRetrievedMatches(matches, message, options = {}) {
           baseScore,
           finalScore,
           offTopicPenalty,
+          legalContaminationPenalty,
+          overviewBoost,
+          titleBoost,
           retrievalPriority: Number(item.retrievalPriority || 0),
           retrievalWeight,
           authorityScore: Number(authorityTrace.score || 0),
@@ -824,6 +863,18 @@ function classifyQuestionIntent(message) {
   const text = normalizeForSearch(String(message || "")).toLowerCase();
   const asksExplanation = wantsExplanation(text);
 
+  // Rule-based intent hints (Thai-first). Keep lightweight + deterministic because AI may be disabled.
+  // NOTE: These patterns are intentionally conservative; they only trigger "legal" routing when users
+  // clearly ask about statutory/registrar powers, even if they don't type "มาตรา".
+  const hasLegalCuesWithoutExplicitSection =
+    /(นายทะเบียน|อำนาจหน้าที่|บทลงโทษ|โทษ|เพิกถอน|ถอนชื่อออกจากทะเบียน|อุทธรณ์|ร้องทุกข์|คำสั่ง|ระเบียบ|ข้อบังคับ|กฎกระทรวง|ประกาศ|พระราชบัญญัติ|พ\.ศ\.)/.test(
+      text,
+    );
+  const isOverviewStyleQuery =
+    /(ความรู้ทั่วไป|ทั่วไปเกี่ยวกับ|เบื้องต้น|ภาพรวม|สรุป|นิยาม|ความหมาย|หมายถึง|คืออะไร|สหกรณ์คืออะไร|ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(
+      text,
+    );
+
   const asksLawSection =
     /มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+/.test(text);
   const asksDocumentStyle =
@@ -842,6 +893,11 @@ function classifyQuestionIntent(message) {
     /[ก-๙]{2,8}\.?\s*(คืออะไร|หมายถึง|คือ|หมายความว่าอะไร)/.test(text);
 
   if (asksLawSection) {
+    return "law_section";
+  }
+
+  // Legal queries that often don't mention an explicit section number.
+  if (hasLegalCuesWithoutExplicitSection && !isOverviewStyleQuery) {
     return "law_section";
   }
 
@@ -866,6 +922,29 @@ function classifyQuestionIntent(message) {
   }
 
   return "general";
+}
+
+function isGeneralOverviewQuery(message = "") {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  // "General / overview" queries should not pull statute-by-section chunks.
+  return /(ความรู้ทั่วไป|ทั่วไปเกี่ยวกับ|เบื้องต้น|ภาพรวม|สรุป|นิยาม|ความหมาย|หมายถึง|สหกรณ์คืออะไร|ประโยชน์ของสหกรณ์|ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(
+    text,
+  );
+}
+
+function hasLegalIntent(message = "") {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return /มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+|นายทะเบียน|อำนาจหน้าที่|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|พ\.ศ\./.test(
+    text,
+  );
 }
 
 function isLawPrioritySearch(message) {
@@ -1186,6 +1265,8 @@ async function searchDatabaseSources(message, target, options = {}) {
   const focusMessage = String(options.originalMessage || retrievalMessage).trim();
   const intent = classifyQuestionIntent(retrievalMessage || focusMessage);
   const routingPlan = getSourceRoutingPlan(intent);
+  const generalOverviewQuery = isGeneralOverviewQuery(retrievalMessage || focusMessage);
+  const legalIntent = hasLegalIntent(retrievalMessage || focusMessage);
   const freePlanSearch = isFreePlanSearch(options.planCode);
   const freeSourcePriorityPlan = freePlanSearch ? getFreeSourcePriorityPlan(retrievalMessage || focusMessage, target) : null;
   const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
@@ -1194,6 +1275,9 @@ async function searchDatabaseSources(message, target, options = {}) {
     lawPrioritySearch ||
     isLiquidationPrioritySearch(retrievalMessage || focusMessage) ||
     isDissolutionPrioritySearch(retrievalMessage || focusMessage);
+
+  const shouldSkipLawSourcesForOverview =
+    generalOverviewQuery && !legalIntent && intent === "general";
 
   const [
     rawKnowledgeMatches,
@@ -1209,8 +1293,12 @@ async function searchDatabaseSources(message, target, options = {}) {
     LawChatbotPdfChunkModel.searchDocuments(retrievalMessage, 5),
     withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(retrievalMessage, 6), hybridTimeoutMs, [], "hybrid-search"),
     Promise.resolve(LawChatbotModel.searchKnowledge(retrievalMessage, target)),
-    LawSearchModel.searchStructuredLaws(retrievalMessage, target, 6),
-    LawSearchModel.searchVinichai(retrievalMessage, 5),
+    shouldSkipLawSourcesForOverview
+      ? Promise.resolve([])
+      : LawSearchModel.searchStructuredLaws(retrievalMessage, target, 6),
+    shouldSkipLawSourcesForOverview
+      ? Promise.resolve([])
+      : LawSearchModel.searchVinichai(retrievalMessage, 5),
   ]);
 
   const knowledgeMatches = prioritizeMatches(rawKnowledgeMatches, {
@@ -1838,6 +1926,11 @@ function pruneFocusedQueryMatches(matches, message) {
 
     if (abbreviationDefinitionMatch?.[1]) {
     const abbreviation = abbreviationDefinitionMatch[1];
+    // Guard: only treat as an "abbreviation definition" query for short abbreviations.
+    // Otherwise we may accidentally prune general definition queries like "สหกรณ์คืออะไร".
+    if (String(abbreviation || "").length > 4 && !/\./.test(String(message || ""))) {
+      // Continue with the normal pruning flow.
+    } else {
 
     const strictAbbreviationMatches = ranked.filter((item) => {
       const sourceText = buildSourceFocusSearchText(item);
@@ -1856,6 +1949,7 @@ function pruneFocusedQueryMatches(matches, message) {
 
     if (strictAbbreviationMatches.length > 0) {
       return strictAbbreviationMatches;
+    }
     }
   }
   if (isCompensationGovernanceQuestion(message)) {
@@ -2007,6 +2101,8 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
   const focusMessage = options.originalMessage || options.message || "";
   const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
   const compensationProfile = getCompensationGovernanceProfile(focusMessage);
+  const overviewQuery = isGeneralOverviewQuery(focusMessage);
+  const legalQuery = hasLegalIntent(focusMessage);
 
   if (isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage)) {
     return {
@@ -2061,6 +2157,19 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
         },
       };
     case "short_answer":
+      if (overviewQuery && !legalQuery) {
+        return {
+          totalLimit: 3,
+          quotas: {
+            vinichai: 0,
+            structured_laws: 0,
+            admin_knowledge: 1,
+            knowledge_suggestion: 0,
+            document_like: 2,
+            internet: 0,
+          },
+        };
+      }
       return {
         totalLimit: 4,
         quotas: {
@@ -2097,6 +2206,19 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
         },
       };
     default:
+      if (overviewQuery && !legalQuery) {
+        return {
+          totalLimit: 3,
+          quotas: {
+            vinichai: 0,
+            structured_laws: 0,
+            admin_knowledge: 1,
+            knowledge_suggestion: 0,
+            document_like: 2,
+            internet: 0,
+          },
+        };
+      }
       return {
         totalLimit: 5,
         quotas: {
@@ -2115,14 +2237,42 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
   const plan = getFinalSourceCompactionPlan(intent, options);
   const compacted = [];
   const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const overviewStrict =
+    isGeneralOverviewQuery(focusMessage) &&
+    !hasLegalIntent(focusMessage) &&
+    (intent === "general" || intent === "short_answer");
   const strictStructuredLawFocus =
     isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage);
   const targetLimit = strictStructuredLawFocus
     ? plan.totalLimit
     : Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
+  const isStrongLegalMarker = (text = "") =>
+    /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(
+      normalizeForSearch(String(text || "")).toLowerCase(),
+    );
+  const isOverviewFriendly = (text = "") =>
+    /(ความรู้ทั่วไป|ภาพรวม|เบื้องต้น|นิยาม|ความหมาย|หมายถึง|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ|สรุป)/.test(
+      normalizeForSearch(String(text || "")).toLowerCase(),
+    );
+  const isOverviewSafeCandidate = (item = {}) => {
+    const text = buildSourceFocusSearchText(item);
+    if (!text) {
+      return false;
+    }
+    if (isStrongLegalMarker(text)) {
+      return false;
+    }
+    // For overview queries, only accept "knowledge-like" entries if they look like definitions/benefits/overview.
+    const sourceName = String(item.source || "").trim().toLowerCase();
+    if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion" || sourceName === "knowledge_base") {
+      return isOverviewFriendly(text);
+    }
+    return true;
+  };
   const pushUnique = (items, limit) => {
-    rankSourcesForMessageFocus(items, focusMessage)
+    const filtered = overviewStrict ? (items || []).filter((item) => isOverviewSafeCandidate(item)) : items;
+    rankSourcesForMessageFocus(filtered, focusMessage)
       .slice(0, limit)
       .forEach((item) => {
         if (compacted.find((existing) => areNearDuplicateSources(existing, item))) {
@@ -2136,25 +2286,74 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
   pushUnique(groups.knowledge_suggestion, plan.quotas.knowledge_suggestion || 0);
   pushUnique(groups.vinichai, plan.quotas.vinichai || 0);
   pushUnique(groups.structured_laws, plan.quotas.structured_laws || 0);
-  pushUnique([...(groups.documents || []), ...(groups.pdf_chunks || [])], plan.quotas.document_like || 0);
+  // For overview queries, prioritize real text chunks over document metadata rows.
+  pushUnique(
+    overviewStrict
+      ? [...(groups.pdf_chunks || []), ...(groups.documents || [])]
+      : [...(groups.documents || []), ...(groups.pdf_chunks || [])],
+    plan.quotas.document_like || 0,
+  );
   pushUnique(groups.internet, plan.quotas.internet || 0);
 
   if (compacted.length < targetLimit && !compensationGovernanceQuestion && !strictStructuredLawFocus) {
-    const fallbackPool = [
-      ...(groups.admin_knowledge || []),
-      ...(groups.knowledge_suggestion || []),
-      ...(groups.vinichai || []),
-      ...(groups.structured_laws || []),
-      ...(groups.documents || []),
-      ...(groups.pdf_chunks || []),
-      ...(groups.knowledge_base || []),
-      ...(groups.internet || []),
-    ];
+    const fallbackPool = overviewStrict
+      ? [
+          ...(groups.documents || []),
+          ...(groups.pdf_chunks || []),
+          ...(groups.admin_knowledge || []),
+          ...(groups.knowledge_base || []),
+        ]
+      : [
+          ...(groups.admin_knowledge || []),
+          ...(groups.knowledge_suggestion || []),
+          ...(groups.vinichai || []),
+          ...(groups.structured_laws || []),
+          ...(groups.documents || []),
+          ...(groups.pdf_chunks || []),
+          ...(groups.knowledge_base || []),
+          ...(groups.internet || []),
+        ];
 
     pushUnique(fallbackPool, targetLimit - compacted.length);
   }
 
-  return rankSourcesForMessageFocus(compacted, focusMessage).slice(0, targetLimit || plan.totalLimit);
+  const ranked = rankSourcesForMessageFocus(compacted, focusMessage);
+  if (!overviewStrict) {
+    return ranked.slice(0, targetLimit || plan.totalLimit);
+  }
+
+  // Coherence: for overview queries, keep chunks in the same "document context" when possible.
+  const anchor = ranked.find((item) => item && (item.source === "documents" || item.source === "pdf_chunks"));
+  const anchorDocumentId = Number(anchor?.documentId || anchor?.document_id || 0);
+  const anchorTitle = normalizeForSearch(String(anchor?.title || anchor?.reference || "")).toLowerCase();
+  const sameContext = (item) => {
+    if (!item) return false;
+    const docId = Number(item.documentId || item.document_id || 0);
+    if (anchorDocumentId && docId) {
+      return docId === anchorDocumentId;
+    }
+    if (anchorTitle) {
+      const title = normalizeForSearch(String(item.title || item.reference || "")).toLowerCase();
+      return Boolean(title) && title === anchorTitle;
+    }
+    return true;
+  };
+
+  const anchored = [];
+  for (const item of ranked) {
+    if (anchored.length >= (targetLimit || plan.totalLimit)) {
+      break;
+    }
+    const sourceName = String(item.source || "").trim().toLowerCase();
+    if (sourceName === "documents" || sourceName === "pdf_chunks") {
+      if (!sameContext(item)) {
+        continue;
+      }
+    }
+    anchored.push(item);
+  }
+
+  return anchored.slice(0, targetLimit || plan.totalLimit);
 }
 
 function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
@@ -2567,6 +2766,9 @@ function selectTieredSources(groups, intent = "general", options = {}) {
   }
 
   const routingPlan = getSourceRoutingPlan(intent);
+  const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const overviewQuery = isGeneralOverviewQuery(focusMessage);
+  const legalQuery = hasLegalIntent(focusMessage);
 
   const planItems = [
     { key: "structured_laws", limit: routingPlan.limits.structured_laws || 3, priority: routingPlan.priorities.structured_laws || 0 },
@@ -2579,11 +2781,23 @@ function selectTieredSources(groups, intent = "general", options = {}) {
     { key: "knowledge_base", limit: routingPlan.limits.knowledge_base || 1, priority: routingPlan.priorities.knowledge_base || 0 },
   ];
 
+  // For broad "overview" queries, avoid mixing statute-by-section sources into general answers.
+  if (overviewQuery && !legalQuery && (intent === "general" || intent === "short_answer")) {
+    planItems.forEach((item) => {
+      if (item.key === "structured_laws" || item.key === "vinichai" || item.key === "internet") {
+        // Keep deterministic/local grounding first; internet tends to add noisy context for broad queries.
+        item.limit = 0;
+      }
+      if (item.key === "documents" || item.key === "pdf_chunks") {
+        item.limit = Math.max(item.limit || 0, 2);
+      }
+    });
+  }
+
   const plan = planItems.sort((a, b) => b.priority - a.priority);
 
   const selected = [];
   const usedTiers = [];
-  const focusMessage = String(options.originalMessage || options.message || "").trim();
   const selectionTrace = {
     mode: "tiered",
     tiers: [],

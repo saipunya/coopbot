@@ -4291,9 +4291,15 @@ function buildFallbackSummary(sources, explainMode, options = {}) {
     });
   }
 
-  const topSources = dedupeSources(
-    (Array.isArray(sources) ? sources : []).filter((source) => sourceHasSubstantiveContent(source)),
-    Math.max(referenceLimit + 1, 5),
+  const topSources = narrowSourcesForFocusedGrounding(
+    dedupeSources(
+      (Array.isArray(sources) ? sources : []).filter((source) => sourceHasSubstantiveContent(source)),
+      Math.max(referenceLimit + 1, 5),
+    ),
+    focusMessage,
+    {
+      limit: Math.min(3, Math.max(referenceLimit, 2)),
+    },
   );
   const amountHighlights = options.amountMode ? extractAmountHighlights(topSources, explainMode ? 5 : 3) : [];
   const numericEvidence = options.amountMode ? extractNumericEvidence(topSources, explainMode ? 5 : 3, focusMessage) : [];
@@ -4419,6 +4425,114 @@ function filterHighQualitySources(sources, topScore, limit = 4, options = {}) {
     .slice(0, Math.max(1, Number(limit || 4)));
 }
 
+function isOverviewGroundingQuery(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /(ความรู้ทั่วไป|ทั่วไปเกี่ยวกับ|เบื้องต้น|ภาพรวม|สรุป|นิยาม|ความหมาย|หมายถึง|สหกรณ์คืออะไร|คืออะไร|ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(
+    normalized,
+  );
+}
+
+function hasExplicitLegalGroundingIntent(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+|นายทะเบียน|อำนาจหน้าที่|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|พ\.ศ\./.test(
+    normalized,
+  );
+}
+
+function sourceLooksLikeLegalSection(source = {}) {
+  const text = normalizeForSearch(
+    [
+      source?.title,
+      source?.reference,
+      source?.keyword,
+      source?.content,
+      source?.chunk_text,
+      source?.comment,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  return /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(
+    text,
+  );
+}
+
+function sourceLooksOverviewFriendly(source = {}) {
+  const text = normalizeForSearch(
+    [
+      source?.title,
+      source?.reference,
+      source?.keyword,
+      source?.content,
+      source?.chunk_text,
+      source?.comment,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  return /(ความรู้ทั่วไป|ภาพรวม|เบื้องต้น|นิยาม|ความหมาย|หมายถึง|คือ|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ)/.test(
+    text,
+  );
+}
+
+function narrowSourcesForFocusedGrounding(sources, message = "", options = {}) {
+  const list = Array.isArray(sources) ? sources.filter(Boolean) : [];
+  const limit = Math.max(1, Number(options.limit || 3));
+  if (list.length <= limit) {
+    return list.slice(0, limit);
+  }
+
+  const overviewQuery = isOverviewGroundingQuery(message);
+  const legalIntent = hasExplicitLegalGroundingIntent(message);
+  if (!overviewQuery || legalIntent) {
+    return list.slice(0, limit);
+  }
+
+  const filtered = list.filter((source) => !sourceLooksLikeLegalSection(source));
+  const overviewFriendly = filtered.filter((source) => sourceLooksOverviewFriendly(source));
+  const candidatePool = overviewFriendly.length > 0 ? overviewFriendly : filtered;
+  if (candidatePool.length === 0) {
+    return list.slice(0, limit);
+  }
+
+  const anchor = candidatePool[0];
+  const anchorDocumentId = Number(anchor?.documentId || anchor?.document_id || 0);
+  const anchorTitle = normalizeForSearch(String(anchor?.title || anchor?.reference || "")).toLowerCase();
+  const sameContext = candidatePool.filter((source) => {
+    const sourceName = String(source?.source || "").trim().toLowerCase();
+    if (sourceName !== "documents" && sourceName !== "pdf_chunks") {
+      return false;
+    }
+    const documentId = Number(source?.documentId || source?.document_id || 0);
+    if (anchorDocumentId && documentId) {
+      return documentId === anchorDocumentId;
+    }
+    const title = normalizeForSearch(String(source?.title || source?.reference || "")).toLowerCase();
+    return Boolean(anchorTitle) && title === anchorTitle;
+  });
+
+  const anchoredPool = sameContext.length > 0 ? sameContext : candidatePool;
+  return anchoredPool.slice(0, limit);
+}
+
 async function generateChatSummary(message, sources, options = {}) {
   const explainMode = wantsExplanation(message);
   const amountMode = wantsAmountAnswer(message);
@@ -4459,13 +4573,22 @@ async function generateChatSummary(message, sources, options = {}) {
     originalMessage: focusMessage,
     message,
   });
-  const effectiveSources =
+  const effectiveSources = narrowSourcesForFocusedGrounding(
     filteredSources.length > 0
       ? filteredSources
-      : answerInputSources.slice(0, aiSourceLimit);
+      : answerInputSources.slice(0, aiSourceLimit),
+    focusMessage,
+    {
+      limit: Math.min(aiSourceLimit, explainMode ? 3 : 2),
+    },
+  );
   captureContinuationDiagnostics(options.answerDiagnostics, effectiveSources, promptProfile);
   const focusedAnswerSources =
-    answerInputSources.length > 0 ? answerInputSources : effectiveSources;
+    answerInputSources.length > 0
+      ? narrowSourcesForFocusedGrounding(answerInputSources, focusMessage, {
+          limit: Math.min(aiSourceLimit, explainMode ? 3 : 2),
+        })
+      : effectiveSources;
 
   const taxGuardAnswer = buildTaxCautiousAnswer(focusedAnswerSources, {
     ...options,
@@ -4695,9 +4818,13 @@ async function generateChatSummary(message, sources, options = {}) {
       : "";
   const metadataExclusionInstruction =
     "ห้ามคัดลอกคำถามของผู้ใช้มาเป็นบรรทัดคำตอบ และห้ามใส่ชื่อเรื่องเอกสาร ชื่อแหล่งข้อมูล เลขที่หนังสือ ลงวันที่ หรือ metadata ของเอกสารเป็นบรรทัดสรุป เว้นแต่ข้อมูลนั้นเป็นสาระคำตอบโดยตรง ";
+  const overviewGroundingInstruction =
+    isOverviewGroundingQuery(focusMessage) && !hasExplicitLegalGroundingIntent(focusMessage)
+      ? "คำถามนี้เป็นคำถามภาพรวม/นิยาม/ประโยชน์ ให้ตอบเฉพาะความหมาย ภาพรวม หรือประโยชน์ที่ตรงคำถามเท่านั้น หากแหล่งอ้างอิงบางส่วนเป็นบทกฎหมาย รายมาตรา หรืออำนาจหน้าที่ของนายทะเบียน แต่ผู้ใช้ไม่ได้ถามเชิงกฎหมาย ห้ามนำประเด็นนั้นมาปนในคำตอบ "
+      : "";
   const instruction = explainMode
-    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${deepAnalysisInstruction}${continuationInstruction}ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดไม่เกิน ${explainLineBudget.summaryContentLimit} บรรทัด และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดไม่เกิน ${explainLineBudget.detailLimit} บรรทัด ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
-    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ตรงประเด็น ${planToneInstruction}${depthInstruction}${compareInstruction}${deepAnalysisInstruction}พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ ไม่เกิน ${conciseLineBudget} บรรทัด โดยต้องเก็บใจความสำคัญทั้งหมดที่จำเป็นต่อการตัดสินใจ ห้ามเปิดหัวข้อ 'รายละเอียดเพิ่มเติม:' เองในรอบแรก ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
+    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${deepAnalysisInstruction}${continuationInstruction}ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${overviewGroundingInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดไม่เกิน ${explainLineBudget.summaryContentLimit} บรรทัด และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดไม่เกิน ${explainLineBudget.detailLimit} บรรทัด ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
+    : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ตรงประเด็น ${planToneInstruction}${depthInstruction}${compareInstruction}${deepAnalysisInstruction}พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${overviewGroundingInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ ไม่เกิน ${conciseLineBudget} บรรทัด โดยต้องเก็บใจความสำคัญทั้งหมดที่จำเป็นต่อการตัดสินใจ ห้ามเปิดหัวข้อ 'รายละเอียดเพิ่มเติม:' เองในรอบแรก ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
 
   try {
     const conversationNote = options.conversationalFollowUp
