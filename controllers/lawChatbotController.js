@@ -8,6 +8,15 @@ const {
 } = require("../middlewares/authMiddleware");
 const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
 
+function setNoStoreHeaders(res) {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+    "Surrogate-Control": "no-store",
+  });
+}
+
 function sanitizeLawChatbotReturnPath(value, fallbackPath, expectedPrefix) {
   const path = String(value || "").trim();
   if (!path || !path.startsWith("/") || path.startsWith("//")) {
@@ -35,6 +44,7 @@ function sanitizeLawChatbotUserReturnPath(value, fallbackPath = "/law-chatbot") 
 }
 
 async function renderIndex(req, res) {
+  setNoStoreHeaders(res);
   const returnTo = sanitizeLawChatbotUserReturnPath(req.query.returnTo, "/law-chatbot");
   if (!req.signedInUser) {
     return res.redirect(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`);
@@ -100,6 +110,7 @@ async function acceptAccessNotice(req, res) {
 }
 
 async function chat(req, res) {
+  setNoStoreHeaders(res);
   try {
     const signedInUser = req.signedInUser || req.session?.user || null;
     const submittedByUserId = Number(signedInUser?.userId || signedInUser?.id || 0);
@@ -143,11 +154,13 @@ async function chat(req, res) {
 }
 
 async function chatSummary(req, res) {
+  setNoStoreHeaders(res);
   const result = await lawChatbotService.summarizeChat(req.body, req.session);
   res.json(result);
 }
 
 async function chatFeedback(req, res) {
+  setNoStoreHeaders(res);
   const signedInUser = req.signedInUser || req.session?.user || null;
   const submittedByUserId = Number(signedInUser?.userId || signedInUser?.id || 0);
   const submittedByName = String(signedInUser?.name || "").trim();
@@ -229,6 +242,7 @@ async function submitKnowledgeSuggestion(req, res) {
 }
 
 async function resetContext(req, res) {
+  setNoStoreHeaders(res);
   if (req.session) {
     req.session.lawChatbotContext = [];
   }
