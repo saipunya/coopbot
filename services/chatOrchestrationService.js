@@ -1,4 +1,5 @@
 const LawChatbotSuggestedQuestionModel = require("../models/lawChatbotSuggestedQuestionModel");
+const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const UserSearchHistoryModel = require("../models/userSearchHistoryModel");
 const { wantsExplanation } = require("./chatAnswerService");
 const {
@@ -33,6 +34,7 @@ const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25
 const CHAT_BUDGET_BUFFER_MS = Number(process.env.CHAT_BUDGET_BUFFER_MS || 3000);
 const CHAT_REPLY_BUDGET_MS = Math.max(2000, CHAT_REQUEST_TIMEOUT_MS - CHAT_BUDGET_BUFFER_MS);
 const MIN_CONTEXT_RESEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_CONTEXT_RESEARCH_MIN_BUDGET_MS || 7000);
+const THREE_LAYER_FALLBACK_MESSAGE = "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้";
 
 function nowMs() {
   return Number(process.hrtime.bigint()) / 1e6;
@@ -179,6 +181,126 @@ async function findManagedSuggestedQuestionMatch(message, target = "all") {
     answerText: formatManagedSuggestedQuestionAnswer(match),
     topicHint: normalizeForSearch(match.questionText || message).toLowerCase(),
     source: buildManagedSuggestedQuestionSource(match),
+  };
+}
+
+function isThreeLayerChatFlowEnabled() {
+  return String(process.env.DISABLE_AI || "").trim().toLowerCase() === "true" &&
+    String(process.env.DISABLE_INTERNET || "").trim().toLowerCase() === "true";
+}
+
+function buildThreeLayerPdfSource(topResult = {}) {
+  const keyword = String(topResult.keyword || "").trim();
+  const chunkText = String(topResult.chunk_text || topResult.clean_text || "").trim();
+
+  return {
+    id: topResult.id || null,
+    title: keyword || "pdf chunk",
+    reference: keyword || chunkText || "pdf chunk",
+    content: chunkText,
+    source: "pdf_chunks",
+    comment: "ผลลัพธ์จากการค้นหา pdf_chunks แบบ keyword-based",
+    score: Number(topResult.score || 0),
+    document_id: topResult.document_id || null,
+    keyword,
+    chunk_text: chunkText,
+  };
+}
+
+function buildThreeLayerHighlightTerms(message = "", source = null) {
+  const terms = [];
+  const keyword = String(source?.keyword || "").trim();
+  if (keyword) {
+    terms.push(keyword);
+  }
+
+  const messageTerms = String(message || "")
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean)
+    .slice(0, 6);
+
+  return Array.from(new Set([...terms, ...messageTerms])).slice(0, 8);
+}
+
+async function resolveThreeLayerChatResponse(message, target = "all", options = {}) {
+  if (!isThreeLayerChatFlowEnabled()) {
+    return null;
+  }
+
+  const normalizedMessage = String(message || "").trim();
+  if (!normalizedMessage) {
+    return {
+      answerMode: "generic",
+      selectedSourceTier: "fallback",
+      hasContext: false,
+      answer: THREE_LAYER_FALLBACK_MESSAGE,
+      highlightTerms: [],
+      usedFollowUpContext: false,
+      usedInternetFallback: false,
+      fromCache: false,
+      sources: [],
+    };
+  }
+
+  const managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(normalizedMessage, target);
+  if (managedSuggestedQuestionMatch) {
+    return {
+      answerMode: "managed_answer",
+      selectedSourceTier: "managed_suggested_question",
+      hasContext: true,
+      answer: managedSuggestedQuestionMatch.answerText,
+      highlightTerms: buildThreeLayerHighlightTerms(normalizedMessage, managedSuggestedQuestionMatch.source),
+      usedFollowUpContext: false,
+      usedInternetFallback: false,
+      fromCache: false,
+      sources: [managedSuggestedQuestionMatch.source],
+    };
+  }
+
+  const searchLimit = Math.max(1, Number(options.searchLimit || 5));
+  const pdfMatches = await LawChatbotPdfChunkModel.searchChunksSmart(normalizedMessage, searchLimit);
+  const topResult = Array.isArray(pdfMatches) && pdfMatches.length > 0 ? pdfMatches[0] : null;
+  if (topResult) {
+    const source = buildThreeLayerPdfSource(topResult);
+    const answer = String(topResult.chunk_text || topResult.clean_text || topResult.keyword || "").trim();
+    if (!answer) {
+      return {
+        answerMode: "generic",
+        selectedSourceTier: "fallback",
+        hasContext: false,
+        answer: THREE_LAYER_FALLBACK_MESSAGE,
+        highlightTerms: buildThreeLayerHighlightTerms(normalizedMessage),
+        usedFollowUpContext: false,
+        usedInternetFallback: false,
+        fromCache: false,
+        sources: [],
+      };
+    }
+
+    return {
+      answerMode: "db_only",
+      selectedSourceTier: "pdf_chunks",
+      hasContext: Boolean(answer),
+      answer,
+      highlightTerms: buildThreeLayerHighlightTerms(normalizedMessage, source),
+      usedFollowUpContext: false,
+      usedInternetFallback: false,
+      fromCache: false,
+      sources: [source],
+    };
+  }
+
+  return {
+    answerMode: "generic",
+    selectedSourceTier: "fallback",
+    hasContext: false,
+    answer: THREE_LAYER_FALLBACK_MESSAGE,
+    highlightTerms: buildThreeLayerHighlightTerms(normalizedMessage),
+    usedFollowUpContext: false,
+    usedInternetFallback: false,
+    fromCache: false,
+    sources: [],
   };
 }
 
@@ -538,6 +660,7 @@ module.exports = {
   nowMs,
   recordUserSearchHistory,
   resolveChatPlanContext,
+  resolveThreeLayerChatResponse,
   resolveSearchPlan,
   shouldPersistDbAnswerCache,
   shouldSearchInternetForPlan,

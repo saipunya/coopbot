@@ -26,6 +26,7 @@ const {
   nowMs,
   recordUserSearchHistory,
   resolveChatPlanContext,
+  resolveThreeLayerChatResponse,
   resolveSearchPlan,
   shouldPersistDbAnswerCache,
   shouldSearchInternetForPlan,
@@ -693,6 +694,66 @@ async function replyToChat(payload, session) {
       answer: "กรุณาระบุคำถามหรือประเด็นที่ต้องการสอบถามก่อนส่งข้อความ",
       highlightTerms: [],
     };
+  }
+
+  const threeLayerResponse = await resolveThreeLayerChatResponse(message, target, {
+    searchLimit: 5,
+  });
+  if (threeLayerResponse) {
+    const answer = String(threeLayerResponse.answer || "").trim();
+    const response = {
+      hasContext: Boolean(threeLayerResponse.hasContext),
+      answer,
+      highlightTerms: Array.isArray(threeLayerResponse.highlightTerms) ? threeLayerResponse.highlightTerms : [],
+      usedFollowUpContext: false,
+      usedInternetFallback: false,
+      responseMeta: buildResponseMeta(threeLayerResponse.answerMode || "generic", threeLayerResponse.sources || []),
+      fromCache: false,
+    };
+    const planContext = resolveChatPlanContext(session, {
+      aiAvailable: false,
+    });
+    const source = Array.isArray(threeLayerResponse.sources) ? threeLayerResponse.sources[0] : null;
+
+    if (source && threeLayerResponse.answerMode !== "generic") {
+      storeConversationContext(
+        session,
+        target,
+        message,
+        message,
+        threeLayerResponse.sources,
+        {
+          usedContext: false,
+          topicHints: [String(source.keyword || source.reference || source.title || "").trim()].filter(Boolean),
+        },
+        { answerText: answer },
+      );
+    }
+
+    LawChatbotModel.create({
+      message,
+      effectiveMessage: message,
+      target,
+      answer,
+      matchedSources: (threeLayerResponse.sources || []).map((item) => ({
+        id: item.id || item.url || item.reference || item.title,
+        title: item.title || item.keyword || item.reference,
+        lawNumber: item.lawNumber || item.reference || item.keyword,
+        source: item.source || "",
+        url: item.url || "",
+        score: Number(item.score || 0),
+      })),
+    });
+
+    await recordUserSearchHistory(session, planContext, {
+      questionText: message,
+      target,
+      answerText: answer,
+    });
+
+    return threeLayerResponse.answerMode === "generic"
+      ? response
+      : personalizeChatResult(session, response);
   }
 
   const aiRuntimeEnabled = await isAiEnabled();

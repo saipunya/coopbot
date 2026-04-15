@@ -9,6 +9,11 @@ const {
 const { hasAcceptedLawChatbotNotice } = require("../middlewares/authMiddleware");
 const runtimeSettingsService = require("../services/runtimeSettingsService");
 const vinichaiAdminService = require("../services/vinichaiAdminService");
+const {
+  generateKeywordFromChunk,
+  normalizeChunkText,
+  splitIntoKnowledgeChunks,
+} = require("../utils/chunkSplitter");
 
 function appendQueryParam(path, key, value) {
   const normalizedPath = String(path || "").trim();
@@ -111,50 +116,19 @@ function sanitizePdfChunkAdminReturnPath(value, fallbackPath = "/admin/pdf-chunk
   return path;
 }
 
-function normalizeManualChunkText(text) {
-  return String(text || "")
-    .replace(/\r\n?/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 function deriveManualChunkKeyword(baseKeyword, block, index, totalBlocks) {
-  const fallbackKeyword = String(baseKeyword || "").trim() || "manual chunk";
-  const lines = String(block || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const heading = String(lines[0] || "")
-    .replace(/^(?:[-*•]|\d+[.)])\s*/u, "")
-    .trim();
-
-  if (
-    heading &&
-    heading.length >= 4 &&
-    heading.length <= 80 &&
-    heading !== fallbackKeyword &&
-    !/^โครงสร้างของสหกรณ์ตั้งอยู่บน/.test(heading)
-  ) {
-    if (
-      fallbackKeyword &&
-      !heading.includes(fallbackKeyword) &&
-      !fallbackKeyword.includes(heading)
-    ) {
-      return `${fallbackKeyword} - ${heading}`.slice(0, 255);
-    }
-
-    return heading.slice(0, 255);
-  }
-
-  if (totalBlocks <= 1) {
-    return fallbackKeyword.slice(0, 255);
-  }
-
-  return `${fallbackKeyword} (${index + 1})`.slice(0, 255);
+  return (
+    generateKeywordFromChunk(block, {
+      baseKeyword,
+      topic: baseKeyword,
+      index,
+      totalChunks: totalBlocks,
+    }) || String(baseKeyword || "").trim().slice(0, 255)
+  );
 }
 
 function splitManualChunkText(baseKeyword, rawContent, splitMode = "single") {
-  const normalizedText = normalizeManualChunkText(rawContent);
+  const normalizedText = normalizeChunkText(rawContent);
   if (!normalizedText) {
     return [];
   }
@@ -168,19 +142,15 @@ function splitManualChunkText(baseKeyword, rawContent, splitMode = "single") {
     ];
   }
 
-  let blocks = normalizedText
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean);
+  const chunks = splitIntoKnowledgeChunks(normalizedText, {
+    baseKeyword,
+    topic: baseKeyword,
+    minLength: 80,
+    maxLength: 350,
+    targetLength: 220,
+  });
 
-  if (blocks.length <= 1) {
-    blocks = normalizedText
-      .split(/\n(?=(?:[-*•]|\d+[.)]|หัวข้อ|ประเด็น|ส่วนที่)\s*)/u)
-      .map((block) => block.trim())
-      .filter(Boolean);
-  }
-
-  if (blocks.length <= 1) {
+  if (chunks.length === 0) {
     return [
       {
         keyword: String(baseKeyword || "").trim().slice(0, 255),
@@ -189,9 +159,10 @@ function splitManualChunkText(baseKeyword, rawContent, splitMode = "single") {
     ];
   }
 
-  return blocks.map((block, index) => ({
-    keyword: deriveManualChunkKeyword(baseKeyword, block, index, blocks.length),
-    chunkText: block,
+  return chunks.map((chunk, index) => ({
+    keyword: chunk.keyword || deriveManualChunkKeyword(baseKeyword, chunk.chunkText, index, chunks.length),
+    chunkText: chunk.chunkText,
+    cleanText: chunk.cleanText,
   }));
 }
 
@@ -394,16 +365,8 @@ async function renderManualPdfChunks(req, res) {
     data: {
       chunkCount,
       sampleKeyword: "โครงสร้างสหกรณ์",
-      sampleText: [
-        "โครงสร้างสหกรณ์",
-        "สหกรณ์มีโครงสร้างการบริหารที่ยึดสมาชิกเป็นศูนย์กลาง และมีการกำกับดูแลผ่านคณะกรรมการดำเนินการ",
-        "",
-        "หลักประชาธิปไตย",
-        "สมาชิกมีสิทธิออกเสียง เลือกตั้ง และมีส่วนร่วมในการกำหนดทิศทางของสหกรณ์อย่างเท่าเทียม",
-        "",
-        "บทบาทของคณะกรรมการดำเนินการ",
-        "คณะกรรมการดำเนินการทำหน้าที่กำหนดนโยบาย ควบคุมการบริหาร และติดตามผลการดำเนินงานให้เป็นไปตามข้อบังคับ",
-      ].join("\n"),
+      sampleText:
+        "โครงสร้างของสหกรณ์ ตั้งอยู่บนรากฐานของประชาธิปไตย สมาชิกทุกคนเป็นเจ้าของสหกรณ์ แต่ทุกคนไม่สามารถร่วมบริหารกิจการของสหกรณ์ได้ จึงต้องมีการเลือกตั้งคณะกรรมการดำเนินการเป็นผู้บริหารงานแทน ตามพระราชบัญญัติสหกรณ์ พ.ศ. 2542 กำหนดให้มีคณะกรรมการดำเนินการไม่เกิน 15 คน มีอำนาจหน้าที่เป็นผู้ดำเนินกิจการและเป็นผู้แทนสหกรณ์ในกิจการทั้งปวงเพื่อให้กิจการสหกรณ์ดำเนินการอย่างกว้างขวาง และให้บริการแก่สมาชิกอย่างทั่วถึง คณะกรรมการดำเนินการควรจัดจ้างผู้จัดการที่มีความรู้ความสามารถมาดำเนินธุรกิจแทน และผู้จัดการอาจจัดจ้างเจ้าหน้าที่โดยความเห็นชอบของคณะกรรมการดำเนินการ เพื่อช่วยเหลือกิจการสหกรณ์ด้านต่างๆ ตามความเหมาะสมโดยคำนึงถึงปริมาณธุรกิจและการประหยัดเป็นสำคัญ",
     },
   });
 }
