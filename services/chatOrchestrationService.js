@@ -170,6 +170,65 @@ function formatManagedSuggestedQuestionAnswer(match = {}) {
   return `${answerText}\n\nแหล่งอ้างอิง:\n${referenceLines.map((line) => `- ${line}`).join("\n")}`;
 }
 
+function buildSeededLegalAnswerSource(entry = {}) {
+  return {
+    id: entry.id || entry.key || null,
+    target: "all",
+    title: entry.questionText || "",
+    reference: entry.sourceReference || entry.questionText || "คำตอบกฎหมายเฉพาะเรื่อง",
+    content: entry.answerText || "",
+    source: "managed_suggested_question",
+    comment: "คำตอบกฎหมายเฉพาะเรื่องที่ระบบ seed ไว้เพื่อกันการตอบคลาดเคลื่อน",
+    score: 1200,
+  };
+}
+
+function findSeededLegalAnswer(message = "") {
+  const normalizedMessage = normalizeForSearch(message).toLowerCase();
+  if (!normalizedMessage) {
+    return null;
+  }
+
+  const compactMessage = normalizedMessage.replace(/\s+/g, "");
+  const mentionsCoopFormation =
+    compactMessage.includes("จัดตั้งสหกรณ์") ||
+    compactMessage.includes("การจัดตั้งสหกรณ์") ||
+    compactMessage.includes("จดทะเบียนจัดตั้งสหกรณ์") ||
+    compactMessage.includes("ผู้เริ่มก่อการสหกรณ์") ||
+    compactMessage.includes("ผู้เริ่มก่อการ") ||
+    compactMessage.includes("ผู้ซึ่งประสงค์จะเป็นสมาชิก") ||
+    (compactMessage.includes("สหกรณ์") && compactMessage.includes("สมาชิก"));
+  const asksMinimumMemberCount =
+    compactMessage.includes("สมาชิกขั้นต่ำสหกรณ์") ||
+    compactMessage.includes("อย่างน้อยกี่คน") ||
+    compactMessage.includes("ต้องมีกี่คน") ||
+    compactMessage.includes("ต้องมีสมาชิกกี่คน") ||
+    compactMessage.includes("ไม่น้อยกว่า10คน") ||
+    compactMessage.includes("ไม่น้อยกว่าสิบคน");
+  const referencesSection33 =
+    compactMessage.includes("มาตรา33") ||
+    compactMessage.includes("มาตรา๓๓");
+
+  if (!(referencesSection33 || (mentionsCoopFormation && asksMinimumMemberCount))) {
+    return null;
+  }
+
+  const seededAnswer = {
+    key: "coop_formation_minimum_members_section_33",
+    questionText: "จำนวนสมาชิกขั้นต่ำในการจัดตั้งสหกรณ์",
+    answerText:
+      "การจัดตั้งสหกรณ์ต้องมีผู้ซึ่งประสงค์จะเป็นสมาชิกเข้าชื่อกันไม่น้อยกว่า 10 คน",
+    sourceReference: "พระราชบัญญัติสหกรณ์ พ.ศ. 2542 มาตรา 33",
+  };
+
+  return {
+    ...seededAnswer,
+    answerText: formatManagedSuggestedQuestionAnswer(seededAnswer),
+    topicHint: normalizeForSearch(seededAnswer.questionText).toLowerCase(),
+    source: buildSeededLegalAnswerSource(seededAnswer),
+  };
+}
+
 async function findManagedSuggestedQuestionMatch(message, target = "all") {
   const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(message, target);
   if (!match?.answerText) {
@@ -240,6 +299,21 @@ async function resolveThreeLayerChatResponse(message, target = "all", options = 
       usedInternetFallback: false,
       fromCache: false,
       sources: [],
+    };
+  }
+
+  const seededLegalAnswer = findSeededLegalAnswer(normalizedMessage);
+  if (seededLegalAnswer) {
+    return {
+      answerMode: "managed_answer",
+      selectedSourceTier: "managed_suggested_question",
+      hasContext: true,
+      answer: seededLegalAnswer.answerText,
+      highlightTerms: buildThreeLayerHighlightTerms(normalizedMessage, seededLegalAnswer.source),
+      usedFollowUpContext: false,
+      usedInternetFallback: false,
+      fromCache: false,
+      sources: [seededLegalAnswer.source],
     };
   }
 
