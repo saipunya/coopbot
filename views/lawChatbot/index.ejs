@@ -2432,94 +2432,7 @@
         : isGoogleUser
           ? "bi-person-badge-fill"
           : "bi-person-circle";
-      const botPlanAliases = {
-        standard: "pro",
-        "premium-monthly": "premium",
-        "premium-yearly": "premium",
-        professional: "pro",
-        blue: "pro"
-      };
-      const rawBotPlanCode = currentUser
-        ? "admin"
-        : String((signedInUser && signedInUser.plan) || "free").trim().toLowerCase();
-      const botPackageVariant = currentUser
-        ? "admin"
-        : (["free", "pro", "premium"].includes(rawBotPlanCode)
-          ? rawBotPlanCode
-          : (botPlanAliases[rawBotPlanCode] || "free"));
-      const botPlanTheme = ["free", "pro", "premium"].includes(botPackageVariant) ? botPackageVariant : "free";
-      const botPlanMeta = {
-        free: {
-          label: "แพ็กเกจฟรี",
-          title: "เริ่มใช้งานแบบเรียบง่าย",
-          description: "เหมาะกับการสำรวจระบบและดูรูปแบบคำตอบก่อนขยับไปแพ็กเกจที่ตอบได้ลึกและต่อเนื่องขึ้น",
-          quota: "โควต้าแบบเริ่มต้น",
-          depth: "คำตอบกระชับและตรงประเด็น",
-          icon: "bi-gift",
-          highlights: [
-            { icon: "bi-database", text: "ค้นหาจากฐานข้อมูลภายในระบบแบบเร็วและตรงประเด็น" },
-            { icon: "bi-stars", text: "ลองคำตอบแบบ AI ได้ฟรี 5 ครั้งต่อเดือน" },
-            { icon: "bi-chat-text", text: "รองรับการถามต่อเนื่องจากเรื่องเดิม" },
-            { icon: "bi-arrow-up-circle", text: "อัปเกรดเมื่อพร้อม เพื่อปลดล็อกความสามารถเต็ม" }
-          ],
-          upgradeCta: true
-        },
-        pro: {
-          label: "Professional",
-          title: "ทำงานประจำได้ลื่นและมั่นใจ",
-          description: "โทนคำตอบและการค้นหาถูกยกระดับให้เหมาะกับการใช้งานต่อเนื่อง พร้อม internet fallback แบบจำกัดเมื่อจำเป็น",
-          quota: "โควต้ารายเดือนที่สูงขึ้น",
-          depth: "คำตอบละเอียดและต่อบทสนทนาได้ดี",
-          icon: "bi-lightning-charge-fill",
-          highlights: [
-            { icon: "bi-cpu", text: "AI ตอบได้ต่อเนื่องโดยไม่ต้องใช้สิทธิ์ทดลอง" },
-            { icon: "bi-globe2", text: "ค้นข้อมูลภายนอกได้แบบจำกัดเมื่อข้อมูลในระบบยังไม่พอ" },
-            { icon: "bi-clock-history", text: "เก็บประวัติการค้นหา 15 วัน" },
-            { icon: "bi-chat-dots", text: "ตอบละเอียดขึ้น พร้อมเหตุผลและเงื่อนไขสำคัญ" }
-          ],
-          upgradeCta: true
-        },
-        premium: {
-          label: "Premium",
-          title: "วิเคราะห์เชิงลึกในมุมที่กว้างกว่า",
-          description: "เหมาะกับงานที่ต้องการความครอบคลุมสูงสุด การเรียบเรียงแน่นขึ้น และการใช้หลายแหล่งข้อมูลมากกว่าเดิม",
-          quota: "ใช้งานระดับเข้มข้น",
-          depth: "คำตอบเชิงลึกและหลายแหล่งอ้างอิง",
-          icon: "bi-gem",
-          highlights: [
-            { icon: "bi-bullseye", text: "AI เชิงลึกพร้อมเปรียบเทียบหลายแหล่งและอธิบายเพิ่มเติม" },
-            { icon: "bi-arrow-repeat", text: "follow-up และวิเคราะห์ต่อเนื่องได้ดีที่สุด" },
-            { icon: "bi-globe", text: "ค้นอินเทอร์เน็ตได้เต็มกว่าแพ็กเกจอื่น" },
-            { icon: "bi-journal-bookmark", text: "เก็บประวัติการค้นหา 30 วัน" }
-          ],
-          upgradeCta: false
-        }
-      };
-      const activeBotPlanMeta = botPlanMeta[botPlanTheme] || botPlanMeta.free;
-      const signedInSummary = data && data.signedInSummary ? data.signedInSummary : null;
-      const signedInUsage = signedInSummary && signedInSummary.usage ? signedInSummary.usage : null;
-      const signedInUpgradeRecommendation = signedInSummary && signedInSummary.upgradeRecommendation
-        ? signedInSummary.upgradeRecommendation
-        : null;
-      const shouldShowQuotaStickyCta = Boolean(
-        isGoogleUser &&
-        signedInUsage &&
-        !signedInUsage.isUnlimited &&
-        signedInUpgradeRecommendation &&
-        signedInUpgradeRecommendation.shouldPromoteUpgrade &&
-        signedInUpgradeRecommendation.currentPlanCode === 'free'
-      );
-      const quotaStickyTitle = signedInUpgradeRecommendation && signedInUpgradeRecommendation.isQuotaExhausted
-        ? 'คุณใช้สิทธิ์ถามครบกำหนดแล้ว'
-        : 'สิทธิ์ถามของคุณใกล้หมดแล้ว';
-      const quotaStickyText = signedInUpgradeRecommendation && signedInUpgradeRecommendation.isQuotaExhausted
-        ? `ใช้ไป ${signedInUsage && signedInUsage.questionCount ? signedInUsage.questionCount : 0} จาก ${signedInUsage && signedInUsage.questionLimit ? signedInUsage.questionLimit : 0} ครั้งของเดือนนี้ อัปเกรดแพ็กเกจเพื่อถามต่อได้ทันที`
-        : `เหลือใช้อีก ${signedInUsage && typeof signedInUsage.remainingQuestions !== 'undefined' ? signedInUsage.remainingQuestions : 0} จาก ${signedInUsage && signedInUsage.questionLimit ? signedInUsage.questionLimit : 0} ครั้งของเดือนนี้ หากใช้งานต่อเนื่อง แนะนำให้อัปเกรดไว้ล่วงหน้า`;
     %>
-
-    <script>
-      document.body.dataset.botPlan = <%- JSON.stringify(botPlanTheme) %>;
-    </script>
 
     <div class="page-header">
       <div class="page-brand">
@@ -2587,68 +2500,6 @@
         </div>
       </div>
     </div>
-
-    <section class="plan-ribbon">
-      <div class="plan-ribbon-head d-none d-md-flex">
-        <span class="plan-ribbon-chip"><i class="bi <%= activeBotPlanMeta.icon || 'bi-layers' %>"></i> <%= activeBotPlanMeta.label %></span>
-        <button
-          type="button"
-          id="togglePlanRibbonBtn"
-          data-toggle-plan-ribbon-control="1"
-          class="btn plan-ribbon-toggle-btn"
-          title="แสดงรายละเอียดแพ็กเกจ"
-          aria-label="แสดงรายละเอียดแพ็กเกจ"
-          aria-pressed="true"
-        >
-          <i class="bi bi-layout-sidebar-inset"></i>
-          <span>แสดงแพ็กเกจ</span>
-        </button>
-      </div>
-      <div class="plan-ribbon-body">
-      <div class="plan-ribbon-copy">
-        <h2 class="plan-ribbon-title"><%= activeBotPlanMeta.title %></h2>
-        <p class="plan-ribbon-text"><%= activeBotPlanMeta.description %></p>
-
-        <% if (Array.isArray(activeBotPlanMeta.highlights) && activeBotPlanMeta.highlights.length) { %>
-          <div class="plan-highlights">
-            <% activeBotPlanMeta.highlights.forEach(function(hl) { %>
-              <div class="plan-highlight-card">
-                <div class="plan-highlight-icon"><i class="bi <%= hl.icon %>"></i></div>
-                <span class="plan-highlight-text"><%= hl.text %></span>
-              </div>
-            <% }); %>
-          </div>
-        <% } %>
-
-        <% if (isGoogleUser && signedInUsage && !signedInUsage.isUnlimited) { %>
-          <div class="plan-ribbon-usage-bar">
-            <div class="plan-ribbon-usage-track">
-              <div class="plan-ribbon-usage-fill" style="width: <%= Math.min(100, Math.round(((signedInUsage.questionCount || 0) / Math.max(1, signedInUsage.questionLimit || 1)) * 100)) %>%"></div>
-            </div>
-            <span class="plan-ribbon-usage-label">ใช้แล้ว <%= signedInUsage.questionCount || 0 %>/<%= signedInUsage.questionLimit || 0 %> ครั้ง</span>
-          </div>
-        <% } %>
-
-        <% if (activeBotPlanMeta.upgradeCta && !currentUser && botPlanTheme !== 'premium') { %>
-          <a href="/user" class="plan-ribbon-upgrade">
-            <i class="bi bi-rocket-takeoff"></i>
-            <span>อัปเกรดแพ็กเกจ</span>
-            <i class="bi bi-chevron-right"></i>
-          </a>
-        <% } %>
-      </div>
-      <div class="plan-ribbon-stats">
-        <div class="plan-ribbon-stat">
-          <span>ระดับการใช้งาน</span>
-          <strong><%= activeBotPlanMeta.quota %></strong>
-        </div>
-        <div class="plan-ribbon-stat">
-          <span>ลักษณะคำตอบ</span>
-          <strong><%= activeBotPlanMeta.depth %></strong>
-        </div>
-      </div>
-      </div>
-    </section>
 
     <div class="modal fade" id="iosInstallModal" tabindex="-1" aria-labelledby="iosInstallModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
@@ -3845,14 +3696,6 @@
         const noisePatterns = [
           /^หากต้องการ(?:เจาะลึกต่อ|ข้อมูลเพิ่มเติม|เพิ่มเติม)\s*พิมพ์:/iu,
           /^(?:คำอธิบายเพิ่มเติม|อธิบายเพิ่มเติม|แสดงรายละเอียด|รายละเอียด|ใจความทั้งหมด|ฉันไม่เข้าใจ|แจ้งเพิ่มเติม)$/iu,
-          /^(?:ลองคำตอบแบบ AI ฟรี|ดูแพ็กเกจ|อัปเกรดแพ็กเกจ|อัปเกรดแพลน|อัปเกรดแพ็กเกจ|อัปเกรด|Premium|Professional)$/iu,
-          /^เหลือ\s*\d+\s*\/\s*\d+\s*ครั้งเดือนนี้(?:.*)$/iu,
-          /^คุณใช้สิทธิ์ลอง AI ฟรีครบ.*$/iu,
-          /^คุณใช้สิทธิ์ลองคำตอบแบบ AI ฟรีครบ.*$/iu,
-          /^หากต้องการใช้งานคำตอบ AI ต่อเนื่อง.*$/iu,
-          /^ใช้งานครบโควต้ารายเดือนแล้ว.*$/iu,
-          /^อัปเกรดแพ็กเกจเพื่อถามต่อได้ทันทีโดยไม่ต้องรอรอบเดือนถัดไป.*$/iu,
-          /^กรุณาอัปเกรดแพลน.*$/iu,
         ];
 
         const filteredLines = raw
