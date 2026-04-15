@@ -5,7 +5,7 @@ const GOOGLE_OAUTH_BASE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_TOKEN_INFO_URL = "https://oauth2.googleapis.com/tokeninfo";
 
-function sanitizeReturnPath(value, fallbackPath = "/user") {
+function sanitizeReturnPath(value, fallbackPath = "/law-chatbot") {
   const path = String(value || "").trim();
   if (!path || !path.startsWith("/") || path.startsWith("//")) {
     return fallbackPath;
@@ -71,7 +71,7 @@ function createGoogleAuthUrl(req) {
   const state = crypto.randomBytes(24).toString("hex");
   if (req.session) {
     req.session.googleOAuthState = state;
-    req.session.googleOAuthReturnTo = sanitizeReturnPath(req.query?.returnTo, "/user");
+    req.session.googleOAuthReturnTo = sanitizeReturnPath(req.query?.returnTo, "/law-chatbot");
   }
 
   const url = new URL(GOOGLE_OAUTH_BASE_URL);
@@ -208,7 +208,7 @@ async function loginWithGoogleCallback(req) {
 
   return {
     ok: true,
-    returnTo: sanitizeReturnPath(req.session?.googleOAuthReturnTo, "/user"),
+    returnTo: sanitizeReturnPath(req.session?.googleOAuthReturnTo, "/law-chatbot"),
     user: {
       id: persistedUser?.id || profile.sub,
       username: persistedUser?.email || profile.email,

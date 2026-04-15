@@ -454,7 +454,7 @@ function redirectIfAuthenticated(req, res, next) {
   }
 
   if (req.session?.user) {
-    const targetPath = sanitizeReturnPath(req.query?.returnTo, "/user");
+    const targetPath = sanitizeReturnPath(req.query?.returnTo, "/law-chatbot");
     return res.redirect(targetPath);
   }
 

@@ -268,7 +268,7 @@ async function handleGoogleCallback(req, res) {
     return saveSessionAndRedirect(
       req,
       res,
-      result.returnTo || "/user",
+      result.returnTo || "/law-chatbot",
       "ไม่สามารถบันทึกสถานะการเข้าสู่ระบบด้วย Google ได้",
       "Failed to save session after Google callback:"
     );
