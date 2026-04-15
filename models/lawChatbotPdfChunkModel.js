@@ -1,4 +1,8 @@
+const fs = require("node:fs/promises");
+const path = require("node:path");
 const { getDbPool } = require("../config/db");
+const { normalizeThai } = require("../utils/thaiNormalizer");
+const { expandKeywords } = require("../utils/synonyms");
 const {
   hasExclusiveMeaningMismatch,
   makeBigrams,
@@ -19,6 +23,12 @@ const {
 let embeddingCache = null;
 let embeddingCacheTime = 0;
 const EMBEDDING_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let pdfChunkFulltextIndexAvailable = null;
+let pdfChunkColumnMetadataCache = null;
+const SEARCH_MISS_LOG_PATH = path.join(__dirname, "..", "logs", "search-misses.jsonl");
+const SEARCH_MISS_LOG_COOLDOWN_MS = 10 * 60 * 1000;
+const searchMissLogTimestamps = new Map();
+let searchMissLogWarned = false;
 
 const GENERIC_QUERY_TOKENS = new Set([
   "ค่า",
@@ -34,6 +44,76 @@ const GENERIC_QUERY_TOKENS = new Set([
   "ข้อ",
   "ระเบียบ",
 ]);
+
+function normalizeSearchKeyword(text) {
+  return normalizeThai(normalizeForSearch(text));
+}
+
+function compactThaiText(text) {
+  return normalizeSearchKeyword(text).replace(/\s+/g, "");
+}
+
+function makeCharacterBigrams(text) {
+  const compact = compactThaiText(text);
+  if (compact.length < 2) {
+    return compact ? [compact] : [];
+  }
+
+  const grams = [];
+  for (let index = 0; index < compact.length - 1; index += 1) {
+    grams.push(compact.slice(index, index + 2));
+  }
+  return grams;
+}
+
+function calculateDiceCoefficient(leftText, rightText) {
+  const leftBigrams = makeCharacterBigrams(leftText);
+  const rightBigrams = makeCharacterBigrams(rightText);
+
+  if (leftBigrams.length === 0 || rightBigrams.length === 0) {
+    return 0;
+  }
+
+  const rightCounts = new Map();
+  rightBigrams.forEach((gram) => {
+    rightCounts.set(gram, (rightCounts.get(gram) || 0) + 1);
+  });
+
+  let overlap = 0;
+  leftBigrams.forEach((gram) => {
+    const count = rightCounts.get(gram) || 0;
+    if (count > 0) {
+      overlap += 1;
+      rightCounts.set(gram, count - 1);
+    }
+  });
+
+  return (2 * overlap) / (leftBigrams.length + rightBigrams.length);
+}
+
+function isGarbage(text) {
+  const rawText = String(text || "");
+  const normalizedText = normalizeSearchKeyword(rawText);
+  if (!normalizedText) {
+    return true;
+  }
+
+  if (normalizedText.replace(/\s+/g, "").length < 4) {
+    return true;
+  }
+
+  const suspiciousSymbolHits = countRegexMatches(rawText, /[\uFFFD\uF700-\uF8FF~^_=<>[\]{}|\\`]/g);
+  if (suspiciousSymbolHits >= 3) {
+    return true;
+  }
+
+  const usefulChars = countRegexMatches(rawText, /[ก-๙a-zA-Z0-9\s]/g);
+  if (rawText.length >= 12 && usefulChars / rawText.length < 0.45) {
+    return true;
+  }
+
+  return false;
+}
 
 function buildCandidateTerms(message) {
   const normalizedMessage = normalizeForSearch(message).toLowerCase();
@@ -447,11 +527,606 @@ function getMinimumTokenHits(queryTokens) {
   return 1;
 }
 
+function buildSmartSearchTerms(message) {
+  const normalizedMessage = normalizeSearchKeyword(message);
+  const baseTerms = buildCandidateTerms(message).map((term) => normalizeSearchKeyword(term));
+  const queryTokens = uniqueTokens([
+    ...segmentWords(message),
+    ...segmentWords(normalizedMessage),
+  ])
+    .map((token) => normalizeSearchKeyword(token))
+    .filter((token) => token && token.length >= 2);
+  const expandedTerms = uniqueTokens([
+    normalizedMessage,
+    ...baseTerms,
+    ...expandKeywords(normalizedMessage),
+    ...queryTokens.flatMap((token) => expandKeywords(token)),
+  ]).filter(Boolean);
+  const genericExpansionTerms = new Set([...GENERIC_QUERY_TOKENS, "coop", "สหกรณ"]);
+  const specificExpandedTerms = expandedTerms.filter((term) => !genericExpansionTerms.has(term));
+  const filteredTerms =
+    specificExpandedTerms.length > 0
+      ? uniqueTokens([normalizedMessage, ...specificExpandedTerms])
+      : expandedTerms;
+  const fallbackSourceTerms = filteredTerms.filter(
+    (term) => term && (term.length <= 8 || filteredTerms.length === 1),
+  );
+
+  const searchTerms = filteredTerms.slice(0, 12);
+  const fallbackTerms = uniqueTokens(
+    fallbackSourceTerms.flatMap((term) => {
+      const compact = compactThaiText(term);
+      if (!compact) {
+        return [];
+      }
+
+      if (compact.length <= 3) {
+        return [compact];
+      }
+
+      const candidates = [compact.slice(0, 3), compact.slice(-3)];
+      if (compact.length >= 5) {
+        candidates.push(compact.slice(0, 2), compact.slice(-2));
+      }
+      return candidates;
+    }),
+  )
+    .filter((term) => term && term.length >= 2 && term.length <= 3)
+    .slice(0, 8);
+
+  return {
+    normalizedMessage,
+    searchTerms,
+    fallbackTerms,
+    queryTokens: queryTokens.filter((token) => token.length >= 2 && !GENERIC_QUERY_TOKENS.has(token)),
+  };
+}
+
+function buildBooleanModeQuery(terms = []) {
+  const booleanTerms = uniqueTokens(
+    terms
+      .flatMap((term) => String(term || "").split(/\s+/))
+      .map((term) => normalizeSearchKeyword(term))
+      .filter((term) => term && term.length >= 2),
+  )
+    .slice(0, 6)
+    .map((term) => `${term}*`);
+
+  return booleanTerms.join(" ");
+}
+
+function scoreApproximateTokenHits(queryTokens = [], rowTokens = []) {
+  if (!Array.isArray(queryTokens) || !Array.isArray(rowTokens) || queryTokens.length === 0 || rowTokens.length === 0) {
+    return 0;
+  }
+
+  const limitedRowTokens = rowTokens
+    .map((token) => compactThaiText(token))
+    .filter((token) => token && token.length >= 2 && token.length <= 32)
+    .slice(0, 80);
+
+  let score = 0;
+  queryTokens
+    .filter((token) => token && token.length >= 3)
+    .slice(0, 6)
+    .forEach((queryToken) => {
+      const compactQuery = compactThaiText(queryToken);
+      if (!compactQuery) {
+        return;
+      }
+
+      let bestSimilarity = 0;
+      for (const rowToken of limitedRowTokens) {
+        if (!rowToken) {
+          continue;
+        }
+
+        const lengthRatio =
+          Math.min(rowToken.length, compactQuery.length) /
+          Math.max(rowToken.length, compactQuery.length);
+        if ((rowToken.includes(compactQuery) || compactQuery.includes(rowToken)) && lengthRatio >= 0.75) {
+          bestSimilarity = 1;
+          break;
+        }
+
+        if (Math.abs(rowToken.length - compactQuery.length) > 2) {
+          continue;
+        }
+
+        bestSimilarity = Math.max(bestSimilarity, calculateDiceCoefficient(compactQuery, rowToken));
+      }
+
+      if (bestSimilarity >= 0.92) {
+        score += 12;
+      } else if (bestSimilarity >= 0.82) {
+        score += 7;
+      } else if (bestSimilarity >= 0.72) {
+        score += 3;
+      }
+    });
+
+  return score;
+}
+
+function buildRowPresentation(row) {
+  return {
+    ...row,
+    source: "pdf_chunks",
+    title: row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
+    reference:
+      row.document_number || row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
+    documentNumber: row.document_number || "",
+    documentDateText: row.document_date_text || "",
+    documentSource: row.document_source || "",
+  };
+}
+
+function evaluateSearchMissReason(results = []) {
+  if (!Array.isArray(results) || results.length === 0) {
+    return "no_results";
+  }
+
+  const topScore = Number(results[0]?.score || 0);
+  if (topScore < 45) {
+    return "low_top_score";
+  }
+
+  if (results.length === 1 && topScore < 70) {
+    return "thin_result_set";
+  }
+
+  return "";
+}
+
+function shouldAppendSearchMissLog(record = {}) {
+  const normalizedQuery = String(record.normalizedQuery || "").trim().toLowerCase();
+  const reason = String(record.reason || "").trim().toLowerCase();
+  const topKeyword = String(record.topResultKeyword || "").trim().toLowerCase();
+  const topScoreBucket = Math.floor(Number(record.topResultScore || 0) / 10);
+  const key = `${normalizedQuery}|${reason}|${topKeyword}|${topScoreBucket}`;
+  const now = Date.now();
+  const lastLoggedAt = searchMissLogTimestamps.get(key) || 0;
+
+  if (now - lastLoggedAt < SEARCH_MISS_LOG_COOLDOWN_MS) {
+    return false;
+  }
+
+  searchMissLogTimestamps.set(key, now);
+  return true;
+}
+
+async function appendSearchMissLog(record = {}) {
+  try {
+    if (!shouldAppendSearchMissLog(record)) {
+      return;
+    }
+
+    await fs.mkdir(path.dirname(SEARCH_MISS_LOG_PATH), { recursive: true });
+    await fs.appendFile(SEARCH_MISS_LOG_PATH, `${JSON.stringify(record)}\n`, "utf8");
+  } catch (error) {
+    if (!searchMissLogWarned) {
+      searchMissLogWarned = true;
+      console.warn(`Search miss log warning: ${error.message || error}`);
+    }
+  }
+}
+
+function logSearchMissIfNeeded(message, searchContext, results) {
+  const reason = evaluateSearchMissReason(results);
+  if (!reason) {
+    return;
+  }
+
+  const topResult = Array.isArray(results) && results.length > 0 ? results[0] : null;
+  void appendSearchMissLog({
+    timestamp: new Date().toISOString(),
+    reason,
+    originalQuery: String(message || ""),
+    normalizedQuery: searchContext?.normalizedMessage || "",
+    expandedTerms: Array.isArray(searchContext?.searchTerms) ? searchContext.searchTerms : [],
+    totalResults: Array.isArray(results) ? results.length : 0,
+    topResultKeyword: topResult?.keyword || "",
+    topResultScore: Number(topResult?.score || 0),
+  });
+}
+
+function rankChunkRows(message, rows, searchContext, limit) {
+  const minTokenHits = getMinimumTokenHits(searchContext.queryTokens);
+
+  return rows
+    .map((row) => {
+      const combinedText = `${row.keyword || ""} ${row.chunk_text || ""} ${row.clean_text || ""}`.trim();
+      const haystack = normalizeSearchKeyword(combinedText);
+      const rowTokens = uniqueTokens([
+        ...segmentWords(row.keyword || ""),
+        ...segmentWords(row.chunk_text || ""),
+        ...segmentWords(row.clean_text || ""),
+        ...segmentWords(haystack),
+      ])
+        .map((token) => normalizeSearchKeyword(token))
+        .filter(Boolean);
+      const rowTokenSet = new Set(rowTokens);
+      const tokenHits = searchContext.queryTokens.filter((token) => rowTokenSet.has(token)).length;
+      const hasExactPhrase =
+        searchContext.normalizedMessage && haystack.includes(searchContext.normalizedMessage);
+      const coarseScore = searchContext.searchTerms.reduce(
+        (sum, term) => sum + (haystack.includes(term) ? (term.length >= 4 ? 2 : 1) : 0),
+        0,
+      );
+      const fallbackScore = searchContext.fallbackTerms.reduce(
+        (sum, term) => sum + (compactThaiText(haystack).includes(term) ? 1 : 0),
+        0,
+      );
+      const fuzzyScore = scoreApproximateTokenHits(searchContext.queryTokens, rowTokens);
+      const fulltextScore = Number(row.fulltext_score || 0);
+      const qualityScore = Number(row.quality_score);
+      const qualityScoreBoost = Number.isFinite(qualityScore)
+        ? Math.round(Math.max(0, Math.min(100, qualityScore)) / 10)
+        : 0;
+
+      if (Number(row.is_active ?? 1) === 0) {
+        return null;
+      }
+
+      if (classifyChunkQuality(row).isHardFiltered || isGarbage(combinedText)) {
+        return null;
+      }
+
+      if (
+        searchContext.queryTokens.length > 0 &&
+        !hasExactPhrase &&
+        tokenHits < minTokenHits &&
+        coarseScore < 1 &&
+        fallbackScore < 2 &&
+        fuzzyScore < 7 &&
+        fulltextScore <= 0
+      ) {
+        return null;
+      }
+
+      const score =
+        scoreChunkMatch(message, row) +
+        Number(row.sql_score || 0) +
+        coarseScore +
+        fallbackScore +
+        fuzzyScore +
+        qualityScoreBoost +
+        Math.round(fulltextScore * 10);
+
+      return {
+        ...buildRowPresentation(row),
+        score,
+      };
+    })
+    .filter(Boolean)
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
 const uploadedFiles = [];
 const memoryChunks = [];
 const memoryDocuments = [];
 
 class LawChatbotPdfChunkModel {
+  static __resetTestState() {
+    uploadedFiles.length = 0;
+    memoryChunks.length = 0;
+    memoryDocuments.length = 0;
+    embeddingCache = null;
+    embeddingCacheTime = 0;
+    pdfChunkFulltextIndexAvailable = null;
+  }
+
+  static __seedTestSearchData({ documents = [], chunks = [] } = {}) {
+    this.__resetTestState();
+
+    documents.forEach((document, index) => {
+      memoryDocuments.push({
+        id: Number(document.id || index + 1),
+        title: String(document.title || ""),
+        documentNumber: String(document.documentNumber || ""),
+        documentDateText: String(document.documentDateText || ""),
+        documentSource: String(document.documentSource || ""),
+        originalname: String(document.originalname || ""),
+        isSearchable: document.isSearchable === false || Number(document.isSearchable) === 0 ? 0 : 1,
+        created_at: document.created_at || new Date().toISOString(),
+      });
+    });
+
+    chunks.forEach((chunk, index) => {
+      memoryChunks.push({
+        id: Number(chunk.id || index + 1),
+        keyword: String(chunk.keyword || ""),
+        chunk_text: String(chunk.chunk_text || chunk.chunkText || ""),
+        clean_text: String(chunk.clean_text || chunk.cleanText || ""),
+        is_active: chunk.is_active === false || Number(chunk.is_active) === 0 ? 0 : 1,
+        quality_score: Number.isFinite(Number(chunk.quality_score))
+          ? Number(chunk.quality_score)
+          : null,
+        document_id: chunk.document_id || chunk.documentId || null,
+        created_at: chunk.created_at || new Date().toISOString(),
+      });
+    });
+  }
+
+  static async hasPdfChunkFulltextIndex(pool) {
+    if (!pool) {
+      return false;
+    }
+
+    if (typeof pdfChunkFulltextIndexAvailable === "boolean") {
+      return pdfChunkFulltextIndexAvailable;
+    }
+
+    try {
+      const [rows] = await pool.query("SHOW INDEX FROM pdf_chunks WHERE Index_type = 'FULLTEXT'");
+      pdfChunkFulltextIndexAvailable = Array.isArray(rows) && rows.length > 0;
+    } catch (_error) {
+      pdfChunkFulltextIndexAvailable = false;
+    }
+
+    return pdfChunkFulltextIndexAvailable;
+  }
+
+  static async resolvePdfChunkColumnMetadata(pool) {
+    if (!pool) {
+      return {
+        hasCleanText: false,
+        hasIsActive: false,
+        hasQualityScore: false,
+      };
+    }
+
+    if (pdfChunkColumnMetadataCache) {
+      return pdfChunkColumnMetadataCache;
+    }
+
+    try {
+      const [rows] = await pool.query("SHOW COLUMNS FROM pdf_chunks");
+      const fields = new Set((rows || []).map((row) => String(row.Field || "").trim().toLowerCase()));
+      pdfChunkColumnMetadataCache = {
+        hasCleanText: fields.has("clean_text"),
+        hasIsActive: fields.has("is_active"),
+        hasQualityScore: fields.has("quality_score"),
+      };
+    } catch (_error) {
+      pdfChunkColumnMetadataCache = {
+        hasCleanText: false,
+        hasIsActive: false,
+        hasQualityScore: false,
+      };
+    }
+
+    return pdfChunkColumnMetadataCache;
+  }
+
+  static async queryChunkRows(pool, searchTerms, options = {}) {
+    const normalizedTerms = uniqueTokens(searchTerms.map((term) => normalizeSearchKeyword(term)).filter(Boolean));
+    const limitedTerms = normalizedTerms
+      .filter((term) => term.length >= (options.fallback ? 2 : 3))
+      .slice(0, options.fallback ? 8 : 12);
+
+    const hasFulltext = options.hasFulltext && options.fulltextQuery;
+    if (limitedTerms.length === 0 && !hasFulltext) {
+      return [];
+    }
+    const columnMetadata = await this.resolvePdfChunkColumnMetadata(pool);
+    const cleanTextSelect = columnMetadata.hasCleanText ? "c.clean_text AS clean_text" : "NULL AS clean_text";
+    const isActiveSelect = columnMetadata.hasIsActive ? "c.is_active AS is_active" : "1 AS is_active";
+    const qualityScoreSelect = columnMetadata.hasQualityScore
+      ? "c.quality_score AS quality_score"
+      : "NULL AS quality_score";
+
+    const whereParts = [];
+    const whereParams = [];
+    const scoreParts = [];
+    const scoreParams = [];
+
+    if (options.normalizedMessage) {
+      const exactLike = `%${options.normalizedMessage}%`;
+      scoreParts.push("CASE WHEN LOWER(c.keyword) LIKE ? THEN 18 ELSE 0 END");
+      scoreParts.push("CASE WHEN LOWER(c.chunk_text) LIKE ? THEN 9 ELSE 0 END");
+      scoreParams.push(exactLike, exactLike);
+    }
+
+    limitedTerms.forEach((term) => {
+      const like = `%${term}%`;
+      whereParts.push("(LOWER(c.keyword) LIKE ? OR LOWER(c.chunk_text) LIKE ?)");
+      whereParams.push(like, like);
+
+      scoreParts.push(`CASE WHEN LOWER(c.keyword) LIKE ? THEN ${options.fallback ? 6 : 12} ELSE 0 END`);
+      scoreParts.push(`CASE WHEN LOWER(c.chunk_text) LIKE ? THEN ${options.fallback ? 3 : 7} ELSE 0 END`);
+      scoreParams.push(like, like);
+    });
+
+    let fulltextSelect = "0 AS fulltext_score";
+    if (hasFulltext) {
+      fulltextSelect = "MATCH(c.keyword, c.chunk_text) AGAINST (? IN BOOLEAN MODE) AS fulltext_score";
+      whereParts.push("MATCH(c.keyword, c.chunk_text) AGAINST (? IN BOOLEAN MODE)");
+      scoreParams.push(options.fulltextQuery);
+      whereParams.push(options.fulltextQuery);
+    }
+
+    const sqlScoreExpression = scoreParts.length > 0 ? scoreParts.join(" + ") : "0";
+    const fetchLimit = options.fetchLimit || 250;
+
+    const [rows] = await pool.query(
+      `SELECT c.id, c.keyword, c.chunk_text, c.created_at, c.document_id,
+              d.title, d.document_number, d.document_date_text, d.document_source, d.originalname,
+              ${cleanTextSelect},
+              ${isActiveSelect},
+              ${qualityScoreSelect},
+              (${sqlScoreExpression}) AS sql_score,
+              ${fulltextSelect}
+       FROM pdf_chunks AS c
+       LEFT JOIN documents AS d ON d.id = c.document_id
+       WHERE (${whereParts.join(" OR ")})
+         AND (d.id IS NULL OR d.is_searchable = 1)
+       ORDER BY sql_score DESC, fulltext_score DESC, c.id DESC
+       LIMIT ?`,
+      [...scoreParams, ...whereParams, fetchLimit],
+    );
+
+    return rows;
+  }
+
+  static getSearchDebugContext(message) {
+    return buildSmartSearchTerms(message);
+  }
+
+  static async debugSearch(message, limit = 10) {
+    const normalizedLimit = Math.max(1, Number(limit || 10));
+    const searchContext = buildSmartSearchTerms(message);
+
+    if (searchContext.searchTerms.length === 0 && searchContext.fallbackTerms.length === 0) {
+      return {
+        query: String(message || ""),
+        normalizedQuery: searchContext.normalizedMessage,
+        searchContext,
+        totalResults: 0,
+        rawCandidateCount: 0,
+        usedFallback: false,
+        fulltextEnabled: false,
+        results: [],
+      };
+    }
+
+    const pool = getDbPool();
+
+    if (!pool) {
+      const primaryRows = memoryChunks
+        .map((row) => {
+          const document = memoryDocuments.find((item) => item.id === row.document_id);
+          if (document && document.isSearchable === 0) {
+            return null;
+          }
+
+          return {
+            ...row,
+            title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
+            document_number: document?.documentNumber || "",
+            document_date_text: document?.documentDateText || "",
+            document_source: document?.documentSource || "",
+            originalname: document?.originalname || "",
+            sql_score: searchContext.searchTerms.reduce((sum, term) => {
+              const haystack = normalizeSearchKeyword(
+                `${row.keyword || ""} ${row.chunk_text || ""} ${row.clean_text || ""}`,
+              );
+              return sum + (haystack.includes(term) ? 1 : 0);
+            }, 0),
+            fulltext_score: 0,
+          };
+        })
+        .filter(Boolean);
+
+      let rankedResults = rankChunkRows(message, primaryRows, searchContext, Number.MAX_SAFE_INTEGER);
+      let usedFallback = false;
+      let rawCandidateCount = primaryRows.length;
+
+      if (rankedResults.length === 0 && searchContext.fallbackTerms.length > 0) {
+        usedFallback = true;
+        const fallbackRows = memoryChunks
+          .map((row) => {
+            const document = memoryDocuments.find((item) => item.id === row.document_id);
+            if (document && document.isSearchable === 0) {
+              return null;
+            }
+
+            return {
+              ...row,
+              title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
+              document_number: document?.documentNumber || "",
+              document_date_text: document?.documentDateText || "",
+              document_source: document?.documentSource || "",
+              originalname: document?.originalname || "",
+              sql_score: searchContext.fallbackTerms.reduce((sum, term) => {
+                const haystack = compactThaiText(
+                  `${row.keyword || ""} ${row.chunk_text || ""} ${row.clean_text || ""}`,
+                );
+                return sum + (haystack.includes(term) ? 1 : 0);
+              }, 0),
+              fulltext_score: 0,
+            };
+          })
+          .filter(Boolean);
+
+        rawCandidateCount = fallbackRows.length;
+        rankedResults = rankChunkRows(
+          message,
+          fallbackRows,
+          {
+            ...searchContext,
+            searchTerms: searchContext.fallbackTerms,
+          },
+          Number.MAX_SAFE_INTEGER,
+        );
+      }
+
+      return {
+        query: String(message || ""),
+        normalizedQuery: searchContext.normalizedMessage,
+        searchContext,
+        totalResults: rankedResults.length,
+        rawCandidateCount,
+        usedFallback,
+        fulltextEnabled: false,
+        results: rankedResults.slice(0, normalizedLimit),
+      };
+    }
+
+    const hasFulltext = await this.hasPdfChunkFulltextIndex(pool);
+    const fulltextQuery = buildBooleanModeQuery(searchContext.searchTerms);
+
+    const primaryRows = await this.queryChunkRows(pool, searchContext.searchTerms, {
+      normalizedMessage: searchContext.normalizedMessage,
+      fulltextQuery,
+      hasFulltext,
+      fetchLimit: 1000,
+      fallback: false,
+    });
+
+    let rankedResults = rankChunkRows(message, primaryRows, searchContext, Number.MAX_SAFE_INTEGER);
+    let rawCandidateCount = primaryRows.length;
+    let usedFallback = false;
+
+    if (rankedResults.length === 0 && searchContext.fallbackTerms.length > 0) {
+      usedFallback = true;
+      const fallbackRows = await this.queryChunkRows(pool, searchContext.fallbackTerms, {
+        normalizedMessage: searchContext.normalizedMessage,
+        fulltextQuery,
+        hasFulltext,
+        fetchLimit: 1000,
+        fallback: true,
+      });
+
+      rawCandidateCount = fallbackRows.length;
+      rankedResults = rankChunkRows(
+        message,
+        fallbackRows,
+        {
+          ...searchContext,
+          searchTerms:
+            searchContext.fallbackTerms.length > 0
+              ? searchContext.fallbackTerms
+              : searchContext.searchTerms,
+        },
+        Number.MAX_SAFE_INTEGER,
+      );
+    }
+
+    return {
+      query: String(message || ""),
+      normalizedQuery: searchContext.normalizedMessage,
+      searchContext,
+      totalResults: rankedResults.length,
+      rawCandidateCount,
+      usedFallback,
+      fulltextEnabled: hasFulltext,
+      results: rankedResults.slice(0, normalizedLimit),
+    };
+  }
+
   static createUpload(entry) {
     const record = {
       id: uploadedFiles.length + 1,
@@ -553,6 +1228,13 @@ class LawChatbotPdfChunkModel {
     const normalizedChunks = chunks.map((chunk) => ({
       keyword: String(chunk.keyword || "").slice(0, 255),
       chunkText: String(chunk.chunkText || ""),
+      cleanText: normalizeThai(String(chunk.chunkText || "")),
+      isActive: chunk.isActive === false || Number(chunk.isActive) === 0 ? 0 : 1,
+      qualityScore: Number.isFinite(Number(chunk.qualityScore))
+        ? Number(chunk.qualityScore)
+        : Number.isFinite(Number(chunk.quality_score))
+          ? Number(chunk.quality_score)
+          : null,
       documentId: documentId || chunk.documentId || null,
     }));
 
@@ -564,6 +1246,9 @@ class LawChatbotPdfChunkModel {
           id: memoryChunks.length + index + 1,
           keyword: chunk.keyword,
           chunk_text: chunk.chunkText,
+          clean_text: chunk.cleanText,
+          is_active: chunk.isActive,
+          quality_score: chunk.qualityScore,
           document_id: chunk.documentId,
           created_at: new Date().toISOString(),
         });
@@ -571,9 +1256,36 @@ class LawChatbotPdfChunkModel {
       return normalizedChunks.length;
     }
 
-    const values = normalizedChunks.map((chunk) => [chunk.keyword, chunk.chunkText, chunk.documentId]);
+    const columnMetadata = await this.resolvePdfChunkColumnMetadata(pool);
+    const columns = ["keyword", "chunk_text"];
+    if (columnMetadata.hasCleanText) {
+      columns.push("clean_text");
+    }
+    if (columnMetadata.hasIsActive) {
+      columns.push("is_active");
+    }
+    if (columnMetadata.hasQualityScore) {
+      columns.push("quality_score");
+    }
+    columns.push("document_id");
+
+    const values = normalizedChunks.map((chunk) => {
+      const rowValues = [chunk.keyword, chunk.chunkText];
+      if (columnMetadata.hasCleanText) {
+        rowValues.push(chunk.cleanText);
+      }
+      if (columnMetadata.hasIsActive) {
+        rowValues.push(chunk.isActive);
+      }
+      if (columnMetadata.hasQualityScore) {
+        rowValues.push(chunk.qualityScore);
+      }
+      rowValues.push(chunk.documentId);
+      return rowValues;
+    });
+
     if (values.length > 0) {
-      await pool.query("INSERT INTO pdf_chunks (keyword, chunk_text, document_id) VALUES ?", [values]);
+      await pool.query(`INSERT INTO pdf_chunks (${columns.join(", ")}) VALUES ?`, [values]);
     }
     return values.length;
   }
@@ -717,161 +1429,134 @@ class LawChatbotPdfChunkModel {
   }
 
   static async searchChunks(message, limit = 5) {
-    const normalizedMessage = normalizeForSearch(message).toLowerCase();
-    const terms = buildCandidateTerms(message);
-    const queryTokens = uniqueTokens(segmentWords(message));
-    const minTokenHits = getMinimumTokenHits(queryTokens);
+    return this.searchChunksSmart(message, limit);
+  }
 
-    if (terms.length === 0) {
+  static async searchChunksSmart(message, limit = 5, options = {}) {
+    const searchContext = buildSmartSearchTerms(message);
+    const shouldLogMiss = options.logMiss !== false;
+
+    if (searchContext.searchTerms.length === 0 && searchContext.fallbackTerms.length === 0) {
+      if (shouldLogMiss) {
+        logSearchMissIfNeeded(message, searchContext, []);
+      }
       return [];
     }
 
     const pool = getDbPool();
 
     if (!pool) {
-      return memoryChunks
-        .map((row) => {
-          const haystack = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
-          const rowTokenSet = new Set(uniqueTokens(segmentWords(haystack)));
-          const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
-          const hasExactPhrase = normalizedMessage && haystack.includes(normalizedMessage);
-          const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+      let results = rankChunkRows(
+        message,
+        memoryChunks
+          .map((row) => {
+            const document = memoryDocuments.find((item) => item.id === row.document_id);
+            if (document && document.isSearchable === 0) {
+              return null;
+            }
 
-          if (
-            queryTokens.length > 0 &&
-            !hasExactPhrase &&
-            tokenHits < minTokenHits &&
-            coarseScore < 1
-          ) {
-            return null;
-          }
-
-          if (classifyChunkQuality(row).isHardFiltered) {
-            return null;
-          }
-
-          const score = scoreChunkMatch(message, row) + coarseScore;
-          const document = memoryDocuments.find((item) => item.id === row.document_id);
-          if (document && document.isSearchable === 0) {
-            return null;
-          }
-          return {
-            ...row,
-            title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
-            reference:
-              document?.documentNumber ||
-              document?.title ||
-              row.keyword ||
-              "เอกสารที่อัปโหลด",
-            documentNumber: document?.documentNumber || "",
-            documentDateText: document?.documentDateText || "",
-            documentSource: document?.documentSource || "",
-            source: "pdf_chunks",
-            score,
-          };
-        })
-        .filter(Boolean)
-        .filter((row) => row.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit);
-    }
-
-    const whereClause = terms
-      .map(() => "(LOWER(keyword) LIKE ? OR LOWER(chunk_text) LIKE ?)")
-      .join(" OR ");
-    const params = terms.flatMap((term) => [`%${term}%`, `%${term}%`]);
-
-    // Build relevance ordering: prioritize specific token combinations in keyword
-    // This helps surface chunks with compound terms like "ค่าบำรุงสันนิบาต" over generic matches
-    // Exclude full phrase and common question words from ordering tokens
-    const specificTokens = terms.filter(
-      (t) =>
-        t &&
-        t.length >= 4 &&
-        t.length <= 20 &&
-        !["ต้อง", "จ่าย", "ไหม", "หรือไม่", "ได้ไหม"].includes(t),
-    );
-    const orderParams = [];
-    let orderClause = "c.id DESC";
-
-    if (specificTokens.length >= 2) {
-      // Prioritize rows where keyword contains multiple specific tokens
-      const keywordConditions = specificTokens
-        .slice(0, 3)
-        .map(() => "LOWER(c.keyword) LIKE ?")
-        .join(" AND ");
-      orderClause = `
-        CASE
-          WHEN ${keywordConditions} THEN 0
-          WHEN LOWER(c.keyword) LIKE ? THEN 1
-          ELSE 2
-        END ASC,
-        c.id DESC`;
-      orderParams.push(
-        ...specificTokens.slice(0, 3).map((t) => `%${t}%`),
-        `%${specificTokens[0]}%`,
+            return {
+              ...row,
+              title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
+              document_number: document?.documentNumber || "",
+              document_date_text: document?.documentDateText || "",
+              document_source: document?.documentSource || "",
+              originalname: document?.originalname || "",
+              sql_score: searchContext.searchTerms.reduce((sum, term) => {
+                const haystack = normalizeSearchKeyword(
+                  `${row.keyword || ""} ${row.chunk_text || ""} ${row.clean_text || ""}`,
+                );
+                return sum + (haystack.includes(term) ? 1 : 0);
+              }, 0),
+              fulltext_score: 0,
+            };
+          })
+          .filter(Boolean),
+        searchContext,
+        limit,
       );
-    } else if (specificTokens.length === 1) {
-      orderClause = `
-        CASE
-          WHEN LOWER(c.keyword) LIKE ? THEN 0
-          ELSE 1
-        END ASC,
-        c.id DESC`;
-      orderParams.push(`%${specificTokens[0]}%`);
+
+      if (results.length === 0 && searchContext.fallbackTerms.length > 0) {
+        results = rankChunkRows(
+          message,
+          memoryChunks
+            .map((row) => {
+              const document = memoryDocuments.find((item) => item.id === row.document_id);
+              if (document && document.isSearchable === 0) {
+                return null;
+              }
+
+              return {
+                ...row,
+                title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
+                document_number: document?.documentNumber || "",
+                document_date_text: document?.documentDateText || "",
+                document_source: document?.documentSource || "",
+                originalname: document?.originalname || "",
+                sql_score: searchContext.fallbackTerms.reduce((sum, term) => {
+                  const haystack = compactThaiText(
+                    `${row.keyword || ""} ${row.chunk_text || ""} ${row.clean_text || ""}`,
+                  );
+                  return sum + (haystack.includes(term) ? 1 : 0);
+                }, 0),
+                fulltext_score: 0,
+              };
+            })
+            .filter(Boolean),
+          {
+            ...searchContext,
+            searchTerms: searchContext.fallbackTerms,
+          },
+          limit,
+        );
+      }
+
+      if (shouldLogMiss) {
+        logSearchMissIfNeeded(message, searchContext, results);
+      }
+      return results;
     }
 
-    const [rows] = await pool.query(
-      `SELECT c.id, c.keyword, c.chunk_text, c.created_at, c.document_id,
-              d.title, d.document_number, d.document_date_text, d.document_source, d.originalname
-       FROM pdf_chunks
-       AS c
-       LEFT JOIN documents AS d ON d.id = c.document_id
-       WHERE ${whereClause}
-         AND (d.id IS NULL OR d.is_searchable = 1)
-       ORDER BY ${orderClause}
-       LIMIT 500`,
-      [...params, ...orderParams]
-    );
+    const hasFulltext = await this.hasPdfChunkFulltextIndex(pool);
+    const fulltextQuery = buildBooleanModeQuery(searchContext.searchTerms);
 
-    return rows
-      .map((row) => {
-        const haystack = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
-        const rowTokenSet = new Set(uniqueTokens(segmentWords(haystack)));
-        const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
-        const hasExactPhrase = normalizedMessage && haystack.includes(normalizedMessage);
-        const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+    const primaryRows = await this.queryChunkRows(pool, searchContext.searchTerms, {
+      normalizedMessage: searchContext.normalizedMessage,
+      fulltextQuery,
+      hasFulltext,
+      fetchLimit: 300,
+      fallback: false,
+    });
 
-        if (
-          queryTokens.length > 0 &&
-          !hasExactPhrase &&
-          tokenHits < minTokenHits &&
-          coarseScore < 1
-        ) {
-          return null;
-        }
+    let results = rankChunkRows(message, primaryRows, searchContext, limit);
 
-        if (classifyChunkQuality(row).isHardFiltered) {
-          return null;
-        }
+    if (results.length === 0) {
+      const fallbackRows = await this.queryChunkRows(pool, searchContext.fallbackTerms, {
+        normalizedMessage: searchContext.normalizedMessage,
+        fulltextQuery,
+        hasFulltext,
+        fetchLimit: 200,
+        fallback: true,
+      });
 
-        const score = scoreChunkMatch(message, row) + coarseScore;
-        return {
-          ...row,
-          source: "pdf_chunks",
-          title: row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
-          reference:
-            row.document_number || row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
-          documentNumber: row.document_number || "",
-          documentDateText: row.document_date_text || "",
-          documentSource: row.document_source || "",
-          score,
-        };
-      })
-      .filter(Boolean)
-      .filter((row) => row.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+      results = rankChunkRows(
+        message,
+        fallbackRows,
+        {
+          ...searchContext,
+          searchTerms:
+            searchContext.fallbackTerms.length > 0
+              ? searchContext.fallbackTerms
+              : searchContext.searchTerms,
+        },
+        limit,
+      );
+    }
+
+    if (shouldLogMiss) {
+      logSearchMissIfNeeded(message, searchContext, results);
+    }
+    return results;
   }
 
   static async searchDocuments(message, limit = 5) {

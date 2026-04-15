@@ -24,6 +24,7 @@ router.get("/", requireAdminAuth, adminController.renderDashboard);
 router.get("/suggested-questions", requireAdminAuth, adminController.renderSuggestedQuestions);
 router.get("/knowledge", requireAdminAuth, adminController.renderKnowledge);
 router.get("/knowledge-suggestions", requireAdminAuth, adminController.renderKnowledgeSuggestions);
+router.get("/pdf-chunks/manual", requireAdminAuth, adminController.renderManualPdfChunks);
 router.get("/vinichai", requireAdminAuth, adminController.renderVinichai);
 router.get("/guest-usage", requireAdminAuth, adminController.renderGuestUsage);
 router.get("/guest-usage/export.csv", requireAdminAuth, adminController.exportGuestUsageCsv);
@@ -38,6 +39,7 @@ router.post("/payment-requests/approve", requireAdminAuth, adminController.appro
 router.post("/payment-requests/reject", requireAdminAuth, adminController.rejectPaymentRequest);
 router.post("/settings/ai", requireAdminAuth, adminController.updateAiSetting);
 router.post("/knowledge", requireAdminAuth, adminController.submitKnowledge);
+router.post("/pdf-chunks/manual", requireAdminAuth, adminController.submitManualPdfChunks);
 router.post("/suggested-questions", requireAdminAuth, adminController.submitSuggestedQuestion);
 router.post("/suggested-questions/update", requireAdminAuth, adminController.updateSuggestedQuestion);
 router.post("/suggested-questions/delete", requireAdminAuth, adminController.deleteSuggestedQuestion);

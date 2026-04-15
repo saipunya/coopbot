@@ -6,6 +6,11 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "backfill:clean-text": "node scripts/backfill-clean-text.js",
+    "backfill:clean-text:dry": "node scripts/backfill-clean-text.js --dry-run",
+    "db:add-fulltext-pdf-chunks": "node scripts/add-fulltext-pdf-chunks.js",
+    "debug:search": "node scripts/debug-search.js",
+    "test:search": "node --test tests/lawChatbotPdfChunkModel.search.test.js",
     "review:responsive": "node scripts/responsive_review_helper.js",
     "review:responsive:open": "node scripts/open_responsive_review_pages.js",
     "verify:group-bylaw": "node scripts/verify_group_bylaw_queries.js",

@@ -1,4 +1,5 @@
 const lawChatbotService = require("../services/lawChatbotService");
+const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const { loginAdmin } = require("../services/adminAuthService");
 const {
   createGoogleAuthUrl,
@@ -95,6 +96,103 @@ function sanitizeKnowledgeAdminReturnPath(value, fallbackPath = "/admin") {
   }
 
   return path;
+}
+
+function sanitizePdfChunkAdminReturnPath(value, fallbackPath = "/admin/pdf-chunks/manual") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!/^\/admin\/pdf-chunks\/manual(?:[?#].*)?$/.test(path)) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
+function normalizeManualChunkText(text) {
+  return String(text || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function deriveManualChunkKeyword(baseKeyword, block, index, totalBlocks) {
+  const fallbackKeyword = String(baseKeyword || "").trim() || "manual chunk";
+  const lines = String(block || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const heading = String(lines[0] || "")
+    .replace(/^(?:[-*•]|\d+[.)])\s*/u, "")
+    .trim();
+
+  if (
+    heading &&
+    heading.length >= 4 &&
+    heading.length <= 80 &&
+    heading !== fallbackKeyword &&
+    !/^โครงสร้างของสหกรณ์ตั้งอยู่บน/.test(heading)
+  ) {
+    if (
+      fallbackKeyword &&
+      !heading.includes(fallbackKeyword) &&
+      !fallbackKeyword.includes(heading)
+    ) {
+      return `${fallbackKeyword} - ${heading}`.slice(0, 255);
+    }
+
+    return heading.slice(0, 255);
+  }
+
+  if (totalBlocks <= 1) {
+    return fallbackKeyword.slice(0, 255);
+  }
+
+  return `${fallbackKeyword} (${index + 1})`.slice(0, 255);
+}
+
+function splitManualChunkText(baseKeyword, rawContent, splitMode = "single") {
+  const normalizedText = normalizeManualChunkText(rawContent);
+  if (!normalizedText) {
+    return [];
+  }
+
+  if (splitMode !== "auto") {
+    return [
+      {
+        keyword: String(baseKeyword || "").trim().slice(0, 255),
+        chunkText: normalizedText,
+      },
+    ];
+  }
+
+  let blocks = normalizedText
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (blocks.length <= 1) {
+    blocks = normalizedText
+      .split(/\n(?=(?:[-*•]|\d+[.)]|หัวข้อ|ประเด็น|ส่วนที่)\s*)/u)
+      .map((block) => block.trim())
+      .filter(Boolean);
+  }
+
+  if (blocks.length <= 1) {
+    return [
+      {
+        keyword: String(baseKeyword || "").trim().slice(0, 255),
+        chunkText: normalizedText,
+      },
+    ];
+  }
+
+  return blocks.map((block, index) => ({
+    keyword: deriveManualChunkKeyword(baseKeyword, block, index, blocks.length),
+    chunkText: block,
+  }));
 }
 
 function sanitizePublicUserReturnPath(value, fallbackPath = "/law-chatbot") {
@@ -282,6 +380,75 @@ async function renderKnowledgeSuggestions(req, res) {
     data,
     returnPath: req.originalUrl || "/admin/knowledge-suggestions",
   });
+}
+
+async function renderManualPdfChunks(req, res) {
+  const chunkCount = await LawChatbotPdfChunkModel.countChunks();
+
+  res.render("admin/manualPdfChunks", {
+    title: "Manual PDF Chunks",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    returnPath: req.originalUrl || "/admin/pdf-chunks/manual",
+    data: {
+      chunkCount,
+      sampleKeyword: "โครงสร้างสหกรณ์",
+      sampleText: [
+        "โครงสร้างสหกรณ์",
+        "สหกรณ์มีโครงสร้างการบริหารที่ยึดสมาชิกเป็นศูนย์กลาง และมีการกำกับดูแลผ่านคณะกรรมการดำเนินการ",
+        "",
+        "หลักประชาธิปไตย",
+        "สมาชิกมีสิทธิออกเสียง เลือกตั้ง และมีส่วนร่วมในการกำหนดทิศทางของสหกรณ์อย่างเท่าเทียม",
+        "",
+        "บทบาทของคณะกรรมการดำเนินการ",
+        "คณะกรรมการดำเนินการทำหน้าที่กำหนดนโยบาย ควบคุมการบริหาร และติดตามผลการดำเนินงานให้เป็นไปตามข้อบังคับ",
+      ].join("\n"),
+    },
+  });
+}
+
+async function submitManualPdfChunks(req, res) {
+  const returnTo = sanitizePdfChunkAdminReturnPath(req.body.returnTo, "/admin/pdf-chunks/manual");
+  const keyword = String(req.body.keyword || "").trim();
+  const rawChunkText = String(req.body.chunkText || "").trim();
+  const splitMode = String(req.body.splitMode || "single").trim() === "auto" ? "auto" : "single";
+  const documentId = Number(req.body.documentId || 0) || null;
+  const qualityScore = Number.isFinite(Number(req.body.qualityScore))
+    ? Math.max(0, Math.min(100, Number(req.body.qualityScore)))
+    : 80;
+  const isActive = String(req.body.isActive || "1").trim() === "0" ? 0 : 1;
+
+  if (!keyword || !rawChunkText) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "กรุณากรอก keyword และข้อความ chunk ก่อนบันทึก")
+    );
+  }
+
+  const chunks = splitManualChunkText(keyword, rawChunkText, splitMode);
+  if (chunks.length === 0) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่พบข้อความที่พร้อมใช้สำหรับสร้าง chunk")
+    );
+  }
+
+  await LawChatbotPdfChunkModel.insertChunks(
+    chunks.map((chunk) => ({
+      keyword: chunk.keyword,
+      chunkText: chunk.chunkText,
+      documentId,
+      isActive,
+      qualityScore,
+    })),
+    documentId,
+  );
+
+  const successMessage =
+    chunks.length > 1
+      ? `บันทึก ${chunks.length} chunks แบบ auto split เรียบร้อยแล้ว`
+      : "บันทึก manual chunk เรียบร้อยแล้ว";
+
+  return res.redirect(appendQueryParam(returnTo, "success", successMessage));
 }
 
 async function renderVinichai(req, res) {
@@ -980,6 +1147,7 @@ module.exports = {
   renderSuggestedQuestions,
   renderKnowledge,
   renderKnowledgeSuggestions,
+  renderManualPdfChunks,
   renderVinichai,
   renderGuestUsage,
   exportGuestUsageCsv,
@@ -991,6 +1159,7 @@ module.exports = {
   resetUserQuestionCount,
   updatePaymentRequestPlan,
   submitKnowledge,
+  submitManualPdfChunks,
   submitSuggestedQuestion,
   submitVinichai,
   updateKnowledge,
