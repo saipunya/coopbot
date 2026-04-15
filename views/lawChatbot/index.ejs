@@ -1330,6 +1330,21 @@
       font-size: 0.7rem;
     }
 
+    .bot-reference-block {
+      display: grid;
+      gap: 0.45rem;
+      margin-top: 0.35rem;
+      max-width: 100%;
+    }
+
+    .bot-reference-collapse-panel {
+      border: 1px solid rgba(47, 127, 184, 0.12);
+      border-radius: 8px;
+      background: rgba(244, 249, 253, 0.9);
+      padding: 0.65rem 0.72rem;
+      max-width: 100%;
+    }
+
     .follow-up-prompt-line {
       display: inline;
       color: inherit;
@@ -1338,156 +1353,6 @@
     .follow-up-prompt-command {
       color: #c22828;
       font-weight: 700;
-    }
-
-    .bot-inline-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.55rem;
-      margin-top: 0.15rem;
-      width: 100%;
-      min-width: 0;
-    }
-
-    .bot-login-cta {
-      display: inline-flex;
-      align-items: center;
-      max-width: 100%;
-      gap: 0.45rem;
-      padding: 0.55rem 0.92rem;
-      border-radius: 999px;
-      text-decoration: none;
-      font-size: 0.84rem;
-      font-weight: 700;
-      color: #fff;
-      background: linear-gradient(135deg, #1f7a46, #155e36);
-      box-shadow: 0 8px 18px rgba(21, 94, 54, 0.18);
-      transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
-    }
-
-    .bot-login-cta:hover,
-    .bot-login-cta:focus-visible {
-      transform: translateY(-1px);
-      box-shadow: 0 10px 22px rgba(21, 94, 54, 0.24);
-      color: #fff;
-      opacity: 0.98;
-      outline: none;
-    }
-
-    .bot-ai-preview-cta {
-      display: inline-flex;
-      align-items: center;
-      max-width: 100%;
-      gap: 0.45rem;
-      padding: 0.55rem 0.92rem;
-      border: none;
-      border-radius: 999px;
-      font-size: 0.84rem;
-      font-weight: 700;
-      color: #fff;
-      background: linear-gradient(135deg, #2f5f7a, #244d64);
-      box-shadow: 0 8px 18px rgba(36, 77, 100, 0.18);
-      transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
-    }
-
-    .bot-ai-preview-cta:hover,
-    .bot-ai-preview-cta:focus-visible {
-      transform: translateY(-1px);
-      box-shadow: 0 10px 22px rgba(36, 77, 100, 0.24);
-      opacity: 0.98;
-      outline: none;
-    }
-
-    .bot-upgrade-cta {
-      display: inline-flex;
-      align-items: center;
-      max-width: 100%;
-      gap: 0.4rem;
-      padding: 0.52rem 0.86rem;
-      border-radius: 999px;
-      text-decoration: none;
-      font-size: 0.82rem;
-      font-weight: 700;
-      color: #244d64;
-      background: #eef5fb;
-      border: 1px solid #c6d8e4;
-      transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
-    }
-
-    .bot-upgrade-cta:hover,
-    .bot-upgrade-cta:focus-visible {
-      background: #e3eef7;
-      border-color: #a9c3d4;
-      color: #16384a;
-      outline: none;
-    }
-
-    .bot-limit-cta-panel {
-      display: grid;
-      gap: 0.7rem;
-      width: 100%;
-      max-width: 100%;
-      padding: 0.9rem 1rem;
-      border-radius: 1rem;
-      border: 1px solid #f0d7a6;
-      background: linear-gradient(145deg, #fff8ea, #fffef8);
-      box-shadow: 0 10px 24px rgba(140, 93, 31, 0.08);
-    }
-
-    .bot-limit-cta-copy {
-      display: grid;
-      gap: 0.22rem;
-      color: #714711;
-    }
-
-    .bot-limit-cta-copy strong {
-      font-size: 0.95rem;
-      color: #5f3a0d;
-    }
-
-    .bot-limit-cta-copy span {
-      font-size: 0.83rem;
-      line-height: 1.5;
-      color: #80511a;
-    }
-
-    .bot-upgrade-cta-prominent {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.48rem;
-      width: fit-content;
-      max-width: 100%;
-      padding: 0.82rem 1.08rem;
-      border-radius: 0.95rem;
-      text-decoration: none;
-      font-size: 0.88rem;
-      font-weight: 800;
-      color: #fff;
-      background: linear-gradient(135deg, #b06a14, #8c5410);
-      box-shadow: 0 12px 26px rgba(140, 84, 16, 0.18);
-      transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
-    }
-
-    .bot-upgrade-cta-prominent:hover,
-    .bot-upgrade-cta-prominent:focus-visible {
-      transform: translateY(-1px);
-      box-shadow: 0 14px 30px rgba(140, 84, 16, 0.24);
-      color: #fff;
-      opacity: 0.98;
-      outline: none;
-    }
-
-    .bot-inline-note {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      color: #557083;
-      font-size: 0.82rem;
-      line-height: 1.45;
-      max-width: 100%;
-      min-width: 0;
-      overflow-wrap: anywhere;
     }
 
     .answer-origin-chip {
@@ -2830,20 +2695,6 @@
       </div>
     </div>
 
-    <div class="modal fade" id="referenceModal" tabindex="-1" aria-labelledby="referenceModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="referenceModalLabel"><i class="bi bi-journal-text me-2"></i>แหล่งอ้างอิง</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <ul id="referenceModalList" class="reference-modal-list"></ul>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="modal fade" id="adminKnowledgeModal" tabindex="-1" aria-labelledby="adminKnowledgeModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
@@ -3089,8 +2940,6 @@
       const installBtn = document.getElementById('installBtn');
       const iosInstallBtn = document.getElementById('iosInstallBtn');
       const onlineBadge = document.getElementById('onlineBadge');
-      const referenceModalElement = document.getElementById('referenceModal');
-      const referenceModalList = document.getElementById('referenceModalList');
       const adminKnowledgeModalElement = document.getElementById('adminKnowledgeModal');
       const adminKnowledgeForm = document.getElementById('adminKnowledgeForm');
       const adminKnowledgeAlert = document.getElementById('adminKnowledgeAlert');
@@ -3114,9 +2963,6 @@
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const isAndroidDevice = /android/i.test(window.navigator.userAgent || '');
       const isIosDevice = /iphone|ipad|ipod/i.test(window.navigator.userAgent || '');
-      const referenceModal = referenceModalElement && window.bootstrap
-        ? new window.bootstrap.Modal(referenceModalElement)
-        : null;
       const adminKnowledgeModal = adminKnowledgeModalElement && window.bootstrap
         ? new window.bootstrap.Modal(adminKnowledgeModalElement)
         : null;
@@ -3953,9 +3799,13 @@
         const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
         let node = walker.nextNode();
         while (node) {
-          node.textContent = replaceUserVisibleAiTerms(node.textContent || '');
+          node.textContent = stripBotUiNoiseText(replaceUserVisibleAiTerms(node.textContent || ''));
           node = walker.nextNode();
         }
+
+        template.content.querySelectorAll(
+          '.bot-inline-actions, .bot-limit-cta-panel, .bot-login-cta, .bot-ai-preview-cta, .bot-upgrade-cta, .bot-upgrade-cta-prominent, .bot-inline-note, .feedback-actions, .answer-origin-chip'
+        ).forEach((element) => element.remove());
 
         return template.innerHTML;
       }
@@ -3982,6 +3832,36 @@
           )
           .replace(/\n{3,}/g, '\n\n')
           .trim();
+      }
+
+      function stripBotUiNoiseText(text) {
+        const raw = String(text || '')
+          .replace(/\r\n?/g, '\n')
+          .trim();
+        if (!raw) {
+          return raw;
+        }
+
+        const noisePatterns = [
+          /^หากต้องการ(?:เจาะลึกต่อ|ข้อมูลเพิ่มเติม|เพิ่มเติม)\s*พิมพ์:/iu,
+          /^(?:คำอธิบายเพิ่มเติม|อธิบายเพิ่มเติม|แสดงรายละเอียด|รายละเอียด|ใจความทั้งหมด|ฉันไม่เข้าใจ|แจ้งเพิ่มเติม)$/iu,
+          /^(?:ลองคำตอบแบบ AI ฟรี|ดูแพ็กเกจ|อัปเกรดแพ็กเกจ|อัปเกรดแพลน|อัปเกรดแพ็กเกจ|อัปเกรด|Premium|Professional)$/iu,
+          /^เหลือ\s*\d+\s*\/\s*\d+\s*ครั้งเดือนนี้(?:.*)$/iu,
+          /^คุณใช้สิทธิ์ลอง AI ฟรีครบ.*$/iu,
+          /^คุณใช้สิทธิ์ลองคำตอบแบบ AI ฟรีครบ.*$/iu,
+          /^หากต้องการใช้งานคำตอบ AI ต่อเนื่อง.*$/iu,
+          /^ใช้งานครบโควต้ารายเดือนแล้ว.*$/iu,
+          /^อัปเกรดแพ็กเกจเพื่อถามต่อได้ทันทีโดยไม่ต้องรอรอบเดือนถัดไป.*$/iu,
+          /^กรุณาอัปเกรดแพลน.*$/iu,
+        ];
+
+        const filteredLines = raw
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .filter((line) => !noisePatterns.some((pattern) => pattern.test(line)));
+
+        return filteredLines.join('\n').trim();
       }
 
       function shouldMergeBulletContinuationLine(currentLine, nextLine) {
@@ -4070,13 +3950,9 @@
       }
 
       function formatFollowUpPromptHtml(text, terms) {
-        const rawText = String(text || '').trim();
-        const promptMatch = rawText.match(/^(หากต้องการ(?:เจาะลึกต่อ|ข้อมูลเพิ่มเติม|เพิ่มเติม)\s*พิมพ์:\s*)อธิบาย,\s*แสดงรายละเอียด,\s*รายละเอียด,\s*ใจความทั้งหมด,\s*ฉันไม่เข้าใจ\s*หรือ\s*แจ้งเพิ่มเติม(.*)$/u);
-        if (!promptMatch) {
-          return '';
-        }
-
-        return applyHighlightHtml(rawText, terms);
+        void text;
+        void terms;
+        return '';
       }
 
       function formatBotDisplayLineHtml(text, terms) {
@@ -4111,31 +3987,33 @@
         if (!referenceLines.length) {
           return '';
         }
+        const collapseId = `referenceCollapse_${Math.random().toString(36).slice(2, 10)}`;
         const encodedLines = encodeURIComponent(JSON.stringify(referenceLines));
 
         return `
-          <button type="button" class="bot-reference-toggle" data-reference-toggle="1" data-reference-lines="${encodedLines}">
-            <span class="bot-reference-toggle-text"><i class="bi bi-journal-text"></i>แหล่งอ้างอิง</span>
-            <i class="bi bi-box-arrow-up-right bot-reference-toggle-icon"></i>
-          </button>
+          <div class="bot-reference-block">
+            <button
+              type="button"
+              class="bot-reference-toggle"
+              data-bs-toggle="collapse"
+              data-bs-target="#${collapseId}"
+              aria-expanded="false"
+              aria-controls="${collapseId}"
+              data-reference-toggle="1"
+              data-reference-lines="${encodedLines}"
+            >
+              <span class="bot-reference-toggle-text"><i class="bi bi-journal-text"></i>แสดงที่มา/อ้างอิง</span>
+              <i class="bi bi-chevron-down bot-reference-toggle-icon"></i>
+            </button>
+            <div class="collapse bot-reference-collapse" id="${collapseId}">
+              <div class="bot-reference-collapse-panel">
+                <ul class="reference-modal-list">
+                  ${referenceLines.map((line) => `<li>${applyHighlightHtml(sanitizeDisplayText(String(line || '')), terms)}</li>`).join('')}
+                </ul>
+              </div>
+            </div>
+          </div>
         `;
-      }
-
-      function openReferenceModal(encodedLines, terms) {
-        if (!referenceModal || !referenceModalList) return;
-
-        let lines = [];
-        try {
-          lines = JSON.parse(decodeURIComponent(String(encodedLines || '')));
-        } catch (error) {
-          lines = [];
-        }
-
-        referenceModalList.innerHTML = Array.isArray(lines)
-          ? lines.map((line) => `<li>${applyHighlightHtml(sanitizeDisplayText(String(line || '')), terms)}</li>`).join('')
-          : '';
-
-        referenceModal.show();
       }
 
       function splitSummaryIntoBullets(text) {
@@ -4256,58 +4134,8 @@
       }
 
       function buildFreeAiPreviewActionHtml(options = {}) {
-        const preview = options && options.freeAiPreview ? options.freeAiPreview : null;
-        if (!isSignedInUser || botPackageVariant !== 'free' || !preview || !preview.enabled) {
-          return '';
-        }
-
-        if (preview.usedThisAnswer) {
-          return '';
-        }
-
-        const question = String(options.question || '').trim();
-        const target = String(options.target || selectedTarget || 'all').trim();
-        if (!question) {
-          return '';
-        }
-
-        if (preview.canTryPreview) {
-          return `
-            <div class="bot-inline-actions">
-              <button
-                type="button"
-                class="bot-ai-preview-cta"
-                data-free-ai-preview="1"
-                data-question="${escapeHtml(question)}"
-                data-target="${escapeHtml(target)}"
-              >
-                <i class="bi bi-stars"></i>
-                <span>ลองคำตอบแบบ AI ฟรี</span>
-              </button>
-              <span class="bot-inline-note">
-                <i class="bi bi-lightbulb"></i>
-                <span>เหลือ ${escapeHtml(String(preview.remainingCount || 0))}/${escapeHtml(String(preview.limit || 0))} ครั้งเดือนนี้ เพื่อดูความต่างก่อนอัปเกรด</span>
-              </span>
-              <a href="/law-chatbot/payment-request?source=chat-ai-preview-upsell" class="bot-upgrade-cta">
-                <i class="bi bi-arrow-up-circle"></i>
-                <span>ดูแพ็กเกจ</span>
-              </a>
-            </div>
-          `;
-        }
-
-        return `
-          <div class="bot-inline-actions">
-            <span class="bot-inline-note">
-              <i class="bi bi-stars"></i>
-              <span>คุณใช้สิทธิ์ลอง AI ฟรีครบ ${escapeHtml(String(preview.limit || 0))} ครั้งของเดือนนี้แล้ว หากต้องการใช้งานคำตอบ AI ต่อเนื่อง แนะนำแพ็กเกจ Professional</span>
-            </span>
-            <a href="/law-chatbot/payment-request?source=chat-ai-preview-upsell" class="bot-upgrade-cta">
-              <i class="bi bi-arrow-up-circle"></i>
-              <span>อัปเกรดแพ็กเกจ</span>
-            </a>
-          </div>
-        `;
+        void options;
+        return '';
       }
 
       function looksLikeMonthlyLimitMessage(text) {
@@ -4320,60 +4148,15 @@
       }
 
       function buildInlineActionHtml(options = {}) {
-        const segments = [];
-
-        if (!isSignedInUser && options && options.guestLimitReached && options.signInPath) {
-          segments.push(`
-            <div class="bot-inline-actions">
-              <a href="${escapeHtml(options.signInPath)}" class="bot-login-cta" title="เข้าสู่ระบบด้วย Google เพื่อใช้งานต่อ">
-                <i class="bi bi-google"></i>
-                <span>เข้าสู่ระบบด้วย Google เพื่อใช้งานต่อ</span>
-              </a>
-            </div>
-          `);
-        }
-
-        if (isSignedInUser && options && (options.monthlyUsageLimitReached || looksLikeMonthlyLimitMessage(options.answerText))) {
-          const questionLimit = Number.isFinite(Number(options.questionLimit)) ? Number(options.questionLimit) : null;
-          const questionCount = Number.isFinite(Number(options.questionCount)) ? Number(options.questionCount) : null;
-          const usageLabel = questionLimit && questionCount !== null
-            ? `ใช้ไป ${questionCount} จาก ${questionLimit} ครั้งของเดือนนี้แล้ว`
-            : 'คุณใช้สิทธิ์รายเดือนครบแล้ว';
-
-          segments.push(`
-            <div class="bot-inline-actions">
-              <div class="bot-limit-cta-panel">
-                <div class="bot-limit-cta-copy">
-                  <strong><i class="bi bi-exclamation-circle"></i> ใช้งานครบโควต้ารายเดือนแล้ว</strong>
-                  <span>${escapeHtml(usageLabel)} อัปเกรดแพ็กเกจเพื่อถามต่อได้ทันทีโดยไม่ต้องรอรอบเดือนถัดไป</span>
-                </div>
-                <a href="/law-chatbot/payment-request?source=chat-limit-panel" class="bot-upgrade-cta-prominent">
-                  <i class="bi bi-arrow-up-circle-fill"></i>
-                  <span>Upgrade</span>
-                </a>
-              </div>
-            </div>
-          `);
-        }
-
-        const freeAiPreviewHtml = buildFreeAiPreviewActionHtml(options);
-        if (freeAiPreviewHtml) {
-          segments.push(freeAiPreviewHtml);
-        }
-
-        return segments.join('');
+        void options;
+        return '';
       }
 
       function formatBotMessageHtml(text, terms, options = {}) {
-        const raw = sanitizeDisplayText(text);
-        const answerOriginHtml = buildAnswerOriginChipHtml(options);
-        const inlineActionHtml = buildInlineActionHtml({
-          ...(options || {}),
-          answerText: raw,
-        });
+        const raw = stripBotUiNoiseText(sanitizeDisplayText(text));
         if (!raw.includes('แหล่งอ้างอิง:')) {
           const highlighted = formatBotDisplayLineHtml(raw, terms);
-          return `${answerOriginHtml}${decorateBotFallbackHtml(highlighted)}${inlineActionHtml}`;
+          return decorateBotFallbackHtml(highlighted);
         }
 
         const [mainText, referenceText] = raw.split(/\n\s*\nแหล่งอ้างอิง:\s*\n/i);
@@ -4386,27 +4169,12 @@
         ].filter(Boolean).join('');
         const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
 
-        return `${answerOriginHtml}<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}${inlineActionHtml}</div>`;
+        return `<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}</div>`;
       }
 
       function buildAnswerOriginChipHtml(options = {}) {
-        const responseMeta = options && options.responseMeta && typeof options.responseMeta === 'object'
-          ? options.responseMeta
-          : null;
-        const sourceTables = responseMeta && Array.isArray(responseMeta.sourceTables)
-          ? responseMeta.sourceTables.map((item) => String(item || '').trim().toLowerCase())
-          : [];
-
-        if (!sourceTables.includes('internet_search')) {
-          return '';
-        }
-
-        return `
-          <div class="answer-origin-chip answer-origin-chip-internet">
-            <i class="bi bi-globe2" aria-hidden="true"></i>
-            <span>ข้อมูลนี้มาจากอินเทอร์เน็ต</span>
-          </div>
-        `;
+        void options;
+        return '';
       }
 
       const AI_SECTION_ICONS = {
@@ -4794,7 +4562,7 @@
       }
 
       function addBubble(text, role, isLoading = false, highlightTerms = [], feedbackContext = null, shouldAutoScroll = true, restoreOptions = {}) {
-        const displayText = role === 'bot' ? sanitizeDisplayText(text) : String(text || '');
+        const displayText = role === 'bot' ? stripBotUiNoiseText(sanitizeDisplayText(text)) : String(text || '');
         const row = document.createElement('div');
         row.className = `message-row ${role === 'user' ? 'message-user' : 'message-bot'}`;
         const resolvedAssistantProfile = role === 'bot'
@@ -4852,24 +4620,6 @@
 
         content.appendChild(message);
 
-        if (
-          role === 'bot' &&
-          !isLoading &&
-          feedbackContext &&
-          feedbackContext.question &&
-          !feedbackContext.guestLimitReached &&
-          !feedbackContext.monthlyUsageLimitReached
-        ) {
-          attachFeedbackActions(content, {
-            question: feedbackContext.question,
-            answerShown: displayText,
-            target: feedbackContext.target || selectedTarget,
-            source: feedbackContext.source || '',
-            sourceLabel: feedbackContext.sourceLabel || '',
-            showFeedbackButtons: feedbackContext.variant === 'ai'
-          });
-        }
-
         if (role === 'bot' && !isLoading && feedbackContext && feedbackContext.debug) {
           const timingHtml = buildTimingDebugHtml(feedbackContext.debug);
           if (timingHtml) {
@@ -4878,13 +4628,6 @@
         }
 
         div.appendChild(content);
-
-        const referenceToggle = content.querySelector('[data-reference-toggle="1"]');
-        if (referenceToggle) {
-          referenceToggle.addEventListener('click', () => {
-            openReferenceModal(referenceToggle.dataset.referenceLines || '', highlightTerms);
-          });
-        }
 
         if (role === 'user') {
           row.appendChild(div);
@@ -5128,7 +4871,7 @@
             const botRow = addBubble(answerText, 'bot', false, dbHighlightTerms, {
               question: trimmed,
               target: options.target || selectedTarget,
-              variant: 'ai',
+              variant: 'db',
               debug: data && data.debug ? data.debug : null,
               usedFollowUpContext: Boolean(data && data.usedFollowUpContext),
               guestLimitReached: Boolean(data && data.guestLimitReached),
@@ -5153,7 +4896,7 @@
           const botRow = addBubble(fallbackMessage, 'bot', false, [], {
             question: trimmed,
             target: options.target || selectedTarget,
-            variant: 'ai',
+            variant: 'db',
             assistantProfile: currentAssistantProfile
           });
           focusFirstAnswer(botRow);

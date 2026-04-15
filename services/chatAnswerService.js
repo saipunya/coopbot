@@ -2747,15 +2747,10 @@ function buildParagraphSummary(summaryLines, detailLines, explainMode, options =
   const summaryHeading = String(
     options.summaryHeading || (orderedSummary ? "ขั้นตอนสำคัญ:" : "สรุปสาระสำคัญ:"),
   ).trim();
-  const followUpPrompt = !explainMode ? cleanLine(options.followUpPrompt || "") : "";
   const renderedSummaryItems = orderedSummary ? buildOrderedLines(summaryItems) : summaryItems;
-  const renderedSummaryWithPrompt =
-    followUpPrompt && !renderedSummaryItems.some((line) => line.includes(followUpPrompt))
-      ? [...renderedSummaryItems, followUpPrompt]
-      : renderedSummaryItems;
 
-  if (renderedSummaryWithPrompt.length) {
-    blocks.push(`${summaryHeading}\n${renderedSummaryWithPrompt.join("\n")}`);
+  if (renderedSummaryItems.length) {
+    blocks.push(`${summaryHeading}\n${renderedSummaryItems.join("\n")}`);
   }
 
   if (explainMode && detailItems.length) {
@@ -2772,20 +2767,12 @@ function getSummaryShapeOptions(options = {}, explainMode = false) {
     : Number(promptProfile.summaryLineLimit || 4);
   const summaryLimit = Math.max(1, configuredSummaryLimit);
   const detailLimit = Math.max(1, Number(promptProfile.detailLineLimit || (explainMode ? 5 : 4)));
-  const followUpPrompt = !explainMode
-    ? cleanLine(
-        promptProfile.followUpPrompt ||
-          (promptProfile.followUpStrength === "deep"
-            ? "หากต้องการเจาะลึกต่อ พิมพ์: อธิบาย, แสดงรายละเอียด, รายละเอียด, ใจความทั้งหมด, ฉันไม่เข้าใจ หรือ แจ้งเพิ่มเติม"
-            : "หากต้องการเพิ่มเติม พิมพ์: อธิบาย, แสดงรายละเอียด, รายละเอียด, ใจความทั้งหมด, ฉันไม่เข้าใจ หรือ แจ้งเพิ่มเติม"),
-        )
-      : "";
 
   return {
     summaryLimit,
     detailLimit,
-    followUpPrompt,
-    summaryContentLimit: followUpPrompt ? Math.max(1, summaryLimit - 1) : summaryLimit,
+    followUpPrompt: "",
+    summaryContentLimit: summaryLimit,
   };
 }
 
