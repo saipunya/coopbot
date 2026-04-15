@@ -1328,6 +1328,11 @@
       color: #2f7fb8;
       flex: 0 0 auto;
       font-size: 0.7rem;
+      transition: transform 0.2s ease;
+    }
+
+    .bot-reference-toggle[aria-expanded="true"] .bot-reference-toggle-icon {
+      transform: rotate(180deg);
     }
 
     .bot-reference-block {
@@ -2432,6 +2437,7 @@
         : isGoogleUser
           ? "bi-person-badge-fill"
           : "bi-person-circle";
+      const botPackageVariant = currentUser ? "admin" : "free";
     %>
 
     <div class="page-header">
@@ -2710,13 +2716,14 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     (() => {
-      const CHAT_CACHE_KEY = 'lawbot-chat-cache-v2';
+      const ENABLE_CHAT_CACHE = false;
+      const CHAT_CACHE_KEY = 'lawbot-chat-cache-v3';
       const CHAT_CACHE_LIMIT = 20;
       const HEADER_COLLAPSE_KEY = 'lawbot-header-collapsed-v1';
       const PLAN_RIBBON_COLLAPSE_KEY = 'lawbot-plan-ribbon-collapsed-v1';
       const POST_LOGIN_PENDING_CHAT_KEY = 'lawbot-post-login-pending-chat-v1';
       const POST_LOGIN_PENDING_CHAT_MAX_AGE_MS = 30 * 60 * 1000;
-      const LEGACY_CHAT_CACHE_KEYS = ['lawbot-chat-cache-v1'];
+      const LEGACY_CHAT_CACHE_KEYS = ['lawbot-chat-cache-v1', 'lawbot-chat-cache-v2', 'lawbot-chat-cache-v3'];
       const isAdminUser = <%- JSON.stringify(Boolean(currentUser)) %>;
       const isGoogleSignedIn = <%- JSON.stringify(Boolean(isGoogleUser)) %>;
       const isSignedInUser = isAdminUser || isGoogleSignedIn;
@@ -3831,7 +3838,10 @@
           return '';
         }
         const collapseId = `referenceCollapse_${Math.random().toString(36).slice(2, 10)}`;
-        const encodedLines = encodeURIComponent(JSON.stringify(referenceLines));
+        const referenceCount = referenceLines.length;
+        const toggleLabel = referenceCount > 1
+          ? `แสดงที่มา/อ้างอิง (${referenceCount})`
+          : 'แสดงที่มา/อ้างอิง';
 
         return `
           <div class="bot-reference-block">
@@ -3843,9 +3853,10 @@
               aria-expanded="false"
               aria-controls="${collapseId}"
               data-reference-toggle="1"
-              data-reference-lines="${encodedLines}"
+              data-reference-show-label="${escapeHtml(toggleLabel)}"
+              data-reference-hide-label="ซ่อนที่มา/อ้างอิง"
             >
-              <span class="bot-reference-toggle-text"><i class="bi bi-journal-text"></i>แสดงที่มา/อ้างอิง</span>
+              <span class="bot-reference-toggle-text"><i class="bi bi-journal-text"></i>${escapeHtml(toggleLabel)}</span>
               <i class="bi bi-chevron-down bot-reference-toggle-icon"></i>
             </button>
             <div class="collapse bot-reference-collapse" id="${collapseId}">
@@ -3995,6 +4006,32 @@
         return '';
       }
 
+      function extractReferenceParts(text) {
+        const raw = String(text || '');
+        if (!raw.includes('แหล่งอ้างอิง:')) {
+          return {
+            mainText: raw,
+            referenceText: '',
+          };
+        }
+
+        const markerMatch = raw.match(/\s*แหล่งอ้างอิง:\s*\n/i);
+        if (!markerMatch || typeof markerMatch.index !== 'number') {
+          return {
+            mainText: raw,
+            referenceText: '',
+          };
+        }
+
+        const markerIndex = markerMatch.index;
+        const markerLength = markerMatch[0].length;
+
+        return {
+          mainText: raw.slice(0, markerIndex).trim(),
+          referenceText: raw.slice(markerIndex + markerLength).trim(),
+        };
+      }
+
       function formatBotMessageHtml(text, terms, options = {}) {
         const raw = stripBotUiNoiseText(sanitizeDisplayText(text));
         if (!raw.includes('แหล่งอ้างอิง:')) {
@@ -4002,7 +4039,7 @@
           return decorateBotFallbackHtml(highlighted);
         }
 
-        const [mainText, referenceText] = raw.split(/\n\s*\nแหล่งอ้างอิง:\s*\n/i);
+        const { mainText, referenceText } = extractReferenceParts(raw);
         const normalizedMain = String(mainText || raw).trim();
         const summaryMatch = normalizedMain.match(/สรุปสาระสำคัญ:\s*([\s\S]*?)(?:\n\s*\nรายละเอียดเพิ่มเติม:\s*|$)/i);
         const detailMatch = normalizedMain.match(/รายละเอียดเพิ่มเติม:\s*([\s\S]*)$/i);
@@ -4013,6 +4050,22 @@
         const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
 
         return `<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}</div>`;
+      }
+
+      function syncReferenceToggleState(button, expanded) {
+        if (!button) {
+          return;
+        }
+
+        const labelNode = button.querySelector('.bot-reference-toggle-text');
+        const showLabel = String(button.dataset.referenceShowLabel || 'แสดงที่มา/อ้างอิง').trim();
+        const hideLabel = String(button.dataset.referenceHideLabel || 'ซ่อนที่มา/อ้างอิง').trim();
+        const nextLabel = expanded ? hideLabel : showLabel;
+
+        button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        if (labelNode) {
+          labelNode.innerHTML = `<i class="bi bi-journal-text"></i>${escapeHtml(nextLabel)}`;
+        }
       }
 
       function buildAnswerOriginChipHtml(options = {}) {
@@ -4580,7 +4633,18 @@
         return sanitized;
       }
 
+      function clearRecentChatCache() {
+        try {
+          [CHAT_CACHE_KEY, ...LEGACY_CHAT_CACHE_KEYS].forEach((key) => localStorage.removeItem(key));
+        } catch (_) {}
+      }
+
       function saveRecentChats() {
+        if (!ENABLE_CHAT_CACHE) {
+          clearRecentChatCache();
+          return;
+        }
+
         const items = Array.from(chatMessages.querySelectorAll('.bubble'))
           .filter((node) => !node.classList.contains('bubble-loading'))
           .map((node) => {
@@ -4607,9 +4671,25 @@
         localStorage.setItem(CHAT_CACHE_KEY, JSON.stringify(items));
       }
 
+      function shouldReformatBotMessageFromText(item = {}) {
+        if (!item || item.role !== 'bot') {
+          return false;
+        }
+
+        const text = String(item.text || '').trim();
+        const renderedHtml = String(item.renderedHtml || '').trim();
+
+        if (!text || !text.includes('แหล่งอ้างอิง:')) {
+          return false;
+        }
+
+        return !/data-reference-toggle=\"1\"|class=\"bot-reference-toggle\"/i.test(renderedHtml);
+      }
+
       function restoreRecentChats(options = {}) {
         try {
-          LEGACY_CHAT_CACHE_KEYS.forEach((key) => localStorage.removeItem(key));
+          clearRecentChatCache();
+          if (!ENABLE_CHAT_CACHE) return;
           const raw = localStorage.getItem(CHAT_CACHE_KEY);
           if (!raw) return;
           const parsed = JSON.parse(raw);
@@ -4624,6 +4704,13 @@
 
           restoredItems.forEach((item) => {
             if (!item || (item.role !== 'user' && item.role !== 'bot')) return;
+
+            if (shouldReformatBotMessageFromText(item)) {
+              addBubble(item.text || '', item.role, false, [], {
+                assistantProfile: item.assistantProfile || null,
+              });
+              return;
+            }
 
             if (typeof item.renderedHtml === 'string' && item.renderedHtml) {
               const restoredHtml = isSignedInUser && item.role === 'bot'
@@ -4758,6 +4845,13 @@
       }
 
       chatMessages.addEventListener('click', async (event) => {
+        const referenceToggle = event.target.closest('[data-reference-toggle="1"]');
+        if (referenceToggle) {
+          window.setTimeout(() => {
+            syncReferenceToggleState(referenceToggle, referenceToggle.getAttribute('aria-expanded') === 'true');
+          }, 0);
+        }
+
         const freeAiPreviewButton = event.target.closest('[data-free-ai-preview="1"]');
         if (freeAiPreviewButton) {
           if (isSubmitting) return;
@@ -4860,6 +4954,26 @@
             delete wrap.dataset.knowledgeSuggestionSaving;
           }
         }
+      });
+
+      chatMessages.addEventListener('shown.bs.collapse', (event) => {
+        const collapse = event.target.closest('.bot-reference-collapse');
+        if (!collapse) {
+          return;
+        }
+
+        const button = chatMessages.querySelector(`[data-reference-toggle="1"][aria-controls="${collapse.id}"]`);
+        syncReferenceToggleState(button, true);
+      });
+
+      chatMessages.addEventListener('hidden.bs.collapse', (event) => {
+        const collapse = event.target.closest('.bot-reference-collapse');
+        if (!collapse) {
+          return;
+        }
+
+        const button = chatMessages.querySelector(`[data-reference-toggle="1"][aria-controls="${collapse.id}"]`);
+        syncReferenceToggleState(button, false);
       });
 
       if (adminKnowledgeForm) {
@@ -5168,7 +5282,7 @@
         hideComposerSuggestions();
         await resetConversationContext();
         chatMessages.innerHTML = '';
-        localStorage.removeItem(CHAT_CACHE_KEY);
+        clearRecentChatCache();
         clearPendingPostLoginChat();
         addBubble(buildAssistantWelcomeText({ afterClear: true, assistantProfile: currentAssistantProfile }), 'bot', false, [], {
           assistantProfile: currentAssistantProfile,
