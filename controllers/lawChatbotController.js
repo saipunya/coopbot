@@ -1,6 +1,11 @@
+const fs = require("node:fs/promises");
+const path = require("node:path");
 const lawChatbotService = require("../services/lawChatbotService");
 const runtimeFlags = require("../config/runtimeFlags");
 const UserModel = require("../models/userModel");
+const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
+const { importDocxToPdfChunks } = require("../services/wordImportService");
+const { searchPdfChunks } = require("../services/hybridSearchService");
 const {
   hasAcceptedLawChatbotNotice,
   markLawChatbotNoticeAccepted,
@@ -41,6 +46,16 @@ function sanitizeLawChatbotUserReturnPath(value, fallbackPath = "/law-chatbot") 
   }
 
   return path;
+}
+
+async function safeUnlink(filePath) {
+  if (!filePath) {
+    return;
+  }
+
+  try {
+    await fs.unlink(filePath);
+  } catch (_error) {}
 }
 
 async function renderIndex(req, res) {
@@ -255,12 +270,28 @@ async function renderUpload(req, res) {
     page: req.query.page || 1,
     pageSize: req.query.perPage || 10,
   });
+  const searchQuery = String(req.query.searchQ || req.query.q || "").trim();
+  const searchLimit = Math.max(1, Math.min(Number(req.query.searchLimit || 10), 10));
+  let searchTestResult = null;
+  let searchErrorMessage = "";
+
+  if (searchQuery) {
+    try {
+      searchTestResult = await searchPdfChunks(searchQuery, { limit: searchLimit });
+    } catch (error) {
+      searchErrorMessage = error.message || "ไม่สามารถทดสอบค้นหาได้";
+    }
+  }
 
   res.render("lawChatbot/upload", {
     title: "Upload Legal Documents",
     page: "upload",
     errorMessage: req.query.error || "",
     successMessage: req.query.success || "",
+    searchErrorMessage,
+    searchQuery,
+    searchLimit,
+    searchTestResult,
     data,
     returnPath: req.originalUrl || "/law-chatbot/upload",
   });
@@ -275,11 +306,72 @@ async function handleUpload(req, res) {
     );
   }
 
+  const extension = path.extname(String(req.file.originalname || req.file.filename || "")).toLowerCase();
+  if (extension === ".docx") {
+    const uploadRecord = LawChatbotPdfChunkModel.createUpload({
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      status: "processing",
+      processingMessage: "กำลังนำเข้า DOCX แบบ structured ลง pdf_chunks",
+    });
+
+    try {
+      const result = await importDocxToPdfChunks(req.file);
+      LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
+        status: "completed",
+        insertedChunkCount: result.insertedRows,
+        processingMessage: `นำเข้า DOCX สำเร็จ ${result.insertedRows} rows`,
+      });
+      await safeUnlink(req.file.path);
+      return res.redirect(
+        `${returnTo}${returnTo.includes("?") ? "&" : "?"}success=` +
+          encodeURIComponent(`นำเข้า DOCX สำเร็จ ${result.insertedRows} rows ลง pdf_chunks แล้ว`)
+      );
+    } catch (error) {
+      LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
+        status: "failed",
+        processingMessage: error.message || "นำเข้า DOCX ไม่สำเร็จ",
+      });
+      await safeUnlink(req.file.path);
+      return res.redirect(
+        `${returnTo}${returnTo.includes("?") ? "&" : "?"}error=` +
+          encodeURIComponent(error.message || "ไม่สามารถนำเข้า DOCX ได้")
+      );
+    }
+  }
+
   await lawChatbotService.recordUpload(req.file);
   return res.redirect(
     `${returnTo}${returnTo.includes("?") ? "&" : "?"}success=` +
       encodeURIComponent("อัปโหลดไฟล์สำเร็จ ระบบกำลังประมวลผลเอกสารในพื้นหลัง")
   );
+}
+
+async function searchUploadTest(req, res) {
+  const query = String(req.query.q || req.query.query || "").trim();
+  const limit = Number(req.query.limit || 10);
+
+  if (!query) {
+    return res.status(400).json({
+      ok: false,
+      message: "Query is required. Use ?q=...",
+    });
+  }
+
+  try {
+    const result = await searchPdfChunks(query, { limit });
+    return res.json({
+      ok: true,
+      data: result,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      message: error.message || "Search test failed.",
+    });
+  }
 }
 
 async function renderFeedback(req, res) {
@@ -350,6 +442,7 @@ module.exports = {
   resetContext,
   renderUpload,
   handleUpload,
+  searchUploadTest,
   renderFeedback,
   submitFeedback,
   renderPaymentRequest,

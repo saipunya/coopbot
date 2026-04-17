@@ -159,6 +159,74 @@
     gap: 0.45rem;
     flex-wrap: wrap;
   }
+  .search-test-form {
+    display: grid;
+    gap: 0.85rem;
+  }
+  .search-test-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 140px auto;
+    gap: 0.75rem;
+    align-items: end;
+  }
+  .search-test-grid input,
+  .search-test-grid select {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.72rem 0.82rem;
+    font: inherit;
+    background: #fff;
+    color: var(--text);
+  }
+  .search-top-answer {
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(241, 246, 251, 0.9);
+  }
+  .search-result-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.8rem;
+  }
+  .search-result-item {
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.84);
+  }
+  .search-result-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: baseline;
+  }
+  .search-result-type {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+  .search-result-body {
+    margin-top: 0.6rem;
+    display: grid;
+    gap: 0.45rem;
+  }
+  .search-debug {
+    margin-top: 0.55rem;
+    font-size: 0.88rem;
+    color: var(--subtle);
+    display: grid;
+    gap: 0.22rem;
+  }
   .pagination-link,
   .pagination-current,
   .pagination-ellipsis {
@@ -216,6 +284,10 @@
       width: 100%;
     }
 
+    .search-test-grid {
+      grid-template-columns: 1fr;
+    }
+
     .pagination-bar {
       flex-direction: column;
       align-items: stretch;
@@ -231,7 +303,7 @@
   <section class="card">
     <div class="upload-kicker">กฎหมายสหกรณ์และกลุ่มเกษตรกร</div>
     <h1 class="upload-title">อัปโหลดเอกสารเพื่อเสริมฐานความรู้ของแชตบอท</h1>
-    <p class="upload-lead">นำเข้าไฟล์ PDF, DOC หรือ DOCX เพื่อให้ระบบอ่านเนื้อหา แยกข้อความ และเตรียมข้อมูลไว้สำหรับใช้ตอบคำถามในหน้าแชทให้แม่นยำขึ้น</p>
+    <p class="upload-lead">นำเข้าไฟล์ PDF, DOC หรือ DOCX เพื่อให้ระบบอ่านเนื้อหา แยกข้อความ และเตรียมข้อมูลไว้สำหรับใช้ตอบคำถามในหน้าแชทให้แม่นยำขึ้น โดยไฟล์ DOCX จะถูกแปลงเข้า <code>pdf_chunks</code> ทันทีเมื่ออัปโหลด</p>
 
     <% if (errorMessage) { %>
       <div class="alert-note error"><%= errorMessage %></div>
@@ -244,7 +316,7 @@
       <input type="hidden" name="returnTo" value="<%= returnPath %>" />
       <label for="lawPdf">เลือกไฟล์เอกสาร</label>
       <input id="lawPdf" type="file" name="lawPdf" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
-      <p style="margin-top: -0.2rem;">ขนาดไฟล์สูงสุด <strong><%= data.maxUploadMb %> MB</strong></p>
+      <p style="margin-top: -0.2rem;">ขนาดไฟล์สูงสุด <strong><%= data.maxUploadMb %> MB</strong> และสำหรับ DOCX ระบบจะ parse section, FAQ, note, process อัตโนมัติ</p>
       <button type="submit">อัปโหลดเอกสาร</button>
     </form>
   </section>
@@ -274,6 +346,108 @@
       <li><%= type %></li>
     <% }) %>
   </ul>
+</section>
+
+<section class="card">
+  <h2 style="margin-top: 0; color: var(--accent-strong);">ทดสอบ Hybrid Search</h2>
+  <form class="search-test-form" action="/law-chatbot/upload" method="get">
+    <div class="search-test-grid">
+      <div>
+        <label for="searchQ">คำค้น</label>
+        <input
+          id="searchQ"
+          type="text"
+          name="searchQ"
+          value="<%= searchQuery || '' %>"
+          placeholder="เช่น การรับสมาชิกใหม่, ขั้นตอนจดทะเบียน, เงินสะสม"
+        />
+      </div>
+      <div>
+        <label for="searchLimit">จำนวนผลลัพธ์</label>
+        <select id="searchLimit" name="searchLimit">
+          <% [5, 10].forEach((size) => { %>
+            <option value="<%= size %>" <%= Number(searchLimit || 10) === size ? 'selected' : '' %>><%= size %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div>
+        <button type="submit">ทดสอบค้นหา</button>
+      </div>
+    </div>
+  </form>
+
+  <% if (searchErrorMessage) { %>
+    <div class="alert-note error"><%= searchErrorMessage %></div>
+  <% } %>
+
+  <% if (searchTestResult) { %>
+    <div class="upload-meta" style="margin: 1rem 0 0.8rem;">
+      <span>normalizedQuery: <strong><%= searchTestResult.normalizedQuery %></strong></span>
+      <span>usedFallback: <strong><%= searchTestResult.usedFallback ? 'yes' : 'no' %></strong></span>
+      <span>total: <strong><%= searchTestResult.total %></strong></span>
+    </div>
+
+    <% if (searchTestResult.topAnswerCandidate) { %>
+      <div class="search-top-answer">
+        <strong>Top Answer Candidate</strong>
+        <div class="search-result-body">
+          <div>
+            <span class="search-result-type"><%= searchTestResult.topAnswerCandidate.chunkType || 'unknown' %></span>
+            <% if (searchTestResult.topAnswerCandidate.title) { %>
+              <strong style="margin-left: 0.45rem;"><%= searchTestResult.topAnswerCandidate.title %></strong>
+            <% } %>
+          </div>
+          <div><%= searchTestResult.topAnswerCandidate.answer %></div>
+        </div>
+      </div>
+    <% } %>
+
+    <ul class="search-result-list" style="margin-top: 1rem;">
+      <% if (!searchTestResult.results || searchTestResult.results.length === 0) { %>
+        <li class="search-result-item">ไม่พบผลลัพธ์</li>
+      <% } %>
+      <% (searchTestResult.results || []).forEach((item, index) => { %>
+        <li class="search-result-item">
+          <div class="search-result-head">
+            <div>
+              <strong>#<%= index + 1 %></strong>
+              <span class="search-result-type"><%= item.chunkType || 'unknown' %></span>
+              <% if (item.title) { %>
+                <strong style="margin-left: 0.45rem;"><%= item.title %></strong>
+              <% } %>
+            </div>
+            <div>score: <strong><%= item.score %></strong></div>
+          </div>
+          <div class="search-result-body">
+            <% if (item.question) { %>
+              <div><strong>Q:</strong> <%= item.question %></div>
+            <% } %>
+            <% if (item.answer) { %>
+              <div><strong>A:</strong> <%= item.answer %></div>
+            <% } else if (item.chunkText) { %>
+              <div><%= item.chunkText %></div>
+            <% } %>
+            <% if (item.stepNo) { %>
+              <div><strong>step_no:</strong> <%= item.stepNo %></div>
+            <% } %>
+            <% if (item.referenceNote) { %>
+              <div><strong>reference_note:</strong> <%= item.referenceNote %></div>
+            <% } %>
+            <% if (item.sourceFileName) { %>
+              <div><strong>source_file_name:</strong> <%= item.sourceFileName %></div>
+            <% } %>
+          </div>
+          <div class="search-debug">
+            <% Object.entries(item.debugScores || {}).forEach(([key, value]) => { %>
+              <% if (Number(value || 0) !== 0) { %>
+                <div><strong><%= key %></strong>: <%= value %></div>
+              <% } %>
+            <% }) %>
+          </div>
+        </li>
+      <% }) %>
+    </ul>
+  <% } %>
 </section>
 
 <section class="card">

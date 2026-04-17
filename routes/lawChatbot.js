@@ -63,6 +63,7 @@ router.post("/admin-knowledge", requireAdminAuth, controller.saveKnowledgeFromCh
 router.post("/knowledge-suggestion", attachCurrentUser, requireLawChatbotNoticeAccepted, requireSignedInUser, controller.submitKnowledgeSuggestion);
 router.post("/reset-context", attachCurrentUser, requireLawChatbotNoticeAccepted, requireSignedInUser, controller.resetContext);
 router.get("/upload", requireAdminAuth, controller.renderUpload);
+router.get("/upload/search-test", requireAdminAuth, controller.searchUploadTest);
 router.post("/upload", requireAdminAuth, handleUploadMiddleware, controller.handleUpload);
 router.get("/feedback", requireAdminAuth, controller.renderFeedback);
 router.post("/feedback", requireAdminAuth, controller.submitFeedback);
