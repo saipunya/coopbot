@@ -1,0 +1,4 @@
+# round 1: available=false token=false answer_len=40
+no further token, stopping
+DONE rounds 1 uniqueTokens 0
+sample answers lengths [ 40 ]

@@ -23,7 +23,7 @@ const {
 let embeddingCache = null;
 let embeddingCacheTime = 0;
 const EMBEDDING_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-let pdfChunkFulltextIndexAvailable = null;
+let pdfChunkFulltextSearchConfigCache = null;
 let pdfChunkColumnMetadataCache = null;
 const SEARCH_MISS_LOG_PATH = path.join(__dirname, "..", "logs", "search-misses.jsonl");
 const SEARCH_MISS_LOG_COOLDOWN_MS = 10 * 60 * 1000;
@@ -51,6 +51,14 @@ function normalizeSearchKeyword(text) {
 
 function compactThaiText(text) {
   return normalizeSearchKeyword(text).replace(/\s+/g, "");
+}
+
+function isFulltextMatchingKeyError(error) {
+  return Boolean(
+    error &&
+      (error.code === "ER_FT_MATCHING_KEY_NOT_FOUND" ||
+        /FULLTEXT index matching the column list/i.test(String(error.message || ""))),
+  );
 }
 
 function makeCharacterBigrams(text) {
@@ -815,7 +823,8 @@ class LawChatbotPdfChunkModel {
     memoryDocuments.length = 0;
     embeddingCache = null;
     embeddingCacheTime = 0;
-    pdfChunkFulltextIndexAvailable = null;
+    pdfChunkFulltextSearchConfigCache = null;
+    pdfChunkColumnMetadataCache = null;
   }
 
   static __seedTestSearchData({ documents = [], chunks = [] } = {}) {
@@ -850,23 +859,70 @@ class LawChatbotPdfChunkModel {
     });
   }
 
-  static async hasPdfChunkFulltextIndex(pool) {
+  static async resolvePdfChunkFulltextSearchConfig(pool, columnMetadata = null) {
     if (!pool) {
-      return false;
+      return {
+        enabled: false,
+        columns: [],
+      };
     }
 
-    if (typeof pdfChunkFulltextIndexAvailable === "boolean") {
-      return pdfChunkFulltextIndexAvailable;
+    if (pdfChunkFulltextSearchConfigCache) {
+      return pdfChunkFulltextSearchConfigCache;
     }
 
     try {
       const [rows] = await pool.query("SHOW INDEX FROM pdf_chunks WHERE Index_type = 'FULLTEXT'");
-      pdfChunkFulltextIndexAvailable = Array.isArray(rows) && rows.length > 0;
+      const effectiveColumnMetadata = columnMetadata || (await this.resolvePdfChunkColumnMetadata(pool));
+      const indexColumnsByName = new Map();
+
+      (rows || []).forEach((row) => {
+        const indexName = String(row.Key_name || "").trim();
+        const columnName = String(row.Column_name || "").trim().toLowerCase();
+        const sequence = Number(row.Seq_in_index || 0);
+        if (!indexName || !columnName || !sequence) {
+          return;
+        }
+
+        const columns = indexColumnsByName.get(indexName) || [];
+        columns[sequence - 1] = columnName;
+        indexColumnsByName.set(indexName, columns);
+      });
+
+      const candidateColumnSets = [];
+      if (effectiveColumnMetadata.hasCleanText) {
+        candidateColumnSets.push(["keyword", "chunk_text", "clean_text"]);
+      }
+      candidateColumnSets.push(["keyword", "chunk_text"]);
+      if (
+        effectiveColumnMetadata.hasTitle &&
+        effectiveColumnMetadata.hasQuestion &&
+        effectiveColumnMetadata.hasAnswer &&
+        effectiveColumnMetadata.hasCleanText
+      ) {
+        candidateColumnSets.push(["keyword", "title", "question", "answer", "chunk_text", "clean_text"]);
+      }
+
+      const matchingColumns =
+        candidateColumnSets.find((candidateColumns) =>
+          [...indexColumnsByName.values()].some((indexColumns) =>
+            indexColumns.length === candidateColumns.length &&
+            indexColumns.every((columnName, index) => columnName === candidateColumns[index]),
+          ),
+        ) || [];
+
+      pdfChunkFulltextSearchConfigCache = {
+        enabled: matchingColumns.length > 0,
+        columns: matchingColumns,
+      };
     } catch (_error) {
-      pdfChunkFulltextIndexAvailable = false;
+      pdfChunkFulltextSearchConfigCache = {
+        enabled: false,
+        columns: [],
+      };
     }
 
-    return pdfChunkFulltextIndexAvailable;
+    return pdfChunkFulltextSearchConfigCache;
   }
 
   static async resolvePdfChunkColumnMetadata(pool) {
@@ -889,12 +945,18 @@ class LawChatbotPdfChunkModel {
         hasCleanText: fields.has("clean_text"),
         hasIsActive: fields.has("is_active"),
         hasQualityScore: fields.has("quality_score"),
+        hasTitle: fields.has("title"),
+        hasQuestion: fields.has("question"),
+        hasAnswer: fields.has("answer"),
       };
     } catch (_error) {
       pdfChunkColumnMetadataCache = {
         hasCleanText: false,
         hasIsActive: false,
         hasQualityScore: false,
+        hasTitle: false,
+        hasQuestion: false,
+        hasAnswer: false,
       };
     }
 
@@ -907,11 +969,12 @@ class LawChatbotPdfChunkModel {
       .filter((term) => term.length >= (options.fallback ? 2 : 3))
       .slice(0, options.fallback ? 8 : 12);
 
-    const hasFulltext = options.hasFulltext && options.fulltextQuery;
+    const fulltextConfig = options.fulltextConfig && options.fulltextConfig.enabled ? options.fulltextConfig : null;
+    const hasFulltext = Boolean(fulltextConfig && options.fulltextQuery);
     if (limitedTerms.length === 0 && !hasFulltext) {
       return [];
     }
-    const columnMetadata = await this.resolvePdfChunkColumnMetadata(pool);
+    const columnMetadata = options.columnMetadata || (await this.resolvePdfChunkColumnMetadata(pool));
     const cleanTextSelect = columnMetadata.hasCleanText ? "c.clean_text AS clean_text" : "NULL AS clean_text";
     const isActiveSelect = columnMetadata.hasIsActive ? "c.is_active AS is_active" : "1 AS is_active";
     const qualityScoreSelect = columnMetadata.hasQualityScore
@@ -942,8 +1005,9 @@ class LawChatbotPdfChunkModel {
 
     let fulltextSelect = "0 AS fulltext_score";
     if (hasFulltext) {
-      fulltextSelect = "MATCH(c.keyword, c.chunk_text) AGAINST (? IN BOOLEAN MODE) AS fulltext_score";
-      whereParts.push("MATCH(c.keyword, c.chunk_text) AGAINST (? IN BOOLEAN MODE)");
+      const matchColumnSql = fulltextConfig.columns.map((columnName) => `c.${columnName}`).join(", ");
+      fulltextSelect = `MATCH(${matchColumnSql}) AGAINST (? IN BOOLEAN MODE) AS fulltext_score`;
+      whereParts.push(`MATCH(${matchColumnSql}) AGAINST (? IN BOOLEAN MODE)`);
       scoreParams.push(options.fulltextQuery);
       whereParams.push(options.fulltextQuery);
     }
@@ -951,24 +1015,39 @@ class LawChatbotPdfChunkModel {
     const sqlScoreExpression = scoreParts.length > 0 ? scoreParts.join(" + ") : "0";
     const fetchLimit = options.fetchLimit || 250;
 
-    const [rows] = await pool.query(
-      `SELECT c.id, c.keyword, c.chunk_text, c.created_at, c.document_id,
-              d.title, d.document_number, d.document_date_text, d.document_source, d.originalname,
-              ${cleanTextSelect},
-              ${isActiveSelect},
-              ${qualityScoreSelect},
-              (${sqlScoreExpression}) AS sql_score,
-              ${fulltextSelect}
-       FROM pdf_chunks AS c
-       LEFT JOIN documents AS d ON d.id = c.document_id
-       WHERE (${whereParts.join(" OR ")})
-         AND (d.id IS NULL OR d.is_searchable = 1)
-       ORDER BY sql_score DESC, fulltext_score DESC, c.id DESC
-       LIMIT ?`,
-      [...scoreParams, ...whereParams, fetchLimit],
-    );
+    try {
+      const [rows] = await pool.query(
+        `SELECT c.id, c.keyword, c.chunk_text, c.created_at, c.document_id,
+                d.title, d.document_number, d.document_date_text, d.document_source, d.originalname,
+                ${cleanTextSelect},
+                ${isActiveSelect},
+                ${qualityScoreSelect},
+                (${sqlScoreExpression}) AS sql_score,
+                ${fulltextSelect}
+         FROM pdf_chunks AS c
+         LEFT JOIN documents AS d ON d.id = c.document_id
+         WHERE (${whereParts.join(" OR ")})
+           AND (d.id IS NULL OR d.is_searchable = 1)
+         ORDER BY sql_score DESC, fulltext_score DESC, c.id DESC
+         LIMIT ?`,
+        [...scoreParams, ...whereParams, fetchLimit],
+      );
 
-    return rows;
+      return rows;
+    } catch (error) {
+      if (hasFulltext && isFulltextMatchingKeyError(error)) {
+        pdfChunkFulltextSearchConfigCache = {
+          enabled: false,
+          columns: [],
+        };
+        return this.queryChunkRows(pool, searchTerms, {
+          ...options,
+          fulltextConfig: null,
+        });
+      }
+
+      throw error;
+    }
   }
 
   static getSearchDebugContext(message) {
@@ -1075,13 +1154,15 @@ class LawChatbotPdfChunkModel {
       };
     }
 
-    const hasFulltext = await this.hasPdfChunkFulltextIndex(pool);
+    const columnMetadata = await this.resolvePdfChunkColumnMetadata(pool);
+    const fulltextConfig = await this.resolvePdfChunkFulltextSearchConfig(pool, columnMetadata);
     const fulltextQuery = buildBooleanModeQuery(searchContext.searchTerms);
 
     const primaryRows = await this.queryChunkRows(pool, searchContext.searchTerms, {
+      columnMetadata,
       normalizedMessage: searchContext.normalizedMessage,
       fulltextQuery,
-      hasFulltext,
+      fulltextConfig,
       fetchLimit: 1000,
       fallback: false,
     });
@@ -1093,9 +1174,10 @@ class LawChatbotPdfChunkModel {
     if (rankedResults.length === 0 && searchContext.fallbackTerms.length > 0) {
       usedFallback = true;
       const fallbackRows = await this.queryChunkRows(pool, searchContext.fallbackTerms, {
+        columnMetadata,
         normalizedMessage: searchContext.normalizedMessage,
         fulltextQuery,
-        hasFulltext,
+        fulltextConfig,
         fetchLimit: 1000,
         fallback: true,
       });
@@ -1122,7 +1204,7 @@ class LawChatbotPdfChunkModel {
       totalResults: rankedResults.length,
       rawCandidateCount,
       usedFallback,
-      fulltextEnabled: hasFulltext,
+      fulltextEnabled: Boolean(fulltextConfig.enabled),
       results: rankedResults.slice(0, normalizedLimit),
     };
   }
@@ -1517,13 +1599,15 @@ class LawChatbotPdfChunkModel {
       return results;
     }
 
-    const hasFulltext = await this.hasPdfChunkFulltextIndex(pool);
+    const columnMetadata = await this.resolvePdfChunkColumnMetadata(pool);
+    const fulltextConfig = await this.resolvePdfChunkFulltextSearchConfig(pool, columnMetadata);
     const fulltextQuery = buildBooleanModeQuery(searchContext.searchTerms);
 
     const primaryRows = await this.queryChunkRows(pool, searchContext.searchTerms, {
+      columnMetadata,
       normalizedMessage: searchContext.normalizedMessage,
       fulltextQuery,
-      hasFulltext,
+      fulltextConfig,
       fetchLimit: 300,
       fallback: false,
     });
@@ -1532,9 +1616,10 @@ class LawChatbotPdfChunkModel {
 
     if (results.length === 0) {
       const fallbackRows = await this.queryChunkRows(pool, searchContext.fallbackTerms, {
+        columnMetadata,
         normalizedMessage: searchContext.normalizedMessage,
         fulltextQuery,
-        hasFulltext,
+        fulltextConfig,
         fetchLimit: 200,
         fallback: true,
       });

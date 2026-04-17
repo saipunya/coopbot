@@ -75,8 +75,22 @@ function compactContextSource(source = {}) {
 function mergeUniqueSources(...groups) {
   const seen = new Set();
   const results = [];
+  let limit = 6;
 
-  groups.flat().forEach((source) => {
+  const flattenedGroups = groups.flat().filter((group) => group !== undefined);
+  const configCandidate = flattenedGroups[flattenedGroups.length - 1];
+  const hasConfig =
+    configCandidate &&
+    typeof configCandidate === "object" &&
+    !Array.isArray(configCandidate) &&
+    Object.prototype.hasOwnProperty.call(configCandidate, "limit");
+
+  if (hasConfig) {
+    limit = Math.max(1, Number(configCandidate.limit || 6));
+    flattenedGroups.pop();
+  }
+
+  flattenedGroups.flat().forEach((source) => {
     const compacted = compactContextSource(source);
     if (!compacted) {
       return;
@@ -91,7 +105,7 @@ function mergeUniqueSources(...groups) {
     results.push(compacted);
   });
 
-  return results.slice(0, 6);
+  return results.slice(0, limit);
 }
 
 function stripQuestionTail(message) {
@@ -301,10 +315,11 @@ function storeConversationContext(session, target, originalMessage, effectiveMes
   }
 
   const history = getSessionContext(session);
+  const continuationSourceLimit = Math.max(1, Number(storeOptions?.continuationSourceLimit || 6));
   const storedFocusSources =
     storeOptions && Array.isArray(storeOptions.usedSourcesForContinuation) && storeOptions.usedSourcesForContinuation.length > 0
-      ? mergeUniqueSources(storeOptions.usedSourcesForContinuation).slice(0, 6)
-      : mergeUniqueSources(Array.isArray(matches) ? matches.slice(0, 6) : []).slice(0, 6);
+      ? mergeUniqueSources(storeOptions.usedSourcesForContinuation, { limit: continuationSourceLimit }).slice(0, continuationSourceLimit)
+      : mergeUniqueSources(Array.isArray(matches) ? matches.slice(0, continuationSourceLimit) : [], { limit: continuationSourceLimit }).slice(0, continuationSourceLimit);
   const topicHints = mergeTopicHints(
     resolvedContext && Array.isArray(resolvedContext.topicHints) ? resolvedContext.topicHints : [],
     extractTopicHints(originalMessage, matches),

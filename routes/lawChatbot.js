@@ -106,4 +106,6 @@ router.post('/debug-decision', requireAdminAuth, async (req, res) => {
   }
 });
 
+// Dev-only endpoint removed: use test scripts under tmp/ or run service-level tests instead.
+
 module.exports = router;

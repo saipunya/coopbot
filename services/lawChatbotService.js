@@ -83,6 +83,17 @@ const { evaluateRetrievalResult } = require("./retrievalEvaluationService");
 const { searchInternetSources } = require("./internetSearchService");
 const { canUseAiPreview } = require("./planService");
 const { buildPaginationMeta, normalizePageNumber, normalizePageSize } = require("./paginationUtils");
+const {
+  MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
+  MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS,
+  MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
+  createContinuationSessionState,
+  getSessionContinuationState,
+  paginateContinuationState,
+  resolveContinuationState,
+  setSessionContinuationState,
+  signContinuationToken,
+} = require("./lawChatbotMainChatContinuation");
 
 const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
 const CHAT_BUDGET_BUFFER_MS = Number(process.env.CHAT_BUDGET_BUFFER_MS || 3000);
@@ -144,7 +155,7 @@ function buildResponseMeta(answerMode = "", sources = []) {
   const sourceTables = getUniqueSourceTableNames(sources);
   const preparedQaModes = new Set(["prepared_qa_db_only", "managed_answer"]);
   const aiModes = new Set(["ai", "ai_preview", "ai_preview_compact", "mock_ai"]);
-  const databaseModes = new Set(["db_only", "economy_db_only"]);
+  const databaseModes = new Set(["db_only", "economy_db_only", "db_only_main_chat"]);
   const normalizedAnswerMode = String(answerMode || "").trim();
   const usesPreparedQa = preparedQaModes.has(String(answerMode || "").trim());
   const usesAiSummary = aiModes.has(normalizedAnswerMode);
@@ -680,487 +691,299 @@ async function collectAnswerSources(message, target, session, options = {}) {
   };
 }
 
-async function replyToChat(payload, session) {
+function buildDbOnlyMainChatContinuation(message = "", nextState = null) {
+  if (!nextState || !Array.isArray(nextState.sources) || nextState.sources.length === 0) {
+    return {
+      available: false,
+      label: "ดูคำตอบต่อ",
+    };
+  }
+
+  return {
+    available: true,
+    label: "ดูคำตอบต่อ",
+    token: signContinuationToken(nextState),
+  };
+}
+
+function buildDbOnlyMainChatErrorResult(answer) {
+  return {
+    hasContext: false,
+    answer: String(answer || "").trim(),
+    highlightTerms: [],
+    usedFollowUpContext: false,
+    usedInternetFallback: false,
+    responseMeta: buildResponseMeta("db_only_main_chat", []),
+    fromCache: false,
+    continuation: {
+      available: false,
+      label: "ดูคำตอบต่อ",
+    },
+  };
+}
+
+async function buildDbOnlyMainChatAnswer(message, target, sources, options = {}) {
+  const promptProfile = options.promptProfile || {};
+  return generateChatSummary(message, sources, {
+    conversationalFollowUp: Boolean(options.usedFollowUpContext),
+    conversationHistory: [],
+    focusMessage: options.effectiveMessage || message,
+    topicLabel: options.topicLabel || "",
+    questionIntent: options.questionIntent || classifyQuestionIntent(message),
+    databaseOnlyMode: true,
+    promptProfile,
+    planCode: options.planCode || "free",
+    target,
+  });
+}
+
+async function replyToDbOnlyMainChat(payload, session) {
   const startedAt = nowMs();
-  const message = String(payload.message || "").trim();
+  const requestedMessage = String(payload.message || "").trim();
   const target =
     payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
+  const continueFromPrevious =
+    payload.continueFromPrevious === true || payload.continueFromPrevious === "true";
+  const continuationToken = String(payload.continuationToken || "").trim();
   const debugMode =
     payload && (payload.debug === true || payload.debug === "true" || process.env.CHATBOT_DEBUG === "1");
-
-  if (!message) {
-    return {
-      hasContext: false,
-      answer: "กรุณาระบุคำถามหรือประเด็นที่ต้องการสอบถามก่อนส่งข้อความ",
-      highlightTerms: [],
-    };
-  }
-
-  const threeLayerResponse = await resolveThreeLayerChatResponse(message, target, {
-    searchLimit: 5,
+  const planContext = resolveChatPlanContext(session, {
+    aiAvailable: false,
   });
-  if (threeLayerResponse) {
-    const answer = String(threeLayerResponse.answer || "").trim();
-    const response = {
-      hasContext: Boolean(threeLayerResponse.hasContext),
-      answer,
-      highlightTerms: Array.isArray(threeLayerResponse.highlightTerms) ? threeLayerResponse.highlightTerms : [],
-      usedFollowUpContext: false,
-      usedInternetFallback: false,
-      responseMeta: buildResponseMeta(threeLayerResponse.answerMode || "generic", threeLayerResponse.sources || []),
-      fromCache: false,
-    };
-    const planContext = resolveChatPlanContext(session, {
-      aiAvailable: false,
-    });
-    const source = Array.isArray(threeLayerResponse.sources) ? threeLayerResponse.sources[0] : null;
 
-    if (source && threeLayerResponse.answerMode !== "generic") {
-      storeConversationContext(
-        session,
-        target,
-        message,
-        message,
-        threeLayerResponse.sources,
-        {
-          usedContext: false,
-          topicHints: [String(source.keyword || source.reference || source.title || "").trim()].filter(Boolean),
-        },
-        { answerText: answer },
-      );
-    }
+  let continuationState = null;
+  let continuationSource = "";
+  let invalidContinuationMessage = "";
 
-    LawChatbotModel.create({
-      message,
-      effectiveMessage: message,
-      target,
-      answer,
-      matchedSources: (threeLayerResponse.sources || []).map((item) => ({
-        id: item.id || item.url || item.reference || item.title,
-        title: item.title || item.keyword || item.reference,
-        lawNumber: item.lawNumber || item.reference || item.keyword,
-        source: item.source || "",
-        url: item.url || "",
-        score: Number(item.score || 0),
-      })),
-    });
-
-    await recordUserSearchHistory(session, planContext, {
-      questionText: message,
-      target,
-      answerText: answer,
-    });
-
-    return threeLayerResponse.answerMode === "generic"
-      ? response
-      : personalizeChatResult(session, response);
-  }
-
-  const aiRuntimeEnabled = await isAiEnabled();
-  const openAiConfig = getOpenAiConfig();
-  const aiFeatureAvailable = aiRuntimeEnabled && Boolean(openAiConfig);
-  const basePlanContext = resolveChatPlanContext(session, {
-    aiAvailable: aiFeatureAvailable,
-  });
-  const sessionUser = session?.user || null;
-  const userId = Number(sessionUser?.userId || sessionUser?.id || 0);
-  const usageMonth = UserMonthlyUsageModel.getYearMonth();
-  const monthlyUsage = await getMonthlyUsageSafe(userId, usageMonth);
-  const freeAiPreviewUsage =
-    userId && canUseAiPreview(basePlanContext.code)
-      ? monthlyUsage
-      : null;
-  const freeAiPreviewMeta = buildAiPreviewMeta(basePlanContext, freeAiPreviewUsage);
-  const aiPreviewRequested = isTruthyFlag(payload.aiPreview);
-  const aiPreviewApproved = aiPreviewRequested && freeAiPreviewMeta.canTryPreview && aiFeatureAvailable;
-  const usePremiumPreview = aiPreviewApproved && freeAiPreviewMeta.canTryPremiumPreview &&
-    (wantsExplanation(message) || classifyQuestionIntent(message) === "explain");
-  const runtimeSearchPlanCode = aiPreviewApproved ? "pro" : basePlanContext.code;
-
-  if (aiPreviewRequested && freeAiPreviewMeta.enabled && !aiPreviewApproved) {
-    const unavailableMessage = freeAiPreviewMeta.exhausted
-      ? `คุณใช้สิทธิ์ลองคำตอบแบบ AI ฟรีครบแล้วของเดือนนี้ (AI ขั้นสูง ${freeAiPreviewMeta.premiumLimit} ครั้ง + AI มาตรฐาน ${freeAiPreviewMeta.limit} ครั้ง) หากต้องการใช้ AI ต่อเนื่อง แนะนำอัปเกรดเป็นแพ็กเกจ Professional`
-      : "ขณะนี้ยังไม่สามารถใช้สิทธิ์ลอง AI ได้ กรุณาลองใหม่อีกครั้งในภายหลัง";
-    return attachAiPreviewState(
-      personalizeChatResult(session, {
-        hasContext: false,
-        answer: unavailableMessage,
-        highlightTerms: [],
-        usedFollowUpContext: false,
-        usedInternetFallback: false,
-        fromCache: false,
-      }),
-      {
-        previewMeta: freeAiPreviewMeta,
-      },
-    );
-  }
-
-  const managedSuggestedQuestionMatch = aiPreviewApproved
-    ? null
-    : await findManagedSuggestedQuestionMatch(message, target);
-  if (managedSuggestedQuestionMatch) {
-    const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
-    const matchedSource = managedSuggestedQuestionMatch.source;
-    const answer = managedSuggestedQuestionMatch.answerText;
-
-    storeConversationContext(
-      session,
-      target,
-      message,
-      message,
-      [matchedSource],
-      {
-        usedContext: false,
-        topicHints: managedSuggestedQuestionMatch.topicHint ? [managedSuggestedQuestionMatch.topicHint] : [],
-      },
-      { answerText: answer },
-    );
-
-    LawChatbotModel.create({
-      message,
-      effectiveMessage: message,
-      target,
-      answer,
-      matchedSources: [
-        {
-          id: matchedSource.id || managedSuggestedQuestionMatch.id || managedSuggestedQuestionMatch.questionText,
-          title: managedSuggestedQuestionMatch.questionText,
-          lawNumber: "",
-          source: matchedSource.source,
-          url: "",
-          score: Number(matchedSource.score || 0),
-        },
-      ],
-    });
-
-    const result = {
-      hasContext: true,
-      answer,
-      highlightTerms,
-      usedFollowUpContext: false,
-      usedInternetFallback: false,
-      responseMeta: buildResponseMeta("managed_answer", [matchedSource]),
-      fromCache: false,
-    };
-
-    if (debugMode) {
-      result.debug = {
-        selectedSourceTier: "managed_suggested_question",
-        sourceCount: 1,
-        databaseMatches: 0,
-        internetMatches: 0,
-        answerMode: "managed_answer",
-        promptProfile: "managed",
-        sourceTables: getUniqueSourceTableNames([matchedSource]),
-        timing: {
-          totalReplyMs: Math.round(nowMs() - startedAt),
-        },
-        sources: [
-          {
-            source: matchedSource.source,
-            sourceLabel: getSourceDisplayLabel(matchedSource.source),
-            sourceTable: getSourceTableName(matchedSource.source),
-            reference: matchedSource.reference,
-            score: Number(matchedSource.score || 0),
-            preview: String(answer || "").replace(/\s+/g, " ").slice(0, 180),
-          },
-        ],
-      };
-    }
-
-    await recordUserSearchHistory(session, basePlanContext, {
-      questionText: message,
-      target,
-      answerText: answer,
-    });
-
-    return attachAiPreviewState(personalizeChatResult(session, result), {
-      previewMeta: freeAiPreviewMeta,
-      consumePreview: aiPreviewApproved && Boolean(answer),
-      consumePremiumPreview: usePremiumPreview,
-      userId,
-      usageMonth,
-    });
-  }
-
-  if (runtimeFlags.useMockAI) {
-    const highlightTerms = message.split(/\s+/).filter(Boolean).slice(0, 8);
-    const answer = `Mock AI\n\nคำถาม: "${message}"\n\nสรุปจำลอง: ระบบกำลังอยู่ในโหมดทดสอบและยังไม่ได้เรียก AI จริง`;
-
-    await recordUserSearchHistory(session, basePlanContext, {
-      questionText: message,
-      target,
-      answerText: answer,
-    });
-
-    return attachAiPreviewState(personalizeChatResult(session, {
-      hasContext: true,
-      answer,
-      highlightTerms,
-      usedFollowUpContext: false,
-      usedInternetFallback: false,
-      responseMeta: buildResponseMeta("mock_ai", []),
-      fromCache: false,
-    }), {
-      previewMeta: freeAiPreviewMeta,
-      consumePreview: aiPreviewApproved && Boolean(answer),
-      consumePremiumPreview: usePremiumPreview,
-      userId,
-      usageMonth,
-    });
-  }
-
-  const searchPlan = await resolveSearchPlan(message, target, session, {
-    requestStartedAt: startedAt,
-    totalBudgetMs: CHAT_REPLY_BUDGET_MS,
-    planCode: runtimeSearchPlanCode,
-  });
-  const planContext = resolveRuntimeAiPlanContext(
-    aiPreviewApproved
-      ? buildFreeAiPreviewPlanContext(basePlanContext, usePremiumPreview)
-      : applyEconomyDatabaseOnlyMode(
-          basePlanContext,
-          searchPlan.effectiveMessage || message,
-          searchPlan.matches,
-          classifyQuestionIntent(message),
-        ),
-    monthlyUsage,
-  );
-  const cacheScope = buildAnswerCacheScope(planContext);
-  const shouldBindCacheToContext =
-    searchPlan?.resolvedContext?.usedContext === true && isTimeFollowUpQuestion(message);
-  const cacheContextKey = shouldBindCacheToContext
-    ? String(searchPlan?.resolvedContext?.topicFamilyId || searchPlan?.resolvedContext?.topicHints?.[0] || "").trim()
-    : "";
-  const cacheMessage = shouldBindCacheToContext
-    ? String(searchPlan.effectiveMessage || message).trim()
-    : message;
-  const cachePlanContext = cacheContextKey ? { ...planContext, cacheContextKey } : planContext;
-  const { normalizedQuestion, questionHash } = buildQuestionCacheIdentity(cacheMessage, target, cacheScope);
-  const cacheKey = buildAnswerCacheKey(cacheMessage, target, cachePlanContext);
-  const canUseCache = shouldUseAnswerCache(message) && !debugMode;
-  const cachedAnswer = canUseCache ? getCachedAnswer(cacheKey, classifyQuestionIntent(message)) : null;
-  if (cachedAnswer) {
-    storeConversationContext(
-      session,
-      target,
-      message,
-      cachedAnswer.effectiveMessage || message,
-      cachedAnswer.sources || [],
-      cachedAnswer.resolvedContext || { usedContext: false, topicHints: [] },
-      { answerText: cachedAnswer.answer },
-    );
-
-    LawChatbotModel.create({
-      message,
-      effectiveMessage: cachedAnswer.effectiveMessage || message,
-      target,
-      answer: cachedAnswer.answer,
-      matchedSources: (cachedAnswer.sources || []).map((item) => ({
-        id: item.id || item.url || item.reference || item.title,
-        title: item.title || item.keyword || item.reference,
-        lawNumber: item.lawNumber || item.reference || item.keyword,
-        source: item.source || "",
-        url: item.url || "",
-        score: Number(item.score || 0),
-      })),
-    });
-
-    const cachedResult = {
-      hasContext: cachedAnswer.hasContext,
-      answer: cachedAnswer.answer,
-      highlightTerms: cachedAnswer.highlightTerms,
-      usedFollowUpContext: false,
-      usedInternetFallback: cachedAnswer.usedInternetFallback,
-      answerMode: cachedAnswer.answerMode || cachedAnswer.responseMeta?.answerMode || "cache",
-      responseMeta: cachedAnswer.responseMeta || null,
-      fromCache: true,
-    };
-
-    if (debugMode) {
-      cachedResult.debug = {
-        selectedSourceTier: cachedAnswer.selectedSourceTier || "cache",
-        sourceCount: Array.isArray(cachedAnswer.sources) ? cachedAnswer.sources.length : 0,
-        answerMode: cachedAnswer.answerMode || "cache",
-        sourceTables: Array.isArray(cachedAnswer.responseMeta?.sourceTables) ? cachedAnswer.responseMeta.sourceTables : [],
-        timing: {
-          cacheHit: true,
-          totalReplyMs: Math.round(nowMs() - startedAt),
-        },
-        sources: (cachedAnswer.sources || []).map((item) => ({
-          source: item.source || "",
-          sourceLabel: getSourceDisplayLabel(item.source || ""),
-          sourceTable: getSourceTableName(item.source || ""),
-          reference: item.reference || item.title || "",
-          score: Number(item.score || 0),
-          preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
-        })),
-      };
-    }
-
-    await recordUserSearchHistory(session, planContext, {
-      questionText: message,
-      target,
-      answerText: cachedResult.answer,
-    });
-
-    return attachAiPreviewState(personalizeChatResult(session, cachedResult), {
-      previewMeta: freeAiPreviewMeta,
-      consumePreview: aiPreviewApproved && cachedResult.answerMode !== "db_only" && Boolean(cachedResult.answer),
-      consumePremiumPreview: usePremiumPreview && cachedResult.answerMode !== "db_only",
-      userId,
-      usageMonth,
-    });
-  }
-
-  if (canUseCache && questionHash) {
+  if (continueFromPrevious) {
     try {
-      const dbCachedAnswer = await LawChatbotAnswerCacheModel.findByQuestionHash(questionHash);
-      if (dbCachedAnswer?.answer_text) {
-        await LawChatbotAnswerCacheModel.incrementHitCount(dbCachedAnswer.id);
+      const resolvedContinuation = resolveContinuationState({
+        continuationToken,
+        target,
+        sessionState: getSessionContinuationState(session),
+      });
+      continuationState = resolvedContinuation.state;
+      continuationSource = resolvedContinuation.source;
+    } catch (_error) {
+      invalidContinuationMessage = "ลิงก์คำตอบต่อหมดอายุหรือไม่ถูกต้อง กรุณาถามใหม่อีกครั้ง";
+    }
 
-        const cachedResult = buildDbCachedChatResult(dbCachedAnswer, message);
-        cachedResult.answerMode = dbCachedAnswer?.metadata?.answerMode || cachedResult.responseMeta?.answerMode || "db_cache";
-        if (debugMode) {
-          cachedResult.debug = {
-            selectedSourceTier: dbCachedAnswer?.metadata?.selectedSourceTier || "db_cache",
-            sourceCount: Number(dbCachedAnswer?.metadata?.sourceCount || 0),
-            answerMode: dbCachedAnswer?.metadata?.answerMode || "db_cache",
-            sourceTables: Array.isArray(dbCachedAnswer?.metadata?.responseMeta?.sourceTables)
-              ? dbCachedAnswer.metadata.responseMeta.sourceTables
-              : Array.isArray(dbCachedAnswer?.metadata?.sourceTables)
-                ? dbCachedAnswer.metadata.sourceTables
-                : [],
-            timing: {
-              cacheHit: true,
-              totalReplyMs: Math.round(nowMs() - startedAt),
-            },
-            sources: [],
-          };
+    if (!continuationState && !invalidContinuationMessage) {
+      invalidContinuationMessage = "ไม่พบข้อมูลคำตอบต่อ กรุณาถามใหม่อีกครั้ง";
+    }
+
+    if (!continuationState) {
+      return buildDbOnlyMainChatErrorResult(invalidContinuationMessage);
+    }
+  }
+
+  // Prefer explicit request message; if absent, use continuation state's originalMessage
+  // Note: token-based continuation should also provide the original message from the token
+  const message =
+    requestedMessage ||
+    (continuationState?.originalMessage ? String(continuationState.originalMessage || "").trim() : "");
+  if (!message) {
+    return buildDbOnlyMainChatErrorResult("กรุณาระบุคำถามหรือประเด็นที่ต้องการสอบถามก่อนส่งข้อความ");
+  }
+
+  let effectiveMessage = message;
+  let resolvedContext = { usedContext: false, topicHints: [] };
+  let selectedSources = [];
+  let questionIntent = classifyQuestionIntent(message);
+  let retrievalEvaluation = null;
+  let paginated = null;
+  let continuationSessionState = continuationState;
+  let answer = "";
+  let contextCarrySources = [];
+
+  if (continueFromPrevious) {
+    paginated = await paginateContinuationState(continuationSessionState, {
+      maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
+      maxSourceChunks: MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS,
+    });
+
+    if (!Array.isArray(paginated.renderSources) || paginated.renderSources.length === 0) {
+      setSessionContinuationState(session, null);
+      return buildDbOnlyMainChatErrorResult("ไม่พบข้อมูลคำตอบต่อ กรุณาถามใหม่อีกครั้ง");
+    }
+
+    selectedSources = paginated.renderSources;
+      // For continuation rounds, return the paginated source slices directly to avoid
+      // repeating previously-sent paragraphs from earlier summaries.
+      if (Array.isArray(selectedSources) && selectedSources.length > 0) {
+        const contentParts = selectedSources.map((s) => String(s.content || s.chunk_text || s.comment || '').trim()).filter(Boolean);
+        const referenceLines = selectedSources.map((s) => `- ${String(s.reference || s.title || '').trim()} ${s.url ? `(${s.url})` : ''} [${getSourceDisplayLabel(s.source || '')}]`);
+        let assembled = `${contentParts.join('\n\n')}${referenceLines.length > 0 ? '\n\nแหล่งอ้างอิง:\n' + referenceLines.join('\n') : ''}`;
+
+        // Trim large prefix overlap with the previous assistant reply to avoid repeated paragraphs.
+        try {
+          const historyTurns = getConversationHistory(session, target) || [];
+          // find last assistant turn
+          let lastAssistant = null;
+          for (let i = historyTurns.length - 1; i >= 0; i--) {
+            if (historyTurns[i] && historyTurns[i].role === "assistant" && historyTurns[i].content) {
+              lastAssistant = String(historyTurns[i].content || "").replace(/\s+/g, ' ').trim();
+              break;
+            }
+          }
+
+          if (lastAssistant) {
+            const normalizedPrev = lastAssistant.replace(/\s+/g, ' ').trim();
+
+            // Drop any source slices that appear to be already included in the previous assistant reply
+            const minRepeatCheck = 80;
+            const filteredParts = [];
+            const filteredRefs = [];
+            for (let i = 0; i < selectedSources.length; i++) {
+              const s = selectedSources[i];
+              const text = String(s.content || s.chunk_text || s.comment || '').replace(/\s+/g, ' ').trim();
+              if (!text) continue;
+              const checkText = text.length > minRepeatCheck ? text.slice(0, minRepeatCheck) : text;
+              if (normalizedPrev.includes(checkText)) {
+                // skip this slice as it's already covered
+                continue;
+              }
+              filteredParts.push(text);
+              filteredRefs.push(referenceLines[i] || '');
+            }
+
+            if (filteredParts.length > 0) {
+              assembled = `${filteredParts.join('\n\n')}${filteredRefs.filter(Boolean).length > 0 ? '\n\nแหล่งอ้างอิง:\n' + filteredRefs.filter(Boolean).join('\n') : ''}`;
+            } else {
+              // If everything was filtered out, try to find the first unique position in assembled
+              const normalizedPrev2 = normalizedPrev;
+              const normalizedNext = assembled.replace(/\s+/g, ' ').trim();
+              const minUnique = 80;
+              let firstUniqueIndex = -1;
+              for (let i = 0; i + minUnique <= normalizedNext.length; i++) {
+                const chunk = normalizedNext.slice(i, i + minUnique);
+                if (!normalizedPrev2.includes(chunk)) {
+                  firstUniqueIndex = i;
+                  break;
+                }
+              }
+
+              if (firstUniqueIndex > 0) {
+                assembled = normalizedNext.slice(firstUniqueIndex).trim();
+              } else if (firstUniqueIndex === 0) {
+                assembled = normalizedNext; // fully unique
+              } else {
+                // nothing unique found; return a short continuation prompt instead
+                assembled = "(ต่อ) มีเนื้อหาต่ออีก คลิก 'ดูคำตอบต่อ' เพื่ออ่าน";
+              }
+            }
+          }
+        } catch (e) {
+          // ignore trimming errors and use assembled as-is
         }
 
-        storeConversationContext(
-          session,
-          target,
-          message,
-          dbCachedAnswer.normalized_question || message,
-          [],
-          { usedContext: false, topicHints: [] },
-          { answerText: cachedResult.answer },
-        );
-
-        LawChatbotModel.create({
-          message,
-          effectiveMessage: dbCachedAnswer.normalized_question || message,
-          target,
-          answer: cachedResult.answer,
-          matchedSources: [],
+        answer = assembled;
+      } else {
+        answer = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
+          effectiveMessage,
+          usedFollowUpContext: true,
+          questionIntent,
+          promptProfile: planContext.promptProfile,
+          planCode: planContext.code,
         });
+    }
+  } else {
+    const searchPlan = await resolveSearchPlan(message, target, session, {
+      requestStartedAt: startedAt,
+      totalBudgetMs: CHAT_REPLY_BUDGET_MS,
+      planCode: planContext.code,
+    });
+    const evidence = await collectAnswerSources(message, target, session, {
+      searchPlan,
+      requestStartedAt: startedAt,
+      totalBudgetMs: CHAT_REPLY_BUDGET_MS,
+      allowInternetFallback: false,
+      databaseOnlyMode: true,
+      sourceLimit: planContext.sourceLimit,
+      internetLimit: 0,
+      promptProfile: planContext.promptProfile,
+      planCode: planContext.code,
+    });
 
-        setCachedAnswer(cacheKey, {
-          hasContext: cachedResult.hasContext,
-          answer: cachedResult.answer,
-          highlightTerms: cachedResult.highlightTerms,
-          usedInternetFallback: cachedResult.usedInternetFallback,
-          responseMeta: cachedResult.responseMeta || null,
-          selectedSourceTier: dbCachedAnswer?.metadata?.selectedSourceTier || "db_cache",
-          answerMode: dbCachedAnswer?.metadata?.answerMode || "db_cache",
-          effectiveMessage: dbCachedAnswer.normalized_question || message,
-          resolvedContext: { usedContext: false, topicHints: [] },
-          sources: [],
-        });
+    effectiveMessage = evidence.effectiveMessage || message;
+    resolvedContext = evidence.resolvedContext || resolvedContext;
+    selectedSources = evidence.sources || [];
+    contextCarrySources = selectedSources.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT);
+    questionIntent = evidence.questionIntent || questionIntent;
+    retrievalEvaluation = evaluateRetrievalResult({
+      message,
+      effectiveMessage,
+      questionIntent,
+      queryRewriteTrace: evidence.queryRewriteTrace,
+      databaseMatches: evidence.databaseMatches,
+      internetMatches: [],
+      selectedSources,
+      usedInternetFallback: false,
+      usedInternetSearch: false,
+      resolvedContext,
+    });
 
-        await recordUserSearchHistory(session, planContext, {
-          questionText: message,
-          target,
-          answerText: cachedResult.answer,
-        });
+    if (!retrievalEvaluation.shouldAnswer) {
+      setSessionContinuationState(session, null);
+      answer = retrievalEvaluation.userFacingMessage;
+    } else {
+      continuationSessionState = createContinuationSessionState({
+        target,
+        originalMessage: message,
+        effectiveMessage,
+        sources: selectedSources,
+      });
+      paginated = await paginateContinuationState(continuationSessionState, {
+        maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
+        maxSourceChunks: MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS,
+      });
+      selectedSources = paginated.renderSources || [];
 
-        return attachAiPreviewState(personalizeChatResult(session, cachedResult), {
-          previewMeta: freeAiPreviewMeta,
-          consumePreview: aiPreviewApproved && cachedResult.answerMode !== "db_only" && Boolean(cachedResult.answer),
-          consumePremiumPreview: usePremiumPreview && cachedResult.answerMode !== "db_only",
-          userId,
-          usageMonth,
+      if (selectedSources.length === 0) {
+        setSessionContinuationState(session, null);
+        answer = retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้";
+      } else {
+        answer = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
+          effectiveMessage,
+          usedFollowUpContext: resolvedContext.usedContext,
+          topicLabel:
+            resolvedContext.topicHints && resolvedContext.topicHints[0]
+              ? resolvedContext.topicHints[0]
+              : "",
+          questionIntent,
+          promptProfile: planContext.promptProfile,
+          planCode: planContext.code,
         });
       }
-    } catch (error) {
-      console.error("[replyToChat] Answer cache lookup failed:", error.message || error);
     }
   }
 
-  const evidence = await collectAnswerSources(message, target, session, {
-    searchPlan,
-    requestStartedAt: startedAt,
-    totalBudgetMs: CHAT_REPLY_BUDGET_MS,
-    allowInternetFallback: planContext.useInternet,
-    databaseOnlyMode: !planContext.useAI,
-    sourceLimit: planContext.sourceLimit,
-    internetLimit: planContext.maxInternetSources,
-    promptProfile: planContext.promptProfile,
-    planCode: aiPreviewApproved ? runtimeSearchPlanCode : planContext.code,
-  });
-  const afterCollectSourcesAt = nowMs();
-  const resolvedContext = evidence.resolvedContext;
-  const effectiveMessage = evidence.effectiveMessage || message;
-  const sources = evidence.sources;
-  const highlightTerms = effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8);
-  const retrievalEvaluation = evaluateRetrievalResult({
-    message,
-    effectiveMessage,
-    questionIntent: evidence.questionIntent,
-    queryRewriteTrace: evidence.queryRewriteTrace,
-    databaseMatches: evidence.databaseMatches,
-    internetMatches: evidence.internetMatches,
-    selectedSources: sources,
-    usedInternetFallback: evidence.usedInternetFallback,
-    usedInternetSearch: evidence.usedInternetSearch,
-    resolvedContext,
-  });
+  const nextContinuationState =
+    paginated && Array.isArray(paginated.renderSources) && paginated.renderSources.length > 0
+      ? {
+          ...continuationSessionState,
+          originalMessage:
+            continuationSessionState?.originalMessage || message,
+          effectiveMessage:
+            continuationSessionState?.effectiveMessage || effectiveMessage,
+          activeSourceIndex: paginated.nextState.activeSourceIndex,
+          sources: paginated.nextState.sources,
+        }
+      : null;
+  const hasContinuation =
+    Boolean(nextContinuationState) &&
+    paginated?.hasMore === true &&
+    nextContinuationState.activeSourceIndex < nextContinuationState.sources.length;
 
-  let answer = "";
+  setSessionContinuationState(session, hasContinuation ? nextContinuationState : null);
 
-  if (!retrievalEvaluation.shouldAnswer) {
-    answer = retrievalEvaluation.userFacingMessage;
-  } else {
-    const remainingBudgetBeforeAnswerMs = getRemainingBudgetMs(
-      startedAt,
-      CHAT_REPLY_BUDGET_MS,
-    );
-    const answerSources = sources;
-    const answerDiagnostics = {};
-    answer = await generateChatSummary(message, answerSources, {
-      conversationalFollowUp: resolvedContext.usedContext,
-      conversationHistory: getConversationHistory(session, target),
-      focusMessage: effectiveMessage,
-      topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
-      forceFallback: !planContext.useAI || remainingBudgetBeforeAnswerMs < MIN_AI_SUMMARY_BUDGET_MS,
-      aiTimeoutMs: Math.max(
-        1000,
-        Math.min(
-          Number(planContext.promptProfile?.aiTimeoutMs || remainingBudgetBeforeAnswerMs - 500),
-          remainingBudgetBeforeAnswerMs - 500,
-        ),
-      ),
-      questionIntent: evidence.questionIntent,
-      databaseOnlyMode: !planContext.useAI,
-      promptProfile: planContext.promptProfile,
-      planCode: runtimeSearchPlanCode,
-      target,
-      answerDiagnostics,
-    });
-    evidence.answerDiagnostics = answerDiagnostics;
-  }
-  const afterAnswerGenerationAt = nowMs();
-  const effectiveAnswerMode = retrievalEvaluation.shouldAnswer
-    ? evidence.answerDiagnostics?.answerMode || planContext.answerMode || (planContext.useAI ? "ai" : "db_only")
-    : retrievalEvaluation.policy;
-
-  if (retrievalEvaluation.shouldAnswer) {
-    storeConversationContext(session, target, message, effectiveMessage, sources, resolvedContext, {
+  if (answer && (continueFromPrevious || retrievalEvaluation?.shouldAnswer)) {
+    storeConversationContext(session, target, message, effectiveMessage, selectedSources, resolvedContext, {
       answerText: answer,
-      usedSourcesForContinuation: evidence.answerDiagnostics?.usedSources,
+      usedSourcesForContinuation: continueFromPrevious
+        ? selectedSources
+        : contextCarrySources,
+      continuationSourceLimit: MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
     });
   }
 
@@ -1169,7 +992,7 @@ async function replyToChat(payload, session) {
     effectiveMessage,
     target,
     answer,
-    matchedSources: sources.map((item) => ({
+    matchedSources: (selectedSources || []).map((item) => ({
       id: item.id || item.url || item.reference || item.title,
       title: item.title || item.keyword || item.reference,
       lawNumber: item.lawNumber || item.reference || item.keyword,
@@ -1179,139 +1002,71 @@ async function replyToChat(payload, session) {
     })),
   });
 
-  const result = {
-    hasContext: retrievalEvaluation.shouldAnswer && sources.length > 0,
-    answer,
-    highlightTerms,
-    usedFollowUpContext: resolvedContext.usedContext,
-    usedInternetFallback: evidence.usedInternetFallback,
-    responseMeta: buildResponseMeta(
-      effectiveAnswerMode,
-      sources,
-    ),
-    fromCache: false,
-  };
-
-  if (retrievalEvaluation.shouldAnswer && canUseCache && !resolvedContext.usedContext) {
-    setCachedAnswer(cacheKey, {
-      hasContext: retrievalEvaluation.shouldAnswer && sources.length > 0,
-      answer,
-      highlightTerms,
-      usedInternetFallback: evidence.usedInternetFallback,
-      responseMeta: result.responseMeta,
-      selectedSourceTier: evidence.selectedSourceTier || "none",
-      planCode: planContext.code,
-      promptProfile: planContext.promptProfile?.code || "template",
-      answerMode: effectiveAnswerMode,
-      effectiveMessage,
-      resolvedContext,
-      sources,
-    });
-  }
-
-  if (
-    retrievalEvaluation.shouldAnswer &&
-    canUseCache &&
-    !resolvedContext.usedContext &&
-    questionHash &&
-    shouldPersistDbAnswerCache(answer, { debugMode })
-  ) {
-    try {
-      await LawChatbotAnswerCacheModel.upsert({
-        questionHash,
-        normalizedQuestion: normalizedQuestion || effectiveMessage || message,
-        originalQuestion: message,
-        target,
-        answerText: answer,
-        metadata: {
-          hasContext: retrievalEvaluation.shouldAnswer && sources.length > 0,
-          highlightTerms,
-          usedInternetFallback: evidence.usedInternetFallback,
-          selectedSourceTier: evidence.selectedSourceTier || "none",
-          effectiveMessage,
-          sourceCount: sources.length,
-          sourceTables: result.responseMeta?.sourceTables || [],
-          responseMeta: result.responseMeta || null,
-          planCode: planContext.code,
-          promptProfile: planContext.promptProfile?.code || "template",
-          answerMode: effectiveAnswerMode,
-        },
-      });
-    } catch (error) {
-      console.error("[replyToChat] Answer cache write failed:", error.message || error);
-    }
-  }
-
-  if (debugMode) {
-    const consideredSourceTables = Array.from(
-      new Set(
-        (evidence.selectionDiagnostics?.rejected || [])
-          .map((item) => getSourceTableName(item?.source || ""))
-          .filter(Boolean),
-      ),
-    );
-    result.debug = {
-      selectedSourceTier: evidence.selectedSourceTier || "none",
-      selectedSourceTierLabel: getSourceDisplayLabel(evidence.selectedSourceTier || "none"),
-      sourceTables: result.responseMeta?.sourceTables || [],
-      consideredSourceTables,
-      sourceCount: sources.length,
-      databaseMatches: evidence.databaseMatches?.length || 0,
-      internetMatches: evidence.internetMatches?.length || 0,
-      answerMode:
-        evidence.answerDiagnostics?.answerMode || effectiveAnswerMode,
-      promptProfile: planContext.promptProfile?.code || "template",
-      queryRewrite: evidence.queryRewriteTrace || null,
-      queryRewriteCount: Array.isArray(evidence.queryRewriteTrace?.rewrites) ? evidence.queryRewriteTrace.rewrites.length : 0,
-      selectionDiagnostics: evidence.selectionDiagnostics || null,
-      evaluation: retrievalEvaluation.trace,
-      timing: {
-        ...(evidence.timing || {}),
-        answerGenerationMs: Math.round(afterAnswerGenerationAt - afterCollectSourcesAt),
-        totalReplyMs: Math.round(afterAnswerGenerationAt - startedAt),
-      },
-      sources: sources.map((item) => ({
-        source: item.source || "",
-        sourceLabel: getSourceDisplayLabel(item.source || ""),
-        sourceTable: getSourceTableName(item.source || ""),
-        selectionTier: item.selectionTier || "",
-        selectionTierLabel: getSourceDisplayLabel(item.selectionTier || ""),
-        reference: item.reference || item.title || "",
-        score: Number(item.score || 0),
-        rawScore: Number(item.rawScore ?? item.score ?? 0),
-        rankingTrace: item.rankingTrace || null,
-        selectedBecause: evidence.selectionDiagnostics?.selected?.find((candidate) =>
-          candidate.source === (item.source || "") &&
-          candidate.reference === (item.reference || item.title || ""),
-        )?.selectedBecause || "",
-        preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
-      })),
-    };
-  }
-
-  if (retrievalEvaluation.shouldReturnNoAnswer) {
-    result.reviewQueue = await queueNoAnswerKnowledgeSuggestion(
-      message,
-      target,
-      retrievalEvaluation,
-      evidence,
-      payload?.requestMeta || {},
-    );
-  }
-
   await recordUserSearchHistory(session, planContext, {
     questionText: message,
     target,
     answerText: answer,
   });
 
-  return attachAiPreviewState(personalizeChatResult(session, result), {
-    previewMeta: freeAiPreviewMeta,
-    consumePreview: aiPreviewApproved && effectiveAnswerMode !== "db_only" && retrievalEvaluation.shouldAnswer && Boolean(answer),
-    consumePremiumPreview: usePremiumPreview && effectiveAnswerMode !== "db_only" && retrievalEvaluation.shouldAnswer && Boolean(answer),
-    userId,
-    usageMonth,
-  });
+  const result = {
+    hasContext: Boolean(answer && selectedSources.length > 0),
+    answer,
+    highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
+    usedFollowUpContext: Boolean(resolvedContext.usedContext),
+    usedInternetFallback: false,
+    responseMeta: buildResponseMeta("db_only_main_chat", selectedSources),
+    fromCache: false,
+    continuation: hasContinuation
+      ? buildDbOnlyMainChatContinuation(message, nextContinuationState)
+      : {
+          available: false,
+          label: "ดูคำตอบต่อ",
+        },
+  };
+
+  if (retrievalEvaluation?.shouldReturnNoAnswer) {
+    result.reviewQueue = await queueNoAnswerKnowledgeSuggestion(
+      message,
+      target,
+      retrievalEvaluation,
+      {
+        resolvedContext,
+        selectionDiagnostics: { selected: [] },
+      },
+      payload?.requestMeta || {},
+    );
+  }
+
+  if (debugMode) {
+    result.debug = {
+      selectedSourceTier: continueFromPrevious ? `continuation_${continuationSource}` : "db_only_main_chat",
+      selectedSourceTierLabel: continueFromPrevious ? `continuation_${continuationSource}` : "db_only_main_chat",
+      sourceTables: result.responseMeta?.sourceTables || [],
+      consideredSourceTables: [],
+      sourceCount: selectedSources.length,
+      databaseMatches: selectedSources.length,
+      internetMatches: 0,
+      answerMode: "db_only_main_chat",
+      promptProfile: planContext.promptProfile?.code || "template",
+      timing: {
+        totalReplyMs: Math.round(nowMs() - startedAt),
+      },
+      sources: selectedSources.map((item) => ({
+        source: item.source || "",
+        sourceLabel: getSourceDisplayLabel(item.source || ""),
+        sourceTable: getSourceTableName(item.source || ""),
+        reference: item.reference || item.title || "",
+        score: Number(item.score || 0),
+        preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
+      })),
+    };
+  }
+
+  return personalizeChatResult(session, result);
+}
+
+async function replyToChat(payload, session) {
+  return replyToDbOnlyMainChat(payload, session);
 }
 
 async function summarizeChat(payload, session) {

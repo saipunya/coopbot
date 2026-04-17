@@ -135,16 +135,23 @@ async function chat(req, res) {
       ? `${submittedByName} (${submittedByEmail})`
       : submittedByName || submittedByEmail || "";
 
+    // Force main chat to be DB-only with signed continuation tokens.
+    const forcedPayload = {
+      ...req.body,
+      useAI: false,
+      useInternet: false,
+      databaseOnlyMode: true,
+      answerMode: 'db_only_main_chat',
+      requestMeta: {
+        submittedBy,
+        submittedByUserId,
+        sessionId: req.sessionID || "",
+        ip: req.ip || req.headers["x-forwarded-for"] || "",
+      },
+    };
+
     const result = await Promise.race([
-      lawChatbotService.replyToChat({
-        ...req.body,
-        requestMeta: {
-          submittedBy,
-          submittedByUserId,
-          sessionId: req.sessionID || "",
-          ip: req.ip || req.headers["x-forwarded-for"] || "",
-        },
-      }, req.session),
+      lawChatbotService.replyToChat(forcedPayload, req.session),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error(`chat request timed out after ${CHAT_REQUEST_TIMEOUT_MS}ms`)), CHAT_REQUEST_TIMEOUT_MS),
       ),

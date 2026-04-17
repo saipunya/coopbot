@@ -1711,6 +1711,19 @@
       margin-left: 0;
     }
 
+    .bot-continuation-actions {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: 0.7rem;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .bot-continuation-btn {
+      border-radius: 8px;
+      font-weight: 600;
+    }
+
     .knowledge-suggestion-form .form-label {
       font-weight: 600;
       color: var(--primary-strong);
@@ -4006,6 +4019,29 @@
         return '';
       }
 
+      function buildContinuationActionHtml(options = {}) {
+        const continuation = options && options.continuation ? options.continuation : null;
+        const token = String(continuation && continuation.token ? continuation.token : '').trim();
+        const question = String(options && options.question ? options.question : '').trim();
+        const target = String(options && options.target ? options.target : selectedTarget || 'all').trim();
+        if (!continuation || continuation.available !== true || !token || !question) {
+          return '';
+        }
+
+        return `
+          <div class="bot-continuation-actions">
+            <button
+              type="button"
+              class="btn btn-outline-primary btn-sm bot-continuation-btn"
+              data-continue-answer="1"
+              data-continuation-token="${escapeHtml(token)}"
+              data-question="${escapeHtml(question)}"
+              data-target="${escapeHtml(target)}"
+            >${escapeHtml(String(continuation.label || 'ดูคำตอบต่อ').trim() || 'ดูคำตอบต่อ')}</button>
+          </div>
+        `;
+      }
+
       function extractReferenceParts(text) {
         const raw = String(text || '');
         if (!raw.includes('แหล่งอ้างอิง:')) {
@@ -4034,9 +4070,15 @@
 
       function formatBotMessageHtml(text, terms, options = {}) {
         const raw = stripBotUiNoiseText(sanitizeDisplayText(text));
+        const continuationHtml = buildContinuationActionHtml(options);
         if (!raw.includes('แหล่งอ้างอิง:')) {
           const highlighted = formatBotDisplayLineHtml(raw, terms);
-          return decorateBotFallbackHtml(highlighted);
+          const fallbackHtml = decorateBotFallbackHtml(highlighted);
+          if (!continuationHtml) {
+            return fallbackHtml;
+          }
+
+          return `<div class="bot-answer-main"><div class="bot-answer-summary">${fallbackHtml}</div>${continuationHtml}</div>`;
         }
 
         const { mainText, referenceText } = extractReferenceParts(raw);
@@ -4049,7 +4091,7 @@
         ].filter(Boolean).join('');
         const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
 
-        return `<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}</div>`;
+        return `<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}${continuationHtml}</div>`;
       }
 
       function syncReferenceToggleState(button, expanded) {
@@ -4771,7 +4813,8 @@
               message: trimmed,
               target: options.target || selectedTarget,
               debug: Boolean(options.debug),
-              aiPreview: Boolean(options.aiPreview),
+              continueFromPrevious: Boolean(options.continueFromPrevious),
+              continuationToken: typeof options.continuationToken === 'string' ? options.continuationToken : '',
               guestDeviceHint: isSignedInUser ? '' : buildGuestDeviceHint()
             }),
             signal: controller.signal
@@ -4810,6 +4853,7 @@
               questionLimit: data && typeof data.questionLimit !== 'undefined' ? data.questionLimit : null,
               signInPath: data && typeof data.signInPath === 'string' ? data.signInPath : '',
               freeAiPreview: data && data.freeAiPreview ? data.freeAiPreview : null,
+              continuation: data && data.continuation ? data.continuation : null,
               responseMeta: data && data.responseMeta ? data.responseMeta : null,
               assistantProfile: data && data.assistantProfile ? data.assistantProfile : currentAssistantProfile
             });
@@ -4817,6 +4861,7 @@
           }
 
           saveRecentChats();
+          return data;
         } catch (error) {
           loadingController.dispose();
           removeLoadingBubble();
@@ -4830,6 +4875,7 @@
             assistantProfile: currentAssistantProfile
           });
           focusFirstAnswer(botRow);
+          return null;
         } finally {
           if (timeoutId) {
             clearTimeout(timeoutId);
@@ -4850,6 +4896,30 @@
           window.setTimeout(() => {
             syncReferenceToggleState(referenceToggle, referenceToggle.getAttribute('aria-expanded') === 'true');
           }, 0);
+        }
+
+        const continuationButton = event.target.closest('[data-continue-answer="1"]');
+        if (continuationButton) {
+          if (isSubmitting) return;
+
+          continuationButton.disabled = true;
+          const continuationResponse = await submitMessage(continuationButton.dataset.question || '', {
+            skipUserBubble: true,
+            continueFromPrevious: true,
+            continuationToken: continuationButton.dataset.continuationToken || '',
+            target: continuationButton.dataset.target || selectedTarget
+          });
+
+          if (!continuationResponse) {
+            continuationButton.disabled = false;
+            return;
+          }
+
+          const continuationWrap = continuationButton.closest('.bot-continuation-actions');
+          if (continuationWrap) {
+            continuationWrap.remove();
+          }
+          return;
         }
 
         const freeAiPreviewButton = event.target.closest('[data-free-ai-preview="1"]');
