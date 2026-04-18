@@ -712,6 +712,8 @@ class LawChatbotSuggestedQuestionModel {
 
     if (normalizedStoredQuestion && normalizedQuestion.includes(normalizedStoredQuestion)) {
       similarity += 0.12;
+    } else if (normalizedStoredQuestion && normalizedStoredQuestion.includes(normalizedQuestion)) {
+      similarity += 0.16;
     }
 
     return {
