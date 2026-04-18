@@ -400,24 +400,7 @@ function requireSignedInUser(req, res, next) {
 }
 
 function requireLawChatbotNoticeAccepted(req, res, next) {
-  if (req.session?.adminUser || hasAcceptedLawChatbotNotice(req)) {
-    return next();
-  }
-
-  const requestedPath = req.method === "GET" ? req.originalUrl : "/law-chatbot";
-  const returnTo = sanitizeReturnPath(requestedPath, "/law-chatbot");
-  const redirectPath = `/law-chatbot?returnTo=${encodeURIComponent(returnTo)}`;
-
-  if (wantsJsonResponse(req)) {
-    return res.status(403).json({
-      success: false,
-      noticeRequired: true,
-      redirectPath,
-      message: "กรุณาอ่านคำประกาศชี้แจงและยอมรับก่อนใช้งาน",
-    });
-  }
-
-  return res.redirect(redirectPath);
+  return next();
 }
 
 function requireGoogleUser(req, res, next) {

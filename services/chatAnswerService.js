@@ -452,6 +452,28 @@ function detectLiquidationScope(message) {
   return scope === "all" ? "coop" : scope;
 }
 
+function isLiquidationAppointmentQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text || !/ชำระบัญชี|ผู้ชำระบัญชี/.test(text)) {
+    return false;
+  }
+
+  return /(ใคร|ผู้มีอำนาจ|อำนาจ).*(แต่งตั้ง|ตั้ง).*ผู้ชำระบัญชี|ผู้ชำระบัญชี.*(แต่งตั้ง|ตั้ง).*โดยใคร/.test(text);
+}
+
+function isLiquidatorIdentityQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  if (isLiquidationAppointmentQuestion(text)) {
+    return false;
+  }
+
+  return /(?:ใครคือ|ใครเป็น|คือใคร).*(?:ผู้ชำระบัญชี)|ผู้ชำระบัญชี(?:คือ|เป็น)ใคร/.test(text);
+}
+
 function isReserveFundQuestion(message) {
   const text = normalizeForSearch(String(message || "")).toLowerCase();
   return Boolean(text) && /ทุนสำรอง/.test(text);
@@ -791,6 +813,8 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
   const explainMode = options.explainMode === true || wantsExplanation(options.message || "");
   const stepMode = options.stepMode === true || wantsStepAnswer(message);
   const scope = detectLiquidationScope(message);
+  const asksAppointmentAuthority = isLiquidationAppointmentQuestion(message);
+  const asksLiquidatorIdentity = isLiquidatorIdentityQuestion(message);
   const allowedSources = scope === "group" ? ["tbl_glaws"] : ["tbl_laws"];
   const references = [];
   const summaryLines = [];
@@ -852,9 +876,18 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
     }
 
     if (appointmentSource) {
-      summaryLines.push("ถ้าเลิกด้วยเหตุอื่นนอกจากล้มละลาย ที่ประชุมใหญ่ต้องตั้งผู้ชำระบัญชีโดยได้รับความเห็นชอบจากนายทะเบียนสหกรณ์ภายในกำหนดเวลา และหากไม่ตั้งหรือตั้งแล้วไม่ผ่านความเห็นชอบ นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีได้");
-      detailLines.push("มาตรา 75 กำหนดให้ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชีภายในสามสิบวันนับแต่วันที่เลิก และต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์");
-      detailLines.push("ถ้าที่ประชุมใหญ่ไม่เลือกตั้งภายในกำหนด หรือเลือกตั้งแล้วไม่ได้รับความเห็นชอบ นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีแทนได้");
+      if (asksAppointmentAuthority) {
+        summaryLines.push("ผู้มีอำนาจตั้งผู้ชำระบัญชีในกรณีสหกรณ์เลิกเพราะเหตุอื่นนอกจากล้มละลาย คือที่ประชุมใหญ่ โดยต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์ และถ้าที่ประชุมใหญ่ไม่ตั้งหรือตั้งแล้วไม่ได้รับความเห็นชอบ นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีได้");
+        detailLines.push("มาตรา 75 กำหนดให้ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชีภายในสามสิบวันนับแต่วันที่สหกรณ์เลิก และการแต่งตั้งนั้นต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์");
+        detailLines.push("ถ้าที่ประชุมใหญ่ไม่เลือกตั้งภายในกำหนด หรือเลือกตั้งแล้วไม่ได้รับความเห็นชอบ นายทะเบียนสหกรณ์เป็นผู้มีอำนาจตั้งผู้ชำระบัญชีแทนได้");
+      } else if (asksLiquidatorIdentity) {
+        summaryLines.push("ผู้ชำระบัญชีคือบุคคลที่ได้รับการตั้งขึ้นเพื่อชำระสะสางกิจการของสหกรณ์หลังเลิกสหกรณ์ โดยหลักที่ประชุมใหญ่เป็นผู้ตั้ง และต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์");
+        detailLines.push("หากที่ประชุมใหญ่ไม่เลือกตั้งผู้ชำระบัญชีภายในกำหนด หรือเลือกตั้งแล้วไม่ได้รับความเห็นชอบ นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีแทนได้");
+      } else {
+        summaryLines.push("ถ้าเลิกด้วยเหตุอื่นนอกจากล้มละลาย ที่ประชุมใหญ่ต้องตั้งผู้ชำระบัญชีโดยได้รับความเห็นชอบจากนายทะเบียนสหกรณ์ภายในกำหนดเวลา และหากไม่ตั้งหรือตั้งแล้วไม่ผ่านความเห็นชอบ นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีได้");
+        detailLines.push("มาตรา 75 กำหนดให้ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชีภายในสามสิบวันนับแต่วันที่เลิก และต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์");
+        detailLines.push("ถ้าที่ประชุมใหญ่ไม่เลือกตั้งภายในกำหนด หรือเลือกตั้งแล้วไม่ได้รับความเห็นชอบ นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีแทนได้");
+      }
       pushUniqueReference(appointmentSource);
     }
 
@@ -2890,6 +2923,298 @@ function splitContentSegments(text) {
   const mergedSegments = mergeProtectedYearLines(rawSegments);
 
   return mergedSegments;
+}
+
+function normalizeDbOnlyMainChatListBreaks(text) {
+  return normalizeProtectedLineBreaks(String(text || ""))
+    .replace(/\r/g, "\n")
+    .replace(/([^\n])\s+(?=(?:ข้อ\s*)?\([0-9๐-๙]{1,3}\))/gu, "$1\n")
+    .replace(/([^\n])\s+(?=(?:ข้อ\s*)?[0-9๐-๙]{1,3}[.)])/gu, "$1\n")
+    .replace(/([;:])\s*(?=(?:ข้อ\s*)?\([0-9๐-๙]{1,3}\))/gu, "$1\n")
+    .replace(/([;:])\s*(?=(?:ข้อ\s*)?[0-9๐-๙]{1,3}[.)])/gu, "$1\n");
+}
+
+function splitInlineDbOnlyNumberedItems(line) {
+  const text = String(line || "");
+  const markerPattern = /(?:ข้อ\s*)?(?:\([0-9๐-๙]{1,3}\)|[0-9๐-๙]{1,3}[.)])/gu;
+  const matches = Array.from(text.matchAll(markerPattern));
+
+  if (matches.length <= 1) {
+    return [text];
+  }
+
+  const parts = [];
+  const firstIndex = Number(matches[0]?.index || 0);
+  const preface = cleanLine(text.slice(0, firstIndex));
+  if (preface) {
+    parts.push(preface);
+  }
+
+  for (let index = 0; index < matches.length; index += 1) {
+    const start = Number(matches[index]?.index || 0);
+    const end = index + 1 < matches.length ? Number(matches[index + 1]?.index || text.length) : text.length;
+    const segment = text.slice(start, end).trim();
+    if (segment) {
+      parts.push(segment);
+    }
+  }
+
+  return parts;
+}
+
+function stripDbOnlySectionPrefix(line) {
+  const cleaned = cleanLine(line);
+  const match = cleaned.match(/^(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*[0-9๐-๙]+(?:\/[0-9๐-๙]+)?(?:\s*[):.\-–—|])?\s*(.*)$/u);
+  if (!match) {
+    return {
+      matched: false,
+      line: cleaned,
+      tail: "",
+    };
+  }
+
+  const tail = cleanLine(String(match[1] || "").replace(/^[|:\-–—]+\s*/u, ""));
+  return {
+    matched: true,
+    line: cleaned,
+    tail,
+  };
+}
+
+function isDbOnlyMainChatMetadataLine(line, source = {}) {
+  const cleaned = cleanLine(line);
+  if (!cleaned) {
+    return true;
+  }
+
+  if (/^(?:kr|da)\b[:：]?/iu.test(cleaned)) {
+    return true;
+  }
+
+  if (/^ผู้ช่วย[^\s:：]*[:：]?/u.test(cleaned)) {
+    return true;
+  }
+
+  if (/^(?:คำสำคัญ|keywords?)\s*[:：]/iu.test(cleaned)) {
+    return true;
+  }
+
+  if (/^(?:สรุปสาระสำคัญ|สรุปใจความสำคัญ|ประเด็นสำคัญ|รายละเอียดเพิ่มเติม|อธิบายเพิ่มเติม|แหล่งอ้างอิง):?$/iu.test(cleaned)) {
+    return true;
+  }
+
+  if (lineLooksLikeSourceMetadata(cleaned, [source]) || looksLikeBareDocumentTitle(cleaned, [source])) {
+    return true;
+  }
+
+  const sectionPrefix = stripDbOnlySectionPrefix(cleaned);
+  if (sectionPrefix.matched && !sectionPrefix.tail) {
+    return true;
+  }
+
+  return false;
+}
+
+function stripDbOnlyInlineMetadata(line) {
+  return cleanLine(
+    String(line || "")
+      .replace(/^(?:kr|da)\b[:：]?\s*/iu, "")
+      .replace(/^ผู้ช่วย[^\s:：]*[:：]?\s*/u, "")
+      .replace(/\s*(?:คำสำคัญ|keywords?)\s*[:：].*$/iu, "")
+      .replace(/\s*แหล่งอ้างอิง\s*[:：].*$/iu, "")
+      .replace(/\s*สรุปสาระสำคัญ\s*[:：].*$/iu, ""),
+  );
+}
+
+function formatDbOnlyMainChatSourceLines(source = {}) {
+  const primaryRawText = [source?.content, source?.chunk_text]
+    .filter(Boolean)
+    .join("\n");
+  const fallbackRawText = String(source?.comment || "");
+  const rawText = normalizeDbOnlyMainChatListBreaks(
+    String(primaryRawText || fallbackRawText),
+  );
+
+  if (!rawText.trim()) {
+    return [];
+  }
+
+  const rawLines = rawText
+    .split(/\n+/)
+    .flatMap((line) => splitInlineDbOnlyNumberedItems(line));
+  const results = [];
+
+  for (const rawLine of rawLines) {
+    if (isDbOnlyMainChatMetadataLine(rawLine, source)) {
+      continue;
+    }
+
+    const cleaned = stripDbOnlyInlineMetadata(rawLine);
+    if (!cleaned) {
+      continue;
+    }
+
+    const sectionPrefix = stripDbOnlySectionPrefix(cleaned);
+    const normalizedLine = sectionPrefix.matched && sectionPrefix.tail ? sectionPrefix.tail : cleaned;
+    if (normalizedLine) {
+      results.push(normalizedLine);
+    }
+  }
+
+  return results;
+}
+
+function isDbOnlyDissolutionWhenQuestion(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /สหกรณ์.*เลิก.*เมื่อ(?:ใด|ไหร่)|เลิกสหกรณ์.*เมื่อ(?:ใด|ไหร่)|สหกรณ์ย่อมเลิก/.test(normalized);
+}
+
+function dedupeDbOnlyAnswerLines(lines = [], limit = 60) {
+  const deduped = [];
+  for (const line of Array.isArray(lines) ? lines : []) {
+    const cleaned = stripDbOnlyInlineMetadata(line);
+    if (!cleaned) {
+      continue;
+    }
+
+    if (deduped.some((existing) => linesLookSemanticallyDuplicate(existing, cleaned))) {
+      continue;
+    }
+
+    deduped.push(cleaned);
+    if (deduped.length >= limit) {
+      break;
+    }
+  }
+
+  return deduped;
+}
+
+function buildDbOnlyReferenceSection(entries = []) {
+  const seen = new Set();
+  const refs = [];
+
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const reference = cleanLine(entry?.source?.reference || entry?.source?.title || entry?.source?.keyword || "");
+    if (!reference) {
+      continue;
+    }
+    const dedupeKey = normalizeComparisonText(reference);
+    if (!dedupeKey || seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+    refs.push(`- ${reference}`);
+  }
+
+  if (refs.length === 0) {
+    return "";
+  }
+
+  return ["อ้างอิง:", ...refs].join("\n");
+}
+
+function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
+  const sourceItems = Array.isArray(sources) ? sources : [];
+  const message = String(options.message || options.originalMessage || "").trim();
+  const maxPrimarySections = Math.min(2, Math.max(1, Number(options.maxPrimarySections || 1)));
+  const parsedEntries = [];
+
+  for (const source of sourceItems) {
+    const lines = dedupeDbOnlyAnswerLines(formatDbOnlyMainChatSourceLines(source), 80);
+    if (lines.length === 0) {
+      continue;
+    }
+
+    parsedEntries.push({
+      source,
+      lines,
+      lawNumber: getSourcePrimaryLawNumber(source),
+      score: Number(source?.score || 0),
+      focusScore: scoreQueryFocusAlignment(message, buildSourceSearchText(source)),
+      sourceName: String(source?.source || "").trim().toLowerCase(),
+    });
+  }
+
+  const dedupedEntries = [];
+  const bestByLawKey = new Map();
+  parsedEntries.forEach((entry) => {
+    const lawKey = `${entry.sourceName}::${entry.lawNumber || normalizeComparisonText(entry.source?.reference || "")}`;
+    const existing = bestByLawKey.get(lawKey);
+    if (!existing || entry.score > existing.score) {
+      bestByLawKey.set(lawKey, entry);
+    }
+  });
+  dedupedEntries.push(...bestByLawKey.values());
+
+  if (dedupedEntries.length === 0) {
+    return [];
+  }
+
+  dedupedEntries.sort((left, right) => {
+    const focusDiff = Number(right.focusScore || 0) - Number(left.focusScore || 0);
+    if (focusDiff !== 0) {
+      return focusDiff;
+    }
+    return Number(right.score || 0) - Number(left.score || 0);
+  });
+
+  let selectedEntries = dedupedEntries.slice(0, maxPrimarySections);
+  if (isDbOnlyDissolutionWhenQuestion(message)) {
+    const section70 = dedupedEntries.find((entry) => entry.lawNumber === "70");
+    if (section70) {
+      selectedEntries = [section70];
+    }
+  } else if (isLiquidationAppointmentQuestion(message)) {
+    const section75 = dedupedEntries.find((entry) => entry.lawNumber === "75");
+    if (section75) {
+      selectedEntries = [section75];
+    }
+  }
+
+  return selectedEntries;
+}
+
+function buildDbOnlyMainChatAnswerResult(sources = [], options = {}) {
+  const selectedEntries = selectDbOnlyMainChatAnswerEntries(sources, options);
+  if (selectedEntries.length === 0) {
+    return {
+      answer: "ไม่ปรากฏข้อมูลที่เกี่ยวข้องอย่างชัดเจนในฐานข้อมูล กรุณาระบุคำค้นหรือประเด็นที่ต้องการสอบถามเพิ่มเติม",
+      selectedSources: [],
+      selectedEntries: [],
+    };
+  }
+
+  const renderedBlocks = [];
+  for (const entry of selectedEntries) {
+    const lines = dedupeDbOnlyAnswerLines(entry.lines, 80);
+    if (lines.length > 0) {
+      renderedBlocks.push(lines.join("\n"));
+    }
+  }
+
+  if (renderedBlocks.length === 0) {
+    return {
+      answer: "ไม่ปรากฏข้อมูลที่เกี่ยวข้องอย่างชัดเจนในฐานข้อมูล กรุณาระบุคำค้นหรือประเด็นที่ต้องการสอบถามเพิ่มเติม",
+      selectedSources: [],
+      selectedEntries: [],
+    };
+  }
+
+  const referenceSection = buildDbOnlyReferenceSection(selectedEntries);
+  return {
+    answer: [renderedBlocks.join("\n\n"), referenceSection].filter(Boolean).join("\n\n").trim(),
+    selectedSources: selectedEntries.map((entry) => entry.source).filter(Boolean),
+    selectedEntries,
+  };
+}
+
+function formatDbOnlyMainChatAnswer(sources = [], options = {}) {
+  return buildDbOnlyMainChatAnswerResult(sources, options).answer;
 }
 
 function extractQueryLawNumber(message) {
@@ -5048,6 +5373,9 @@ function buildBoardElectionFocusedAnswer(sources, options = {}) {
 
 module.exports = {
   generateChatSummary,
+  buildDbOnlyMainChatAnswerResult,
+  formatDbOnlyMainChatAnswer,
+  selectDbOnlyMainChatAnswerEntries,
   wantsExplanation,
   SOURCE_LABELS,
 };

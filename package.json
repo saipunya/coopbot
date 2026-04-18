@@ -4,8 +4,8 @@
   "description": "Express and EJS starter for coopbot",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js",
+    "start": "kill-port 3000 && node app.js",
+    "dev": "kill-port 3000 && nodemon app.js",
     "backfill:clean-text": "node scripts/backfill-clean-text.js",
     "backfill:clean-text:dry": "node scripts/backfill-clean-text.js --dry-run",
     "db:add-fulltext-pdf-chunks": "node scripts/add-fulltext-pdf-chunks.js",
@@ -50,6 +50,7 @@
     "word-extractor": "^1.0.4"
   },
   "devDependencies": {
+    "kill-port": "^2.0.1",
     "nodemon": "^3.1.14"
   }
 }

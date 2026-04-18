@@ -1008,6 +1008,15 @@ function isLiquidationPrioritySearch(message) {
   return /ชำระบัญชี|ผู้ชำระบัญชี/.test(normalizeForSearch(message).toLowerCase());
 }
 
+function isLiquidationAppointmentAuthorityQuestion(message) {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized || !/ชำระบัญชี|ผู้ชำระบัญชี/.test(normalized)) {
+    return false;
+  }
+
+  return /(ใคร|ผู้มีอำนาจ|อำนาจ).*(แต่งตั้ง|ตั้ง).*ผู้ชำระบัญชี|ผู้ชำระบัญชี.*(แต่งตั้ง|ตั้ง).*โดยใคร/.test(normalized);
+}
+
 function isDissolutionPrioritySearch(message) {
   const normalized = normalizeForSearch(message).toLowerCase();
   if (!normalized) {
@@ -1066,6 +1075,28 @@ function getPreferredDissolutionLawNumberBonuses(message = "") {
     "32": 138,
     "33": 130,
     "34": 114,
+  };
+}
+
+function getPreferredLiquidationLawNumberBonuses(message = "") {
+  const asksAppointmentAuthority = isLiquidationAppointmentAuthorityQuestion(message);
+  if (asksAppointmentAuthority) {
+    return {
+      "75": 220,
+      "74": 50,
+      "73": 30,
+      "81": -180,
+    };
+  }
+
+  return {
+    "73": 90,
+    "74": 94,
+    "75": 126,
+    "76": 80,
+    "77": 82,
+    "81": 78,
+    "87": 76,
   };
 }
 
@@ -1146,8 +1177,8 @@ function getFreeSourcePriorityPlan(message, target = "all") {
 
   if (isLiquidationPrioritySearch(message)) {
     return {
-      admin_knowledge: 12,
-      [primaryLawSource]: 10,
+      [primaryLawSource]: 12,
+      admin_knowledge: 10,
       knowledge_suggestion: 8,
       vinichai: 7,
       documents: 3,
@@ -1797,6 +1828,79 @@ function scoreDissolutionSourceFocus(item = {}) {
   return score;
 }
 
+function scoreLiquidationSourceFocus(item = {}, message = "") {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  const sourceText = buildSourceFocusSearchText(item);
+  if (!sourceText) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const asksAppointmentAuthority = isLiquidationAppointmentAuthorityQuestion(message);
+  let score = 0;
+
+  if (/(มาตรา 73|มาตรา73)/.test(sourceText)) {
+    score += 42;
+  }
+  if (/(มาตรา 74|มาตรา74)/.test(sourceText)) {
+    score += 46;
+  }
+  if (/(มาตรา 75|มาตรา75)/.test(sourceText)) {
+    score += 72;
+  }
+  if (/(มาตรา 76|มาตรา76)/.test(sourceText)) {
+    score += 32;
+  }
+  if (/(มาตรา 77|มาตรา77)/.test(sourceText)) {
+    score += 34;
+  }
+  if (/(มาตรา 81|มาตรา81)/.test(sourceText)) {
+    score += 30;
+  }
+  if (/(มาตรา 87|มาตรา87)/.test(sourceText)) {
+    score += 28;
+  }
+
+  if (/(ชำระบัญชี|ผู้ชำระบัญชี)/.test(sourceText)) {
+    score += 26;
+  }
+
+  if (asksAppointmentAuthority) {
+    if (/(ที่ประชุมใหญ่(?:ต้อง)?(?:เลือกตั้ง|ตั้ง)ผู้ชำระบัญชี|เลือกตั้งผู้ชำระบัญชี.*ที่ประชุมใหญ่)/.test(sourceText)) {
+      score += 180;
+    }
+    if (/(ได้รับความเห็นชอบจากนายทะเบียนสหกรณ์|นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี)/.test(sourceText)) {
+      score += 164;
+    }
+
+    const isDutyOnlyText =
+      /(ผู้ชำระบัญชีมีอำนาจหน้าที่|เรียกประชุมใหญ่|จำหน่ายทรัพย์สินของสหกรณ์|ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น)/.test(sourceText) &&
+      !/(เลือกตั้งผู้ชำระบัญชี|ตั้งผู้ชำระบัญชี|ได้รับความเห็นชอบจากนายทะเบียนสหกรณ์|นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี)/.test(sourceText);
+    if (isDutyOnlyText) {
+      score -= 220;
+    }
+
+    if (sourceName === "tbl_laws" && /(มาตรา 81|มาตรา81)/.test(sourceText)) {
+      score -= 260;
+    }
+  }
+
+  if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+    score += 14;
+  }
+  if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion") {
+    score += 10;
+  }
+  if (sourceName === "documents" || sourceName === "pdf_chunks") {
+    score -= 24;
+  }
+  if (sourceName === "tbl_vinichai") {
+    score -= 26;
+  }
+
+  score += getMatchBaseScore(item) * 0.12;
+  return score;
+}
+
 function normalizeLawFocusDigits(text) {
   return normalizeThaiNumberSearchText(thaiDigitsToArabic(String(text || "")));
 }
@@ -1927,6 +2031,32 @@ function rankSourcesForMessageFocus(items, message = "") {
         __messageFocusRank: scoreTaxSourceFocus(item, message),
       }))
       .filter((item) => Number.isFinite(Number(item.__messageFocusRank)))
+      .sort((left, right) => {
+        const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+        if (focusDiff !== 0) {
+          return focusDiff;
+        }
+        return Number(right.score || 0) - Number(left.score || 0);
+      })
+      .map((item) => {
+        const normalized = { ...item };
+        delete normalized.__messageFocusRank;
+        return normalized;
+      });
+  }
+
+  if (isLiquidationPrioritySearch(message)) {
+    const preferredLawNumbers = getPreferredLiquidationLawNumberBonuses(message);
+
+    return ranked
+      .map((item) => {
+        const lawNumber = extractPrimaryLawFocusNumber(item);
+        const bonus = preferredLawNumbers[lawNumber] || 0;
+        return {
+          ...item,
+          __messageFocusRank: scoreLiquidationSourceFocus(item, message) + bonus,
+        };
+      })
       .sort((left, right) => {
         const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
         if (focusDiff !== 0) {
@@ -2076,6 +2206,31 @@ function pruneFocusedQueryMatches(matches, message) {
       return focusedDissolutionMatches.map((item) => {
         const normalized = { ...item };
         delete normalized.__dissolutionScore;
+        return normalized;
+      });
+    }
+  }
+
+  if (isLiquidationPrioritySearch(message)) {
+    const focusedLiquidationMatches = ranked
+      .map((item) => ({
+        ...item,
+        __liquidationScore: scoreLiquidationSourceFocus(item, message),
+      }))
+      .filter((item) => Number(item.__liquidationScore || 0) >= 24)
+      .sort((left, right) => {
+        const focusDiff = Number(right.__liquidationScore || 0) - Number(left.__liquidationScore || 0);
+        if (focusDiff !== 0) {
+          return focusDiff;
+        }
+
+        return Number(right.score || 0) - Number(left.score || 0);
+      });
+
+    if (focusedLiquidationMatches.length > 0) {
+      return focusedLiquidationMatches.map((item) => {
+        const normalized = { ...item };
+        delete normalized.__liquidationScore;
         return normalized;
       });
     }

@@ -10,7 +10,13 @@ const runtimeFlags = require("../config/runtimeFlags");
 const { isAiEnabled } = require("./runtimeSettingsService");
 const { getOpenAiConfig } = require("./openAiService");
 const { buildQuestionCacheIdentity } = require("./lawChatbotAnswerCacheUtils");
-const { generateChatSummary, wantsExplanation, SOURCE_LABELS } = require("./chatAnswerService");
+const {
+  buildDbOnlyMainChatAnswerResult,
+  generateChatSummary,
+  selectDbOnlyMainChatAnswerEntries,
+  wantsExplanation,
+  SOURCE_LABELS,
+} = require("./chatAnswerService");
 const {
   getConversationHistory,
   getFollowUpCarrySources,
@@ -85,7 +91,6 @@ const { canUseAiPreview } = require("./planService");
 const { buildPaginationMeta, normalizePageNumber, normalizePageSize } = require("./paginationUtils");
 const {
   MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
-  MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS,
   MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
   createContinuationSessionState,
   getSessionContinuationState,
@@ -100,6 +105,7 @@ const CHAT_BUDGET_BUFFER_MS = Number(process.env.CHAT_BUDGET_BUFFER_MS || 3000);
 const CHAT_REPLY_BUDGET_MS = Math.max(2000, CHAT_REQUEST_TIMEOUT_MS - CHAT_BUDGET_BUFFER_MS);
 const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SEARCH_MIN_BUDGET_MS || 5000);
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
+const DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS = 1;
 const PREPARED_QA_NOTICE = "คำตอบนี้มาจาก Q&A/ฐานข้อมูลในระบบ โดยไม่ได้เรียก AI";
 const AI_SUMMARY_NOTICE = "คำตอบนี้สรุปโดย AI จากข้อมูลที่ระบบค้นพบ";
 const DB_LOOKUP_NOTICE = "คำตอบนี้มาจากการค้นฐานข้อมูลโดยตรง";
@@ -220,7 +226,7 @@ function personalizeAnswerWithAssistantProfile(answer = "", assistantProfile = L
     return rawAnswer;
   }
 
-  const referenceSectionMatch = rawAnswer.match(/(\n\s*\nแหล่งอ้างอิง:\s*\n[\s\S]*)$/u);
+  const referenceSectionMatch = rawAnswer.match(/(\n(?:\s*\n)?(?:แหล่งอ้างอิง|อ้างอิง):\s*\n[\s\S]*)$/u);
   const referenceSection = referenceSectionMatch ? referenceSectionMatch[1] : "";
   const mainAnswer = referenceSectionMatch
     ? rawAnswer.slice(0, rawAnswer.length - referenceSection.length)
@@ -768,17 +774,10 @@ function buildDbOnlyMainChatErrorResult(answer) {
 }
 
 async function buildDbOnlyMainChatAnswer(message, target, sources, options = {}) {
-  const promptProfile = options.promptProfile || {};
-  return generateChatSummary(message, sources, {
-    conversationalFollowUp: Boolean(options.usedFollowUpContext),
-    conversationHistory: [],
-    focusMessage: options.effectiveMessage || message,
-    topicLabel: options.topicLabel || "",
-    questionIntent: options.questionIntent || classifyQuestionIntent(message),
-    databaseOnlyMode: true,
-    promptProfile,
-    planCode: options.planCode || "free",
-    target,
+  return buildDbOnlyMainChatAnswerResult(sources, {
+    message: options.effectiveMessage || message,
+    originalMessage: message,
+    maxPrimarySections: 1,
   });
 }
 
@@ -840,11 +839,12 @@ async function replyToDbOnlyMainChat(payload, session) {
   let continuationSessionState = continuationState;
   let answer = "";
   let contextCarrySources = [];
+  let answerSourcePool = [];
 
   if (continueFromPrevious) {
     paginated = await paginateContinuationState(continuationSessionState, {
       maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
-      maxSourceChunks: MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS,
+      maxSourceChunks: DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS,
     });
 
     if (!Array.isArray(paginated.renderSources) || paginated.renderSources.length === 0) {
@@ -853,84 +853,26 @@ async function replyToDbOnlyMainChat(payload, session) {
     }
 
     selectedSources = paginated.renderSources;
-      // For continuation rounds, return the paginated source slices directly to avoid
-      // repeating previously-sent paragraphs from earlier summaries.
-      if (Array.isArray(selectedSources) && selectedSources.length > 0) {
-        const contentParts = selectedSources.map((s) => String(s.content || s.chunk_text || s.comment || '').trim()).filter(Boolean);
-        const referenceLines = selectedSources.map((s) => `- ${String(s.reference || s.title || '').trim()} ${s.url ? `(${s.url})` : ''} [${getSourceDisplayLabel(s.source || '')}]`);
-        let assembled = `${contentParts.join('\n\n')}${referenceLines.length > 0 ? '\n\nแหล่งอ้างอิง:\n' + referenceLines.join('\n') : ''}`;
-
-        // Trim large prefix overlap with the previous assistant reply to avoid repeated paragraphs.
-        try {
-          const historyTurns = getConversationHistory(session, target) || [];
-          // find last assistant turn
-          let lastAssistant = null;
-          for (let i = historyTurns.length - 1; i >= 0; i--) {
-            if (historyTurns[i] && historyTurns[i].role === "assistant" && historyTurns[i].content) {
-              lastAssistant = String(historyTurns[i].content || "").replace(/\s+/g, ' ').trim();
-              break;
-            }
-          }
-
-          if (lastAssistant) {
-            const normalizedPrev = lastAssistant.replace(/\s+/g, ' ').trim();
-
-            // Drop any source slices that appear to be already included in the previous assistant reply
-            const minRepeatCheck = 80;
-            const filteredParts = [];
-            const filteredRefs = [];
-            for (let i = 0; i < selectedSources.length; i++) {
-              const s = selectedSources[i];
-              const text = String(s.content || s.chunk_text || s.comment || '').replace(/\s+/g, ' ').trim();
-              if (!text) continue;
-              const checkText = text.length > minRepeatCheck ? text.slice(0, minRepeatCheck) : text;
-              if (normalizedPrev.includes(checkText)) {
-                // skip this slice as it's already covered
-                continue;
-              }
-              filteredParts.push(text);
-              filteredRefs.push(referenceLines[i] || '');
-            }
-
-            if (filteredParts.length > 0) {
-              assembled = `${filteredParts.join('\n\n')}${filteredRefs.filter(Boolean).length > 0 ? '\n\nแหล่งอ้างอิง:\n' + filteredRefs.filter(Boolean).join('\n') : ''}`;
-            } else {
-              // If everything was filtered out, try to find the first unique position in assembled
-              const normalizedPrev2 = normalizedPrev;
-              const normalizedNext = assembled.replace(/\s+/g, ' ').trim();
-              const minUnique = 80;
-              let firstUniqueIndex = -1;
-              for (let i = 0; i + minUnique <= normalizedNext.length; i++) {
-                const chunk = normalizedNext.slice(i, i + minUnique);
-                if (!normalizedPrev2.includes(chunk)) {
-                  firstUniqueIndex = i;
-                  break;
-                }
-              }
-
-              if (firstUniqueIndex > 0) {
-                assembled = normalizedNext.slice(firstUniqueIndex).trim();
-              } else if (firstUniqueIndex === 0) {
-                assembled = normalizedNext; // fully unique
-              } else {
-                // nothing unique found; return a short continuation prompt instead
-                assembled = "(ต่อ) มีเนื้อหาต่ออีก คลิก 'ดูคำตอบต่อ' เพื่ออ่าน";
-              }
-            }
-          }
-        } catch (e) {
-          // ignore trimming errors and use assembled as-is
-        }
-
-        answer = assembled;
-      } else {
-        answer = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
-          effectiveMessage,
-          usedFollowUpContext: true,
-          questionIntent,
-          promptProfile: planContext.promptProfile,
-          planCode: planContext.code,
-        });
+    if (Array.isArray(selectedSources) && selectedSources.length > 0) {
+      const answerResult = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
+        effectiveMessage: continuationSessionState?.effectiveMessage || effectiveMessage,
+        usedFollowUpContext: true,
+        questionIntent,
+        promptProfile: planContext.promptProfile,
+        planCode: planContext.code,
+      });
+      answer = answerResult.answer;
+      selectedSources = answerResult.selectedSources;
+    } else {
+      const answerResult = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
+        effectiveMessage,
+        usedFollowUpContext: true,
+        questionIntent,
+        promptProfile: planContext.promptProfile,
+        planCode: planContext.code,
+      });
+      answer = answerResult.answer;
+      selectedSources = answerResult.selectedSources;
     }
   } else {
     const searchPlan = await resolveSearchPlan(message, target, session, {
@@ -953,7 +895,6 @@ async function replyToDbOnlyMainChat(payload, session) {
     effectiveMessage = evidence.effectiveMessage || message;
     resolvedContext = evidence.resolvedContext || resolvedContext;
     selectedSources = evidence.sources || [];
-    contextCarrySources = selectedSources.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT);
     questionIntent = evidence.questionIntent || questionIntent;
     retrievalEvaluation = evaluateRetrievalResult({
       message,
@@ -972,33 +913,47 @@ async function replyToDbOnlyMainChat(payload, session) {
       setSessionContinuationState(session, null);
       answer = retrievalEvaluation.userFacingMessage;
     } else {
-      continuationSessionState = createContinuationSessionState({
-        target,
+      answerSourcePool = selectDbOnlyMainChatAnswerEntries(selectedSources, {
+        message: effectiveMessage,
         originalMessage: message,
-        effectiveMessage,
-        sources: selectedSources,
-      });
-      paginated = await paginateContinuationState(continuationSessionState, {
-        maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
-        maxSourceChunks: MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS,
-      });
-      selectedSources = paginated.renderSources || [];
+        maxPrimarySections: 1,
+      }).map((entry) => entry.source).filter(Boolean);
+      contextCarrySources = answerSourcePool.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT);
 
-      if (selectedSources.length === 0) {
+      if (answerSourcePool.length === 0) {
         setSessionContinuationState(session, null);
         answer = retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้";
       } else {
-        answer = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
+        continuationSessionState = createContinuationSessionState({
+          target,
+          originalMessage: message,
           effectiveMessage,
-          usedFollowUpContext: resolvedContext.usedContext,
-          topicLabel:
-            resolvedContext.topicHints && resolvedContext.topicHints[0]
-              ? resolvedContext.topicHints[0]
-              : "",
-          questionIntent,
-          promptProfile: planContext.promptProfile,
-          planCode: planContext.code,
+          sources: answerSourcePool,
         });
+        paginated = await paginateContinuationState(continuationSessionState, {
+          maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
+          maxSourceChunks: DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS,
+        });
+        selectedSources = paginated.renderSources || [];
+
+        if (selectedSources.length === 0) {
+          setSessionContinuationState(session, null);
+          answer = retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้";
+        } else {
+          const answerResult = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
+            effectiveMessage,
+            usedFollowUpContext: resolvedContext.usedContext,
+            topicLabel:
+              resolvedContext.topicHints && resolvedContext.topicHints[0]
+                ? resolvedContext.topicHints[0]
+                : "",
+            questionIntent,
+            promptProfile: planContext.promptProfile,
+            planCode: planContext.code,
+          });
+          answer = answerResult.answer;
+          selectedSources = answerResult.selectedSources;
+        }
       }
     }
   }

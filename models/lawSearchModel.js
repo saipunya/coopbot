@@ -602,6 +602,7 @@ function scoreStructuredLawKeywordMatch(message, keywordText = "") {
     score += (matched.size / queryTerms.length) * 24;
   }
 
+  return score;
 }
 
 class LawSearchModel {

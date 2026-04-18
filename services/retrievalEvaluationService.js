@@ -161,6 +161,34 @@ function isGroupFormationQuestion(message = "") {
   return Boolean(family && String(family.id || "").trim().toLowerCase() === "group_formation");
 }
 
+function isLiquidationQuestion(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /ชำระบัญชี|ผู้ชำระบัญชี/.test(normalized);
+}
+
+function extractPrimaryLawNumberFromText(text = "") {
+  const normalized = normalizeForSearch(String(text || "")).toLowerCase();
+  const match = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]{1,4})/);
+  return match?.[1] ? String(Number(match[1])) : "";
+}
+
+function getSourcePrimaryLawNumber(source = {}) {
+  const candidates = [source?.lawNumber, source?.reference, source?.title, source?.keyword];
+
+  for (const candidate of candidates) {
+    const number = extractPrimaryLawNumberFromText(candidate);
+    if (number) {
+      return number;
+    }
+  }
+
+  return "";
+}
+
 function hasStrongGroupFormationEvidence(payload = {}) {
   const message = payload.effectiveMessage || payload.message || "";
   if (!isGroupFormationQuestion(message)) {
@@ -188,6 +216,44 @@ function hasStrongGroupFormationEvidence(payload = {}) {
       /(ช่วยเหลือซึ่งกันและกัน|วัตถุประสงค์เพื่อช่วยเหลือซึ่งกันและกัน)/.test(text);
 
     return hasSection5 && hasCoreCriteria;
+  });
+}
+
+function hasStrongLiquidationEvidence(payload = {}) {
+  const message = payload.effectiveMessage || payload.message || "";
+  if (!isLiquidationQuestion(message)) {
+    return false;
+  }
+
+  const asksAppointmentAuthority = /(ใคร|ผู้มีอำนาจ|อำนาจ).*(แต่งตั้ง|ตั้ง).*ผู้ชำระบัญชี|ผู้ชำระบัญชี.*(แต่งตั้ง|ตั้ง).*โดยใคร/.test(
+    normalizeForSearch(message).toLowerCase(),
+  );
+  const selectedSources = sortByScore(payload.selectedSources || payload.sources || []);
+
+  return selectedSources.some((item) => {
+    const sourceName = normalizeSourceName(item?.source);
+    if (sourceName !== "tbl_laws" && sourceName !== "tbl_glaws") {
+      return false;
+    }
+
+    const text = normalizeForSearch(
+      [item?.reference, item?.title, item?.keyword, item?.content, item?.comment, item?.chunk_text].filter(Boolean).join(" "),
+    ).toLowerCase();
+    if (!text || !/ชำระบัญชี|ผู้ชำระบัญชี/.test(text)) {
+      return false;
+    }
+
+    const lawNumber = getSourcePrimaryLawNumber(item);
+    if (asksAppointmentAuthority) {
+      return (
+        lawNumber === "75" &&
+        /ที่ประชุมใหญ่/.test(text) &&
+        /นายทะเบียนสหกรณ์/.test(text)
+      );
+    }
+
+    const liquidationLawNumbers = new Set(["34", "35", "44", "73", "74", "75", "76", "77", "81", "87"]);
+    return liquidationLawNumbers.has(lawNumber);
   });
 }
 
@@ -622,6 +688,7 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
   const profile = answerability.profile || resolveRetrievalThresholdProfile(payload.questionIntent, payload);
   const metrics = answerability.metrics || collectRetrievalMetrics(payload, profile);
   const strongGroupFormationEvidence = hasStrongGroupFormationEvidence(payload);
+  const strongLiquidationEvidence = hasStrongLiquidationEvidence(payload);
 
   const meetsTopScore = metrics.topScore >= profile.minTopScore;
   const meetsAggregateScore =
@@ -661,6 +728,10 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
 
   // If we clearly found พ.ร.ฎ. กลุ่มเกษตรกร มาตรา 5 with the core criteria, do not fall back to clarify.
   if (strongGroupFormationEvidence && metrics.selectedCount > 0 && metrics.primaryLawCount > 0) {
+    policy = "answer";
+  }
+
+  if (policy !== "answer" && strongLiquidationEvidence && metrics.selectedCount > 0 && metrics.primaryLawCount > 0) {
     policy = "answer";
   }
 

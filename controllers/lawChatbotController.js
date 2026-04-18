@@ -7,7 +7,6 @@ const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const { importDocxToPdfChunks } = require("../services/wordImportService");
 const { searchPdfChunks } = require("../services/hybridSearchService");
 const {
-  hasAcceptedLawChatbotNotice,
   markLawChatbotNoticeAccepted,
   LAW_CHATBOT_NOTICE_VERSION,
 } = require("../middlewares/authMiddleware");
@@ -63,17 +62,6 @@ async function renderIndex(req, res) {
   const returnTo = sanitizeLawChatbotUserReturnPath(req.query.returnTo, "/law-chatbot");
   if (!req.signedInUser) {
     return res.redirect(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`);
-  }
-
-  if (!hasAcceptedLawChatbotNotice(req)) {
-    return res.render("lawChatbot/accessNotice", {
-      title: "คำประกาศชี้แจงก่อนใช้งาน",
-      themeColor: "#2f5f7a",
-      manifestPath: "/manifest-law-chatbot.json",
-      errorMessage: req.query.error || "",
-      returnTo,
-      requiresGoogleLogin: false,
-    });
   }
 
   const data = await lawChatbotService.getDashboardData(req.signedInUser);
