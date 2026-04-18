@@ -33,8 +33,40 @@ const GENERIC_QUERY_TOKENS = new Set([
 
 function extractLawNumber(text) {
   const normalized = normalizeThaiNumberSearchText(String(text || ""));
-  const match = normalized.match(/\d+/);
-  return match ? match[0] : null;
+  const match = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*([0-9]{1,4}(?:\/[0-9]{1,3})?)/);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const parts = String(match[1]).split("/");
+  const primary = String(Number(parts[0] || 0));
+  if (!primary || primary === "0") {
+    return null;
+  }
+
+  if (parts.length === 1) {
+    return primary;
+  }
+
+  const secondary = String(Number(parts[1] || 0));
+  return secondary ? `${primary}/${secondary}` : primary;
+}
+
+function escapeRegExp(text) {
+  return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasExactLawNumberText(text, lawNumber) {
+  const normalizedLawNumber = extractLawNumber(lawNumber);
+  if (!normalizedLawNumber) {
+    return false;
+  }
+
+  const normalizedText = normalizeThaiNumberSearchText(String(text || ""));
+  return new RegExp(
+    `(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\\s*${escapeRegExp(normalizedLawNumber)}(?![0-9/])`,
+    "i",
+  ).test(normalizedText);
 }
 
 function detectLawScope(text) {
@@ -129,7 +161,7 @@ function buildLawNumberPatterns(number) {
 
 function isDirectLawNumberQuery(text) {
   const normalized = normalizeForSearch(text).toLowerCase();
-  return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+(?:\s|$)/.test(normalized);
+  return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+(?:\/\d+)?(?:\s|$)/.test(normalized);
 }
 
 function getFocusedIntentTerms(intent = "general") {
@@ -883,7 +915,7 @@ class LawSearchModel {
           score += 90;
         }
 
-        if (queryLawNumber && normalizeForSearch(row.law_number).includes(`มาตรา ${queryLawNumber}`)) {
+        if (queryLawNumber && hasExactLawNumberText(row.law_number, queryLawNumber)) {
           score += 50;
         }
 

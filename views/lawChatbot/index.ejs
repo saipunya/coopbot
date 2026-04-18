@@ -1244,7 +1244,7 @@
     }
 
     .bot-answer-bullets li {
-      margin: 0;
+      margin: 0 0 6px 0;
       padding: 0;
     }
 
@@ -1252,7 +1252,7 @@
       position: relative;
       display: block;
       overflow: hidden;
-      padding: 0.48rem 0.64rem 0.5rem 0.7rem;
+      padding: 6px 10px;
       border-radius: 0.72rem;
       border: 1px solid rgba(47, 127, 184, 0.1);
       background: rgba(250, 253, 255, 0.96);
@@ -1348,6 +1348,15 @@
       background: rgba(244, 249, 253, 0.9);
       padding: 0.65rem 0.72rem;
       max-width: 100%;
+    }
+
+    .bot-answer-reference-title {
+      display: inline-flex;
+      align-items: center;
+      margin-bottom: 0.4rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #1a577c;
     }
 
     .follow-up-prompt-line {
@@ -2993,7 +3002,9 @@
           assistantProfile: normalizedProfile,
         });
 
-        return escapeHtml(welcomeText);
+        return formatBotMessageHtml(welcomeText, [], {
+          assistantProfile: normalizedProfile,
+        });
       }
 
       function getComposerSuggestionPageCount() {
@@ -3839,22 +3850,21 @@
         return decorated;
       }
 
-      function buildReferenceToggleHtml(referenceText, terms) {
-        const referenceLines = sanitizeDisplayText(referenceText)
+      function extractReferenceLines(referenceText) {
+        return sanitizeDisplayText(referenceText)
           .split('\n')
           .map((line) => line.trim())
           .filter(Boolean)
           .map((line) => line.replace(/^-\s*/, '').trim())
           .filter(Boolean);
+      }
 
-        if (!referenceLines.length) {
-          return '';
-        }
+      function buildReferenceToggleHtml(referenceText, terms) {
+        const referenceLines = extractReferenceLines(referenceText);
+        if (!referenceLines.length) return '';
+
         const collapseId = `referenceCollapse_${Math.random().toString(36).slice(2, 10)}`;
-        const referenceCount = referenceLines.length;
-        const toggleLabel = referenceCount > 1
-          ? `แสดงที่มา/อ้างอิง (${referenceCount})`
-          : 'แสดงที่มา/อ้างอิง';
+        const toggleLabel = 'ซ่อน/แสดงที่มา';
 
         return `
           <div class="bot-reference-block">
@@ -3866,14 +3876,14 @@
               aria-expanded="false"
               aria-controls="${collapseId}"
               data-reference-toggle="1"
-              data-reference-show-label="${escapeHtml(toggleLabel)}"
-              data-reference-hide-label="ซ่อนที่มา/อ้างอิง"
+              data-reference-label="${escapeHtml(toggleLabel)}"
             >
               <span class="bot-reference-toggle-text"><i class="bi bi-journal-text"></i>${escapeHtml(toggleLabel)}</span>
               <i class="bi bi-chevron-down bot-reference-toggle-icon"></i>
             </button>
             <div class="collapse bot-reference-collapse" id="${collapseId}">
               <div class="bot-reference-collapse-panel">
+                <div class="bot-answer-reference-title">อ้างอิง</div>
                 <ul class="reference-modal-list">
                   ${referenceLines.map((line) => `<li>${applyHighlightHtml(sanitizeDisplayText(String(line || '')), terms)}</li>`).join('')}
                 </ul>
@@ -3883,11 +3893,25 @@
         `;
       }
 
+      function buildBotAnswerWrapperHtml(answerHtml, referenceText, terms, continuationHtml = '') {
+        const resolvedAnswerHtml = String(answerHtml || '').trim();
+        const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
+
+        return `
+          <div class="bot-answer-main">
+            <div class="bot-answer-summary">${resolvedAnswerHtml}</div>
+            ${referenceHtml}
+            ${continuationHtml}
+          </div>
+        `;
+      }
+
       function splitSummaryIntoBullets(text) {
         const raw = sanitizeDisplayText(text);
         if (!raw) return [];
 
-        // Step 1: split on explicit newlines (already-formatted AI output)
+        // Keep formatter conservative: only split when the source text already
+        // looks like a real list, so prose answers stay as one continuous block.
         const explicitLines = mergeProtectedBulletLines(raw
           .split('\n')
           .map((line) => line.trim())
@@ -3899,23 +3923,7 @@
 
         const normalized = raw.replace(/\s+/g, ' ').trim();
 
-        // Step 2: sentence-boundary split — protect Thai abbreviations first
-        // Rule A: multi-dot sequences (2+ reps): พ.ศ. พ.ร.บ. น.ส. — uses Thai consonants only (ก-ฮ)
-        // Rule B: single consonant+period before a digit: ม. 15, พ.ศ. 2542 (last dot)
-        const ABBREV_MARK = '\u200B';
-        const abbrevProtected = normalized
-          .replace(/([\u0E01-\u0E2E]{1,2}\.){2,}/g, (m) => m.replace(/\./g, ABBREV_MARK))
-          .replace(/[\u0E01-\u0E2E]{1,2}\.(?=\s*\d)/g, (m) => m.replace('.', ABBREV_MARK));
-        const sentenceLikeParts = abbrevProtected
-          .split(/(?<=[.!?])\s+(?!\d)/)
-          .map((part) => part.replace(/\u200B/g, '.').trim())
-          .filter((line) => line.length >= 8);
-
-        if (sentenceLikeParts.length > 1) {
-          return sentenceLikeParts;
-        }
-
-        // Step 3: numbered list items
+        // Preserve explicit numbered lists that arrive in one line.
         const numberedMatches = normalized.match(/(?:\(?\d+\)|\d+\.)\s*[^0-9]+(?=(?:\s+\(?\d+\)|\s+\d+\.|$))/g);
         const numberedParts = (numberedMatches || [])
           .map((line) => line.replace(/^(\(?\d+\)|\d+\.)\s*/, '').trim())
@@ -3923,20 +3931,6 @@
 
         if (numberedParts.length > 1) {
           return numberedParts;
-        }
-
-        // Step 4: comma/conjunction list after Thai list-intro phrase
-        const introListMatch = normalized.match(/^(.*?(?:ได้แก่|ประกอบด้วย|มีหน้าที่ดังนี้|มีสาระสำคัญดังนี้)\s*)(.+)$/);
-        if (introListMatch) {
-          const intro = introListMatch[1].trim();
-          const items = introListMatch[2]
-            .split(/\s*[,;]\s*|\s+และ\s+/)
-            .map((line) => line.trim())
-            .filter((line) => line.length >= 6);
-
-          if (items.length > 1) {
-            return [intro, ...items];
-          }
         }
 
         return [normalized];
@@ -4042,16 +4036,21 @@
         `;
       }
 
+      function hasReferenceMarker(text) {
+        return /(?:^|\n)\s*(?:แหล่งอ้างอิง|อ้างอิง):\s*/i.test(String(text || ''));
+      }
+
       function extractReferenceParts(text) {
         const raw = String(text || '');
-        if (!raw.includes('แหล่งอ้างอิง:')) {
+        if (!hasReferenceMarker(raw)) {
           return {
             mainText: raw,
             referenceText: '',
           };
         }
 
-        const markerMatch = raw.match(/\s*แหล่งอ้างอิง:\s*\n/i);
+        const markerMatches = Array.from(raw.matchAll(/(^|\n)\s*(?:แหล่งอ้างอิง|อ้างอิง):\s*/gi));
+        const markerMatch = markerMatches.length ? markerMatches[markerMatches.length - 1] : null;
         if (!markerMatch || typeof markerMatch.index !== 'number') {
           return {
             mainText: raw,
@@ -4059,7 +4058,8 @@
           };
         }
 
-        const markerIndex = markerMatch.index;
+        const leadingMarkerText = String(markerMatch[1] || '');
+        const markerIndex = markerMatch.index + leadingMarkerText.length;
         const markerLength = markerMatch[0].length;
 
         return {
@@ -4071,14 +4071,10 @@
       function formatBotMessageHtml(text, terms, options = {}) {
         const raw = stripBotUiNoiseText(sanitizeDisplayText(text));
         const continuationHtml = buildContinuationActionHtml(options);
-        if (!raw.includes('แหล่งอ้างอิง:')) {
+        if (!hasReferenceMarker(raw)) {
           const highlighted = formatBotDisplayLineHtml(raw, terms);
           const fallbackHtml = decorateBotFallbackHtml(highlighted);
-          if (!continuationHtml) {
-            return fallbackHtml;
-          }
-
-          return `<div class="bot-answer-main"><div class="bot-answer-summary">${fallbackHtml}</div>${continuationHtml}</div>`;
+          return buildBotAnswerWrapperHtml(fallbackHtml, '', terms, continuationHtml);
         }
 
         const { mainText, referenceText } = extractReferenceParts(raw);
@@ -4089,9 +4085,9 @@
           buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', summaryMatch ? summaryMatch[1] : normalizedMain, terms),
           detailMatch ? buildAnswerSectionHtml('รายละเอียดเพิ่มเติม', 'bi-info-circle', detailMatch[1], terms) : ''
         ].filter(Boolean).join('');
-        const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
+        const resolvedSummaryHtml = summaryHtml || decorateBotFallbackHtml(formatBotDisplayLineHtml(normalizedMain, terms));
 
-        return `<div class="bot-answer-main"><div class="bot-answer-summary">${summaryHtml}</div>${referenceHtml}${continuationHtml}</div>`;
+        return buildBotAnswerWrapperHtml(resolvedSummaryHtml, referenceText, terms, continuationHtml);
       }
 
       function syncReferenceToggleState(button, expanded) {
@@ -4100,13 +4096,11 @@
         }
 
         const labelNode = button.querySelector('.bot-reference-toggle-text');
-        const showLabel = String(button.dataset.referenceShowLabel || 'แสดงที่มา/อ้างอิง').trim();
-        const hideLabel = String(button.dataset.referenceHideLabel || 'ซ่อนที่มา/อ้างอิง').trim();
-        const nextLabel = expanded ? hideLabel : showLabel;
+        const referenceLabel = String(button.dataset.referenceLabel || 'ซ่อน/แสดงที่มา').trim();
 
         button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
         if (labelNode) {
-          labelNode.innerHTML = `<i class="bi bi-journal-text"></i>${escapeHtml(nextLabel)}`;
+          labelNode.innerHTML = `<i class="bi bi-journal-text"></i>${escapeHtml(referenceLabel)}`;
         }
       }
 
@@ -4721,7 +4715,15 @@
         const text = String(item.text || '').trim();
         const renderedHtml = String(item.renderedHtml || '').trim();
 
-        if (!text || !text.includes('แหล่งอ้างอิง:')) {
+        if (!text) {
+          return false;
+        }
+
+        if (!/class=\"bot-answer-main\"/i.test(renderedHtml)) {
+          return true;
+        }
+
+        if (!hasReferenceMarker(text)) {
           return false;
         }
 

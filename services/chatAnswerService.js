@@ -3122,6 +3122,13 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
   const sourceItems = Array.isArray(sources) ? sources : [];
   const message = String(options.message || options.originalMessage || "").trim();
   const maxPrimarySections = Math.min(2, Math.max(1, Number(options.maxPrimarySections || 1)));
+  const queryLawNumber = extractQueryLawNumber(message);
+  const questionIntent = String(
+    options.questionIntent ||
+      ((queryLawNumber && /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)/.test(message)) ? "law_section" : ""),
+  )
+    .trim()
+    .toLowerCase();
   const parsedEntries = [];
 
   for (const source of sourceItems) {
@@ -3155,7 +3162,24 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
     return [];
   }
 
+  if (questionIntent === "law_section" && queryLawNumber) {
+    const exactStructuredEntries = dedupedEntries
+      .filter((entry) => isStructuredLawSource(entry.source) && sourceMatchesQueryLawNumber(entry.source, queryLawNumber))
+      .sort((left, right) => sortLawSectionSources(left.source, right.source, queryLawNumber));
+
+    if (exactStructuredEntries.length > 0) {
+      return exactStructuredEntries.slice(0, maxPrimarySections);
+    }
+  }
+
   dedupedEntries.sort((left, right) => {
+    if (questionIntent === "law_section" && queryLawNumber) {
+      const exactDiff = sortLawSectionSources(left.source, right.source, queryLawNumber);
+      if (exactDiff !== 0) {
+        return exactDiff;
+      }
+    }
+
     const focusDiff = Number(right.focusScore || 0) - Number(left.focusScore || 0);
     if (focusDiff !== 0) {
       return focusDiff;
@@ -3218,7 +3242,9 @@ function formatDbOnlyMainChatAnswer(sources = [], options = {}) {
 }
 
 function extractQueryLawNumber(message) {
-  const match = String(message || "").match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*(\d{1,4})/);
+  const match = normalizeThaiDigits(String(message || "")).match(
+    /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*(\d{1,4}(?:\/\d{1,3})?)/,
+  );
   return match ? match[1] : "";
 }
 
@@ -3231,17 +3257,28 @@ function normalizeThaiDigits(text) {
 }
 
 function normalizeClauseNumber(value) {
-  const digits = normalizeThaiDigits(value).replace(/\D/g, "");
-  if (!digits) {
+  const normalized = normalizeThaiDigits(String(value || "")).trim();
+  if (!normalized) {
     return "";
   }
 
-  return String(Number(digits));
+  const match = normalized.match(/^(\d{1,4})(?:\/(\d{1,3}))?$/);
+  if (!match) {
+    return "";
+  }
+
+  const primary = String(Number(match[1] || 0));
+  const secondary = match[2] ? String(Number(match[2])) : "";
+  if (!primary || primary === "0") {
+    return "";
+  }
+
+  return secondary ? `${primary}/${secondary}` : primary;
 }
 
 function extractPrimaryLawNumberFromText(text) {
   const normalized = normalizeThaiDigits(String(text || ""));
-  const match = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]{1,4})/i);
+  const match = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]{1,4}(?:\/[0-9]{1,3})?)/i);
   return normalizeClauseNumber(match?.[1] || "");
 }
 

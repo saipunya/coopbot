@@ -165,6 +165,51 @@ function extractRequestedLawReferences(message = "") {
   return uniqueTokens(references.filter(Boolean));
 }
 
+function normalizeLawReference(value = "") {
+  const normalized = normalizeLawFocusDigits(String(value || "")).trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const match = normalized.match(/^([0-9]{1,4})(?:\/([0-9]{1,3}))?$/);
+  if (!match) {
+    return "";
+  }
+
+  const primary = String(Number(match[1] || 0));
+  const secondary = match[2] ? String(Number(match[2])) : "";
+  if (!primary || primary === "0") {
+    return "";
+  }
+
+  return secondary ? `${primary}/${secondary}` : primary;
+}
+
+function escapeRegExp(text = "") {
+  return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildRequestedLawReferencePattern(reference = "") {
+  const normalizedReference = normalizeLawReference(reference);
+  if (!normalizedReference) {
+    return null;
+  }
+
+  return new RegExp(
+    `(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\\s*${escapeRegExp(normalizedReference)}(?![0-9/])`,
+    "i",
+  );
+}
+
+function sourceContainsRequestedLawReference(item = {}, reference = "") {
+  const pattern = buildRequestedLawReferencePattern(reference);
+  if (!pattern) {
+    return false;
+  }
+
+  return pattern.test(normalizeLawFocusDigits(buildSourceFocusSearchText(item)));
+}
+
 function getSourceAuthorityTrace(item = {}, intent = "general", message = "") {
   const sourceName = String(item.source || "").trim().toLowerCase();
   let score = 0;
@@ -236,9 +281,8 @@ function getSourceAuthorityTrace(item = {}, intent = "general", message = "") {
 }
 
 function getSectionMatchTrace(item = {}, message = "", intent = "general") {
-  const requestedReferences = extractRequestedLawReferences(message);
-  const sourceText = normalizeLawFocusDigits(buildSourceFocusSearchText(item));
-  const sourceLawNumber = normalizeLawFocusDigits(extractPrimaryLawFocusNumber(item));
+  const requestedReferences = extractRequestedLawReferences(message).map((reference) => normalizeLawReference(reference));
+  const sourceLawNumber = normalizeLawReference(extractPrimaryLawFocusNumber(item));
   let score = 0;
   let matchedReference = "";
 
@@ -248,21 +292,16 @@ function getSectionMatchTrace(item = {}, message = "", intent = "general") {
       requestedReferences.some((reference) => reference === sourceLawNumber);
 
     if (exactNumberMatch) {
-      score += 18;
+      score += 42;
       matchedReference = sourceLawNumber;
     } else {
-      const textMatch = requestedReferences.find((reference) =>
-        sourceText.includes(`มาตรา ${reference}`) ||
-        sourceText.includes(`ข้อ ${reference}`) ||
-        sourceText.includes(`วรรค ${reference}`) ||
-        sourceText.includes(`อนุมาตรา ${reference}`),
-      );
+      const textMatch = requestedReferences.find((reference) => sourceContainsRequestedLawReference(item, reference));
 
       if (textMatch) {
-        score += 12;
+        score += 28;
         matchedReference = textMatch;
       } else if (intent === "law_section" && sourceLawNumber) {
-        score -= 6;
+        score -= 20;
       }
     }
   } else if (intent === "law_section" && sourceLawNumber) {

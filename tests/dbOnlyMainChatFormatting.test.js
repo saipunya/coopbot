@@ -148,3 +148,37 @@ test("liquidation appointment question keeps only section 75 as the answer sourc
   assert.doesNotMatch(result.answer, /คณะกรรมการดำเนินการมีอำนาจหน้าที่จัดการทั่วไป/);
   assert.doesNotMatch(result.answer, /มาตรา 28/);
 });
+
+test("exact section query prefers matching structured law over nearby section suggestions", () => {
+  const result = buildDbOnlyMainChatAnswerResult(
+    [
+      {
+        source: "tbl_laws",
+        score: 1000,
+        reference: "มาตรา 8",
+        title: "วรรคแรก",
+        content:
+          "ทุนกลางของบรรดาสหกรณ์ไม่จำกัด ให้กรมส่งเสริมสหกรณ์จัดการฝากไว้ที่ธนาคารออมสิน ธนาคารกรุงไทย หรือธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร",
+      },
+      {
+        source: "knowledge_suggestion",
+        score: 1200,
+        reference: "มาตรา 89/3 พรบ.สหกรณ์ พ.ศ. 2542",
+        title: "การสั่งเลิกสหกรณ์ออมทรัพย์หรือสหกรณ์เครดิตยูเนี่ยน",
+        content:
+          "นายทะเบียนสหกรณ์มีอำนาจสั่งเลิกสหกรณ์ออมทรัพย์หรือสหกรณ์เครดิตยูเนี่ยนได้ตามมาตรา 89/3 วรรคสอง",
+      },
+    ],
+    {
+      message: "มาตรา 8 พ.ร.บ. สหกรณ์",
+      questionIntent: "law_section",
+      maxPrimarySections: 1,
+    },
+  );
+
+  assert.equal(result.selectedSources.length, 1);
+  assert.equal(result.selectedSources[0].reference, "มาตรา 8");
+  assert.match(result.answer, /ทุนกลางของบรรดาสหกรณ์ไม่จำกัด/);
+  assert.doesNotMatch(result.answer, /มาตรา 89\/3/);
+  assert.doesNotMatch(result.answer, /สั่งเลิกสหกรณ์ออมทรัพย์/);
+});

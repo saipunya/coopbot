@@ -777,6 +777,7 @@ async function buildDbOnlyMainChatAnswer(message, target, sources, options = {})
   return buildDbOnlyMainChatAnswerResult(sources, {
     message: options.effectiveMessage || message,
     originalMessage: message,
+    questionIntent: options.questionIntent || "",
     maxPrimarySections: 1,
   });
 }
