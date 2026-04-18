@@ -47,6 +47,28 @@ test("managed suggested question matches shorter exact phrases inside the stored
   assert.match(match?.sourceReference || "", /ข้อ 20/);
 });
 
+test("managed suggested question matches time-oriented questions from answer text", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การทำบัญชี การบันทึกบัญชี เก็บรักษาบัญชีและเอกสารประกอบการลงบัญชี",
+    answerText:
+      "ให้บันทึกรายการในบัญชีเกี่ยวกับกระแสเงินสดของสหกรณ์ในวันที่เกิดเหตุ และรายการที่ไม่เกี่ยวกับกระแสเงินสดให้บันทึกภายในสามวัน",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 20 การบัญชีของสหกรณ์",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(
+    "การบันทึกบัญชี ต้องทำภายในกี่วัน",
+    "coop",
+  );
+
+  assert.ok(match, "expected a suggested-question match for a time-oriented question");
+  assert.match(match?.questionText || "", /บันทึกบัญชี/);
+  assert.match(match?.sourceReference || "", /ข้อ 20/);
+});
+
 test("approved FAQ-style knowledge suggestions are searchable by source reference", async () => {
   const LawChatbotKnowledgeSuggestionModel = loadFresh("../models/lawChatbotKnowledgeSuggestionModel");
 

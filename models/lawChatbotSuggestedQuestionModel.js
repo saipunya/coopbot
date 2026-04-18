@@ -23,6 +23,63 @@ const SUGGESTED_QUESTION_SELECT_COLUMNS = `
   updated_at
 `;
 const SUGGESTED_QUESTION_TARGETS = new Set(["all", "coop", "group", "general"]);
+const QUANTIFIER_QUERY_STOP_TOKENS = new Set([
+  "กี่",
+  "กี่วัน",
+  "กี่คน",
+  "เท่าไร",
+  "เท่าไหร่",
+  "จำนวน",
+  "จำนวนเท่าไร",
+  "ภายใน",
+  "ต้อง",
+  "ทำ",
+  "มี",
+  "ใช้",
+  "คือ",
+  "ได้",
+  "เท่า",
+  "ไร",
+  "ไหร่",
+  "วัน",
+  "คน",
+  "บาท",
+  "ร้อยละ",
+  "เปอร์เซ็นต์",
+]);
+const QUANTIFIER_WORD_NUMBER_PATTERN =
+  /(หนึ่ง|เอ็ด|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|สิบสอง|สิบสาม|สิบสี่|สิบห้า|สิบหก|สิบเจ็ด|สิบแปด|สิบเก้า|ยี่สิบ|สามสิบ|สี่สิบ|ห้าสิบ|หกสิบ|เจ็ดสิบ|แปดสิบ|เก้าสิบ|ร้อย)/;
+const QUANTIFIER_QUERY_RULES = [
+  {
+    id: "time",
+    queryPattern: /(?:กี่วัน|กี่เดือน|กี่ปี|ภายในกี่วัน|ภายในกี่เดือน|ภายในกี่ปี|ภายใน.*กี่วัน|เมื่อไร|เมื่อไหร่)/,
+    answerPatterns: [
+      /\d+\s*(วัน|เดือน|ปี|ชั่วโมง|นาที)/,
+      new RegExp(`${QUANTIFIER_WORD_NUMBER_PATTERN.source}\\s*(วัน|เดือน|ปี|ชั่วโมง|นาที)`),
+      /ภายใน.*(วัน|เดือน|ปี|ชั่วโมง|นาที)/,
+    ],
+  },
+  {
+    id: "count",
+    queryPattern: /(?:กี่คน|จำนวนเท่าไร|จำนวนกี่|กี่ราย|กี่แห่ง|กี่ข้อ|กี่ครั้ง)/,
+    answerPatterns: [
+      /\d+\s*(คน|ราย|แห่ง|ข้อ|ครั้ง|เสียง|หุ้น)/,
+      new RegExp(`${QUANTIFIER_WORD_NUMBER_PATTERN.source}\\s*(คน|ราย|แห่ง|ข้อ|ครั้ง|เสียง|หุ้น)`),
+      /ไม่น้อยกว่า\s*\d+/,
+      new RegExp(`ไม่น้อยกว่า\\s*${QUANTIFIER_WORD_NUMBER_PATTERN.source}`),
+    ],
+  },
+  {
+    id: "amount",
+    queryPattern: /(?:เท่าไร|เท่าไหร่|กี่บาท|กี่เปอร์เซ็นต์|กี่ร้อยละ|อัตราเท่าไร)/,
+    answerPatterns: [
+      /\d[\d,]*(?:\.\d+)?\s*(บาท|เปอร์เซ็นต์|ร้อยละ|%)/,
+      new RegExp(`${QUANTIFIER_WORD_NUMBER_PATTERN.source}\\s*(บาท|เปอร์เซ็นต์|ร้อยละ)`),
+      /ร้อยละ\s*\d+/,
+      /%\s*\d+/,
+    ],
+  },
+];
 
 function invalidateAnswerCache() {
   const { clearAnswerCache } = require("../services/answerStateService");
@@ -48,6 +105,66 @@ function buildSuggestedQuestionSearchText(entry = {}) {
       .filter(Boolean)
       .join(" "),
   ).toLowerCase();
+}
+
+function detectQuantifierQueryRule(normalizedQuestion = "") {
+  return QUANTIFIER_QUERY_RULES.find((rule) => rule.queryPattern.test(normalizedQuestion)) || null;
+}
+
+function buildQuantifierTopicTokens(normalizedQuestion = "") {
+  return uniqueTokens(segmentWords(normalizedQuestion))
+    .map((token) => normalizeQuestionText(token))
+    .filter((token) => token && token.length >= 2 && !QUANTIFIER_QUERY_STOP_TOKENS.has(token) && !/^\d+$/.test(token));
+}
+
+function computeQuantifierQueryBoost(normalizedQuestion, row = {}) {
+  const rule = detectQuantifierQueryRule(normalizedQuestion);
+  if (!rule) {
+    return 0;
+  }
+
+  const topicTokens = buildQuantifierTopicTokens(normalizedQuestion);
+  if (topicTokens.length === 0) {
+    return 0;
+  }
+
+  const normalizedStoredQuestion = normalizeQuestionText(
+    row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
+  );
+  const normalizedReference = normalizeQuestionText(row.source_reference || row.sourceReference || "");
+  const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
+  const anchorText = [normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ");
+  if (!anchorText) {
+    return 0;
+  }
+
+  const topicHitCount = topicTokens.filter((token) => anchorText.includes(token)).length;
+  if (topicHitCount === 0) {
+    return 0;
+  }
+
+  const answerSearchText = [normalizedAnswer, normalizedReference].filter(Boolean).join(" ");
+  const hasAnswerShape = rule.answerPatterns.some((pattern) => pattern.test(answerSearchText));
+  if (!hasAnswerShape) {
+    return 0;
+  }
+
+  const topicCoverage = topicHitCount / topicTokens.length;
+  let boost = 0.08;
+
+  if (topicCoverage >= 0.8) {
+    boost += 0.1;
+  } else if (topicCoverage >= 0.5) {
+    boost += 0.07;
+  } else {
+    boost += 0.04;
+  }
+
+  if (normalizedStoredQuestion.includes(normalizedQuestion)) {
+    boost += 0.03;
+  }
+
+  return boost;
 }
 
 function normalizeSuggestedQuestionDomain(value) {
@@ -715,6 +832,8 @@ class LawChatbotSuggestedQuestionModel {
     } else if (normalizedStoredQuestion && normalizedStoredQuestion.includes(normalizedQuestion)) {
       similarity += 0.16;
     }
+
+    similarity += computeQuantifierQueryBoost(normalizedQuestion, row);
 
     return {
       similarity,
