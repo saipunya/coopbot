@@ -249,6 +249,43 @@ test("[Case 8] quality score influences ordering when relevance is close", async
   );
 });
 
+test("[Case 9] source title plus clause number finds the matching chunk", async () => {
+  LawChatbotPdfChunkModel.__seedTestSearchData({
+    documents: [
+      {
+        id: 2,
+        title: "ร่างข้อบังคับสหกรณ์ออมทรัพย์ตัวอย่าง",
+        documentNumber: "DRAFT-BYLAW-26",
+        documentDateText: "18 เมษายน 2569",
+        documentSource: "unit-test",
+        originalname: "draft-bylaw.docx",
+        isSearchable: 1,
+      },
+    ],
+    chunks: [
+      buildChunk(
+        201,
+        "องค์ประชุมคณะกรรมการ",
+        "ข้อ 26 การประชุมคณะกรรมการดำเนินการต้องมีกรรมการมาประชุมไม่น้อยกว่ากึ่งหนึ่งของจำนวนกรรมการทั้งหมด",
+        { document_id: 2, quality_score: 96 },
+      ),
+      buildChunk(
+        202,
+        "การประชุมใหญ่",
+        "ข้อ 18 การประชุมใหญ่สามัญให้จัดปีละหนึ่งครั้ง",
+        { document_id: 2, quality_score: 84 },
+      ),
+    ],
+  });
+
+  const results = await search("ร่างข้อบังคับสหกรณ์ออมทรัพย์ตัวอย่าง ข้อ 26", 5);
+
+  assert.ok(results.length > 0, "should return results for source title plus clause query");
+  assert.equal(results[0]?.id, 201, `expected clause 26 chunk first:\n${printTopResults(results)}`);
+  assert.match(results[0]?.title || "", /ร่างข้อบังคับสหกรณ์ออมทรัพย์ตัวอย่าง/);
+  assert.match(results[0]?.chunk_text || "", /ข้อ 26/);
+});
+
 test("requested query set stays covered in the regression suite", async () => {
   const cases = [
     {

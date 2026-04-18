@@ -1,0 +1,52 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+function loadFresh(modulePath) {
+  const resolved = require.resolve(modulePath);
+  delete require.cache[resolved];
+  return require(modulePath);
+}
+
+test("managed suggested question matches queries that include source references", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การจัดตั้งสหกรณ์ต้องมีผู้เริ่มก่อการกี่คน",
+    answerText: "ต้องมีผู้ซึ่งประสงค์จะเป็นสมาชิกเข้าชื่อกันไม่น้อยกว่า 10 คน",
+    sourceReference: "พระราชบัญญัติสหกรณ์ พ.ศ. 2542 มาตรา 33",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(
+    "มาตรา 33 การจัดตั้งสหกรณ์ต้องมีผู้เริ่มก่อการกี่คน",
+    "coop",
+  );
+
+  assert.ok(match, "expected a suggested-question match");
+  assert.match(match?.questionText || "", /ผู้เริ่มก่อการกี่คน/);
+  assert.match(match?.sourceReference || "", /มาตรา 33/);
+});
+
+test("approved FAQ-style knowledge suggestions are searchable by source reference", async () => {
+  const LawChatbotKnowledgeSuggestionModel = loadFresh("../models/lawChatbotKnowledgeSuggestionModel");
+
+  await LawChatbotKnowledgeSuggestionModel.create({
+    target: "coop",
+    title: "องค์ประชุมคณะกรรมการดำเนินการ",
+    content: "การประชุมคณะกรรมการดำเนินการต้องมีกรรมการมาประชุมไม่น้อยกว่ากึ่งหนึ่ง",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ออมทรัพย์ตัวอย่าง ข้อ 26",
+    sourceType: "text",
+    status: "approved",
+  });
+
+  const results = await LawChatbotKnowledgeSuggestionModel.searchApproved(
+    "ร่างข้อบังคับสหกรณ์ออมทรัพย์ตัวอย่าง ข้อ 26",
+    "all",
+    5,
+  );
+
+  assert.ok(results.length > 0, "expected approved suggestion search results");
+  assert.match(results[0]?.reference || "", /ข้อ 26/);
+  assert.match(results[0]?.title || "", /องค์ประชุมคณะกรรมการ/);
+});

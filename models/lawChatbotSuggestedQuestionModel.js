@@ -1,5 +1,10 @@
 const { getDbPool } = require("../config/db");
-const { normalizeForSearch } = require("../services/thaiTextUtils");
+const {
+  normalizeForSearch,
+  scoreQueryFocusAlignment,
+  segmentWords,
+  uniqueTokens,
+} = require("../services/thaiTextUtils");
 
 const memorySuggestedQuestions = [];
 const SUGGESTED_QUESTION_SELECT_COLUMNS = `
@@ -26,6 +31,23 @@ function invalidateAnswerCache() {
 
 function normalizeQuestionText(value) {
   return normalizeForSearch(String(value || "")).toLowerCase();
+}
+
+function buildSuggestedQuestionSearchText(entry = {}) {
+  return normalizeForSearch(
+    [
+      entry.normalized_question,
+      entry.normalizedQuestion,
+      entry.question_text,
+      entry.questionText,
+      entry.source_reference,
+      entry.sourceReference,
+      entry.answer_text,
+      entry.answerText,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).toLowerCase();
 }
 
 function normalizeSuggestedQuestionDomain(value) {
@@ -618,7 +640,7 @@ class LawChatbotSuggestedQuestionModel {
       });
 
     if (!pool) {
-      const found = sortMatches(
+      const exactMatch = sortMatches(
         memorySuggestedQuestions
           .filter((item) => {
             if (!item.isActive) {
@@ -638,7 +660,11 @@ class LawChatbotSuggestedQuestionModel {
           .map(mapRow),
       )[0];
 
-      return found || null;
+      if (exactMatch) {
+        return exactMatch;
+      }
+
+      return this.findFuzzyMatchInMemory(normalizedQuestion, normalizedTarget);
     }
 
     // Try exact match first
@@ -649,6 +675,102 @@ class LawChatbotSuggestedQuestionModel {
 
     // Try fuzzy matching if no exact match
     return await this.findFuzzyMatch(normalizedQuestion, normalizedTarget);
+  }
+
+  static scoreFuzzyCandidate(normalizedQuestion, row = {}) {
+    const { segmentWords } = require("../services/thaiTextUtils");
+
+    const normalizedSearchText = buildSuggestedQuestionSearchText(row);
+    if (!normalizedSearchText) {
+      return null;
+    }
+
+    const questionTokens = new Set(segmentWords(normalizedQuestion));
+    const rowTokens = new Set(segmentWords(normalizedSearchText));
+    if (questionTokens.size === 0 || rowTokens.size === 0) {
+      return null;
+    }
+
+    const intersection = new Set([...questionTokens].filter((token) => rowTokens.has(token)));
+    const union = new Set([...questionTokens, ...rowTokens]);
+
+    const jaccardSimilarity = union.size > 0 ? intersection.size / union.size : 0;
+    const tokenCoverage = questionTokens.size > 0 ? intersection.size / questionTokens.size : 0;
+    const focusScore = scoreQueryFocusAlignment(normalizedQuestion, normalizedSearchText);
+    const normalizedReference = normalizeQuestionText(row.source_reference || row.sourceReference || "");
+    const normalizedStoredQuestion = normalizeQuestionText(
+      row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
+    );
+
+    let similarity = (jaccardSimilarity * 0.55) + (tokenCoverage * 0.35) + (Math.max(0, focusScore) * 0.01);
+
+    if (normalizedReference && normalizedQuestion.includes(normalizedReference)) {
+      similarity += 0.22;
+    } else if (normalizedReference && normalizedReference.includes(normalizedQuestion)) {
+      similarity += 0.16;
+    }
+
+    if (normalizedStoredQuestion && normalizedQuestion.includes(normalizedStoredQuestion)) {
+      similarity += 0.12;
+    }
+
+    return {
+      similarity,
+      tokenCoverage,
+      jaccardSimilarity,
+      focusScore,
+    };
+  }
+
+  static async findFuzzyMatchInMemory(normalizedQuestion, normalizedTarget, minThreshold = 0.7) {
+    const { lookupTargets } = getSuggestedQuestionLookupTargets(normalizedTarget);
+
+    const candidates = memorySuggestedQuestions
+      .filter((item) => {
+        if (!item.isActive) {
+          return false;
+        }
+
+        if (normalizedTarget === "all") {
+          return true;
+        }
+
+        return lookupTargets.includes(normalizeSuggestedQuestionTarget(item.target));
+      })
+      .map((row) => {
+        const scoring = this.scoreFuzzyCandidate(normalizedQuestion, row);
+        if (!scoring) {
+          return null;
+        }
+
+        return {
+          ...mapRow(row),
+          ...scoring,
+        };
+      })
+      .filter(Boolean)
+      .filter((candidate) => candidate.similarity >= minThreshold)
+      .sort((left, right) => {
+        if (right.similarity !== left.similarity) {
+          return right.similarity - left.similarity;
+        }
+
+        const priorityDiff =
+          getSuggestedQuestionTargetPriority(left.target, normalizedTarget) -
+          getSuggestedQuestionTargetPriority(right.target, normalizedTarget);
+        if (priorityDiff !== 0) {
+          return priorityDiff;
+        }
+
+        const orderDiff = Number(left.displayOrder || 0) - Number(right.displayOrder || 0);
+        if (orderDiff !== 0) {
+          return orderDiff;
+        }
+
+        return Number(right.id || 0) - Number(left.id || 0);
+      });
+
+    return candidates[0] || null;
   }
 
   static async findExactMatch(normalizedQuestion, normalizedTarget) {
@@ -703,29 +825,46 @@ class LawChatbotSuggestedQuestionModel {
     await ensureTable();
     const { normalizedTarget: resolvedTarget, lookupTargets } =
       getSuggestedQuestionLookupTargets(normalizedTarget);
+    const searchTerms = uniqueTokens(segmentWords(normalizedQuestion)).slice(0, 8);
+    const whereClause = searchTerms.length
+      ? searchTerms
+        .map(
+          () =>
+            "(normalized_question LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ? OR LOWER(COALESCE(answer_text, '')) LIKE ?)",
+        )
+        .join(" OR ")
+      : "1 = 1";
+    const whereParams = searchTerms.flatMap((term) => {
+      const like = `%${term}%`;
+      return [like, like, like];
+    });
     const [rows] =
       resolvedTarget === "all"
         ? await pool.query(
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
+                AND (${whereClause})
               ORDER BY display_order ASC, id DESC
-              LIMIT 50`,
+              LIMIT 80`,
+            whereParams,
           )
         : await pool.query(
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND target IN (${lookupTargets.map(() => "?").join(", ")})
+                AND (${whereClause})
               ORDER BY CASE
                          WHEN target = ? THEN 0
                          WHEN target = 'general' THEN 1
                          WHEN target = 'all' THEN 2
                          ELSE 3
                        END, display_order ASC, id DESC
-              LIMIT 50`,
+              LIMIT 80`,
             [
               ...lookupTargets,
+              ...whereParams,
               resolvedTarget,
             ],
           );
@@ -734,32 +873,42 @@ class LawChatbotSuggestedQuestionModel {
       return null;
     }
 
-    const { segmentWords } = require("../services/thaiTextUtils");
-    const questionTokens = new Set(segmentWords(normalizedQuestion));
+    const candidates = rows
+      .map((row) => {
+        const scoring = this.scoreFuzzyCandidate(normalizedQuestion, row);
+        if (!scoring) {
+          return null;
+        }
 
-    // Calculate token overlap for each candidate
-    const candidates = rows.map(row => {
-      const rowTokens = new Set(segmentWords(row.normalized_question));
-      
-      const intersection = new Set([...questionTokens].filter(x => rowTokens.has(x)));
-      const union = new Set([...questionTokens, ...rowTokens]);
-      
-      const jaccardSimilarity = intersection.size / union.size;
-      const tokenCoverage = intersection.size / questionTokens.size;
-      
-      // Combined score: 70% Jaccard, 30% coverage
-      const similarity = (jaccardSimilarity * 0.7) + (tokenCoverage * 0.3);
-      
-      return {
-        ...mapRow(row),
-        similarity
-      };
-    });
+        return {
+          ...mapRow(row),
+          ...scoring,
+        };
+      })
+      .filter(Boolean);
 
     // Filter by threshold and sort by similarity
     const matches = candidates
-      .filter(candidate => candidate.similarity >= minThreshold)
-      .sort((a, b) => b.similarity - a.similarity);
+      .filter((candidate) => candidate.similarity >= minThreshold)
+      .sort((a, b) => {
+        if (b.similarity !== a.similarity) {
+          return b.similarity - a.similarity;
+        }
+
+        const priorityDiff =
+          getSuggestedQuestionTargetPriority(a.target, resolvedTarget) -
+          getSuggestedQuestionTargetPriority(b.target, resolvedTarget);
+        if (priorityDiff !== 0) {
+          return priorityDiff;
+        }
+
+        const orderDiff = Number(a.displayOrder || 0) - Number(b.displayOrder || 0);
+        if (orderDiff !== 0) {
+          return orderDiff;
+        }
+
+        return Number(b.id || 0) - Number(a.id || 0);
+      });
 
     return matches[0] || null;
   }

@@ -92,7 +92,7 @@ function scoreSuggestionMatch(query, row) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const focusProfile = getQueryFocusProfile(query);
   const rowText = normalizeForSearch(
-    `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
+    `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`,
   ).toLowerCase();
   const queryTokens = uniqueTokens(segmentWords(query));
   const rowTokens = uniqueTokens(segmentWords(rowText));
@@ -118,7 +118,7 @@ function scoreSuggestionMatch(query, row) {
   score += coverage * 18;
   score += scoreQueryFocusAlignment(
     query,
-    `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
+    `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`,
   );
 
   if (String(row.title || "").trim()) {
@@ -136,7 +136,7 @@ function scoreSuggestionMatch(query, row) {
   if (
     hasExclusiveMeaningMismatch(
       query,
-      `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
+      `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`,
     )
   ) {
     score -= 120;
@@ -149,7 +149,7 @@ function hasSuggestionRelevance(query, row) {
   if (
     hasExclusiveMeaningMismatch(
       query,
-      `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
+      `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`,
     )
   ) {
     return false;
@@ -158,7 +158,7 @@ function hasSuggestionRelevance(query, row) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const focusProfile = getQueryFocusProfile(query);
   const rowText = normalizeForSearch(
-    `${row.title || ""} ${row.content || ""} ${row.review_note || row.reviewNote || ""}`,
+    `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`,
   ).toLowerCase();
   const queryTokens = getMeaningfulTokens(query);
   const rowTokenSet = new Set(getMeaningfulTokens(rowText));
@@ -623,13 +623,14 @@ class LawChatbotKnowledgeSuggestionModel {
           }
 
           const haystack = normalizeForSearch(
-            `${row.title || ""} ${row.content || ""} ${row.reviewNote || ""}`,
+            `${row.title || ""} ${row.content || ""} ${row.sourceReference || ""} ${row.reviewNote || ""}`,
           ).toLowerCase();
           const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
           const score =
             scoreSuggestionMatch(message, {
               title: row.title,
               content: row.content,
+              sourceReference: row.sourceReference,
               reviewNote: row.reviewNote,
             }) + coarseScore;
 
@@ -654,11 +655,11 @@ class LawChatbotKnowledgeSuggestionModel {
 
     await ensureTable();
     const whereClause = terms
-      .map(() => "(LOWER(title) LIKE ? OR LOWER(content) LIKE ? OR LOWER(review_note) LIKE ?)")
+      .map(() => "(LOWER(title) LIKE ? OR LOWER(content) LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ? OR LOWER(review_note) LIKE ?)")
       .join(" OR ");
     const params = terms.flatMap((term) => {
       const like = `%${term}%`;
-      return [like, like, like];
+      return [like, like, like, like];
     });
 
     const sql =

@@ -285,12 +285,27 @@ function countFamilyTermHits(text = "", terms = []) {
   return hits;
 }
 
+function buildRowSearchCorpus(row = {}) {
+  return [
+    row.keyword,
+    row.chunk_text,
+    row.clean_text,
+    row.title,
+    row.document_number,
+    row.document_date_text,
+    row.document_source,
+    row.originalname,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function applyTopicBoost(row, family, query, baseScore) {
   if (!family || typeof family !== "object") {
     return baseScore;
   }
 
-  const rowText = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
+  const rowText = normalizeForSearch(buildRowSearchCorpus(row)).toLowerCase();
   const queryText = normalizeForSearch(query).toLowerCase();
   if (!rowText || !queryText) {
     return baseScore;
@@ -323,9 +338,12 @@ function applyTopicBoost(row, family, query, baseScore) {
 
 function scoreChunkMatch(query, row) {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
-  const rowText = normalizeForSearch(`${row.keyword} ${row.chunk_text}`).toLowerCase();
+  const rowText = normalizeForSearch(buildRowSearchCorpus(row)).toLowerCase();
   const rawKeyword = String(row.keyword || "");
   const rawChunkText = String(row.chunk_text || "");
+  const rawTitle = String(row.title || "");
+  const rawDocumentNumber = String(row.document_number || "");
+  const rawDocumentSource = String(row.document_source || "");
   const quality = classifyChunkQuality(row);
   const queryTokens = uniqueTokens(segmentWords(query));
   const rowTokens = uniqueTokens(segmentWords(rowText));
@@ -364,9 +382,29 @@ function scoreChunkMatch(query, row) {
     score += 18;
   }
 
+  if (normalizedQuery && rawTitle.toLowerCase().includes(normalizedQuery)) {
+    score += 24;
+  }
+
+  if (normalizedQuery && rawDocumentNumber.toLowerCase().includes(normalizedQuery)) {
+    score += 20;
+  }
+
   const keywordTokens = uniqueTokens(segmentWords(row.keyword || ""));
   const keywordHits = queryTokens.filter((token) => keywordTokens.includes(token)).length;
   score += keywordHits * 12;
+
+  const titleTokens = uniqueTokens(segmentWords(rawTitle));
+  const titleHits = queryTokens.filter((token) => titleTokens.includes(token)).length;
+  score += titleHits * 10;
+
+  const documentNumberTokens = uniqueTokens(segmentWords(rawDocumentNumber));
+  const documentNumberHits = queryTokens.filter((token) => documentNumberTokens.includes(token)).length;
+  score += documentNumberHits * 9;
+
+  const sourceTokens = uniqueTokens(segmentWords(rawDocumentSource));
+  const sourceHits = queryTokens.filter((token) => sourceTokens.includes(token)).length;
+  score += sourceHits * 6;
 
   const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
   score += coverage * 20;
@@ -424,10 +462,16 @@ function scoreChunkMatch(query, row) {
   const chunkLower = rawChunkText.toLowerCase();
   const queryLower = normalizedQuery;
   const combinedLower = `${keywordLower} ${chunkLower}`;
+  const titleLower = rawTitle.toLowerCase();
+  const documentNumberLower = rawDocumentNumber.toLowerCase();
 
   const topicFamily = detectTopicFamily(query);
   if (topicFamily) {
     score = applyTopicBoost(row, topicFamily, query, score);
+  }
+
+  if (queryLower && (titleLower.includes(queryLower) || documentNumberLower.includes(queryLower))) {
+    score += 18;
   }
 
   // Legacy, keep for safety: union-fee keyword shaping (family-driven rules also apply).
@@ -743,12 +787,16 @@ function rankChunkRows(message, rows, searchContext, limit) {
 
   return rows
     .map((row) => {
-      const combinedText = `${row.keyword || ""} ${row.chunk_text || ""} ${row.clean_text || ""}`.trim();
+      const combinedText = buildRowSearchCorpus(row).trim();
       const haystack = normalizeSearchKeyword(combinedText);
       const rowTokens = uniqueTokens([
         ...segmentWords(row.keyword || ""),
         ...segmentWords(row.chunk_text || ""),
         ...segmentWords(row.clean_text || ""),
+        ...segmentWords(row.title || ""),
+        ...segmentWords(row.document_number || ""),
+        ...segmentWords(row.document_source || ""),
+        ...segmentWords(row.originalname || ""),
         ...segmentWords(haystack),
       ])
         .map((token) => normalizeSearchKeyword(token))
@@ -995,12 +1043,22 @@ class LawChatbotPdfChunkModel {
 
     limitedTerms.forEach((term) => {
       const like = `%${term}%`;
-      whereParts.push("(LOWER(c.keyword) LIKE ? OR LOWER(c.chunk_text) LIKE ?)");
-      whereParams.push(like, like);
+      whereParts.push(
+        "(LOWER(c.keyword) LIKE ? OR LOWER(c.chunk_text) LIKE ? OR LOWER(COALESCE(d.title, '')) LIKE ? OR LOWER(COALESCE(d.document_number, '')) LIKE ? OR LOWER(COALESCE(d.document_source, '')) LIKE ? OR LOWER(COALESCE(d.originalname, '')) LIKE ?)",
+      );
+      whereParams.push(like, like, like, like, like, like);
 
       scoreParts.push(`CASE WHEN LOWER(c.keyword) LIKE ? THEN ${options.fallback ? 6 : 12} ELSE 0 END`);
       scoreParts.push(`CASE WHEN LOWER(c.chunk_text) LIKE ? THEN ${options.fallback ? 3 : 7} ELSE 0 END`);
-      scoreParams.push(like, like);
+      scoreParts.push(`CASE WHEN LOWER(COALESCE(d.title, '')) LIKE ? THEN ${options.fallback ? 5 : 11} ELSE 0 END`);
+      scoreParts.push(
+        `CASE WHEN LOWER(COALESCE(d.document_number, '')) LIKE ? THEN ${options.fallback ? 4 : 9} ELSE 0 END`,
+      );
+      scoreParts.push(
+        `CASE WHEN LOWER(COALESCE(d.document_source, '')) LIKE ? THEN ${options.fallback ? 2 : 5} ELSE 0 END`,
+      );
+      scoreParts.push(`CASE WHEN LOWER(COALESCE(d.originalname, '')) LIKE ? THEN ${options.fallback ? 2 : 4} ELSE 0 END`);
+      scoreParams.push(like, like, like, like, like, like);
     });
 
     let fulltextSelect = "0 AS fulltext_score";
