@@ -330,6 +330,51 @@ function normalizeContinuationText(text = "") {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
+function cleanAssistantAnswer(rawAnswer = "", originalMessage = "") {
+  let text = String(rawAnswer || "");
+  if (!text) return "";
+
+  // Normalize line endings and whitespace
+  text = text.replace(/\r\n/g, "\n").replace(/\t/g, " ");
+
+  // Remove lines starting with forbidden prefixes
+  const lines = text.split(/\n/).filter((ln) => {
+    const t = String(ln || "").trim();
+    if (!t) return false;
+    if (/^\s*(คำถาม:)/.test(t)) return false;
+    if (/^\s*(KR\b)/.test(t)) return false;
+    if (/^\s*(ผู้ช่วย\b)/.test(t)) return false;
+    return true;
+  });
+
+  text = lines.join("\n").trim();
+
+  // If content contains explicit Q/A markers, extract the answer part
+  try {
+    const qaMatch = text.match(/(?:คำถาม[:\s].*?\n+)?(?:คำตอบ[:\s]*)?(.*)/s);
+    if (qaMatch && qaMatch[1]) {
+      const candidate = String(qaMatch[1] || "").trim();
+      if (candidate) text = candidate;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // If originalMessage is present and appears at the start of the answer, remove it
+  const orig = String(originalMessage || "").replace(/\s+/g, " ").trim();
+  if (orig) {
+    const normalized = text.replace(/\s+/g, " ").trim();
+    if (normalized.startsWith(orig)) {
+      text = normalized.slice(orig.length).trim();
+    }
+  }
+
+  // Remove any leading labels like "คำตอบ:" or "Answer:" after trimming
+  text = text.replace(/^\s*(คำตอบ[:\s]*)+/i, "").trim();
+
+  return text;
+}
+
 function isShortExplainFollowUpMessage(message = "") {
   const text = String(message || "").replace(/\s+/g, " ").trim().toLowerCase();
   if (!text) {
@@ -986,6 +1031,9 @@ async function replyToDbOnlyMainChat(payload, session) {
       continuationSourceLimit: MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
     });
   }
+  // Clean answer content before storing and returning
+  const cleanedAnswer = cleanAssistantAnswer(answer, message);
+  answer = cleanedAnswer;
 
   LawChatbotModel.create({
     message,
