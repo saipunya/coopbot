@@ -190,6 +190,39 @@ function parseDraftBylawClauseQuery(normalizedQuestion = "") {
   };
 }
 
+function computeDutyPhraseBoost(normalizedQuestion, row = {}) {
+  const normalizedStoredQuestion = normalizeQuestionText(
+    row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
+  );
+  const normalizedReference = normalizeQuestionText(row.source_reference || row.sourceReference || "");
+  const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
+  const anchorText = [normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ");
+  const fullText = [anchorText, normalizedAnswer].filter(Boolean).join(" ");
+
+  if (!normalizedQuestion.includes("อำนาจหน้าที่")) {
+    return 0;
+  }
+
+  let boost = 0;
+  const hasExactDutyPhraseInAnchor = anchorText.includes("อำนาจหน้าที่");
+  const hasOfficerOnly = fullText.includes("เจ้าหน้าที่");
+  const hasInspectorPhrase = fullText.includes("ผู้ตรวจสอบกิจการ");
+
+  if (hasExactDutyPhraseInAnchor) {
+    boost += 0.2;
+  }
+
+  if (hasInspectorPhrase && hasExactDutyPhraseInAnchor) {
+    boost += 0.08;
+  }
+
+  if (hasOfficerOnly && !hasExactDutyPhraseInAnchor) {
+    boost -= 0.22;
+  }
+
+  return boost;
+}
+
 function normalizeSuggestedQuestionDomain(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return ["legal", "general", "mixed"].includes(normalized) ? normalized : "general";
@@ -857,6 +890,7 @@ class LawChatbotSuggestedQuestionModel {
     }
 
     similarity += computeQuantifierQueryBoost(normalizedQuestion, row);
+    similarity += computeDutyPhraseBoost(normalizedQuestion, row);
 
     return {
       similarity,

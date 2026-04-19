@@ -97,6 +97,32 @@ test("managed suggested question prioritizes the exact draft bylaw clause refere
   assert.match(match?.questionText || "", /การให้เงินกู้/);
 });
 
+test("managed suggested question prefers exact duty phrase over officer-only mentions", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การจัดจ้างเจ้าหน้าที่",
+    answerText: "เจ้าหน้าที่ต้องไม่มีลักษณะต้องห้าม หรือเป็นที่ปรึกษาสหกรณ์หรือผู้ตรวจสอบกิจการสหกรณ์",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 95 เจ้าหน้าที่สหกรณ์",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "อำนาจหน้าที่ผู้ตรวจสอบกิจการ",
+    answerText: "ผู้ตรวจสอบกิจการมีอำนาจหน้าที่ตรวจสอบและรายงานผลตามข้อบังคับ",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 101 อำนาจหน้าที่ของผู้ตรวจสอบกิจการ",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch("อำนาจหน้าที่ของผู้ตรวจสอบกิจการ", "all");
+
+  assert.ok(match, "expected an exact duty phrase match");
+  assert.match(match?.sourceReference || "", /ข้อ 101/);
+  assert.match(match?.questionText || "", /อำนาจหน้าที่ผู้ตรวจสอบกิจการ/);
+});
+
 test("approved FAQ-style knowledge suggestions are searchable by source reference", async () => {
   const LawChatbotKnowledgeSuggestionModel = loadFresh("../models/lawChatbotKnowledgeSuggestionModel");
 
