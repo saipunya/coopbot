@@ -97,6 +97,32 @@ test("managed suggested question prioritizes the exact draft bylaw clause refere
   assert.match(match?.questionText || "", /การให้เงินกู้/);
 });
 
+test("managed suggested question does not confuse clause 5 with clause 50", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "สมาชิกของสหกรณ์",
+    answerText: "ข้อ 5 สมาชิก กำหนดเรื่องสมาชิกของสหกรณ์",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 5 สมาชิก",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การประชุมดำเนินการ",
+    answerText: "ข้อ 50 ว่าด้วยการดำเนินงานอีกเรื่องหนึ่ง",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 50 การดำเนินการ",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch("ร่างข้อบังคับสหกรณ์ข้อ 5", "all");
+
+  assert.ok(match, "expected a suggested-question match for clause 5");
+  assert.match(match?.sourceReference || "", /ข้อ 5 สมาชิก/);
+  assert.doesNotMatch(match?.sourceReference || "", /ข้อ 50/);
+});
+
 test("managed suggested question prefers exact duty phrase over officer-only mentions", async () => {
   const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
 

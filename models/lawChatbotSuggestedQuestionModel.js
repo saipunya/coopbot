@@ -94,6 +94,10 @@ function escapeLike(value) {
   return String(value || "").replace(/[\\%_]/g, "\\$&");
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function buildSuggestedQuestionSearchText(entry = {}) {
   return normalizeForSearch(
     [
@@ -187,7 +191,36 @@ function parseDraftBylawClauseQuery(normalizedQuestion = "") {
     clauseNumber,
     clauseLike: `%${escapeLike(`ข้อ ${clauseNumber}`)}%`,
     clauseCompactLike: `%${escapeLike(`ข้อ${clauseNumber}`)}%`,
+    clauseRegexp: `ข้อ[[:space:]]*${escapeRegExp(clauseNumber)}([^0-9]|$)`,
   };
+}
+
+function computeDraftBylawClauseBoost(normalizedQuestion, row = {}) {
+  const draftBylawClauseQuery = parseDraftBylawClauseQuery(normalizedQuestion);
+  if (!draftBylawClauseQuery) {
+    return 0;
+  }
+
+  const normalizedStoredQuestion = normalizeQuestionText(
+    row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
+  );
+  const normalizedReference = normalizeQuestionText(row.source_reference || row.sourceReference || "");
+  const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
+  const anchorText = [normalizedStoredQuestion, normalizedReference, normalizedAnswer].filter(Boolean).join(" ");
+  if (!anchorText) {
+    return 0;
+  }
+
+  const exactClausePattern = new RegExp(`ข้อ\\s*${escapeRegExp(draftBylawClauseQuery.clauseNumber)}(?!\\d)`);
+  if (exactClausePattern.test(anchorText)) {
+    return 0.34;
+  }
+
+  if (/ร่างข้อบังคับ/.test(anchorText) && /ข้อ\s*\d+/.test(anchorText)) {
+    return -0.28;
+  }
+
+  return 0;
 }
 
 function computeDutyPhraseBoost(normalizedQuestion, row = {}) {
@@ -1038,6 +1071,7 @@ class LawChatbotSuggestedQuestionModel {
     }
 
     similarity += computeQuantifierQueryBoost(normalizedQuestion, row);
+    similarity += computeDraftBylawClauseBoost(normalizedQuestion, row);
     similarity += computeDutyPhraseBoost(normalizedQuestion, row);
     similarity += computeTopicPhraseAnchorBoost(normalizedQuestion, row);
     similarity += computeRegistrarOrderBoost(normalizedQuestion, row);
@@ -1173,12 +1207,12 @@ class LawChatbotSuggestedQuestionModel {
     });
     const clausePrioritySql = draftBylawClauseQuery
       ? `CASE
-           WHEN LOWER(COALESCE(source_reference, '')) LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ? THEN 0
+           WHEN LOWER(COALESCE(source_reference, '')) REGEXP ? THEN 0
            ELSE 1
          END, `
       : "";
     const clausePriorityParams = draftBylawClauseQuery
-      ? [draftBylawClauseQuery.clauseLike, draftBylawClauseQuery.clauseCompactLike]
+      ? [draftBylawClauseQuery.clauseRegexp]
       : [];
     const topicPrioritySql = anchoredTopicQuery
       ? `CASE
