@@ -149,6 +149,40 @@ test("managed suggested question prefers exact topic anchors over answer-only me
   assert.match(match?.sourceReference || "", /คู่มือการเลิกสหกรณ์/);
 });
 
+test("managed suggested question prefers registrar-order dissolution anchors over appeal follow-ups", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "สหกรณ์ที่ถูกสั่งเลิกมีสิทธิอุทธรณ์",
+    answerText: "สหกรณ์ที่ถูกสั่งเลิกสามารถอุทธรณ์ได้ภายในกำหนดเวลา",
+    sourceReference: "คู่มือการเลิกสหกรณ์ สำนักนายทะเบียนและกฎหมาย กรมส่งเสริมสหกรณ์",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การสั่งเลิกสหกรณ์ออมทรัพย์หรือสหกรณ์เครดิตยูเนี่ยน",
+    answerText: "นายทะเบียนสหกรณ์มีอำนาจสั่งเลิกสหกรณ์ออมทรัพย์หรือสหกรณ์เครดิตยูเนี่ยนได้ ตามมาตรา 89/3 วรรคสอง",
+    sourceReference: "มาตรา 89/3 พรบ.สหกรณ์ พ.ศ. 2542",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "เหตุแห่งการเลิกสหกรณ์ตามกฎหมาย",
+    answerText: "เลิกเมื่อนายทะเบียนสหกรณ์สั่งให้เลิกตามมาตรา 71 เช่น ไม่เริ่มดำเนินกิจการภายใน 1 ปี หรือหยุดดำเนินกิจการติดต่อกัน 2 ปี",
+    sourceReference: "มาตรา 70 มาตรา 71 และ มาตรา 89/3 แห่ง พระราชบัญญัติสหกรณ์ พ.ศ. 2542",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch("นายทะเบียนสหกรณ์สั่งเลิก", "all");
+
+  assert.ok(match, "expected a registrar-order dissolution match");
+  assert.match(match?.sourceReference || "", /มาตรา 71/);
+  assert.match(match?.questionText || "", /เหตุแห่งการเลิกสหกรณ์/);
+});
+
 test("approved FAQ-style knowledge suggestions are searchable by source reference", async () => {
   const LawChatbotKnowledgeSuggestionModel = loadFresh("../models/lawChatbotKnowledgeSuggestionModel");
 

@@ -250,6 +250,54 @@ function computeTopicPhraseAnchorBoost(normalizedQuestion, row = {}) {
   return 0;
 }
 
+function computeRegistrarOrderBoost(normalizedQuestion, row = {}) {
+  const queryText = normalizeQuestionText(normalizedQuestion);
+  if (!queryText.includes("นายทะเบียนสหกรณ์") || !queryText.includes("สั่งเลิก")) {
+    return 0;
+  }
+
+  const normalizedStoredQuestion = normalizeQuestionText(
+    row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
+  );
+  const normalizedReference = normalizeQuestionText(row.source_reference || row.sourceReference || "");
+  const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
+  const anchorText = [normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ");
+  const fullText = [anchorText, normalizedAnswer].filter(Boolean).join(" ");
+
+  let boost = 0;
+  const hasRegistrarPhrase = fullText.includes("นายทะเบียนสหกรณ์");
+  const hasOrderPhrase = anchorText.includes("สั่งเลิก") || fullText.includes("มีอำนาจสั่งเลิก");
+  const referencesSection71 = /มาตรา\s*71/.test(fullText);
+  const talksAboutBeingOrdered = fullText.includes("ถูกสั่งเลิก");
+  const talksAboutAppeal = fullText.includes("อุทธรณ์");
+  const isGenericRegistrarOrderQuery =
+    !queryText.includes("ออมทรัพย์") && !queryText.includes("เครดิตยูเนี่ยน");
+  const talksAboutSpecializedCoops =
+    fullText.includes("ออมทรัพย์") || fullText.includes("เครดิตยูเนี่ยน");
+
+  if (hasRegistrarPhrase && hasOrderPhrase) {
+    boost += 0.2;
+  }
+
+  if (referencesSection71) {
+    boost += 0.16;
+  }
+
+  if (talksAboutBeingOrdered && !referencesSection71) {
+    boost -= 0.18;
+  }
+
+  if (talksAboutAppeal && !queryText.includes("อุทธรณ์")) {
+    boost -= 0.24;
+  }
+
+  if (isGenericRegistrarOrderQuery && talksAboutSpecializedCoops && !referencesSection71) {
+    boost -= 0.32;
+  }
+
+  return boost;
+}
+
 function parseAnchoredTopicQuery(normalizedQuestion = "") {
   const text = normalizeQuestionText(normalizedQuestion);
   if (!text || text !== "การเลิกสหกรณ์") {
@@ -259,6 +307,21 @@ function parseAnchoredTopicQuery(normalizedQuestion = "") {
   const like = `%${escapeLike(text)}%`;
   return {
     topicLike: like,
+  };
+}
+
+function parseRegistrarOrderQuery(normalizedQuestion = "") {
+  const text = normalizeQuestionText(normalizedQuestion);
+  if (!text.includes("นายทะเบียนสหกรณ์") || !text.includes("สั่งเลิก")) {
+    return null;
+  }
+
+  return {
+    registrarLike: `%${escapeLike("นายทะเบียนสหกรณ์")}%`,
+    section71Like: `%${escapeLike("มาตรา 71")}%`,
+    orderLike: `%${escapeLike("สั่งเลิก")}%`,
+    orderWithHelperLike: `%${escapeLike("สั่งให้เลิก")}%`,
+    passiveOrderLike: `%${escapeLike("ถูกสั่งเลิก")}%`,
   };
 }
 
@@ -931,6 +994,7 @@ class LawChatbotSuggestedQuestionModel {
     similarity += computeQuantifierQueryBoost(normalizedQuestion, row);
     similarity += computeDutyPhraseBoost(normalizedQuestion, row);
     similarity += computeTopicPhraseAnchorBoost(normalizedQuestion, row);
+    similarity += computeRegistrarOrderBoost(normalizedQuestion, row);
 
     return {
       similarity,
@@ -1045,6 +1109,7 @@ class LawChatbotSuggestedQuestionModel {
       getSuggestedQuestionLookupTargets(normalizedTarget);
     const draftBylawClauseQuery = parseDraftBylawClauseQuery(normalizedQuestion);
     const anchoredTopicQuery = parseAnchoredTopicQuery(normalizedQuestion);
+    const registrarOrderQuery = parseRegistrarOrderQuery(normalizedQuestion);
     const searchTerms = uniqueTokens(segmentWords(normalizedQuestion)).slice(0, 8);
     const whereClause = searchTerms.length
       ? searchTerms
@@ -1076,6 +1141,30 @@ class LawChatbotSuggestedQuestionModel {
     const topicPriorityParams = anchoredTopicQuery
       ? [anchoredTopicQuery.topicLike, anchoredTopicQuery.topicLike]
       : [];
+    const registrarPrioritySql = registrarOrderQuery
+      ? `CASE
+           WHEN LOWER(COALESCE(source_reference, '')) LIKE ? OR LOWER(COALESCE(answer_text, '')) LIKE ? THEN 0
+           WHEN LOWER(COALESCE(answer_text, '')) LIKE ? AND (
+             LOWER(COALESCE(question_text, '')) LIKE ?
+             OR LOWER(COALESCE(source_reference, '')) LIKE ?
+             OR LOWER(COALESCE(answer_text, '')) LIKE ?
+           ) THEN 1
+           WHEN LOWER(COALESCE(question_text, '')) LIKE ? OR LOWER(COALESCE(answer_text, '')) LIKE ? THEN 3
+           ELSE 2
+         END, `
+      : "";
+    const registrarPriorityParams = registrarOrderQuery
+      ? [
+          registrarOrderQuery.section71Like,
+          registrarOrderQuery.section71Like,
+          registrarOrderQuery.registrarLike,
+          registrarOrderQuery.orderLike,
+          registrarOrderQuery.orderLike,
+          registrarOrderQuery.orderWithHelperLike,
+          registrarOrderQuery.passiveOrderLike,
+          registrarOrderQuery.passiveOrderLike,
+        ]
+      : [];
     const [rows] =
       resolvedTarget === "all"
         ? await pool.query(
@@ -1083,9 +1172,9 @@ class LawChatbotSuggestedQuestionModel {
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND (${whereClause})
-              ORDER BY ${clausePrioritySql}${topicPrioritySql}display_order ASC, id DESC
+              ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}display_order ASC, id DESC
               LIMIT 80`,
-            [...whereParams, ...clausePriorityParams, ...topicPriorityParams],
+            [...whereParams, ...clausePriorityParams, ...topicPriorityParams, ...registrarPriorityParams],
           )
         : await pool.query(
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
@@ -1093,7 +1182,7 @@ class LawChatbotSuggestedQuestionModel {
               WHERE is_active = 1
                 AND target IN (${lookupTargets.map(() => "?").join(", ")})
                 AND (${whereClause})
-              ORDER BY ${clausePrioritySql}${topicPrioritySql}CASE
+              ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}CASE
                          WHEN target = ? THEN 0
                          WHEN target = 'general' THEN 1
                          WHEN target = 'all' THEN 2
@@ -1105,6 +1194,7 @@ class LawChatbotSuggestedQuestionModel {
               ...whereParams,
               ...clausePriorityParams,
               ...topicPriorityParams,
+              ...registrarPriorityParams,
               resolvedTarget,
             ],
           );
