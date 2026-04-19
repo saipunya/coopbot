@@ -69,6 +69,34 @@ test("managed suggested question matches time-oriented questions from answer tex
   assert.match(match?.sourceReference || "", /ข้อ 20/);
 });
 
+test("managed suggested question prioritizes the exact draft bylaw clause reference", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การให้เงินกู้ของสหกรณ์",
+    answerText: "ข้อ 13 การให้เงินกู้ สหกรณ์อาจให้เงินกู้ได้แก่สมาชิกของสหกรณ์",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 13 การให้เงินกู้",
+    isActive: true,
+  });
+
+  for (let clauseNumber = 100; clauseNumber <= 181; clauseNumber += 1) {
+    await LawChatbotSuggestedQuestionModel.create({
+      target: "coop",
+      questionText: `ข้อบังคับหมวดพิเศษ ${clauseNumber}`,
+      answerText: `เนื้อหาข้อบังคับลำดับ ${clauseNumber}`,
+      sourceReference: `ร่างข้อบังคับสหกรณ์ ข้อ ${clauseNumber} เรื่องตัวอย่าง`,
+      isActive: true,
+    });
+  }
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch("ร่างข้อบังคับสหกรณ์ ข้อ 13", "all");
+
+  assert.ok(match, "expected a suggested-question match for the requested draft bylaw clause");
+  assert.match(match?.sourceReference || "", /ข้อ 13/);
+  assert.match(match?.questionText || "", /การให้เงินกู้/);
+});
+
 test("approved FAQ-style knowledge suggestions are searchable by source reference", async () => {
   const LawChatbotKnowledgeSuggestionModel = loadFresh("../models/lawChatbotKnowledgeSuggestionModel");
 

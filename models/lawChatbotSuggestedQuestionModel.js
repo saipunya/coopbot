@@ -90,6 +90,10 @@ function normalizeQuestionText(value) {
   return normalizeForSearch(String(value || "")).toLowerCase();
 }
 
+function escapeLike(value) {
+  return String(value || "").replace(/[\\%_]/g, "\\$&");
+}
+
 function buildSuggestedQuestionSearchText(entry = {}) {
   return normalizeForSearch(
     [
@@ -165,6 +169,25 @@ function computeQuantifierQueryBoost(normalizedQuestion, row = {}) {
   }
 
   return boost;
+}
+
+function parseDraftBylawClauseQuery(normalizedQuestion = "") {
+  const text = normalizeQuestionText(normalizedQuestion);
+  if (!text || !/ร่างข้อบังคับ/.test(text)) {
+    return null;
+  }
+
+  const clauseMatch = text.match(/ข้อ\s*([0-9]+)/);
+  if (!clauseMatch?.[1]) {
+    return null;
+  }
+
+  const clauseNumber = clauseMatch[1];
+  return {
+    clauseNumber,
+    clauseLike: `%${escapeLike(`ข้อ ${clauseNumber}`)}%`,
+    clauseCompactLike: `%${escapeLike(`ข้อ${clauseNumber}`)}%`,
+  };
 }
 
 function normalizeSuggestedQuestionDomain(value) {
@@ -946,6 +969,7 @@ class LawChatbotSuggestedQuestionModel {
     await ensureTable();
     const { normalizedTarget: resolvedTarget, lookupTargets } =
       getSuggestedQuestionLookupTargets(normalizedTarget);
+    const draftBylawClauseQuery = parseDraftBylawClauseQuery(normalizedQuestion);
     const searchTerms = uniqueTokens(segmentWords(normalizedQuestion)).slice(0, 8);
     const whereClause = searchTerms.length
       ? searchTerms
@@ -959,6 +983,15 @@ class LawChatbotSuggestedQuestionModel {
       const like = `%${term}%`;
       return [like, like, like];
     });
+    const clausePrioritySql = draftBylawClauseQuery
+      ? `CASE
+           WHEN LOWER(COALESCE(source_reference, '')) LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ? THEN 0
+           ELSE 1
+         END, `
+      : "";
+    const clausePriorityParams = draftBylawClauseQuery
+      ? [draftBylawClauseQuery.clauseLike, draftBylawClauseQuery.clauseCompactLike]
+      : [];
     const [rows] =
       resolvedTarget === "all"
         ? await pool.query(
@@ -966,9 +999,9 @@ class LawChatbotSuggestedQuestionModel {
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND (${whereClause})
-              ORDER BY display_order ASC, id DESC
+              ORDER BY ${clausePrioritySql}display_order ASC, id DESC
               LIMIT 80`,
-            whereParams,
+            [...whereParams, ...clausePriorityParams],
           )
         : await pool.query(
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
@@ -976,7 +1009,7 @@ class LawChatbotSuggestedQuestionModel {
               WHERE is_active = 1
                 AND target IN (${lookupTargets.map(() => "?").join(", ")})
                 AND (${whereClause})
-              ORDER BY CASE
+              ORDER BY ${clausePrioritySql}CASE
                          WHEN target = ? THEN 0
                          WHEN target = 'general' THEN 1
                          WHEN target = 'all' THEN 2
@@ -986,6 +1019,7 @@ class LawChatbotSuggestedQuestionModel {
             [
               ...lookupTargets,
               ...whereParams,
+              ...clausePriorityParams,
               resolvedTarget,
             ],
           );
