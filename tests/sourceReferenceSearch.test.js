@@ -183,6 +183,32 @@ test("managed suggested question prefers registrar-order dissolution anchors ove
   assert.match(match?.questionText || "", /เหตุแห่งการเลิกสหกรณ์/);
 });
 
+test("managed suggested question prefers clause 6 shareholding anchor over manager duties", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การถือหุ้นของสหกรณ์",
+    answerText: "ข้อ 6 การถือหุ้น สมาชิกทุกคนต้องชำระค่าหุ้นและถือหุ้นตามที่ข้อบังคับกำหนด",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 6 การถือหุ้น",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "อำนาจหน้าที่ผู้จัดการสหกรณ์",
+    answerText: "ผู้จัดการมีหน้าที่ควบคุมให้มีการเก็บเงินค่าหุ้น โอนหุ้น แจ้งยอดจำนวนหุ้น และชักชวนการถือหุ้นในสหกรณ์",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 90 อำนาจหน้าที่ผู้จัดการสหกรณ์",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch("การถือหุ้นของสมาชิกสหกรณ์", "all");
+
+  assert.ok(match, "expected a clause 6 shareholding match");
+  assert.match(match?.sourceReference || "", /ข้อ 6/);
+  assert.match(match?.questionText || "", /การถือหุ้น/);
+});
+
 test("approved FAQ-style knowledge suggestions are searchable by source reference", async () => {
   const LawChatbotKnowledgeSuggestionModel = loadFresh("../models/lawChatbotKnowledgeSuggestionModel");
 

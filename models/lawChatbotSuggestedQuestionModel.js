@@ -298,6 +298,40 @@ function computeRegistrarOrderBoost(normalizedQuestion, row = {}) {
   return boost;
 }
 
+function computeMemberShareholdingBoost(normalizedQuestion, row = {}) {
+  const queryText = normalizeQuestionText(normalizedQuestion);
+  if (!queryText.includes("ถือหุ้น") || !queryText.includes("สมาชิกสหกรณ์")) {
+    return 0;
+  }
+
+  const normalizedStoredQuestion = normalizeQuestionText(
+    row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
+  );
+  const normalizedReference = normalizeQuestionText(row.source_reference || row.sourceReference || "");
+  const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
+  const anchorText = [normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ");
+
+  let boost = 0;
+  const hasShareholdingAnchor = anchorText.includes("การถือหุ้น");
+  const referencesClause6 = /ข้อ\s*6/.test(anchorText);
+  const mentionsManagerAnchor = anchorText.includes("อำนาจหน้าที่ผู้จัดการ") || anchorText.includes("อำนาจหน้าที่ของผู้จัดการ");
+  const answerMentionsShares = normalizedAnswer.includes("หุ้น") || normalizedAnswer.includes("ถือหุ้น");
+
+  if (hasShareholdingAnchor) {
+    boost += 0.24;
+  }
+
+  if (referencesClause6 && hasShareholdingAnchor) {
+    boost += 0.14;
+  }
+
+  if (mentionsManagerAnchor && answerMentionsShares && !hasShareholdingAnchor) {
+    boost -= 0.3;
+  }
+
+  return boost;
+}
+
 function parseAnchoredTopicQuery(normalizedQuestion = "") {
   const text = normalizeQuestionText(normalizedQuestion);
   if (!text || text !== "การเลิกสหกรณ์") {
@@ -322,6 +356,18 @@ function parseRegistrarOrderQuery(normalizedQuestion = "") {
     orderLike: `%${escapeLike("สั่งเลิก")}%`,
     orderWithHelperLike: `%${escapeLike("สั่งให้เลิก")}%`,
     passiveOrderLike: `%${escapeLike("ถูกสั่งเลิก")}%`,
+  };
+}
+
+function parseMemberShareholdingQuery(normalizedQuestion = "") {
+  const text = normalizeQuestionText(normalizedQuestion);
+  if (!text.includes("ถือหุ้น") || !text.includes("สมาชิกสหกรณ์")) {
+    return null;
+  }
+
+  return {
+    shareholdingLike: `%${escapeLike("การถือหุ้น")}%`,
+    clause6Like: `%${escapeLike("ข้อ 6")}%`,
   };
 }
 
@@ -995,6 +1041,7 @@ class LawChatbotSuggestedQuestionModel {
     similarity += computeDutyPhraseBoost(normalizedQuestion, row);
     similarity += computeTopicPhraseAnchorBoost(normalizedQuestion, row);
     similarity += computeRegistrarOrderBoost(normalizedQuestion, row);
+    similarity += computeMemberShareholdingBoost(normalizedQuestion, row);
 
     return {
       similarity,
@@ -1110,6 +1157,7 @@ class LawChatbotSuggestedQuestionModel {
     const draftBylawClauseQuery = parseDraftBylawClauseQuery(normalizedQuestion);
     const anchoredTopicQuery = parseAnchoredTopicQuery(normalizedQuestion);
     const registrarOrderQuery = parseRegistrarOrderQuery(normalizedQuestion);
+    const memberShareholdingQuery = parseMemberShareholdingQuery(normalizedQuestion);
     const searchTerms = uniqueTokens(segmentWords(normalizedQuestion)).slice(0, 8);
     const whereClause = searchTerms.length
       ? searchTerms
@@ -1165,6 +1213,24 @@ class LawChatbotSuggestedQuestionModel {
           registrarOrderQuery.passiveOrderLike,
         ]
       : [];
+    const memberShareholdingPrioritySql = memberShareholdingQuery
+      ? `CASE
+           WHEN LOWER(COALESCE(source_reference, '')) LIKE ? AND (
+             LOWER(COALESCE(question_text, '')) LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ?
+           ) THEN 0
+           WHEN LOWER(COALESCE(question_text, '')) LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ? THEN 1
+           ELSE 2
+         END, `
+      : "";
+    const memberShareholdingPriorityParams = memberShareholdingQuery
+      ? [
+          memberShareholdingQuery.clause6Like,
+          memberShareholdingQuery.shareholdingLike,
+          memberShareholdingQuery.shareholdingLike,
+          memberShareholdingQuery.shareholdingLike,
+          memberShareholdingQuery.shareholdingLike,
+        ]
+      : [];
     const [rows] =
       resolvedTarget === "all"
         ? await pool.query(
@@ -1172,9 +1238,9 @@ class LawChatbotSuggestedQuestionModel {
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND (${whereClause})
-              ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}display_order ASC, id DESC
-              LIMIT 80`,
-            [...whereParams, ...clausePriorityParams, ...topicPriorityParams, ...registrarPriorityParams],
+              ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}${memberShareholdingPrioritySql}display_order ASC, id DESC
+              LIMIT 100`,
+            [...whereParams, ...clausePriorityParams, ...topicPriorityParams, ...registrarPriorityParams, ...memberShareholdingPriorityParams],
           )
         : await pool.query(
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
@@ -1182,19 +1248,20 @@ class LawChatbotSuggestedQuestionModel {
               WHERE is_active = 1
                 AND target IN (${lookupTargets.map(() => "?").join(", ")})
                 AND (${whereClause})
-              ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}CASE
+              ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}${memberShareholdingPrioritySql}CASE
                          WHEN target = ? THEN 0
                          WHEN target = 'general' THEN 1
                          WHEN target = 'all' THEN 2
                          ELSE 3
                        END, display_order ASC, id DESC
-              LIMIT 80`,
+               LIMIT 100`,
             [
               ...lookupTargets,
               ...whereParams,
               ...clausePriorityParams,
               ...topicPriorityParams,
               ...registrarPriorityParams,
+              ...memberShareholdingPriorityParams,
               resolvedTarget,
             ],
           );
