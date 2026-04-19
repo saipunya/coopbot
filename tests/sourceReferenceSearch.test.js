@@ -123,6 +123,32 @@ test("managed suggested question prefers exact duty phrase over officer-only men
   assert.match(match?.questionText || "", /อำนาจหน้าที่ผู้ตรวจสอบกิจการ/);
 });
 
+test("managed suggested question prefers exact topic anchors over answer-only mentions for dissolution", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การเลิกสหกรณ์ หมายถึง",
+    answerText: "การเลิกสหกรณ์ คือการสิ้นสภาพของสหกรณ์ตามกฎหมาย",
+    sourceReference: "คู่มือการเลิกสหกรณ์ สำนักนายทะเบียนและกฎหมาย กรมส่งเสริมสหกรณ์",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "อำนาจหน้าที่ของที่ประชุมใหญ่",
+    answerText: "ที่ประชุมใหญ่มีอำนาจหน้าที่... เห็นชอบให้แยกสหกรณ์ ควบสหกรณ์ เลิกสหกรณ์ เข้าร่วมจัดตั้งหรือเป็นสมาชิกชุมนุมสหกรณ์",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 67 อำนาจหน้าที่ของที่ประชุมใหญ่",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch("การเลิกสหกรณ์", "all");
+
+  assert.ok(match, "expected an anchored dissolution topic match");
+  assert.match(match?.questionText || "", /การเลิกสหกรณ์ หมายถึง/);
+  assert.match(match?.sourceReference || "", /คู่มือการเลิกสหกรณ์/);
+});
+
 test("approved FAQ-style knowledge suggestions are searchable by source reference", async () => {
   const LawChatbotKnowledgeSuggestionModel = loadFresh("../models/lawChatbotKnowledgeSuggestionModel");
 

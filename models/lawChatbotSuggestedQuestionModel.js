@@ -223,6 +223,45 @@ function computeDutyPhraseBoost(normalizedQuestion, row = {}) {
   return boost;
 }
 
+function computeTopicPhraseAnchorBoost(normalizedQuestion, row = {}) {
+  const normalizedStoredQuestion = normalizeQuestionText(
+    row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
+  );
+  const normalizedReference = normalizeQuestionText(row.source_reference || row.sourceReference || "");
+  const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
+  const anchorText = [normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ");
+  const queryText = normalizeQuestionText(normalizedQuestion);
+
+  if (!queryText || queryText !== "การเลิกสหกรณ์") {
+    return 0;
+  }
+
+  const anchorHasExactTopic = anchorText.includes(queryText);
+  const answerHasExactTopic = normalizedAnswer.includes(queryText);
+
+  if (anchorHasExactTopic) {
+    return 0.26;
+  }
+
+  if (answerHasExactTopic) {
+    return -0.28;
+  }
+
+  return 0;
+}
+
+function parseAnchoredTopicQuery(normalizedQuestion = "") {
+  const text = normalizeQuestionText(normalizedQuestion);
+  if (!text || text !== "การเลิกสหกรณ์") {
+    return null;
+  }
+
+  const like = `%${escapeLike(text)}%`;
+  return {
+    topicLike: like,
+  };
+}
+
 function normalizeSuggestedQuestionDomain(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return ["legal", "general", "mixed"].includes(normalized) ? normalized : "general";
@@ -891,6 +930,7 @@ class LawChatbotSuggestedQuestionModel {
 
     similarity += computeQuantifierQueryBoost(normalizedQuestion, row);
     similarity += computeDutyPhraseBoost(normalizedQuestion, row);
+    similarity += computeTopicPhraseAnchorBoost(normalizedQuestion, row);
 
     return {
       similarity,
@@ -1004,6 +1044,7 @@ class LawChatbotSuggestedQuestionModel {
     const { normalizedTarget: resolvedTarget, lookupTargets } =
       getSuggestedQuestionLookupTargets(normalizedTarget);
     const draftBylawClauseQuery = parseDraftBylawClauseQuery(normalizedQuestion);
+    const anchoredTopicQuery = parseAnchoredTopicQuery(normalizedQuestion);
     const searchTerms = uniqueTokens(segmentWords(normalizedQuestion)).slice(0, 8);
     const whereClause = searchTerms.length
       ? searchTerms
@@ -1026,6 +1067,15 @@ class LawChatbotSuggestedQuestionModel {
     const clausePriorityParams = draftBylawClauseQuery
       ? [draftBylawClauseQuery.clauseLike, draftBylawClauseQuery.clauseCompactLike]
       : [];
+    const topicPrioritySql = anchoredTopicQuery
+      ? `CASE
+           WHEN LOWER(COALESCE(normalized_question, '')) LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ? THEN 0
+           ELSE 1
+         END, `
+      : "";
+    const topicPriorityParams = anchoredTopicQuery
+      ? [anchoredTopicQuery.topicLike, anchoredTopicQuery.topicLike]
+      : [];
     const [rows] =
       resolvedTarget === "all"
         ? await pool.query(
@@ -1033,9 +1083,9 @@ class LawChatbotSuggestedQuestionModel {
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND (${whereClause})
-              ORDER BY ${clausePrioritySql}display_order ASC, id DESC
+              ORDER BY ${clausePrioritySql}${topicPrioritySql}display_order ASC, id DESC
               LIMIT 80`,
-            [...whereParams, ...clausePriorityParams],
+            [...whereParams, ...clausePriorityParams, ...topicPriorityParams],
           )
         : await pool.query(
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
@@ -1043,7 +1093,7 @@ class LawChatbotSuggestedQuestionModel {
               WHERE is_active = 1
                 AND target IN (${lookupTargets.map(() => "?").join(", ")})
                 AND (${whereClause})
-              ORDER BY ${clausePrioritySql}CASE
+              ORDER BY ${clausePrioritySql}${topicPrioritySql}CASE
                          WHEN target = ? THEN 0
                          WHEN target = 'general' THEN 1
                          WHEN target = 'all' THEN 2
@@ -1054,6 +1104,7 @@ class LawChatbotSuggestedQuestionModel {
               ...lookupTargets,
               ...whereParams,
               ...clausePriorityParams,
+              ...topicPriorityParams,
               resolvedTarget,
             ],
           );
