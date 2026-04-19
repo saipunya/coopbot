@@ -115,6 +115,10 @@ const EXCLUSIVE_MEANING_RULES = [
     conflicts: ["สมาชิกสมทบ"],
   },
   {
+    primary: "สมาชิกสามัญ",
+    conflicts: ["สมาชิกสมทบ"],
+  },
+  {
     primary: "สมาชิกสมทบ",
     conflicts: ["สมาชิก"],
   },
@@ -560,7 +564,7 @@ const QUERY_TOPIC_RULES = [
   },
   {
     primary: "สมาชิก",
-    aliases: [],
+    aliases: ["สมาชิกสามัญ"],
     conflicts: ["สมาชิกสมทบ"],
     contextSignals: [
       "รับสมาชิก",

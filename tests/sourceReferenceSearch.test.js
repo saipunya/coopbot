@@ -209,6 +209,32 @@ test("managed suggested question prefers clause 6 shareholding anchor over manag
   assert.match(match?.questionText || "", /การถือหุ้น/);
 });
 
+test("managed suggested question treats สมาชิกสามัญ as สมาชิก without drifting to สมาชิกสมทบ", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "สิทธิของสมาชิก",
+    answerText: "สมาชิกมีสิทธิตามที่กฎหมายและข้อบังคับกำหนด",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 5 สมาชิก",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "สิทธิของสมาชิกสมทบ",
+    answerText: "สมาชิกสมทบไม่มีสิทธิออกเสียงและมีข้อจำกัดตามข้อบังคับ",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 7 สมาชิกสมทบ",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch("สิทธิของสมาชิกสามัญ", "all");
+
+  assert.ok(match, "expected ordinary member query to match the member entry");
+  assert.match(match?.sourceReference || "", /ข้อ 5/);
+  assert.doesNotMatch(match?.sourceReference || "", /สมาชิกสมทบ/);
+});
+
 test("approved FAQ-style knowledge suggestions are searchable by source reference", async () => {
   const LawChatbotKnowledgeSuggestionModel = loadFresh("../models/lawChatbotKnowledgeSuggestionModel");
 
