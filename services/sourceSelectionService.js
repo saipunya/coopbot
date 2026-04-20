@@ -1087,6 +1087,49 @@ function isCoopStructuredLawSearch(message) {
   return /สหกรณ์|พรบ\.?\s*สหกรณ์|พระราชบัญญัติสหกรณ์|กฎหมายสหกรณ์/.test(normalized);
 }
 
+function resolveSearchTarget(message = "", target = "all") {
+  const normalizedTarget = String(target || "all").trim().toLowerCase();
+  if (normalizedTarget === "group" || normalizedTarget === "coop") {
+    return normalizedTarget;
+  }
+
+  const mentionsGroupLaw = isGroupStructuredLawSearch(message);
+  const mentionsCoopLaw = isCoopStructuredLawSearch(message);
+
+  if (mentionsGroupLaw && !mentionsCoopLaw) {
+    return "group";
+  }
+
+  if (mentionsCoopLaw && !mentionsGroupLaw) {
+    return "coop";
+  }
+
+  return "all";
+}
+
+function buildStructuredLawQuota(primaryLawSource, secondaryLawSource, primaryCount, secondaryCount = 0) {
+  return {
+    tbl_laws:
+      primaryLawSource === "tbl_laws"
+        ? primaryCount
+        : secondaryLawSource === "tbl_laws"
+          ? secondaryCount
+          : 0,
+    tbl_glaws:
+      primaryLawSource === "tbl_glaws"
+        ? primaryCount
+        : secondaryLawSource === "tbl_glaws"
+          ? secondaryCount
+          : 0,
+  };
+}
+
+function buildStructuredLawSourceOrder(primaryLawSource, secondaryLawSource) {
+  return [primaryLawSource, secondaryLawSource].filter(
+    (sourceName, index, items) => Boolean(sourceName) && items.indexOf(sourceName) === index,
+  );
+}
+
 function getPreferredDissolutionLawNumberBonuses(message = "") {
   const mentionsGroupLaw = isGroupStructuredLawSearch(message);
   const mentionsCoopLaw = isCoopStructuredLawSearch(message);
@@ -1140,7 +1183,7 @@ function getPreferredLiquidationLawNumberBonuses(message = "") {
 }
 
 function hasExclusiveStructuredLawDomain(message = "", target = "all") {
-  const normalizedTarget = String(target || "all").trim().toLowerCase();
+  const normalizedTarget = resolveSearchTarget(message, target);
   if (normalizedTarget === "group" || normalizedTarget === "coop") {
     return true;
   }
@@ -1164,16 +1207,9 @@ function isFreePlanSearch(planCode = "") {
 }
 
 function resolvePreferredStructuredLawSources(message, target = "all") {
-  const normalizedMessage = normalizeForSearch(message).toLowerCase();
-  const normalizedTarget = String(target || "all").trim().toLowerCase();
-  const mentionsGroupLaw = /กลุ่มเกษตรกร|พรบ\.?\s*กลุ่มเกษตรกร|พระราชกฤษฎีกากลุ่มเกษตรกร|กฎหมายกลุ่มเกษตรกร/.test(
-    normalizedMessage,
-  );
-  const mentionsCoopLaw = /สหกรณ์|พรบ\.?\s*สหกรณ์|พระราชบัญญัติสหกรณ์|กฎหมายสหกรณ์/.test(
-    normalizedMessage,
-  );
+  const normalizedTarget = resolveSearchTarget(message, target);
 
-  if (normalizedTarget === "group" || (mentionsGroupLaw && !mentionsCoopLaw)) {
+  if (normalizedTarget === "group") {
     return {
       primaryLawSource: "tbl_glaws",
       secondaryLawSource: "tbl_laws",
@@ -1193,8 +1229,7 @@ function getFreeSourcePriorityPlan(message, target = "all") {
       admin_knowledge: 12,
       knowledge_suggestion: 11,
       vinichai: 10,
-      tbl_laws: 9,
-      tbl_glaws: 8,
+      ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 9, 8),
       documents: 2,
       pdf_chunks: 1,
       knowledge_base: 1,
@@ -1203,8 +1238,7 @@ function getFreeSourcePriorityPlan(message, target = "all") {
 
   if (isLawPrioritySearch(message)) {
     return {
-      tbl_laws: 12,
-      tbl_glaws: 11,
+      ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 12, 11),
       admin_knowledge: 10,
       knowledge_suggestion: 9,
       vinichai: 8,
@@ -1244,8 +1278,7 @@ function getFreeSourcePriorityPlan(message, target = "all") {
     admin_knowledge: 10,
     knowledge_suggestion: 9,
     vinichai: 8,
-    tbl_laws: 7,
-    tbl_glaws: 6,
+    ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 7, 6),
     documents: 3,
     pdf_chunks: 1,
     knowledge_base: 1,
@@ -1386,12 +1419,15 @@ function getSourceRoutingPlan(intent) {
 async function searchDatabaseSources(message, target, options = {}) {
   const retrievalMessage = String(message || "").trim();
   const focusMessage = String(options.originalMessage || retrievalMessage).trim();
+  const effectiveTarget = resolveSearchTarget(focusMessage || retrievalMessage, target);
   const intent = classifyQuestionIntent(retrievalMessage || focusMessage);
   const routingPlan = getSourceRoutingPlan(intent);
   const generalOverviewQuery = isGeneralOverviewQuery(retrievalMessage || focusMessage);
   const legalIntent = hasLegalIntent(retrievalMessage || focusMessage);
   const freePlanSearch = isFreePlanSearch(options.planCode);
-  const freeSourcePriorityPlan = freePlanSearch ? getFreeSourcePriorityPlan(retrievalMessage || focusMessage, target) : null;
+  const freeSourcePriorityPlan = freePlanSearch
+    ? getFreeSourcePriorityPlan(retrievalMessage || focusMessage, effectiveTarget)
+    : null;
   const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
   const lawPrioritySearch = isLawPrioritySearch(retrievalMessage || focusMessage);
   const prioritizeStructuredLawSearch =
@@ -1411,14 +1447,14 @@ async function searchDatabaseSources(message, target, options = {}) {
     rawStructuredMatches,
     rawVinichaiMatches,
   ] = await Promise.all([
-    LawChatbotKnowledgeModel.searchKnowledge(retrievalMessage, target, 5),
-    LawChatbotKnowledgeSuggestionModel.searchApproved(retrievalMessage, target, 5),
+    LawChatbotKnowledgeModel.searchKnowledge(retrievalMessage, effectiveTarget, 5),
+    LawChatbotKnowledgeSuggestionModel.searchApproved(retrievalMessage, effectiveTarget, 5),
     LawChatbotPdfChunkModel.searchDocuments(retrievalMessage, 5),
     withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(retrievalMessage, 6), hybridTimeoutMs, [], "hybrid-search"),
-    Promise.resolve(LawChatbotModel.searchKnowledge(retrievalMessage, target)),
+    Promise.resolve(LawChatbotModel.searchKnowledge(retrievalMessage, effectiveTarget)),
     shouldSkipLawSourcesForOverview
       ? Promise.resolve([])
-      : LawSearchModel.searchStructuredLaws(retrievalMessage, target, 6),
+      : LawSearchModel.searchStructuredLaws(retrievalMessage, effectiveTarget, 6),
     shouldSkipLawSourcesForOverview
       ? Promise.resolve([])
       : LawSearchModel.searchVinichai(retrievalMessage, 5),
@@ -1491,7 +1527,7 @@ async function searchDatabaseSources(message, target, options = {}) {
 
   return rerankRetrievedMatches(pruneFocusedQueryMatches(combinedMatches, focusMessage), focusMessage, {
     intent,
-    target,
+    target: effectiveTarget,
   });
 }
 
@@ -2630,8 +2666,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
       quotas: {
         admin_knowledge: 2,
         knowledge_suggestion: 1,
-        tbl_laws: 4,
-        tbl_glaws: 3,
+        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 4, 3),
         pdf_chunks: 0,
         tbl_vinichai: 1,
         documents: 0,
@@ -2659,8 +2694,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
       quotas: {
         admin_knowledge: 3,
         knowledge_suggestion: 1,
-        tbl_laws: 2,
-        tbl_glaws: 1,
+        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 2, 1),
         pdf_chunks: 0,
         tbl_vinichai: 0,  // ตัด tbl_vinichai ออกจาก short_answer
         documents: 0,
@@ -2673,8 +2707,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
       quotas: {
         admin_knowledge: freePlan ? 3 : 2,
         knowledge_suggestion: 1,
-        tbl_laws: 2,
-        tbl_glaws: 1,
+        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 2, 1),
         pdf_chunks: 1,
         tbl_vinichai: 1,
         documents: freePlan ? 1 : 2,
@@ -2688,8 +2721,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
         quotas: {
           admin_knowledge: 0,
           knowledge_suggestion: 0,
-          tbl_laws: compensationProfile.asksBonus ? 1 : 0,
-          tbl_glaws: 0,
+          ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, compensationProfile.asksBonus ? 1 : 0, 0),
           pdf_chunks: 0,
           tbl_vinichai: 1,
           documents: 0,
@@ -2702,8 +2734,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
       quotas: {
         admin_knowledge: 3,
         knowledge_suggestion: 2,
-        tbl_laws: vinichaiPrioritySearch ? 1 : 1,
-        tbl_glaws: 0,
+        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 1, 0),
         pdf_chunks: 0,
         tbl_vinichai: vinichaiPrioritySearch ? 2 : 1,
         documents: 0,
@@ -2716,8 +2747,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
       quotas: {
         admin_knowledge: freePlan ? 3 : 3,
         knowledge_suggestion: freePlan ? 2 : 2,
-        tbl_laws: freePlan ? 3 : 3,
-        tbl_glaws: freePlan ? 2 : 2,
+        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, freePlan ? 3 : 3, freePlan ? 2 : 2),
         pdf_chunks: freePlan ? 1 : 1,
         tbl_vinichai: freePlan ? 2 : 1,
         documents: freePlan ? 2 : 1,
@@ -2745,8 +2775,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
       quotas: {
         admin_knowledge: 3,
         knowledge_suggestion: 1,
-        tbl_laws: freePlan ? 2 : 3,
-        tbl_glaws: 1,
+        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, freePlan ? 2 : 3, 1),
         pdf_chunks: 0,
         tbl_vinichai: freePlan ? 2 : 1,
         documents: 0,
@@ -2764,6 +2793,7 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
     options.originalMessage || options.message || "",
     options.target || "all",
   );
+  const structuredLawOrder = buildStructuredLawSourceOrder(primaryLawSource, secondaryLawSource);
 
   const focusMessage = options.originalMessage || options.message || "";
   const overviewQuery = isGeneralOverviewQuery(focusMessage);
@@ -2787,8 +2817,7 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
 
   if (intent === "law_section") {
     return [
-      "tbl_laws",
-      "tbl_glaws",
+      ...structuredLawOrder,
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
@@ -2803,8 +2832,7 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      "tbl_laws",
-      "tbl_glaws",
+      ...structuredLawOrder,
       "pdf_chunks",
       "documents",
       "knowledge_base",
@@ -2828,8 +2856,7 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      "tbl_laws",
-      "tbl_glaws",
+      ...structuredLawOrder,
       "pdf_chunks",
       "documents",
       "knowledge_base",
@@ -2841,8 +2868,7 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      "tbl_laws",
-      "tbl_glaws",
+      ...structuredLawOrder,
       "pdf_chunks",
       "documents",
       "knowledge_base",
@@ -2854,8 +2880,7 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      "tbl_laws",
-      "tbl_glaws",
+      ...structuredLawOrder,
       "pdf_chunks",
       "documents",
       "knowledge_base",
@@ -2870,8 +2895,7 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
       "knowledge_suggestion",
       "knowledge_base",
       "tbl_vinichai",
-      "tbl_laws",
-      "tbl_glaws",
+      ...structuredLawOrder,
     ];
   }
 
@@ -2879,8 +2903,7 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
     "admin_knowledge",
     "knowledge_suggestion",
     "tbl_vinichai",
-    "tbl_laws",
-    "tbl_glaws",
+    ...structuredLawOrder,
     "pdf_chunks",
     "documents",
     "knowledge_base",
@@ -3214,6 +3237,7 @@ module.exports = {
   isLowConfidenceDatabaseResult,
   isSimpleQuestion,
   pruneFocusedQueryMatches,
+  resolveSearchTarget,
   scoreMatchSet,
   searchDatabaseSources,
   selectDatabaseOnlySources,

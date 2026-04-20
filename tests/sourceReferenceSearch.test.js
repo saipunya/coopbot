@@ -235,6 +235,65 @@ test("managed suggested question prefers clause 6 shareholding anchor over manag
   assert.match(match?.questionText || "", /การถือหุ้น/);
 });
 
+test("managed suggested question prioritizes group entries when the query mentions กลุ่มเกษตรกร", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การถือหุ้นของสมาชิก",
+    answerText: "ข้อ 6 การถือหุ้นของสหกรณ์",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 6 การถือหุ้น",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "group",
+    questionText: "การถือหุ้นของสมาชิก",
+    answerText: "ข้อ 6 การถือหุ้นของกลุ่มเกษตรกร",
+    sourceReference: "ร่างข้อบังคับกลุ่มเกษตรกร ข้อ 6 การถือหุ้น",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(
+    "การถือหุ้นของสมาชิกกลุ่มเกษตรกร",
+    "all",
+  );
+
+  assert.ok(match, "expected a group-target suggested-question match");
+  assert.equal(match?.target, "group");
+  assert.match(match?.sourceReference || "", /ร่างข้อบังคับกลุ่มเกษตรกร/);
+});
+
+test("managed suggested question recognizes member shareholding queries for กลุ่มเกษตรกร", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "group",
+    questionText: "การถือหุ้นของกลุ่มเกษตรกร",
+    answerText: "ข้อ 6 การถือหุ้น สมาชิกกลุ่มเกษตรกรต้องถือหุ้นตามที่ข้อบังคับกำหนด",
+    sourceReference: "ร่างข้อบังคับกลุ่มเกษตรกร ข้อ 6 การถือหุ้น",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "group",
+    questionText: "อำนาจหน้าที่ผู้จัดการกลุ่มเกษตรกร",
+    answerText: "ผู้จัดการมีหน้าที่ดูแลการเก็บค่าหุ้นและทะเบียนหุ้นของกลุ่มเกษตรกร",
+    sourceReference: "ร่างข้อบังคับกลุ่มเกษตรกร ข้อ 90 อำนาจหน้าที่ผู้จัดการ",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(
+    "การถือหุ้นของสมาชิกกลุ่มเกษตรกร",
+    "all",
+  );
+
+  assert.ok(match, "expected a group shareholding match");
+  assert.equal(match?.target, "group");
+  assert.match(match?.sourceReference || "", /ข้อ 6/);
+  assert.match(match?.questionText || "", /การถือหุ้น/);
+});
+
 test("managed suggested question treats สมาชิกสามัญ as สมาชิก without drifting to สมาชิกสมทบ", async () => {
   const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
 

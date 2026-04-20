@@ -90,6 +90,31 @@ function normalizeQuestionText(value) {
   return normalizeForSearch(String(value || "")).toLowerCase();
 }
 
+function inferSuggestedQuestionTarget(question = "", requestedTarget = "all") {
+  const normalizedRequestedTarget = normalizeSuggestedQuestionTarget(requestedTarget);
+  if (normalizedRequestedTarget === "group" || normalizedRequestedTarget === "coop") {
+    return normalizedRequestedTarget;
+  }
+
+  const normalizedQuestion = normalizeQuestionText(question);
+  if (!normalizedQuestion) {
+    return normalizedRequestedTarget;
+  }
+
+  const mentionsGroup = /กลุ่มเกษตรกร|พรฎ|พระราชกฤษฎีกา/.test(normalizedQuestion);
+  const mentionsCoop = /สหกรณ์|พรบ|พระราชบัญญัติ/.test(normalizedQuestion);
+
+  if (mentionsGroup) {
+    return "group";
+  }
+
+  if (mentionsCoop) {
+    return "coop";
+  }
+
+  return normalizedRequestedTarget;
+}
+
 function escapeLike(value) {
   return String(value || "").replace(/[\\%_]/g, "\\$&");
 }
@@ -333,7 +358,10 @@ function computeRegistrarOrderBoost(normalizedQuestion, row = {}) {
 
 function computeMemberShareholdingBoost(normalizedQuestion, row = {}) {
   const queryText = normalizeQuestionText(normalizedQuestion);
-  if (!queryText.includes("ถือหุ้น") || !queryText.includes("สมาชิกสหกรณ์")) {
+  const mentionsMemberShareholding =
+    queryText.includes("ถือหุ้น") &&
+    (queryText.includes("สมาชิกสหกรณ์") || queryText.includes("สมาชิกกลุ่มเกษตรกร"));
+  if (!mentionsMemberShareholding) {
     return 0;
   }
 
@@ -394,7 +422,10 @@ function parseRegistrarOrderQuery(normalizedQuestion = "") {
 
 function parseMemberShareholdingQuery(normalizedQuestion = "") {
   const text = normalizeQuestionText(normalizedQuestion);
-  if (!text.includes("ถือหุ้น") || !text.includes("สมาชิกสหกรณ์")) {
+  const mentionsMemberShareholding =
+    text.includes("ถือหุ้น") &&
+    (text.includes("สมาชิกสหกรณ์") || text.includes("สมาชิกกลุ่มเกษตรกร"));
+  if (!mentionsMemberShareholding) {
     return null;
   }
 
@@ -973,7 +1004,8 @@ class LawChatbotSuggestedQuestionModel {
       return null;
     }
 
-    const { normalizedTarget, lookupTargets } = getSuggestedQuestionLookupTargets(target);
+    const inferredTarget = inferSuggestedQuestionTarget(question, target);
+    const { normalizedTarget, lookupTargets } = getSuggestedQuestionLookupTargets(inferredTarget);
     const pool = getDbPool();
 
     const sortMatches = (items) =>

@@ -150,14 +150,16 @@ function resolvePreferredStructuredLawSources(options = {}) {
 
 function getDatabaseOnlySourceOrder(options = {}) {
   const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(options);
+  const structuredLawOrder = [primaryLawSource, secondaryLawSource].filter(
+    (sourceName, index, items) => Boolean(sourceName) && items.indexOf(sourceName) === index,
+  );
   if (options.questionIntent === "qa") {
     return [
       "managed_suggested_question",
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      "tbl_laws",
-      "tbl_glaws",
+      ...structuredLawOrder,
       "pdf_chunks",
       "documents",
       "knowledge_base",
@@ -169,8 +171,7 @@ function getDatabaseOnlySourceOrder(options = {}) {
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      "tbl_laws",
-      "tbl_glaws",
+      ...structuredLawOrder,
       "pdf_chunks",
       "documents",
       "knowledge_base",
@@ -179,8 +180,7 @@ function getDatabaseOnlySourceOrder(options = {}) {
 
   if (isFreePlanDisplay(options) && isLawPriorityQuestion(options.originalMessage || options.message || "")) {
     return [
-      "tbl_laws",
-      "tbl_glaws",
+      ...structuredLawOrder,
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
@@ -221,8 +221,7 @@ function getDatabaseOnlySourceOrder(options = {}) {
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      "tbl_laws",
-      "tbl_glaws",
+      ...structuredLawOrder,
       "pdf_chunks",
       "documents",
       "knowledge_base",
@@ -233,8 +232,7 @@ function getDatabaseOnlySourceOrder(options = {}) {
     "admin_knowledge",
     "knowledge_suggestion",
     "tbl_vinichai",
-    "tbl_laws",
-    "tbl_glaws",
+    ...structuredLawOrder,
     "pdf_chunks",
     "documents",
     "knowledge_base",

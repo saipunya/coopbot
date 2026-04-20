@@ -83,6 +83,7 @@ const {
 const { isTimeFollowUpQuestion, normalizeForSearch } = require("./thaiTextUtils");
 const {
   classifyQuestionIntent,
+  resolveSearchTarget,
   selectTieredSources,
 } = require("./sourceSelectionService");
 const { evaluateRetrievalResult } = require("./retrievalEvaluationService");
@@ -785,7 +786,7 @@ async function buildDbOnlyMainChatAnswer(message, target, sources, options = {})
 async function replyToDbOnlyMainChat(payload, session) {
   const startedAt = nowMs();
   const requestedMessage = String(payload.message || "").trim();
-  const target =
+  const requestedTarget =
     payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
   const continueFromPrevious =
     payload.continueFromPrevious === true || payload.continueFromPrevious === "true";
@@ -804,7 +805,7 @@ async function replyToDbOnlyMainChat(payload, session) {
     try {
       const resolvedContinuation = resolveContinuationState({
         continuationToken,
-        target,
+        target: requestedTarget,
         sessionState: getSessionContinuationState(session),
       });
       continuationState = resolvedContinuation.state;
@@ -830,6 +831,7 @@ async function replyToDbOnlyMainChat(payload, session) {
   if (!message) {
     return buildDbOnlyMainChatErrorResult("กรุณาระบุคำถามหรือประเด็นที่ต้องการสอบถามก่อนส่งข้อความ");
   }
+  const target = resolveSearchTarget(message, requestedTarget);
 
   if (!continueFromPrevious) {
     const managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(message, target);
@@ -1182,7 +1184,10 @@ async function summarizeChat(payload, session) {
   const monthlyUsage = await getMonthlyUsageSafe(userId, usageMonth);
 
   const target =
-    payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
+    resolveSearchTarget(
+      message,
+      payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all",
+    );
   const searchPlan = await resolveSearchPlan(message, target, session, {
     planCode: basePlanContext.code,
   });

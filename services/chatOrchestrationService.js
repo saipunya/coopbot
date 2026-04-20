@@ -16,6 +16,7 @@ const {
   computeDbConfidence,
   isClearlyCurrentOrExternalQuestion,
   isLowConfidenceDatabaseResult,
+  resolveSearchTarget,
   isSimpleQuestion,
   scoreMatchSet,
   searchDatabaseSources,
@@ -301,6 +302,7 @@ async function resolveThreeLayerChatResponse(message, target = "all", options = 
       sources: [],
     };
   }
+  const effectiveTarget = resolveSearchTarget(normalizedMessage, target);
 
   const seededLegalAnswer = findSeededLegalAnswer(normalizedMessage);
   if (seededLegalAnswer) {
@@ -317,7 +319,7 @@ async function resolveThreeLayerChatResponse(message, target = "all", options = 
     };
   }
 
-  const managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(normalizedMessage, target);
+  const managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(normalizedMessage, effectiveTarget);
   if (managedSuggestedQuestionMatch) {
     return {
       answerMode: "managed_answer",
@@ -482,8 +484,9 @@ function shouldSearchInternetForPlan(planCode, message, matches, questionIntent 
 
 async function resolveSearchPlan(message, target, session, options = {}) {
   const baseMessage = String(message || "").trim();
+  const effectiveTarget = resolveSearchTarget(baseMessage, target);
   const followUpProfile = getFollowUpResolutionProfile(options.planCode || "free");
-  const contextualCandidate = resolveMessageWithContext(baseMessage, target, session);
+  const contextualCandidate = resolveMessageWithContext(baseMessage, effectiveTarget, session);
   const baseTopicHints = extractExplicitTopicHints(baseMessage);
   const implicitFollowUpQuestion =
     contextualCandidate.usedContext &&
@@ -507,13 +510,13 @@ async function resolveSearchPlan(message, target, session, options = {}) {
     );
   const { ambiguousFollowUp, candidates } = await buildQueryRewriteCandidates(
     baseMessage,
-    target,
+    effectiveTarget,
     session,
     contextualCandidate,
   );
   const candidateResults = await Promise.all(
     candidates.map(async (candidate) => {
-      const matches = await searchDatabaseSources(candidate.retrievalQuery || candidate.query, target, {
+      const matches = await searchDatabaseSources(candidate.retrievalQuery || candidate.query, effectiveTarget, {
         ...options,
         originalMessage: baseMessage,
       });
