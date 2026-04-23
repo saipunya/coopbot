@@ -1,8 +1,10 @@
 require("dotenv").config();
 
+const { execSync } = require("node:child_process");
 const express = require("express");
 const session = require("express-session");
 const path = require("path");
+const packageJson = require("./package.json");
 
 const { connectDb } = require("./config/db");
 const adminController = require("./controllers/adminController");
@@ -43,6 +45,43 @@ const sessionTtlMs = 1000 * 60 * 60 * 8;
 const sessionStore = createSessionStore({
   defaultTtlMs: sessionTtlMs,
 });
+const runtimeStartedAt = new Date();
+
+function resolveGitCommit() {
+  const fromEnv = String(process.env.APP_GIT_SHA || process.env.GIT_COMMIT || "").trim();
+  if (fromEnv) {
+    return fromEnv.slice(0, 40);
+  }
+
+  try {
+    return execSync("git rev-parse --short=12 HEAD", {
+      cwd: __dirname,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+  } catch (_error) {
+    return "unknown";
+  }
+}
+
+const runtimeGitCommit = resolveGitCommit();
+const runtimeAppVersion = String(process.env.APP_VERSION || packageJson.version || "0.0.0").trim();
+const runtimeBuildTag = String(process.env.APP_BUILD_TAG || "").trim();
+
+function buildRuntimeVersionPayload() {
+  return {
+    ok: true,
+    app: String(packageJson.name || "coopbot"),
+    version: runtimeAppVersion,
+    buildTag: runtimeBuildTag || null,
+    gitCommit: runtimeGitCommit,
+    node: process.version,
+    env: process.env.NODE_ENV || "development",
+    pid: process.pid,
+    startedAt: runtimeStartedAt.toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+  };
+}
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -52,6 +91,11 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads/paymentRequests", express.static(path.join(__dirname, "uploads", "paymentRequests")));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use((req, res, next) => {
+  res.set("X-Coopbot-Version", runtimeAppVersion);
+  res.set("X-Coopbot-Commit", runtimeGitCommit);
+  next();
+});
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "change-this-session-secret",
@@ -77,6 +121,16 @@ app.get("/", (req, res) => {
 
 app.get("/auth/test", (req, res) => {
   res.send("AUTH TEST OK");
+});
+
+app.get("/version", (req, res) => {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+    "Surrogate-Control": "no-store",
+  });
+  res.json(buildRuntimeVersionPayload());
 });
 
 app.get("/google-callback-test", (req, res) => {
