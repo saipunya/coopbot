@@ -1089,12 +1089,24 @@ function isCoopStructuredLawSearch(message) {
 
 function resolveSearchTarget(message = "", target = "all") {
   const normalizedTarget = String(target || "all").trim().toLowerCase();
-  if (normalizedTarget === "group" || normalizedTarget === "coop") {
-    return normalizedTarget;
-  }
-
   const mentionsGroupLaw = isGroupStructuredLawSearch(message);
   const mentionsCoopLaw = isCoopStructuredLawSearch(message);
+
+  // Respect explicit target by default, but allow the message itself
+  // to override when it clearly points to the opposite law family.
+  if (normalizedTarget === "coop") {
+    if (mentionsGroupLaw && !mentionsCoopLaw) {
+      return "group";
+    }
+    return "coop";
+  }
+
+  if (normalizedTarget === "group") {
+    if (mentionsCoopLaw && !mentionsGroupLaw) {
+      return "coop";
+    }
+    return "group";
+  }
 
   if (mentionsGroupLaw && !mentionsCoopLaw) {
     return "group";
