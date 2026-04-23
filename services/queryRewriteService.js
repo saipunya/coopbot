@@ -8,6 +8,7 @@ const {
   segmentWords,
   uniqueTokens,
 } = require("./thaiTextUtils");
+const { normalizeThaiNumberSearchText } = require("./thaiNumberNormalizer");
 
 const QUERY_REWRITE_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_QUERY_REWRITE_TIMEOUT_MS || 3500);
 const QUERY_REWRITE_AI_ENABLED = String(process.env.LAW_CHATBOT_QUERY_REWRITE_AI_ENABLED || "1") !== "0";
@@ -54,17 +55,17 @@ function stripFollowUpLeadText(message) {
 }
 
 function extractLawReferenceTokens(text) {
-  const normalizedMessage = normalizeForSearch(String(text || "")).toLowerCase();
+  const normalizedMessage = normalizeThaiNumberSearchText(String(text || "")).toLowerCase();
   if (!normalizedMessage) {
     return [];
   }
 
   const references = [];
-  const matcher = /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]+(?:\/[0-9]+)?)/g;
+  const matcher = /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]+(?:\s*\/\s*[0-9]+)?)/g;
   let match = matcher.exec(normalizedMessage);
   while (match) {
     if (match[1]) {
-      references.push(match[1]);
+      references.push(match[1].replace(/\s*\/\s*/g, "/"));
     }
     match = matcher.exec(normalizedMessage);
   }
@@ -244,8 +245,24 @@ function getGroupBylawRewriteBoost(message) {
   };
 }
 
+function hasDividedLawReference(message = "") {
+  return /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*[0-9๐-๙]{1,4}\s*\/\s*[0-9๐-๙]{1,3}/i.test(String(message || ""));
+}
+
 function buildHeuristicQueryRewrite(message, context = {}) {
   const baseMessage = normalizeRewriteQuery(message);
+  if (hasDividedLawReference(baseMessage)) {
+    return {
+      effectiveQuery: baseMessage,
+      retrievalQuery: baseMessage,
+      expandedKeywords: [],
+      legalAliases: [],
+      method: "heuristic",
+      reason: context.reason || "preserve explicit divided law reference",
+      fallbackReason: "",
+    };
+  }
+
   const expandedQueryText = normalizeRewriteQuery(expandSearchConcepts(baseMessage)) || baseMessage;
   const focusProfile = getQueryFocusProfile(expandedQueryText);
   const groupBylawBoost = getGroupBylawRewriteBoost(expandedQueryText);

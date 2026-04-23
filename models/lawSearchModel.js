@@ -33,12 +33,12 @@ const GENERIC_QUERY_TOKENS = new Set([
 
 function extractLawNumber(text) {
   const normalized = normalizeThaiNumberSearchText(String(text || ""));
-  const match = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*([0-9]{1,4}(?:\/[0-9]{1,3})?)/);
+  const match = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*([0-9]{1,4}(?:\s*\/\s*[0-9]{1,3})?)/);
   if (!match?.[1]) {
     return null;
   }
 
-  const parts = String(match[1]).split("/");
+  const parts = String(match[1]).split("/").map((part) => part.trim());
   const primary = String(Number(parts[0] || 0));
   if (!primary || primary === "0") {
     return null;
@@ -67,6 +67,16 @@ function hasExactLawNumberText(text, lawNumber) {
     `(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\\s*${escapeRegExp(normalizedLawNumber)}(?![0-9/])`,
     "i",
   ).test(normalizedText);
+}
+
+function rowMatchesLawNumber(row = {}, queryLawNumber = "") {
+  const normalizedQueryLawNumber = extractLawNumber(queryLawNumber);
+  if (!normalizedQueryLawNumber) {
+    return false;
+  }
+
+  return [row.law_number, row.reference, row.title, row.law_part]
+    .some((candidate) => extractLawNumber(candidate) === normalizedQueryLawNumber);
 }
 
 function detectLawScope(text) {
@@ -160,8 +170,8 @@ function buildLawNumberPatterns(number) {
 }
 
 function isDirectLawNumberQuery(text) {
-  const normalized = normalizeForSearch(text).toLowerCase();
-  return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+(?:\/\d+)?(?:\s|$)/.test(normalized);
+  const normalized = normalizeThaiNumberSearchText(String(text || "")).toLowerCase().replace(/\s+/g, " ").trim();
+  return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+(?:\s*\/\s*\d+)?(?:\s|$)/.test(normalized);
 }
 
 function getFocusedIntentTerms(intent = "general") {
@@ -839,7 +849,11 @@ class LawSearchModel {
       })
       .sort((a, b) => b.score - a.score);
 
-    if (focusedResults.length > 0 && getQueryFocusProfile(message).intent !== "general") {
+    if (
+      focusedResults.length > 0 &&
+      getQueryFocusProfile(message).intent !== "general" &&
+      !(queryLawNumber && isDirectLawNumberQuery(message))
+    ) {
       return focusedResults.slice(0, limit);
     }
 
@@ -859,7 +873,7 @@ class LawSearchModel {
           comment: row.law_comment || "",
           score: 999,
         }))
-        .filter((row) => extractLawNumber(row.reference || row.title || "") === queryLawNumber);
+        .filter((row) => rowMatchesLawNumber(row, queryLawNumber));
 
       if (exactRanked.length > 0) {
         return exactRanked.slice(0, limit);
@@ -952,10 +966,10 @@ class LawSearchModel {
 
     if (queryLawNumber && isDirectLawNumberQuery(message)) {
       const exactLawMatches = rankedResults.filter(
-        (row) => extractLawNumber(row.reference || row.title || "") === queryLawNumber,
+        (row) => rowMatchesLawNumber(row, queryLawNumber),
       );
 
-      if (exactLawMatches.length > 0) {
+      if (exactLawMatches.length > 0 || queryLawNumber.includes("/")) {
         return exactLawMatches.slice(0, limit);
       }
     }

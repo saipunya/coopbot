@@ -1342,28 +1342,6 @@
       max-width: 100%;
     }
 
-    .bot-answer-actions-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.65rem;
-      flex-wrap: wrap;
-    }
-
-    .bot-reference-action-slot {
-      min-width: 0;
-      flex: 0 1 auto;
-    }
-
-    .bot-answer-actions-row .feedback-actions {
-      width: auto;
-      flex: 0 0 auto;
-      align-self: center;
-      justify-content: flex-end;
-      margin-top: 0;
-      margin-left: auto;
-    }
-
     .bot-reference-collapse-panel {
       border: 1px solid rgba(47, 127, 184, 0.12);
       border-radius: 8px;
@@ -1740,12 +1718,6 @@
       align-self: stretch;
       margin-top: 0.55rem;
       margin-left: 0;
-    }
-
-    .bubble-bot .bubble-content .bot-answer-actions-row .feedback-actions {
-      align-self: center;
-      margin-top: 0;
-      margin-left: auto;
     }
 
     .bot-continuation-actions {
@@ -2448,948 +2420,6 @@
       }
     }
 
-    /* Cooperative legal search UI refresh */
-    body {
-      background:
-        radial-gradient(circle at 18% 12%, rgba(77, 137, 201, 0.18), transparent 28%),
-        radial-gradient(circle at 84% 8%, rgba(24, 75, 132, 0.15), transparent 30%),
-        linear-gradient(180deg, #eef5fc 0%, #f9fbfe 46%, #eef5fb 100%);
-    }
-
-    .lawbot-app {
-      max-width: none;
-      padding: 0;
-      gap: 0.62rem;
-      min-height: 100dvh;
-    }
-
-    .floating-controls {
-      display: none;
-    }
-
-    .page-header {
-      width: 100%;
-      --header-icon-size: 2.82rem;
-      --header-icon-radius: 999px;
-      --header-icon-font-size: 1rem;
-      border: 0;
-      border-radius: 0;
-      padding: 0.58rem clamp(0.82rem, 2.2vw, 1.45rem);
-      color: #fff;
-      background:
-        linear-gradient(135deg, rgba(59, 122, 190, 0.98), rgba(74, 137, 199, 0.98)),
-        radial-gradient(circle at 8% 8%, rgba(255, 255, 255, 0.22), transparent 28%);
-      box-shadow: 0 12px 30px rgba(26, 72, 124, 0.18);
-      grid-template-columns: minmax(230px, 0.92fr) minmax(330px, 1.16fr) auto;
-      align-items: center;
-      gap: clamp(0.62rem, 1.4vw, 1.05rem);
-      overflow: visible;
-      position: relative;
-      z-index: 180;
-    }
-
-    .page-header::before {
-      background:
-        radial-gradient(circle at 16% 50%, rgba(255, 255, 255, 0.16), transparent 20%),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.06), transparent 48%);
-      pointer-events: none;
-    }
-
-    .brand-icon {
-      background: rgba(255, 255, 255, 0.12);
-      border: 2px solid rgba(255, 255, 255, 0.82);
-      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18), 0 10px 18px rgba(9, 44, 91, 0.16);
-      overflow: hidden;
-    }
-
-    .brand-icon img {
-      width: 78%;
-      height: 78%;
-      object-fit: contain;
-      filter: brightness(0) invert(1);
-      opacity: 0.96;
-    }
-
-    .page-brand {
-      min-width: 0;
-      gap: 0.72rem;
-    }
-
-    .brand-heading {
-      gap: 0.5rem;
-    }
-
-    .brand-title h6 {
-      color: #fff;
-      font-size: clamp(0.9rem, 1.25vw, 1.08rem);
-      letter-spacing: 0.01em;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .brand-title p {
-      display: block;
-      margin: 0.08rem 0 0;
-      color: rgba(255, 255, 255, 0.82);
-      font-size: 0.76rem;
-    }
-
-    #onlineBadge.status-chip {
-      color: #fff;
-      background: rgba(255, 255, 255, 0.14);
-      border-color: rgba(255, 255, 255, 0.34);
-      padding: 0.42rem 0.7rem;
-      font-size: 0.76rem;
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-    }
-
-    #onlineBadge i {
-      color: #48d37a;
-      filter: drop-shadow(0 0 5px rgba(72, 211, 122, 0.56));
-    }
-
-    .page-toolbar {
-      gap: 0.58rem;
-      overflow: visible;
-      z-index: 190;
-    }
-
-    .page-identity {
-      min-width: min(246px, 28vw);
-      padding: 0.34rem 0.45rem;
-      border-radius: 0.88rem;
-      color: #fff;
-      background: rgba(255, 255, 255, 0.13);
-      border-color: rgba(255, 255, 255, 0.36);
-      position: relative;
-      z-index: 200;
-    }
-
-    .page-identity-avatar {
-      background: rgba(255, 255, 255, 0.92);
-      color: #6f7d8c;
-      box-shadow: none;
-    }
-
-    .page-identity-name,
-    .page-identity-badge {
-      color: #fff;
-    }
-
-    .page-identity-badge {
-      background: rgba(255, 255, 255, 0.16);
-    }
-
-    .page-identity-action,
-    .page-actions .icon-chip-btn {
-      background: rgba(255, 255, 255, 0.12) !important;
-      border-color: rgba(255, 255, 255, 0.24) !important;
-      color: #fff !important;
-    }
-
-    .page-actions .icon-chip-btn {
-      width: 2.42rem;
-      height: 2.42rem;
-      border-radius: 0.72rem;
-      font-size: 0.98rem;
-    }
-
-    .page-toolbar-divider {
-      display: none;
-    }
-
-    .header-assistant {
-      min-width: 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.7rem;
-      padding: 0.34rem 0.48rem;
-      border-radius: 0.98rem;
-      border: 1px solid rgba(255, 255, 255, 0.26);
-      background: rgba(255, 255, 255, 0.12);
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-      backdrop-filter: blur(10px);
-    }
-
-    .header-assistant-brand {
-      min-width: 0;
-      display: flex;
-      align-items: center;
-      gap: 0.58rem;
-    }
-
-    .header-assistant-icon {
-      width: 2.54rem;
-      height: 2.54rem;
-      border-radius: 0.78rem;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(255, 255, 255, 0.92);
-      box-shadow: 0 8px 18px rgba(9, 44, 91, 0.16);
-      flex: 0 0 auto;
-    }
-
-    .header-assistant-icon img {
-      width: 1.92rem;
-      height: 1.92rem;
-      object-fit: contain;
-    }
-
-    .header-assistant-copy {
-      min-width: 0;
-      display: grid;
-      gap: 0.06rem;
-    }
-
-    .header-assistant-copy strong,
-    .header-assistant-copy span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .header-assistant-copy strong {
-      color: #fff;
-      font-size: 0.96rem;
-      font-weight: 800;
-      line-height: 1.15;
-    }
-
-    .header-assistant-copy span {
-      color: rgba(255, 255, 255, 0.8);
-      font-size: 0.74rem;
-      line-height: 1.2;
-    }
-
-    .header-assistant-actions {
-      display: inline-flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 0.42rem;
-      flex: 0 0 auto;
-    }
-
-    .header-action-btn {
-      width: 2.32rem;
-      height: 2.32rem;
-      border-radius: 0.72rem;
-      border: 1px solid rgba(255, 255, 255, 0.28);
-      background: rgba(255, 255, 255, 0.14);
-      color: #fff;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      text-decoration: none;
-      transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
-    }
-
-    .header-action-btn:hover,
-    .header-action-btn:focus-visible {
-      transform: translateY(-1px);
-      border-color: rgba(255, 255, 255, 0.48);
-      background: rgba(255, 255, 255, 0.22);
-      color: #fff;
-      outline: none;
-    }
-
-    .header-action-btn-danger {
-      color: #ffe8e8;
-      background: rgba(238, 68, 68, 0.2);
-    }
-
-    .lawbot-hero,
-    .chat-shell,
-    .quick-questions,
-    .legalbot-site-footer {
-      width: min(1180px, calc(100% - 2rem));
-    }
-
-    .lawbot-hero {
-      display: none;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 1rem;
-      align-items: center;
-      margin-top: 0.8rem;
-    }
-
-    .lawbot-hero-brand {
-      display: flex;
-      align-items: center;
-      gap: 0.9rem;
-      min-width: 0;
-    }
-
-    .lawbot-hero-icon {
-      width: 4.1rem;
-      height: 4.1rem;
-      border-radius: 1rem;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: linear-gradient(145deg, #4d85c7, #2f67ac);
-      color: #fff;
-      box-shadow: 0 14px 28px rgba(40, 91, 158, 0.24);
-      flex: 0 0 auto;
-    }
-
-    .lawbot-hero-icon img {
-      width: 2.85rem;
-      height: 2.85rem;
-      object-fit: contain;
-    }
-
-    .lawbot-hero h1 {
-      margin: 0;
-      color: #143f81;
-      font-size: clamp(1.18rem, 2vw, 1.45rem);
-      font-weight: 800;
-    }
-
-    .lawbot-hero p {
-      margin: 0.22rem 0 0;
-      color: #66758d;
-      font-size: 0.96rem;
-    }
-
-    .lawbot-hero-actions {
-      display: flex;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-
-    .lawbot-action-btn {
-      min-height: 3.08rem;
-      padding: 0.72rem 1.05rem;
-      border-radius: 0.88rem;
-      border: 1px solid rgba(178, 195, 218, 0.74);
-      background: rgba(255, 255, 255, 0.88);
-      color: #485a74;
-      box-shadow: 0 12px 24px rgba(35, 66, 108, 0.09);
-      display: inline-flex;
-      align-items: center;
-      gap: 0.55rem;
-      font-weight: 700;
-      text-decoration: none;
-      transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
-    }
-
-    .lawbot-action-btn:hover,
-    .lawbot-action-btn:focus-visible {
-      transform: translateY(-1px);
-      border-color: rgba(75, 133, 199, 0.46);
-      box-shadow: 0 16px 30px rgba(35, 66, 108, 0.13);
-      color: #214b85;
-      outline: none;
-    }
-
-    .lawbot-action-btn i {
-      color: #2f70bd;
-      font-size: 1.08rem;
-    }
-
-    .lawbot-action-btn-danger i {
-      color: #f04438;
-    }
-
-    .chat-shell {
-      border-radius: 1.1rem;
-      border: 1px solid rgba(198, 213, 232, 0.92);
-      background: rgba(255, 255, 255, 0.72);
-      box-shadow: none;
-      min-height: min(82dvh, 920px);
-      overflow: hidden;
-      position: relative;
-      z-index: 1;
-    }
-
-    .chat-messages {
-      min-height: calc(100dvh - 232px);
-      padding: 1.2rem 1.35rem;
-      gap: 1.05rem;
-      background:
-        radial-gradient(circle at 16% 22%, rgba(80, 139, 205, 0.08), transparent 26%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 250, 254, 0.98));
-    }
-
-    .chat-day-pill {
-      align-self: center;
-      padding: 0.52rem 1.35rem;
-      border-radius: 999px;
-      background: #eef4fd;
-      border: 1px solid #d5e2f5;
-      color: #27456f;
-      font-weight: 800;
-      box-shadow: 0 8px 18px rgba(31, 78, 139, 0.06);
-    }
-
-    .message-row {
-      gap: 0.9rem;
-    }
-
-    .message-avatar {
-      width: 3.7rem;
-      height: 3.7rem;
-      border: 6px solid #fff;
-      box-shadow: 0 10px 24px rgba(34, 63, 87, 0.14);
-    }
-
-    .message-avatar-bot .bot-avatar-icon {
-      font-size: 1.42rem;
-    }
-
-    .message-avatar-bot .bot-avatar-badge {
-      right: -0.32rem;
-      bottom: 0.02rem;
-      min-width: 1.58rem;
-      height: 1.25rem;
-      font-size: 0.58rem;
-    }
-
-    .message-avatar-user {
-      background: radial-gradient(circle at 50% 28%, #7fa7db 0 20%, #1b57a4 42%, #123d83 78%);
-      color: #fff;
-      overflow: hidden;
-    }
-
-    .message-avatar-user img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      object-position: center center;
-    }
-
-    .bubble {
-      border-radius: 1rem;
-      padding: 1.08rem 1.34rem;
-      max-width: min(78%, 820px);
-      box-shadow: 0 12px 28px rgba(35, 66, 108, 0.11);
-    }
-
-    .bubble-user {
-      background: linear-gradient(145deg, #477fc3, #336caf);
-      border: 0;
-      border-bottom-right-radius: 0.98rem;
-      color: #fff;
-      font-size: 1rem;
-    }
-
-    .bubble-bot {
-      border: 1px solid rgba(221, 229, 240, 0.98);
-      border-left: 0;
-      background: #fff;
-      border-bottom-left-radius: 0.98rem;
-    }
-
-    .bubble-bot .bubble-message {
-      line-height: 0.05;
-    }
-
-    .bubble-assistant-name {
-      margin-bottom: 0.64rem;
-      font-size: 0.96rem;
-      color: #174b8e;
-    }
-
-    .bot-answer-summary,
-    .answer-bullet-card-content {
-      color: #253653;
-      line-height: 1.72;
-      font-size: 0.97rem;
-    }
-
-    .answer-bullet-card {
-      border: 1px solid rgba(214, 226, 242, 0.92);
-      box-shadow: 0 8px 18px rgba(35, 66, 108, 0.06);
-      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-      padding: 0.72rem 0.88rem;
-      min-height: 0;
-      border-radius: 0.86rem 0.86rem 0.86rem 0.28rem;
-    }
-
-    .answer-bullet-card::before {
-      display: block;
-      width: 3px;
-      background: linear-gradient(180deg, rgba(69, 126, 195, 0.42), rgba(69, 126, 195, 0.12));
-    }
-
-    .answer-bullet-card::after {
-      display: none;
-      content: "";
-    }
-
-    .answer-bullet-card-content {
-      padding-left: 0;
-    }
-
-    .bot-answer-section-title {
-      color: #154b8d;
-      background: transparent;
-      padding: 0;
-      border-radius: 0;
-      font-size: 1.02rem;
-    }
-
-    .bot-reference-collapse-panel {
-      background: #fff8ec;
-      border-color: #f3d6a0;
-      border-radius: 0.72rem;
-    }
-
-    .bot-reference-toggle {
-      background: #fff8ec;
-      border-color: #f3d6a0;
-      color: #94611b;
-      border-radius: 0.78rem;
-      padding: 0.55rem 0.78rem;
-    }
-
-    .feedback-actions .feedback-icon-btn,
-    .feedback-actions .btn-knowledge-suggestion,
-    .feedback-actions .btn-admin-knowledge {
-      border-radius: 0.62rem;
-      background: #f8fbff;
-      border-color: #dae5f2;
-      color: #52657d;
-    }
-
-    .chat-input-wrap {
-      margin: 0.9rem 1rem 1rem;
-      padding: 0.72rem;
-      border: 1.5px solid #94b8e7;
-      border-radius: 1rem;
-      background: rgba(255, 255, 255, 0.96);
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.62);
-    }
-
-    .chat-input-wrap .input-group {
-      gap: 0.65rem;
-      align-items: stretch;
-    }
-
-    #chatInput {
-      min-height: 3.25rem;
-      border: 0;
-      border-radius: 0.84rem !important;
-      background: #fff;
-      font-size: 1rem;
-      padding-left: 0.82rem;
-    }
-
-    #voiceBtn,
-    #debugBtn {
-      min-width: 5.5rem;
-      border-radius: 0.72rem !important;
-      border-color: #cddbef;
-      color: #315b91;
-      font-weight: 700;
-      background: #f8fbff;
-    }
-
-    #sendBtn {
-      min-width: 8rem;
-      border-radius: 0.72rem !important;
-      border: 0;
-      background: linear-gradient(145deg, #457ec3, #336caf);
-      box-shadow: 0 12px 22px rgba(51, 108, 175, 0.2);
-      font-weight: 800;
-    }
-
-    .composer-inline-only {
-      display: none !important;
-    }
-
-    .composer-hint {
-      justify-content: flex-end;
-      color: #8a96a8;
-      font-size: 0.82rem;
-    }
-
-    .quick-questions {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.7rem;
-      flex-wrap: wrap;
-      border: 0;
-      background: transparent;
-      box-shadow: none;
-      backdrop-filter: none;
-      margin-top: -0.1rem;
-    }
-
-    .quick-questions-title {
-      color: #233d66;
-      font-weight: 800;
-      margin-right: 0.4rem;
-    }
-
-    .quick-btn {
-      color: #3c4f6b;
-      background: #f6f8fb;
-      border-color: #d9e2ee;
-      box-shadow: none;
-      padding: 0.58rem 1.1rem;
-    }
-
-    .legalbot-site-footer {
-      margin-top: auto;
-      width: 100%;
-      padding: 1rem clamp(1rem, 3vw, 2rem);
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-      gap: 1rem;
-      align-items: center;
-      color: #fff;
-      background: linear-gradient(135deg, #447fbf, #3c76b6);
-      font-size: 0.86rem;
-    }
-
-    .legalbot-footer-links {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: clamp(0.8rem, 2.8vw, 2.2rem);
-      flex-wrap: wrap;
-      font-weight: 800;
-    }
-
-    .legalbot-footer-links a,
-    .legalbot-footer-security {
-      color: rgba(255, 255, 255, 0.92);
-      text-decoration: none;
-    }
-
-    .legalbot-footer-security {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 0.6rem;
-      font-weight: 800;
-    }
-
-    .legalbot-footer-security i {
-      width: 2.1rem;
-      height: 2.1rem;
-      border-radius: 0.72rem;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: #35c56e;
-      box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.42);
-    }
-
-    @media (max-width: 991.98px) {
-      .page-header {
-        grid-template-columns: minmax(0, 1fr) auto auto;
-      }
-
-      .lawbot-hero,
-      .lawbot-hero-actions {
-        width: 100%;
-      }
-
-      .header-assistant {
-        justify-self: end;
-        max-width: 18rem;
-      }
-
-      .header-assistant-actions,
-      .header-assistant-copy span {
-        display: none;
-      }
-
-      .page-toolbar {
-        width: auto;
-      }
-
-      .lawbot-hero {
-        grid-template-columns: 1fr;
-      }
-
-      .lawbot-hero-actions {
-        justify-content: flex-start;
-      }
-
-      .bubble {
-        max-width: min(88%, 760px);
-      }
-    }
-
-    @media (max-width: 767.98px) {
-      .lawbot-app {
-        height: auto;
-        min-height: 100dvh;
-        overflow: visible;
-        gap: 0.48rem;
-      }
-
-      .floating-controls {
-        position: fixed;
-        top: auto;
-        right: 0.7rem;
-        bottom: calc(env(safe-area-inset-bottom) + 6.4rem);
-        z-index: 90;
-        display: inline-flex;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.68rem;
-      }
-
-      .floating-controls .header-toggle-btn,
-      .floating-controls .clear-chat-btn,
-      .floating-action-btn {
-        width: 3rem;
-        height: 3rem;
-        min-width: 3rem;
-        min-height: 3rem;
-        padding: 0;
-        border-radius: 0.9rem;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        color: #fff;
-        background: rgba(67, 126, 194, 0.94);
-        border: 1px solid rgba(255, 255, 255, 0.32);
-        box-shadow: 0 14px 28px rgba(37, 79, 132, 0.24);
-        backdrop-filter: blur(10px);
-        text-decoration: none;
-        font-size: 1.08rem;
-      }
-
-      .floating-controls .clear-chat-btn {
-        background: rgba(238, 68, 68, 0.96);
-      }
-
-      .floating-controls span {
-        display: none;
-      }
-
-      .page-header {
-        --header-icon-size: 2.45rem;
-        padding: 0.52rem 0.64rem;
-        grid-template-columns: minmax(0, 1fr) auto auto;
-        align-items: center;
-        gap: 0.38rem;
-      }
-
-      .brand-title p {
-        display: block;
-        font-size: 0.68rem;
-      }
-
-      #onlineBadge {
-        display: inline-flex;
-      }
-
-      #onlineBadge.status-chip {
-        padding: 0.32rem;
-        font-size: 0;
-      }
-
-      #onlineBadge i {
-        font-size: 0.78rem;
-      }
-
-      .page-toolbar {
-        width: auto;
-        flex-wrap: nowrap;
-        justify-content: flex-end;
-      }
-
-      .header-assistant {
-        padding: 0;
-        border: 0;
-        background: transparent;
-        box-shadow: none;
-        backdrop-filter: none;
-      }
-
-      .header-assistant-icon {
-        width: 2.28rem;
-        height: 2.28rem;
-        border-radius: 0.72rem;
-      }
-
-      .header-assistant-icon img {
-        width: 1.68rem;
-        height: 1.68rem;
-      }
-
-      .header-assistant-copy,
-      .header-assistant-actions {
-        display: none;
-      }
-
-      .page-identity {
-        min-width: 0;
-        width: 2.54rem;
-        height: 2.54rem;
-        padding: 0.18rem;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 0.95rem;
-        cursor: pointer;
-      }
-
-      .page-identity:focus-visible {
-        outline: 2px solid rgba(255, 255, 255, 0.88);
-        outline-offset: 3px;
-      }
-
-      .page-identity::after {
-        content: "";
-        position: absolute;
-        right: 0.24rem;
-        bottom: 0.24rem;
-        width: 0.62rem;
-        height: 0.62rem;
-        border-radius: 999px;
-        background: #48d37a;
-        border: 2px solid rgba(255, 255, 255, 0.94);
-      }
-
-      .page-identity-avatar {
-        width: 2rem;
-        height: 2rem;
-        border-radius: 0.64rem;
-        flex: 0 0 auto;
-      }
-
-      .page-identity-text,
-      .page-identity-actions,
-      .page-actions {
-        display: none;
-      }
-
-      .page-identity .page-identity-actions {
-        position: fixed;
-        top: calc(env(safe-area-inset-top) + 3.35rem);
-        right: 0.58rem;
-        z-index: 1000;
-        min-width: 10.8rem;
-        padding: 0.5rem;
-        border-radius: 0.9rem;
-        border: 1px solid rgba(205, 219, 239, 0.92);
-        background: rgba(255, 255, 255, 0.98);
-        box-shadow: 0 18px 36px rgba(24, 62, 111, 0.2);
-        flex-direction: column;
-        gap: 0.42rem;
-      }
-
-      .page-identity .page-identity-actions::before {
-        content: "";
-        position: absolute;
-        top: -0.42rem;
-        right: 0.82rem;
-        width: 0.78rem;
-        height: 0.78rem;
-        background: rgba(255, 255, 255, 0.98);
-        border-left: 1px solid rgba(205, 219, 239, 0.92);
-        border-top: 1px solid rgba(205, 219, 239, 0.92);
-        transform: rotate(45deg);
-      }
-
-      .page-identity:hover .page-identity-actions,
-      .page-identity:focus-within .page-identity-actions {
-        display: flex;
-      }
-
-      .page-identity .page-identity-action {
-        width: 100%;
-        min-height: 2.28rem;
-        justify-content: flex-start;
-        border-radius: 0.7rem;
-        border-color: rgba(58, 113, 181, 0.16);
-        background: #f7fbff !important;
-        color: #1c4f8e !important;
-        font-size: 0.78rem;
-        box-shadow: none;
-      }
-
-      .page-identity .page-identity-action.primary {
-        background: linear-gradient(145deg, #457ec3, #336caf) !important;
-        color: #fff !important;
-      }
-
-      .lawbot-hero,
-      .chat-shell,
-      .quick-questions {
-        width: min(100% - 0.9rem, 1180px);
-      }
-
-      .lawbot-hero {
-        margin-top: 0.2rem;
-      }
-
-      .lawbot-hero-actions {
-        display: none;
-      }
-
-      .lawbot-action-btn {
-        flex: 1 1 100%;
-        justify-content: center;
-      }
-
-      .chat-shell {
-        flex: initial;
-        min-height: 0;
-        border-radius: 0.9rem;
-      }
-
-      .chat-messages {
-        min-height: calc(100dvh - 174px);
-        padding: 0.85rem 0.7rem;
-      }
-
-      .message-avatar {
-        width: 2.9rem;
-        height: 2.9rem;
-        border-width: 4px;
-      }
-
-      .message-row {
-        gap: 0.55rem;
-      }
-
-      .bubble {
-        max-width: 100%;
-        padding: 0.9rem 0.92rem;
-      }
-
-      .answer-bullet-card {
-        padding: 0.68rem 0.76rem;
-      }
-
-      .answer-bullet-card::after {
-        display: none;
-      }
-
-      .chat-input-wrap {
-        margin: 0.55rem;
-      }
-
-      #voiceBtn,
-      #debugBtn,
-      #sendBtn {
-        min-width: 0;
-        flex: 1 1 auto;
-      }
-
-      .legalbot-site-footer {
-        grid-template-columns: 1fr;
-        text-align: center;
-      }
-
-      .legalbot-footer-security {
-        justify-content: center;
-      }
-    }
-
     @media (prefers-reduced-motion: reduce) {
       .bubble, .hl-hit { animation: none !important; }
     }
@@ -3398,10 +2428,6 @@
 <body data-bot-plan="free">
   <div class="lawbot-app">
     <div class="floating-controls">
-      <a href="/user/search-history" class="floating-action-btn" title="ประวัติการสนทนา" aria-label="ประวัติการสนทนา">
-        <i class="bi bi-clock-history"></i>
-        <span>ประวัติ</span>
-      </a>
       <button type="button" id="toggleHeaderBtn" data-toggle-header-control="1" class="btn btn-sm btn-outline-secondary header-toggle-btn" title="ซ่อนส่วนหัวของระบบ" aria-label="ซ่อนส่วนหัวของระบบ" aria-pressed="false">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
         <span>ซ่อนหัวระบบ</span>
@@ -3409,10 +2435,6 @@
       <button type="button" id="clearChatBtn" data-clear-chat-control="1" class="btn btn-sm btn-outline-danger clear-chat-btn" title="ลบประวัติแชต" aria-label="ลบประวัติแชต">
         <i class="bi bi-trash-fill"></i>
         <span>ลบประวัติ</span>
-      </button>
-      <button type="button" class="floating-action-btn" data-bs-toggle="modal" data-bs-target="#developerModal" title="เกี่ยวกับระบบ" aria-label="เกี่ยวกับระบบ">
-        <i class="bi bi-info-circle"></i>
-        <span>เกี่ยวกับระบบ</span>
       </button>
     </div>
 
@@ -3447,40 +2469,18 @@
     <div class="page-header">
       <div class="page-brand">
         <div class="brand-icon" aria-hidden="true">
-          <img src="/icon/coop-rope-watermark.svg" alt="" />
+          <i class="bi bi-robot"></i>
         </div>
         <div class="brand-title">
           <div class="brand-heading">
-            <h6><strong>ระบบค้นหากฎหมายสหกรณ์และกลุ่มเกษตรกร</strong></h6>
+            <h6><strong>แชทบอทกฎหมายสหกรณ์และกลุ่มเกษตรกร</strong> (v.1)</h6>
             <span id="onlineBadge" class="status-chip"><i class="bi bi-wifi"></i>ออนไลน์</span>
           </div>
-          <p>ระบบตอบคำถามกฎหมาย LawBot</p>
-        </div>
-      </div>
-      <div class="header-assistant" aria-label="ข้อมูลผู้ช่วยค้นหากฎหมาย">
-        <div class="header-assistant-brand">
-          <div class="header-assistant-icon" aria-hidden="true">
-            <img src="/icon/robot-icon.svg" alt="" />
-          </div>
-          <div class="header-assistant-copy">
-            <strong>LawBot AI Assistant</strong>
-            <span>ค้นหาและสรุปกฎหมายสหกรณ์และกลุ่มเกษตรกร</span>
-          </div>
-        </div>
-        <div class="header-assistant-actions" aria-label="เครื่องมือสนทนา">
-          <a href="/user/search-history" class="header-action-btn" title="ประวัติการสนทนา" aria-label="ประวัติการสนทนา">
-            <i class="bi bi-clock-history"></i>
-          </a>
-          <button type="button" class="header-action-btn header-action-btn-danger" data-clear-chat-control="1" title="ล้างการสนทนา" aria-label="ล้างการสนทนา">
-            <i class="bi bi-trash3"></i>
-          </button>
-          <button type="button" class="header-action-btn" data-bs-toggle="modal" data-bs-target="#developerModal" title="เกี่ยวกับระบบ" aria-label="เกี่ยวกับระบบ">
-            <i class="bi bi-info-circle"></i>
-          </button>
+          <p>ค้นหากฎหมายสหกรณ์แบบ PWA สำหรับมือถือและเดสก์ท็อป</p>
         </div>
       </div>
       <div class="page-toolbar">
-        <div class="page-identity page-identity-<%= headerUserVariant %>" tabindex="0" aria-label="เมนูผู้ใช้">
+        <div class="page-identity page-identity-<%= headerUserVariant %>">
           <div class="page-identity-avatar" aria-hidden="true">
             <% if (headerUserImage) { %>
               <img src="<%= headerUserImage %>" alt="โปรไฟล์ผู้ใช้" />
@@ -3653,7 +2653,7 @@
                   </div>
                   <textarea id="knowledgeSuggestionContent" name="content" class="form-control mt-2" rows="6" placeholder="พิมพ์หรือพูดคำตอบที่ถูกต้องที่ต้องการให้ผู้ดูแลตรวจสอบ" required></textarea>
                   <div class="knowledge-suggestion-hint mt-2">
-                    ข้อเสนอของคุณจะถูกส่งให้ผู้ดูแลตรวจสอบ หากอนุมัติแล้วระบบจะนำไปแสดงในคำถามแนะนำ และเพิ่มสิทธิ์ถามฟรีให้อีก 1 ครั้งต่อเดือน
+                    ข้อเสนอของคุณจะยังไม่ถูกนำเข้าฐานความรู้ทันที ระบบจะส่งให้ผู้ดูแลตรวจสอบก่อนอนุมัติ และหากอนุมัติแล้วจะเพิ่มสิทธิ์ถามฟรีให้อีก 1 ครั้งต่อเดือน
                   </div>
                 </div>
                 <div class="col-12">
@@ -3671,38 +2671,10 @@
       </div>
     </div>
 
-    <section class="lawbot-hero" aria-label="ข้อมูลผู้ช่วยค้นหากฎหมาย">
-      <div class="lawbot-hero-brand">
-        <div class="lawbot-hero-icon" aria-hidden="true">
-          <img src="/icon/robot-icon.svg" alt="" />
-        </div>
-        <div>
-          <h1>LawBot AI Assistant</h1>
-          <p>ผู้ช่วยค้นหาและสรุปกฎหมายสหกรณ์และกลุ่มเกษตรกร</p>
-        </div>
-      </div>
-      <div class="lawbot-hero-actions" aria-label="เครื่องมือสนทนา">
-        <a href="/user/search-history" class="lawbot-action-btn">
-          <i class="bi bi-clock-history"></i>
-          <span>ประวัติการสนทนา</span>
-        </a>
-        <button type="button" class="lawbot-action-btn lawbot-action-btn-danger" data-clear-chat-control="1">
-          <i class="bi bi-trash3"></i>
-          <span>ล้างการสนทนา</span>
-        </button>
-        <button type="button" class="lawbot-action-btn" data-bs-toggle="modal" data-bs-target="#developerModal">
-          <i class="bi bi-info-circle"></i>
-          <span>เกี่ยวกับระบบ</span>
-        </button>
-      </div>
-    </section>
-
     <div class="chat-shell">
       
 
-      <div id="chatMessages" class="chat-messages" aria-live="polite">
-        <div class="chat-day-pill" aria-hidden="true">วันนี้</div>
-      </div>
+      <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
 
       <form id="chatForm" class="chat-input-wrap" autocomplete="off">
         <div id="composerSuggestions" class="composer-suggestions" hidden aria-label="คำถามแนะนำ">
@@ -3726,18 +2698,16 @@
           </div>
         </div>
         <div class="input-group">
-          <input id="chatInput" type="text" class="form-control" placeholder="พิมพ์คำถามของคุณที่นี่..." maxlength="500" required />
+          <input id="chatInput" type="text" class="form-control" placeholder="พิมพ์คำถามของคุณที่นี่" maxlength="500" required />
           <button id="voiceBtn" type="button" class="btn btn-outline-secondary" title="ค้นหาด้วยเสียง" aria-label="ค้นหาด้วยเสียง">
-            <i class="bi bi-mic-fill me-1"></i>พูด
+            <i class="bi bi-mic-fill"></i>
           </button>
           <% if (currentUser) { %>
             <button id="debugBtn" type="button" class="btn btn-outline-secondary" title="ส่งคำถามพร้อม debug timing" aria-label="ส่งคำถามพร้อม debug timing">
               Debug
             </button>
           <% } %>
-          <button id="sendBtn" type="submit" class="btn btn-primary px-4">
-            <i class="bi bi-send-fill me-1"></i>ส่ง
-          </button>
+          <button id="sendBtn" type="submit" class="btn btn-primary px-4">ส่ง</button>
           <button
             type="button"
             data-toggle-header-control="1"
@@ -3767,24 +2737,6 @@
         </div>
       </form>
     </div>
-
-
-    <footer class="legalbot-site-footer">
-      <div>
-        <strong>ระบบค้นหากฎหมายสหกรณ์และกลุ่มเกษตรกร</strong><br />
-        สงวนลิขสิทธิ์ © 2567
-      </div>
-      <nav class="legalbot-footer-links" aria-label="ลิงก์ท้ายหน้า">
-        <a href="#" data-bs-toggle="modal" data-bs-target="#developerModal">เกี่ยวกับระบบ</a>
-        <a href="#" data-bs-toggle="modal" data-bs-target="#developerModal">ติดต่อเรา</a>
-        <a href="#" data-bs-toggle="modal" data-bs-target="#iosInstallModal">คู่มือการใช้งาน</a>
-        <a href="/law-chatbot">นโยบายความเป็นส่วนตัว</a>
-      </nav>
-      <div class="legalbot-footer-security">
-        <i class="bi bi-shield-check"></i>
-        <span>ระบบปลอดภัย<br />ข้อมูลของคุณได้รับการคุ้มครอง</span>
-      </div>
-    </footer>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -3801,7 +2753,6 @@
       const isAdminUser = <%- JSON.stringify(Boolean(currentUser)) %>;
       const isGoogleSignedIn = <%- JSON.stringify(Boolean(isGoogleUser)) %>;
       const isSignedInUser = isAdminUser || isGoogleSignedIn;
-      const signedInUserAvatarUrl = <%- JSON.stringify(headerUserImage || "") %>;
       const botPackageVariant = <%- JSON.stringify(botPackageVariant) %>;
       const initialAssistantProfile = <%- JSON.stringify(data && data.assistantProfile ? data.assistantProfile : null) %>;
       const botAvatarConfigs = {
@@ -4921,23 +3872,19 @@
 
         return `
           <div class="bot-reference-block">
-            <div class="bot-answer-actions-row">
-              <div class="bot-reference-action-slot">
-                <button
-                  type="button"
-                  class="bot-reference-toggle"
-                  data-bs-toggle="collapse"
-                  data-bs-target="#${collapseId}"
-                  aria-expanded="false"
-                  aria-controls="${collapseId}"
-                  data-reference-toggle="1"
-                  data-reference-label="${escapeHtml(toggleLabel)}"
-                >
-                  <span class="bot-reference-toggle-text"><i class="bi bi-journal-text"></i>${escapeHtml(toggleLabel)}</span>
-                  <i class="bi bi-chevron-down bot-reference-toggle-icon"></i>
-                </button>
-              </div>
-            </div>
+            <button
+              type="button"
+              class="bot-reference-toggle"
+              data-bs-toggle="collapse"
+              data-bs-target="#${collapseId}"
+              aria-expanded="false"
+              aria-controls="${collapseId}"
+              data-reference-toggle="1"
+              data-reference-label="${escapeHtml(toggleLabel)}"
+            >
+              <span class="bot-reference-toggle-text"><i class="bi bi-journal-text"></i>${escapeHtml(toggleLabel)}</span>
+              <i class="bi bi-chevron-down bot-reference-toggle-icon"></i>
+            </button>
             <div class="collapse bot-reference-collapse" id="${collapseId}">
               <div class="bot-reference-collapse-panel">
                 <div class="bot-answer-reference-title">อ้างอิง</div>
@@ -5433,7 +4380,6 @@
             aria-label="ควรปรับปรุง"
           ><i class="bi bi-hand-thumbs-down-fill"></i><span class="visually-hidden">ควรปรับปรุง</span></button>
           ` : ""}
-          ${!isAdminUser && isSignedInUser ? `
           <button
             type="button"
             class="btn btn-outline-primary btn-sm btn-knowledge-suggestion"
@@ -5441,7 +4387,6 @@
             data-question="${escapeHtml(question)}"
             data-target="${escapeHtml(target || selectedTarget)}"
           >เสนอคำตอบที่ถูกต้อง</button>
-          ` : ""}
         `;
 
         if (isAdminUser) {
@@ -5455,15 +4400,9 @@
                 data-question="${escapeHtml(question)}"
                 data-answer-shown="${escapeHtml(answerShown)}"
                 data-target="${escapeHtml(target || selectedTarget)}"
-              >บันทึกเข้าระบบทันที</button>
+              >บันทึกเป็นคำตอบที่ถูกต้อง</button>
             `
           );
-        }
-
-        const answerActionsRow = container.querySelector('.bot-answer-actions-row');
-        if (answerActionsRow) {
-          answerActionsRow.appendChild(wrap);
-          return;
         }
 
         container.appendChild(wrap);
@@ -5573,9 +4512,7 @@
         const avatar = document.createElement('div');
         if (role === 'user') {
           avatar.className = 'message-avatar message-avatar-user';
-          avatar.innerHTML = signedInUserAvatarUrl
-            ? `<img src="${escapeHtml(signedInUserAvatarUrl)}" alt="โปรไฟล์ผู้ใช้" />`
-            : '<i class="bi bi-person-fill"></i>';
+          avatar.innerHTML = '<i class="bi bi-person-fill"></i>';
         } else {
           const botAvatarConfig = getAssistantAvatarConfig(resolvedAssistantProfile);
           avatar.className = `message-avatar message-avatar-bot ${botAvatarConfig.avatarClass || 'message-avatar-bot-free'}`;
@@ -5624,21 +4561,6 @@
           if (timingHtml) {
             content.insertAdjacentHTML('beforeend', timingHtml);
           }
-        }
-
-        if (
-          role === 'bot' &&
-          !isLoading &&
-          feedbackContext &&
-          !feedbackContext.suppressKnowledgeActions &&
-          !feedbackContext.guestLimitReached &&
-          !feedbackContext.monthlyUsageLimitReached
-        ) {
-          attachFeedbackActions(content, {
-            question: feedbackContext.question || '',
-            answerShown: displayText,
-            target: feedbackContext.target || selectedTarget,
-          });
         }
 
         div.appendChild(content);
@@ -5956,7 +4878,6 @@
             question: trimmed,
             target: options.target || selectedTarget,
             variant: 'db',
-            suppressKnowledgeActions: true,
             assistantProfile: currentAssistantProfile
           });
           focusFirstAnswer(botRow);
@@ -6093,7 +5014,7 @@
             if (result && !result.cancelled) {
               wrap.insertAdjacentHTML(
                 'beforeend',
-                '<span class="text-primary small">ส่งข้อเสนอให้ผู้ดูแลอนุมัติเป็นคำถามแนะนำแล้ว</span>'
+                '<span class="text-primary small">ส่งข้อเสนอให้ผู้ดูแลตรวจสอบแล้ว</span>'
               );
               knowledgeSuggestionButton.remove();
             } else {

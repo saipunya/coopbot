@@ -147,17 +147,17 @@ function resolveSourceTimestamp(item = {}) {
 }
 
 function extractRequestedLawReferences(message = "") {
-  const normalizedMessage = normalizeLawFocusDigits(normalizeForSearch(String(message || ""))).toLowerCase();
+  const normalizedMessage = normalizeLawFocusDigits(String(message || "")).toLowerCase();
   if (!normalizedMessage) {
     return [];
   }
 
   const references = [];
-  const matcher = /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]+(?:\/[0-9]+)?)/g;
+  const matcher = /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]+(?:\s*\/\s*[0-9]+)?)/g;
   let match = matcher.exec(normalizedMessage);
   while (match) {
     if (match[1]) {
-      references.push(match[1]);
+      references.push(match[1].replace(/\s*\/\s*/g, "/"));
     }
     match = matcher.exec(normalizedMessage);
   }
@@ -171,7 +171,7 @@ function normalizeLawReference(value = "") {
     return "";
   }
 
-  const match = normalized.match(/^([0-9]{1,4})(?:\/([0-9]{1,3}))?$/);
+  const match = normalized.match(/^([0-9]{1,4})(?:\s*\/\s*([0-9]{1,3}))?$/);
   if (!match) {
     return "";
   }
@@ -1982,24 +1982,26 @@ function normalizeLawFocusDigits(text) {
 
 function extractPrimaryLawFocusNumber(item = {}) {
   const candidates = [item.reference, item.title, item.keyword];
+  const extractedNumbers = [];
   for (const candidate of candidates) {
     const raw = normalizeLawFocusDigits(String(candidate || "").trim());
     if (!raw) {
       continue;
     }
 
-    const explicitMatch = raw.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]+(?:\/[0-9]+)?)/i);
+    const explicitMatch = raw.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]+(?:\s*\/\s*[0-9]+)?)/i);
     if (explicitMatch?.[1]) {
-      return explicitMatch[1];
+      extractedNumbers.push(explicitMatch[1].replace(/\s*\/\s*/g, "/"));
+      continue;
     }
 
-    const bareMatch = raw.match(/^([0-9]+(?:\/[0-9]+)?)$/);
+    const bareMatch = raw.match(/^([0-9]+(?:\s*\/\s*[0-9]+)?)$/);
     if (bareMatch?.[1]) {
-      return bareMatch[1];
+      extractedNumbers.push(bareMatch[1].replace(/\s*\/\s*/g, "/"));
     }
   }
 
-  return "";
+  return extractedNumbers.find((number) => String(number || "").includes("/")) || extractedNumbers[0] || "";
 }
 
 function normalizeSourceIdentityText(value) {

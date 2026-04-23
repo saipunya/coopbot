@@ -3256,9 +3256,9 @@ function formatDbOnlyMainChatAnswer(sources = [], options = {}) {
 
 function extractQueryLawNumber(message) {
   const match = normalizeThaiDigits(String(message || "")).match(
-    /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*(\d{1,4}(?:\/\d{1,3})?)/,
+    /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*(\d{1,4}(?:\s*\/\s*\d{1,3})?)/,
   );
-  return match ? match[1] : "";
+  return match ? match[1].replace(/\s*\/\s*/g, "/") : "";
 }
 
 function isStructuredLawSource(source = {}) {
@@ -3270,7 +3270,7 @@ function normalizeThaiDigits(text) {
 }
 
 function normalizeClauseNumber(value) {
-  const normalized = normalizeThaiDigits(String(value || "")).trim();
+  const normalized = normalizeThaiDigits(String(value || "")).trim().replace(/\s*\/\s*/g, "/");
   if (!normalized) {
     return "";
   }
@@ -3291,21 +3291,22 @@ function normalizeClauseNumber(value) {
 
 function extractPrimaryLawNumberFromText(text) {
   const normalized = normalizeThaiDigits(String(text || ""));
-  const match = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]{1,4}(?:\/[0-9]{1,3})?)/i);
-  return normalizeClauseNumber(match?.[1] || "");
+  const match = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]{1,4}(?:\s*\/\s*[0-9]{1,3})?)/i);
+  return normalizeClauseNumber(String(match?.[1] || "").replace(/\s*\/\s*/g, "/"));
 }
 
 function getSourcePrimaryLawNumber(source = {}) {
   const candidates = [source?.lawNumber, source?.reference, source?.title, source?.keyword];
+  const extractedNumbers = [];
 
   for (const candidate of candidates) {
     const number = extractPrimaryLawNumberFromText(candidate);
     if (number) {
-      return number;
+      extractedNumbers.push(number);
     }
   }
 
-  return "";
+  return extractedNumbers.find((number) => String(number || "").includes("/")) || extractedNumbers[0] || "";
 }
 
 function sourceMatchesQueryLawNumber(source, queryLawNumber) {
