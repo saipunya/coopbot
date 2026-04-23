@@ -107,6 +107,7 @@ const CHAT_REPLY_BUDGET_MS = Math.max(2000, CHAT_REQUEST_TIMEOUT_MS - CHAT_BUDGE
 const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SEARCH_MIN_BUDGET_MS || 5000);
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
 const DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS = 1;
+const DB_ONLY_LAW_SECTION_MAX_SOURCE_CHUNKS = 6;
 const PREPARED_QA_NOTICE = "คำตอบนี้มาจาก Q&A/ฐานข้อมูลในระบบ โดยไม่ได้เรียก AI";
 const AI_SUMMARY_NOTICE = "คำตอบนี้สรุปโดย AI จากข้อมูลที่ระบบค้นพบ";
 const DB_LOOKUP_NOTICE = "คำตอบนี้มาจากการค้นฐานข้อมูลโดยตรง";
@@ -156,6 +157,24 @@ function getUniqueSourceTableNames(sources = []) {
         .filter(Boolean),
     ),
   );
+}
+
+function hasExplicitLawReferenceQuery(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*[0-9๐-๙]{1,4}(?:\/[0-9๐-๙]{1,3})?/.test(normalized);
+}
+
+function resolveDbOnlyMainChatMaxSourceChunks(message = "", questionIntent = "") {
+  const normalizedIntent = String(questionIntent || "").trim().toLowerCase();
+  if (normalizedIntent === "law_section" && hasExplicitLawReferenceQuery(message)) {
+    return DB_ONLY_LAW_SECTION_MAX_SOURCE_CHUNKS;
+  }
+
+  return DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS;
 }
 
 function buildResponseMeta(answerMode = "", sources = []) {
@@ -940,7 +959,7 @@ async function replyToDbOnlyMainChat(payload, session) {
   if (continueFromPrevious) {
     paginated = await paginateContinuationState(continuationSessionState, {
       maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
-      maxSourceChunks: DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS,
+      maxSourceChunks: resolveDbOnlyMainChatMaxSourceChunks(message, questionIntent),
     });
 
     if (!Array.isArray(paginated.renderSources) || paginated.renderSources.length === 0) {
@@ -1028,7 +1047,7 @@ async function replyToDbOnlyMainChat(payload, session) {
         });
         paginated = await paginateContinuationState(continuationSessionState, {
           maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
-          maxSourceChunks: DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS,
+          maxSourceChunks: resolveDbOnlyMainChatMaxSourceChunks(message, questionIntent),
         });
         selectedSources = paginated.renderSources || [];
 

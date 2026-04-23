@@ -3127,6 +3127,11 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
   )
     .trim()
     .toLowerCase();
+  const normalizedQueryLawNumber = normalizeClauseNumber(queryLawNumber);
+  const allowMultipleSubsectionsForExactLaw = questionIntent === "law_section" && Boolean(normalizedQueryLawNumber);
+  const effectiveMaxPrimarySections = allowMultipleSubsectionsForExactLaw
+    ? Math.max(maxPrimarySections, 6)
+    : maxPrimarySections;
   const parsedEntries = [];
 
   for (const source of sourceItems) {
@@ -3148,7 +3153,17 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
   const dedupedEntries = [];
   const bestByLawKey = new Map();
   parsedEntries.forEach((entry) => {
-    const lawKey = `${entry.sourceName}::${entry.lawNumber || normalizeComparisonText(entry.source?.reference || "")}`;
+    const isExactStructuredLawSection =
+      allowMultipleSubsectionsForExactLaw &&
+      isStructuredLawSource(entry.source) &&
+      entry.lawNumber === normalizedQueryLawNumber;
+    const subsectionOrder = extractLawSubsectionOrder(entry.source);
+    const subsectionLabel = normalizeComparisonText(
+      `${entry.source?.title || ""} ${entry.source?.reference || ""} ${entry.source?.keyword || ""}`,
+    );
+    const lawKey = isExactStructuredLawSection
+      ? `${entry.sourceName}::${entry.lawNumber}::${subsectionOrder}::${subsectionLabel}`
+      : `${entry.sourceName}::${entry.lawNumber || normalizeComparisonText(entry.source?.reference || "")}`;
     const existing = bestByLawKey.get(lawKey);
     if (!existing || entry.score > existing.score) {
       bestByLawKey.set(lawKey, entry);
@@ -3166,7 +3181,7 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
       .sort((left, right) => sortLawSectionSources(left.source, right.source, queryLawNumber));
 
     if (exactStructuredEntries.length > 0) {
-      return exactStructuredEntries.slice(0, maxPrimarySections);
+      return exactStructuredEntries.slice(0, effectiveMaxPrimarySections);
     }
   }
 
@@ -3185,7 +3200,7 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
     return Number(right.score || 0) - Number(left.score || 0);
   });
 
-  let selectedEntries = dedupedEntries.slice(0, maxPrimarySections);
+  let selectedEntries = dedupedEntries.slice(0, effectiveMaxPrimarySections);
   if (isDbOnlyDissolutionWhenQuestion(message)) {
     const section70 = dedupedEntries.find((entry) => entry.lawNumber === "70");
     if (section70) {

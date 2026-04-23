@@ -182,3 +182,45 @@ test("exact section query prefers matching structured law over nearby section su
   assert.doesNotMatch(result.answer, /มาตรา 89\/3/);
   assert.doesNotMatch(result.answer, /สั่งเลิกสหกรณ์ออมทรัพย์/);
 });
+
+test("exact structured law query keeps all subsections under the same section number", () => {
+  const result = buildDbOnlyMainChatAnswerResult(
+    [
+      {
+        source: "tbl_laws",
+        score: 1000,
+        reference: "มาตรา 121",
+        title: "วรรคแรก",
+        content: "ให้นายทะเบียนสหกรณ์เป็นนายทะเบียนกลุ่มเกษตรกร",
+      },
+      {
+        source: "tbl_laws",
+        score: 1000,
+        reference: "มาตรา 121",
+        title: "วรรคสอง",
+        content: "รองนายทะเบียนสหกรณ์เป็นผู้ช่วยนายทะเบียนกลุ่มเกษตรกร",
+      },
+      {
+        source: "tbl_laws",
+        score: 1000,
+        reference: "มาตรา 121",
+        title: "วรรคสาม",
+        content: "ให้รัฐมนตรีแต่งตั้งพนักงานเจ้าหน้าที่",
+      },
+    ],
+    {
+      message: "มาตรา 121 พรบ สหกรณ์",
+      questionIntent: "law_section",
+      maxPrimarySections: 1,
+    },
+  );
+
+  assert.equal(result.selectedSources.length, 3);
+  assert.deepEqual(
+    result.selectedSources.map((item) => item.title),
+    ["วรรคแรก", "วรรคสอง", "วรรคสาม"],
+  );
+  assert.match(result.answer, /ให้นายทะเบียนสหกรณ์เป็นนายทะเบียนกลุ่มเกษตรกร/);
+  assert.match(result.answer, /รองนายทะเบียนสหกรณ์เป็นผู้ช่วยนายทะเบียนกลุ่มเกษตรกร/);
+  assert.match(result.answer, /ให้รัฐมนตรีแต่งตั้งพนักงานเจ้าหน้าที่/);
+});
