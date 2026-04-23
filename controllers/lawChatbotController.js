@@ -196,6 +196,10 @@ async function chatFeedback(req, res) {
 async function saveKnowledgeFromChat(req, res) {
   const title = String(req.body.title || req.body.question || "").trim();
   const content = String(req.body.content || "").trim();
+  const sourceReference = [
+    String(req.body.lawNumber || "").trim(),
+    String(req.body.sourceReference || req.body.sourceNote || req.body.note || "").trim(),
+  ].filter(Boolean).join(" | ");
 
   if (!title || !content) {
     return res.status(400).json({
@@ -204,11 +208,27 @@ async function saveKnowledgeFromChat(req, res) {
     });
   }
 
-  const entry = await lawChatbotService.saveKnowledgeEntry(req.body);
+  const result = await lawChatbotService.saveSuggestedQuestionEntry({
+    domain: req.body.domain,
+    target: req.body.target,
+    questionText: title,
+    answerText: content,
+    sourceReference,
+    displayOrder: 0,
+    isActive: 1,
+  });
+
+  if (!result.ok) {
+    return res.status(400).json({
+      success: false,
+      message: "ไม่สามารถบันทึกคำตอบนี้เป็นคำถามแนะนำได้",
+    });
+  }
+
   return res.json({
     success: true,
-    message: "บันทึกคำตอบที่ถูกต้องเรียบร้อยแล้ว",
-    entry,
+    message: "บันทึกคำตอบที่ถูกต้องเป็นคำถามแนะนำเรียบร้อยแล้ว",
+    entry: result.entry,
   });
 }
 

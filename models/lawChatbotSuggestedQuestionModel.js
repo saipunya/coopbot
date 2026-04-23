@@ -92,10 +92,6 @@ function normalizeQuestionText(value) {
 
 function inferSuggestedQuestionTarget(question = "", requestedTarget = "all") {
   const normalizedRequestedTarget = normalizeSuggestedQuestionTarget(requestedTarget);
-  if (normalizedRequestedTarget === "group" || normalizedRequestedTarget === "coop") {
-    return normalizedRequestedTarget;
-  }
-
   const normalizedQuestion = normalizeQuestionText(question);
   if (!normalizedQuestion) {
     return normalizedRequestedTarget;
@@ -104,12 +100,16 @@ function inferSuggestedQuestionTarget(question = "", requestedTarget = "all") {
   const mentionsGroup = /กลุ่มเกษตรกร|พรฎ|พระราชกฤษฎีกา/.test(normalizedQuestion);
   const mentionsCoop = /สหกรณ์|พรบ|พระราชบัญญัติ/.test(normalizedQuestion);
 
-  if (mentionsGroup) {
+  if (mentionsGroup && !mentionsCoop) {
     return "group";
   }
 
-  if (mentionsCoop) {
+  if (mentionsCoop && !mentionsGroup) {
     return "coop";
+  }
+
+  if (normalizedRequestedTarget === "group" || normalizedRequestedTarget === "coop") {
+    return normalizedRequestedTarget;
   }
 
   return normalizedRequestedTarget;
@@ -289,16 +289,34 @@ function computeTopicPhraseAnchorBoost(normalizedQuestion, row = {}) {
   const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
   const anchorText = [normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ");
   const queryText = normalizeQuestionText(normalizedQuestion);
+  const canonicalTopic = resolveAnchoredCoopDissolutionTopic(queryText);
+  const isCoopDissolutionTopic = canonicalTopic === "การเลิกสหกรณ์";
+  const isGroupDissolutionTopic = canonicalTopic === "การเลิกกลุ่มเกษตรกร";
 
-  if (!queryText || queryText !== "การเลิกสหกรณ์") {
+  if (!canonicalTopic) {
     return 0;
   }
 
-  const anchorHasExactTopic = anchorText.includes(queryText);
-  const answerHasExactTopic = normalizedAnswer.includes(queryText);
+  const anchorHasExactTopic =
+    anchorText.includes(canonicalTopic) ||
+    (isCoopDissolutionTopic &&
+      (anchorText.includes("เหตุแห่งการเลิกสหกรณ์") || anchorText.includes("สหกรณ์ย่อมเลิก"))) ||
+    (isGroupDissolutionTopic &&
+      (anchorText.includes("เหตุแห่งการเลิกกลุ่มเกษตรกร") || anchorText.includes("กลุ่มเกษตรกรย่อมเลิก")));
+  const answerHasExactTopic =
+    normalizedAnswer.includes(canonicalTopic) ||
+    (isCoopDissolutionTopic &&
+      (normalizedAnswer.includes("เหตุแห่งการเลิกสหกรณ์") || normalizedAnswer.includes("สหกรณ์ย่อมเลิก"))) ||
+    (isGroupDissolutionTopic &&
+      (normalizedAnswer.includes("เหตุแห่งการเลิกกลุ่มเกษตรกร") || normalizedAnswer.includes("กลุ่มเกษตรกรย่อมเลิก")));
+  const answerTalksAboutAppeal = normalizedAnswer.includes("อุทธรณ์");
 
   if (anchorHasExactTopic) {
     return 0.26;
+  }
+
+  if (answerTalksAboutAppeal) {
+    return -0.36;
   }
 
   if (answerHasExactTopic) {
@@ -393,16 +411,88 @@ function computeMemberShareholdingBoost(normalizedQuestion, row = {}) {
   return boost;
 }
 
+function computeProcedureQuestionBoost(normalizedQuestion, row = {}) {
+  const queryText = normalizeQuestionText(normalizedQuestion);
+  const asksForProcedure = /(ขั้นตอน|วิธี|ทำอย่างไร|ทำยังไง|ดำเนินการอย่างไร|ต้องทำอย่างไร|ต้องดำเนินการ)/.test(queryText);
+  if (!asksForProcedure) {
+    return 0;
+  }
+
+  const normalizedStoredQuestion = normalizeQuestionText(
+    row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
+  );
+  const normalizedReference = normalizeQuestionText(row.source_reference || row.sourceReference || "");
+  const anchorText = [normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ");
+
+  let boost = 0;
+  const anchorLooksProcedural = /(ขั้นตอน|วิธี|การดำเนินการ|ดำเนินการ|การจัดตั้ง|จดทะเบียนจัดตั้ง|คำขอจัดตั้ง)/.test(anchorText);
+  const anchorLooksRegistryRecord = /(ทะเบียนสมาชิก|ทะเบียนหุ้น)/.test(anchorText);
+  const queryMentionsRegistryRecord = /(ทะเบียนสมาชิก|ทะเบียนหุ้น|ทะเบียน)/.test(queryText);
+
+  if (anchorLooksProcedural) {
+    boost += normalizedStoredQuestion.includes("ขั้นตอน") ? 0.24 : 0.1;
+  }
+
+  if (anchorLooksRegistryRecord && !queryMentionsRegistryRecord) {
+    boost -= 0.28;
+  }
+
+  return boost;
+}
+
 function parseAnchoredTopicQuery(normalizedQuestion = "") {
   const text = normalizeQuestionText(normalizedQuestion);
-  if (!text || text !== "การเลิกสหกรณ์") {
+  const canonicalTopic = resolveAnchoredCoopDissolutionTopic(text);
+  if (!canonicalTopic) {
     return null;
   }
 
-  const like = `%${escapeLike(text)}%`;
+  const like = `%${escapeLike(canonicalTopic)}%`;
   return {
     topicLike: like,
   };
+}
+
+function resolveAnchoredCoopDissolutionTopic(normalizedQuestion = "") {
+  const text = normalizeQuestionText(normalizedQuestion);
+  if (!text) {
+    return null;
+  }
+
+  const isGenericCoopDissolutionQuery =
+    text === "การเลิกสหกรณ์" ||
+    text === "เลิกสหกรณ์" ||
+    text === "สหกรณ์ย่อมเลิก" ||
+    text === "สหกรณ์ต้องเลิก" ||
+    (/สหกรณ์(?:ย่อม|ต้อง)?เลิก/.test(text) && /(เมื่อใด|เมื่อไหร่|กรณี|เหตุ|ตามกฎหมาย)/.test(text)) ||
+    (/เลิกสหกรณ์/.test(text) && /(เมื่อใด|เมื่อไหร่|กรณี|เหตุ|ตามกฎหมาย)/.test(text));
+
+  const isGenericGroupDissolutionQuery =
+    text === "การเลิกกลุ่มเกษตรกร" ||
+    text === "เลิกกลุ่มเกษตรกร" ||
+    text === "กลุ่มเกษตรกรย่อมเลิก" ||
+    text === "กลุ่มเกษตรกรต้องเลิก" ||
+    text === "ยุบเลิกกลุ่มเกษตรกร" ||
+    (/กลุ่มเกษตรกร(?:ย่อม|ต้อง)?เลิก/.test(text) && /(เมื่อใด|เมื่อไหร่|กรณี|เหตุ|ตามกฎหมาย)/.test(text)) ||
+    (/เลิกกลุ่มเกษตรกร/.test(text) && /(เมื่อใด|เมื่อไหร่|กรณี|เหตุ|ตามกฎหมาย)/.test(text));
+
+  if (isGenericCoopDissolutionQuery) {
+    if (text.includes("อุทธรณ์") || text.includes("ถูกสั่งเลิก") || text.includes("นายทะเบียนสหกรณ์")) {
+      return null;
+    }
+
+    return "การเลิกสหกรณ์";
+  }
+
+  if (isGenericGroupDissolutionQuery) {
+    if (text.includes("อุทธรณ์") || text.includes("ถูกสั่งเลิก") || text.includes("นายทะเบียนสหกรณ์")) {
+      return null;
+    }
+
+    return "การเลิกกลุ่มเกษตรกร";
+  }
+
+  return null;
 }
 
 function parseRegistrarOrderQuery(normalizedQuestion = "") {
@@ -1087,8 +1177,18 @@ class LawChatbotSuggestedQuestionModel {
     const normalizedStoredQuestion = normalizeQuestionText(
       row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
     );
+    const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
+    const anchorTokens = new Set(segmentWords([normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ")));
+    const anchorHits = [...questionTokens].filter((token) => anchorTokens.has(token)).length;
+    const anchorCoverage = questionTokens.size > 0 ? anchorHits / questionTokens.size : 0;
+    const hasAnswerOnlyHeavyMatch = normalizedAnswer && tokenCoverage >= 0.75 && anchorCoverage < 0.45;
 
     let similarity = (jaccardSimilarity * 0.55) + (tokenCoverage * 0.35) + (Math.max(0, focusScore) * 0.01);
+    similarity += anchorCoverage * 0.14;
+
+    if (hasAnswerOnlyHeavyMatch) {
+      similarity -= 0.18;
+    }
 
     if (normalizedReference && normalizedQuestion.includes(normalizedReference)) {
       similarity += 0.22;
@@ -1108,6 +1208,7 @@ class LawChatbotSuggestedQuestionModel {
     similarity += computeTopicPhraseAnchorBoost(normalizedQuestion, row);
     similarity += computeRegistrarOrderBoost(normalizedQuestion, row);
     similarity += computeMemberShareholdingBoost(normalizedQuestion, row);
+    similarity += computeProcedureQuestionBoost(normalizedQuestion, row);
 
     return {
       similarity,

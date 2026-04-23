@@ -177,6 +177,11 @@ function resolveDbOnlyMainChatMaxSourceChunks(message = "", questionIntent = "")
   return DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS;
 }
 
+function shouldCollapseExactLawSectionPreview(message = "", questionIntent = "") {
+  const normalizedIntent = String(questionIntent || "").trim().toLowerCase();
+  return normalizedIntent === "law_section" && hasExplicitLawReferenceQuery(message);
+}
+
 function buildResponseMeta(answerMode = "", sources = []) {
   const sourceTables = getUniqueSourceTableNames(sources);
   const preparedQaModes = new Set(["prepared_qa_db_only", "managed_answer"]);
@@ -191,6 +196,9 @@ function buildResponseMeta(answerMode = "", sources = []) {
     answerMode: normalizedAnswerMode,
     kind: usesPreparedQa ? "prepared_qa" : usesAiSummary ? "ai_summary" : usesDatabaseLookup ? "database_lookup" : "generic",
     usesPreparedQa,
+    preparedQaTitle: usesPreparedQa
+      ? String((Array.isArray(sources) && sources[0] && (sources[0].title || sources[0].reference)) || "").trim()
+      : "",
     notice: usesPreparedQa
       ? PREPARED_QA_NOTICE
       : usesAiSummary
@@ -762,17 +770,18 @@ async function collectAnswerSources(message, target, session, options = {}) {
   };
 }
 
-function buildDbOnlyMainChatContinuation(message = "", nextState = null) {
+function buildDbOnlyMainChatContinuation(message = "", nextState = null, options = {}) {
+  const label = String(options.label || "ดูคำตอบต่อ").trim() || "ดูคำตอบต่อ";
   if (!nextState || !Array.isArray(nextState.sources) || nextState.sources.length === 0) {
     return {
       available: false,
-      label: "ดูคำตอบต่อ",
+      label,
     };
   }
 
   return {
     available: true,
-    label: "ดูคำตอบต่อ",
+    label,
     token: signContinuationToken(nextState),
   };
 }
@@ -798,6 +807,7 @@ async function buildDbOnlyMainChatAnswer(message, target, sources, options = {})
     message: options.effectiveMessage || message,
     originalMessage: message,
     questionIntent: options.questionIntent || "",
+    collapseExactLawSectionPreview: options.collapseExactLawSectionPreview === true,
     maxPrimarySections: 1,
   });
 }
@@ -861,7 +871,7 @@ async function replyToDbOnlyMainChat(payload, session) {
           managedSuggestedQuestionMatch.topicHint ||
           message,
       ).trim() || message;
-      const answer = cleanAssistantAnswer(managedSuggestedQuestionMatch.answerText, message);
+      const answer = cleanAssistantAnswer(managedSuggestedQuestionMatch.answerText, "");
 
       setSessionContinuationState(session, null);
 
@@ -955,6 +965,7 @@ async function replyToDbOnlyMainChat(payload, session) {
   let answer = "";
   let contextCarrySources = [];
   let answerSourcePool = [];
+  let continuationLabel = "ดูคำตอบต่อ";
 
   if (continueFromPrevious) {
     paginated = await paginateContinuationState(continuationSessionState, {
@@ -1034,6 +1045,10 @@ async function replyToDbOnlyMainChat(payload, session) {
         maxPrimarySections: 1,
       }).map((entry) => entry.source).filter(Boolean);
       contextCarrySources = answerSourcePool.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT);
+      const collapseExactLawSectionPreview = shouldCollapseExactLawSectionPreview(message, questionIntent);
+      if (collapseExactLawSectionPreview && answerSourcePool.length > 1) {
+        continuationLabel = "ดูเพิ่มเติม";
+      }
 
       if (answerSourcePool.length === 0) {
         setSessionContinuationState(session, null);
@@ -1047,7 +1062,9 @@ async function replyToDbOnlyMainChat(payload, session) {
         });
         paginated = await paginateContinuationState(continuationSessionState, {
           maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
-          maxSourceChunks: resolveDbOnlyMainChatMaxSourceChunks(message, questionIntent),
+          maxSourceChunks: collapseExactLawSectionPreview
+            ? 1
+            : resolveDbOnlyMainChatMaxSourceChunks(message, questionIntent),
         });
         selectedSources = paginated.renderSources || [];
 
@@ -1063,6 +1080,7 @@ async function replyToDbOnlyMainChat(payload, session) {
                 ? resolvedContext.topicHints[0]
                 : "",
             questionIntent,
+            collapseExactLawSectionPreview,
             promptProfile: planContext.promptProfile,
             planCode: planContext.code,
           });
@@ -1135,10 +1153,12 @@ async function replyToDbOnlyMainChat(payload, session) {
     responseMeta: buildResponseMeta("db_only_main_chat", selectedSources),
     fromCache: false,
     continuation: hasContinuation
-      ? buildDbOnlyMainChatContinuation(message, nextContinuationState)
+      ? buildDbOnlyMainChatContinuation(message, nextContinuationState, {
+          label: continuationLabel,
+        })
       : {
           available: false,
-          label: "ดูคำตอบต่อ",
+          label: continuationLabel,
         },
   };
 

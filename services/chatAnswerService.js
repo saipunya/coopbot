@@ -3120,6 +3120,7 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
   const sourceItems = Array.isArray(sources) ? sources : [];
   const message = String(options.message || options.originalMessage || "").trim();
   const maxPrimarySections = Math.min(2, Math.max(1, Number(options.maxPrimarySections || 1)));
+  const collapseExactLawSectionPreview = options.collapseExactLawSectionPreview === true;
   const queryLawNumber = extractQueryLawNumber(message);
   const questionIntent = String(
     options.questionIntent ||
@@ -3130,7 +3131,7 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
   const normalizedQueryLawNumber = normalizeClauseNumber(queryLawNumber);
   const allowMultipleSubsectionsForExactLaw = questionIntent === "law_section" && Boolean(normalizedQueryLawNumber);
   const effectiveMaxPrimarySections = allowMultipleSubsectionsForExactLaw
-    ? Math.max(maxPrimarySections, 6)
+    ? (collapseExactLawSectionPreview ? maxPrimarySections : Math.max(maxPrimarySections, 6))
     : maxPrimarySections;
   const parsedEntries = [];
 

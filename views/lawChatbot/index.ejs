@@ -2464,6 +2464,42 @@
     }
 
     .floating-controls {
+      position: fixed;
+      top: calc(env(safe-area-inset-top) + 5.65rem);
+      right: 0.9rem;
+      z-index: 220;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.68rem;
+    }
+
+    .floating-controls .header-toggle-btn,
+    .floating-controls .clear-chat-btn,
+    .floating-action-btn {
+      width: 3rem;
+      height: 3rem;
+      min-width: 3rem;
+      min-height: 3rem;
+      padding: 0;
+      border-radius: 0.9rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      background: rgba(67, 126, 194, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.32);
+      box-shadow: 0 14px 28px rgba(37, 79, 132, 0.24);
+      backdrop-filter: blur(10px);
+      text-decoration: none;
+      font-size: 1.08rem;
+    }
+
+    .floating-controls .clear-chat-btn {
+      background: rgba(238, 68, 68, 0.96);
+    }
+
+    .floating-controls span {
       display: none;
     }
 
@@ -2480,7 +2516,7 @@
         linear-gradient(135deg, rgba(59, 122, 190, 0.98), rgba(74, 137, 199, 0.98)),
         radial-gradient(circle at 8% 8%, rgba(255, 255, 255, 0.22), transparent 28%);
       box-shadow: 0 12px 30px rgba(26, 72, 124, 0.18);
-      grid-template-columns: minmax(230px, 0.92fr) minmax(330px, 1.16fr) auto;
+      grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
       gap: clamp(0.62rem, 1.4vw, 1.05rem);
       overflow: visible;
@@ -2600,17 +2636,7 @@
     }
 
     .header-assistant {
-      min-width: 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.7rem;
-      padding: 0.34rem 0.48rem;
-      border-radius: 0.98rem;
-      border: 1px solid rgba(255, 255, 255, 0.26);
-      background: rgba(255, 255, 255, 0.12);
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-      backdrop-filter: blur(10px);
+      display: none;
     }
 
     .header-assistant-brand {
@@ -3084,22 +3110,12 @@
 
     @media (max-width: 991.98px) {
       .page-header {
-        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-columns: minmax(0, 1fr) auto;
       }
 
       .lawbot-hero,
       .lawbot-hero-actions {
         width: 100%;
-      }
-
-      .header-assistant {
-        justify-self: end;
-        max-width: 18rem;
-      }
-
-      .header-assistant-actions,
-      .header-assistant-copy span {
-        display: none;
       }
 
       .page-toolbar {
@@ -3127,51 +3143,10 @@
         gap: 0.48rem;
       }
 
-      .floating-controls {
-        position: fixed;
-        top: auto;
-        right: 0.7rem;
-        bottom: calc(env(safe-area-inset-bottom) + 6.4rem);
-        z-index: 90;
-        display: inline-flex;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.68rem;
-      }
-
-      .floating-controls .header-toggle-btn,
-      .floating-controls .clear-chat-btn,
-      .floating-action-btn {
-        width: 3rem;
-        height: 3rem;
-        min-width: 3rem;
-        min-height: 3rem;
-        padding: 0;
-        border-radius: 0.9rem;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        color: #fff;
-        background: rgba(67, 126, 194, 0.94);
-        border: 1px solid rgba(255, 255, 255, 0.32);
-        box-shadow: 0 14px 28px rgba(37, 79, 132, 0.24);
-        backdrop-filter: blur(10px);
-        text-decoration: none;
-        font-size: 1.08rem;
-      }
-
-      .floating-controls .clear-chat-btn {
-        background: rgba(238, 68, 68, 0.96);
-      }
-
-      .floating-controls span {
-        display: none;
-      }
-
       .page-header {
         --header-icon-size: 2.45rem;
         padding: 0.52rem 0.64rem;
-        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
         gap: 0.38rem;
       }
@@ -3198,30 +3173,6 @@
         width: auto;
         flex-wrap: nowrap;
         justify-content: flex-end;
-      }
-
-      .header-assistant {
-        padding: 0;
-        border: 0;
-        background: transparent;
-        box-shadow: none;
-        backdrop-filter: none;
-      }
-
-      .header-assistant-icon {
-        width: 2.28rem;
-        height: 2.28rem;
-        border-radius: 0.72rem;
-      }
-
-      .header-assistant-icon img {
-        width: 1.68rem;
-        height: 1.68rem;
-      }
-
-      .header-assistant-copy,
-      .header-assistant-actions {
-        display: none;
       }
 
       .page-identity {
@@ -3390,6 +3341,889 @@
       }
     }
 
+    /* --- CoopLaw reference layout overrides (UI only) --- */
+    body {
+      background: #eef0f2;
+      color: #1b2430;
+    }
+
+    .lawbot-app {
+      max-width: 1320px;
+      padding: 1.25rem;
+      gap: 0.92rem;
+    }
+
+    .floating-controls {
+      display: none !important;
+    }
+
+    .mobile-topbar {
+      display: none;
+      width: 100%;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.7rem;
+      padding: 0.2rem 0.15rem 0.42rem;
+    }
+
+    .mobile-topbar-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .mobile-topbar-icon {
+      width: 2.8rem;
+      height: 2.8rem;
+      border-radius: 1rem;
+      background: #166c49;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 16px rgba(15, 87, 57, 0.16);
+      flex: 0 0 auto;
+    }
+
+    .mobile-topbar-icon img {
+      width: 1.75rem;
+      height: 1.75rem;
+      object-fit: contain;
+      filter: brightness(0) invert(1);
+    }
+
+    .mobile-topbar-brand strong {
+      display: block;
+      font-size: 1.08rem;
+      line-height: 1.05;
+      color: #173527;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mobile-topbar-brand span {
+      display: block;
+      margin-top: 0.12rem;
+      font-size: 0.8rem;
+      color: #72808b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mobile-topbar-btn {
+      width: 2.8rem;
+      height: 2.8rem;
+      border: 1px solid #dbe1e6;
+      border-radius: 1rem;
+      background: #f8fafb;
+      color: #1d2735;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      text-decoration: none;
+      box-shadow: 0 6px 14px rgba(20, 28, 40, 0.08);
+      flex: 0 0 auto;
+    }
+
+    .mobile-topbar-btn:hover,
+    .mobile-topbar-btn:focus-visible {
+      color: #166c49;
+      border-color: #bcd7ca;
+      background: #f5f9f7;
+    }
+
+    .mobile-topbar-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex: 0 0 auto;
+    }
+
+    .mobile-topbar-clear {
+      color: #b42318;
+    }
+
+    .mobile-topbar-clear:hover,
+    .mobile-topbar-clear:focus-visible {
+      color: #8a1f14;
+      border-color: #f0c6c0;
+      background: #fff7f5;
+    }
+
+    .cooplaw-layout {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 0.92rem;
+      align-items: stretch;
+    }
+
+    .cooplaw-sidebar {
+      background: #f5f6f7;
+      border: 1px solid #dde2e7;
+      border-radius: 1.1rem;
+      box-shadow: 0 12px 26px rgba(16, 29, 44, 0.08);
+      padding: 1.05rem 0.9rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.96rem;
+      min-height: calc(100dvh - 2.5rem);
+    }
+
+    .cooplaw-sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.28rem 0.2rem 0.34rem;
+    }
+
+    .cooplaw-sidebar-brand-copy,
+    .cooplaw-sidebar-legal-copy {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .cooplaw-sidebar-close {
+      display: none;
+      width: 2.35rem;
+      height: 2.35rem;
+      border: 1px solid #dbe3e8;
+      border-radius: 0.78rem;
+      background: #fff;
+      color: #223044;
+      align-items: center;
+      justify-content: center;
+      margin-left: auto;
+      font-size: 1rem;
+      box-shadow: 0 8px 16px rgba(16, 29, 44, 0.08);
+    }
+
+    .cooplaw-sidebar-backdrop {
+      display: none;
+    }
+
+    .cooplaw-sidebar-brand-icon {
+      width: 2.86rem;
+      height: 2.86rem;
+      border-radius: 0.96rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #196f4b;
+      box-shadow: 0 8px 16px rgba(15, 92, 60, 0.18);
+      flex: 0 0 auto;
+    }
+
+    .cooplaw-sidebar-brand-icon img {
+      width: 1.82rem;
+      height: 1.82rem;
+      object-fit: contain;
+      filter: brightness(0) invert(1);
+    }
+
+    .cooplaw-sidebar-brand-copy strong {
+      display: block;
+      color: #192436;
+      font-size: 2rem;
+      line-height: 1.05;
+    }
+
+    .cooplaw-sidebar-brand-copy span {
+      display: block;
+      margin-top: 0.18rem;
+      font-size: 0.8rem;
+      color: #7a8794;
+      line-height: 1.35;
+    }
+
+    .cooplaw-new-chat-btn {
+      width: 100%;
+      border: 0;
+      border-radius: 0.88rem;
+      padding: 0.8rem 0.95rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.52rem;
+      background: linear-gradient(140deg, #0e7a4f, #11653f);
+      color: #fff;
+      font-weight: 700;
+      font-size: 1rem;
+      box-shadow: 0 10px 24px rgba(17, 101, 63, 0.22);
+    }
+
+    .cooplaw-new-chat-btn span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .cooplaw-new-chat-btn:hover,
+    .cooplaw-new-chat-btn:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 26px rgba(17, 101, 63, 0.28);
+    }
+
+    .cooplaw-sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 0.18rem;
+      padding-bottom: 0.62rem;
+      border-bottom: 1px solid #d7dee4;
+    }
+
+    .cooplaw-sidebar-nav-item {
+      width: 100%;
+      border-radius: 0.72rem;
+      padding: 0.62rem 0.68rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.62rem;
+      color: #2b3442;
+      text-decoration: none;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .cooplaw-sidebar-nav-item i {
+      color: #404c5b;
+      font-size: 1.15rem;
+      flex: 0 0 auto;
+    }
+
+    .cooplaw-sidebar-nav-item span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .cooplaw-sidebar-nav-item:hover,
+    .cooplaw-sidebar-nav-item:focus-visible,
+    .cooplaw-sidebar-nav-item.is-active {
+      background: #e0ece5;
+      color: #113c2a;
+    }
+
+    .cooplaw-sidebar-nav-item.is-active i,
+    .cooplaw-sidebar-nav-item:hover i,
+    .cooplaw-sidebar-nav-item:focus-visible i {
+      color: #0f6642;
+    }
+
+    .cooplaw-sidebar-recent {
+      display: flex;
+      flex-direction: column;
+      gap: 0.62rem;
+      min-height: 0;
+    }
+
+    .cooplaw-sidebar-recent-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.4rem;
+      font-size: 0.9rem;
+      color: #3b4958;
+    }
+
+    .cooplaw-sidebar-recent-head strong {
+      color: #243140;
+    }
+
+    .cooplaw-sidebar-recent-head a {
+      color: #166c49;
+      font-weight: 700;
+      text-decoration: none;
+      font-size: 0.84rem;
+    }
+
+    .cooplaw-sidebar-recent-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.44rem;
+      min-height: 0;
+    }
+
+    .cooplaw-sidebar-recent-item {
+      width: 100%;
+      border: 1px solid #d7dfe6;
+      background: #f8fafb;
+      box-shadow: none;
+      border-radius: 0.72rem;
+      justify-content: flex-start;
+      padding: 0.62rem 0.62rem;
+      text-align: left;
+      color: #283342;
+      font-size: 0.94rem;
+      line-height: 1.36;
+      display: inline-flex;
+      gap: 0.55rem;
+      align-items: flex-start;
+    }
+
+    .cooplaw-sidebar-recent-item i {
+      color: #7c8a97;
+      margin-top: 0.08rem;
+    }
+
+    .cooplaw-sidebar-recent-item.is-active {
+      background: #dceae2;
+      border-color: #c0d8cc;
+      color: #102f22;
+    }
+
+    .cooplaw-sidebar-recent-item.is-active i {
+      color: #0f6542;
+    }
+
+    .cooplaw-sidebar-recent-item span {
+      display: -webkit-box;
+      min-width: 0;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      overflow-wrap: anywhere;
+    }
+
+    .cooplaw-sidebar-legal {
+      margin-top: auto;
+      border-radius: 0.88rem;
+      border: 1px solid #cee2d5;
+      background: linear-gradient(180deg, #e7f3ec, #ecf5f0);
+      padding: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.72rem;
+    }
+
+    .cooplaw-sidebar-legal-icon {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 0.92rem;
+      background: #176f4a;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      flex: 0 0 auto;
+    }
+
+    .cooplaw-sidebar-legal-copy strong {
+      display: block;
+      font-size: 0.95rem;
+      color: #11402d;
+      margin-bottom: 0.12rem;
+    }
+
+    .cooplaw-sidebar-legal-copy span {
+      display: block;
+      font-size: 0.8rem;
+      color: #516170;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+
+    .cooplaw-sidebar-version {
+      margin-top: 0.12rem;
+      color: #6f7f8d;
+      font-size: 0.8rem;
+      display: grid;
+      gap: 0.12rem;
+      padding: 0 0.2rem;
+    }
+
+    .cooplaw-sidebar-version strong {
+      color: #485767;
+      font-size: 0.82rem;
+    }
+
+    .cooplaw-main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.82rem;
+    }
+
+    .page-header {
+      width: 100%;
+      border-radius: 1rem;
+      border: 1px solid #dde4eb;
+      background: #f7f9fb;
+      box-shadow: 0 12px 25px rgba(22, 35, 52, 0.08);
+      padding: 0.9rem 1.05rem;
+    }
+
+    .page-header::before {
+      display: none;
+    }
+
+    .page-brand .brand-icon {
+      width: 2.52rem;
+      height: 2.52rem;
+      border-radius: 0.82rem;
+      background: linear-gradient(140deg, #166e4a, #12583a);
+      box-shadow: 0 8px 16px rgba(17, 102, 66, 0.22);
+    }
+
+    .page-brand .brand-icon img {
+      width: 1.55rem;
+      height: 1.55rem;
+      filter: brightness(0) invert(1);
+    }
+
+    .brand-title h6 {
+      color: #1a2332;
+      font-size: 1.2rem;
+      letter-spacing: -0.01em;
+    }
+
+    .brand-title p {
+      display: block;
+      color: #6d7b88;
+      font-size: 0.95rem;
+      margin: 0.12rem 0 0;
+    }
+
+    #onlineBadge.status-chip {
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      color: #1f4734;
+      font-weight: 700;
+      padding: 0;
+      gap: 0.34rem;
+    }
+
+    #onlineBadge.status-chip::before {
+      width: 0.46rem;
+      height: 0.46rem;
+      box-shadow: none;
+      background: #39b16f;
+    }
+
+    .header-assistant {
+      display: none !important;
+    }
+
+    .page-toolbar {
+      gap: 0.62rem;
+      align-items: center;
+    }
+
+    .page-toolbar-divider {
+      display: none;
+    }
+
+    .page-identity {
+      width: 2.45rem;
+      min-width: 2.45rem;
+      height: 2.45rem;
+      padding: 0.15rem;
+      border-radius: 999px;
+      justify-content: center;
+      background: #fff;
+      border-color: #d5dde5;
+      box-shadow: 0 7px 14px rgba(32, 45, 61, 0.08);
+    }
+
+    .page-identity-text,
+    .page-identity-badge {
+      display: none;
+    }
+
+    .page-identity-avatar {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 999px;
+      box-shadow: none;
+    }
+
+    .page-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.46rem;
+    }
+
+    .cooplaw-save-btn {
+      border-radius: 999px;
+      border-color: #d1d9e2;
+      color: #213144;
+      background: #fff;
+      padding: 0.46rem 0.9rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .cooplaw-save-btn:hover,
+    .cooplaw-save-btn:focus-visible {
+      background: #f4f8f6;
+      border-color: #c1d7cc;
+      color: #114c33;
+    }
+
+    .cooplaw-clear-history-btn {
+      border-radius: 999px;
+      border-color: #efd0ca;
+      color: #a5281d;
+      background: #fff;
+      padding: 0.46rem 0.9rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .cooplaw-clear-history-btn:hover,
+    .cooplaw-clear-history-btn:focus-visible {
+      background: #fff7f5;
+      border-color: #e9b5ac;
+      color: #812016;
+    }
+
+    .page-actions .icon-chip-btn {
+      width: 2.4rem;
+      height: 2.4rem;
+      border-radius: 999px;
+      border-color: #d1dae2;
+      background: #fff;
+      color: #2b394b;
+      box-shadow: none;
+    }
+
+    .page-actions .btn-install,
+    .page-actions .btn-install-ios {
+      display: none !important;
+    }
+
+    .lawbot-hero {
+      display: none !important;
+    }
+
+    .chat-shell {
+      width: 100%;
+      border-radius: 1.12rem;
+      min-height: calc(100dvh - 5.1rem);
+      border: 1px solid #dbe2e8;
+      background: #f7f9fa;
+      box-shadow: 0 14px 30px rgba(16, 28, 42, 0.08);
+    }
+
+    .chat-messages {
+      background: #f2f5f6;
+      padding: 1.02rem;
+    }
+
+    .chat-messages::before {
+      display: none;
+    }
+
+    .bubble-user {
+      background: linear-gradient(140deg, #107046, #115d3c) !important;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    .bubble-bot {
+      border: 1px solid #d6e0e6;
+      border-left: 1px solid #d6e0e6;
+      box-shadow: 0 10px 22px rgba(30, 44, 63, 0.07);
+    }
+
+    .bot-answer-section-title {
+      color: #0f5639;
+      border-left-color: #0f6b46;
+      background: rgba(15, 107, 70, 0.08);
+    }
+
+    .answer-bullet-card {
+      border-color: #d7e3de;
+      background: #f9fcfa;
+    }
+
+    .answer-bullet-card::before {
+      background: rgba(14, 121, 79, 0.08);
+      color: #0f6c46;
+    }
+
+    .chat-input-wrap {
+      margin: 0.72rem;
+      border: 1px solid #d6dde4;
+      border-radius: 1rem;
+      background: #fff;
+      box-shadow: 0 10px 20px rgba(19, 33, 48, 0.06);
+      padding: 0.78rem;
+    }
+
+    .chat-input-wrap .input-group > .form-control {
+      border-radius: 0.9rem;
+      border-color: #d5dde6;
+      min-height: 3rem;
+      background: #fbfcfd;
+    }
+
+    #sendBtn {
+      border-radius: 0.9rem;
+      min-width: 6.4rem;
+      background: linear-gradient(135deg, #0f7a4e, #115c3c);
+      border-color: #115c3c;
+    }
+
+    #voiceBtn {
+      border-radius: 0.9rem;
+    }
+
+    .composer-inline-only {
+      display: none !important;
+    }
+
+    .composer-hint {
+      color: #74808a;
+      font-size: 0.78rem;
+      margin-top: 0.55rem;
+    }
+
+    .composer-hint span:last-child {
+      display: none;
+    }
+
+    .legalbot-site-footer {
+      display: none;
+    }
+
+    @media (max-width: 991.98px) {
+      body.mobile-menu-open {
+        overflow: hidden;
+      }
+
+      .lawbot-app {
+        max-width: 100%;
+        width: 100%;
+        height: auto;
+        min-height: 100dvh;
+        overflow: visible;
+        padding: 0.72rem;
+        gap: 0.58rem;
+        align-items: stretch;
+      }
+
+      .mobile-topbar {
+        display: flex;
+        flex: 0 0 auto;
+      }
+
+      .cooplaw-layout {
+        display: block;
+      }
+
+      .cooplaw-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 1060;
+        width: min(88vw, 21rem);
+        max-width: calc(100vw - 1rem);
+        min-height: 100dvh;
+        max-height: 100dvh;
+        display: flex;
+        overflow-y: auto;
+        border-radius: 0 1.08rem 1.08rem 0;
+        transform: translateX(calc(-100% - 1rem));
+        transition: transform 180ms ease;
+        box-shadow: 0 24px 48px rgba(16, 29, 44, 0.22);
+      }
+
+      .cooplaw-sidebar-brand {
+        align-items: flex-start;
+        gap: 0.58rem;
+        padding-right: 0;
+      }
+
+      .cooplaw-sidebar-brand-icon {
+        width: 2.42rem;
+        height: 2.42rem;
+        border-radius: 0.82rem;
+      }
+
+      .cooplaw-sidebar-brand-icon img {
+        width: 1.48rem;
+        height: 1.48rem;
+      }
+
+      .cooplaw-sidebar-brand-copy strong {
+        font-size: 1.22rem;
+        line-height: 1.12;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .cooplaw-sidebar-brand-copy span {
+        font-size: 0.74rem;
+        line-height: 1.28;
+        overflow-wrap: anywhere;
+      }
+
+      .cooplaw-sidebar-close {
+        width: 2.2rem;
+        height: 2.2rem;
+        min-width: 2.2rem;
+        flex: 0 0 auto;
+      }
+
+      .lawbot-app.mobile-menu-open .cooplaw-sidebar {
+        transform: translateX(0);
+      }
+
+      .cooplaw-sidebar-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1050;
+        display: block;
+        pointer-events: none;
+        opacity: 0;
+        background: rgba(16, 29, 44, 0.36);
+        transition: opacity 180ms ease;
+      }
+
+      .lawbot-app.mobile-menu-open .cooplaw-sidebar-backdrop {
+        pointer-events: auto;
+        opacity: 1;
+      }
+
+      .cooplaw-sidebar-close {
+        display: inline-flex;
+      }
+
+      .cooplaw-main {
+        width: 100%;
+        min-width: 0;
+        gap: 0.55rem;
+      }
+
+      .page-header {
+        display: none;
+      }
+
+      .chat-shell {
+        width: 100%;
+        max-width: 100%;
+        flex: 0 0 auto;
+        border-radius: 1rem;
+        min-height: 0;
+        border: 1px solid #d8e0e6;
+        box-shadow: 0 12px 24px rgba(21, 33, 47, 0.08);
+      }
+
+      .chat-messages {
+        min-height: calc(100dvh - 246px);
+        padding: 0.82rem;
+      }
+
+      .chat-input-wrap {
+        margin: 0.65rem;
+        flex: 0 0 auto;
+      }
+    }
+
+    @media (max-width: 767.98px) {
+      html,
+      body {
+        min-height: 100%;
+        overflow-x: hidden;
+        overscroll-behavior-y: auto;
+      }
+
+      .lawbot-app {
+        padding: 0.58rem;
+        padding-bottom: max(0.58rem, env(safe-area-inset-bottom));
+      }
+
+      .mobile-topbar {
+        padding-top: max(0.12rem, env(safe-area-inset-top));
+        gap: 0.44rem;
+      }
+
+      .mobile-topbar-actions {
+        gap: 0.34rem;
+      }
+
+      .mobile-topbar-btn,
+      .mobile-topbar-icon {
+        width: 2.6rem;
+        height: 2.6rem;
+        border-radius: 0.88rem;
+      }
+
+      .mobile-topbar-btn {
+        font-size: 1.42rem;
+      }
+
+      .mobile-topbar-brand strong {
+        font-size: 1rem;
+      }
+
+      .mobile-topbar-brand span {
+        font-size: 0.75rem;
+      }
+
+      .chat-shell {
+        width: 100%;
+        max-width: 100%;
+        overflow: visible;
+        border-radius: 0.95rem;
+      }
+
+      .chat-messages {
+        min-height: calc(100dvh - 258px);
+        max-height: none;
+        overflow-y: visible;
+      }
+
+      .chat-input-wrap .input-group {
+        gap: 0.42rem;
+        align-items: center;
+      }
+
+      .chat-input-wrap .input-group > .form-control {
+        flex: 1 1 100%;
+        width: 100%;
+        min-height: 2.9rem;
+      }
+
+      .composer-inline-only {
+        display: none !important;
+      }
+
+      #voiceBtn,
+      #sendBtn {
+        flex: 0 0 auto;
+        width: 3rem;
+        min-width: 3rem;
+        height: 3rem;
+        padding: 0;
+        font-size: 0;
+      }
+
+      #debugBtn {
+        display: none !important;
+      }
+
+      #voiceBtn i,
+      #sendBtn i {
+        margin: 0 !important;
+        font-size: 1.02rem;
+      }
+
+      .composer-hint {
+        display: none;
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .bubble, .hl-hit { animation: none !important; }
     }
@@ -3398,10 +4232,6 @@
 <body data-bot-plan="free">
   <div class="lawbot-app">
     <div class="floating-controls">
-      <a href="/user/search-history" class="floating-action-btn" title="ประวัติการสนทนา" aria-label="ประวัติการสนทนา">
-        <i class="bi bi-clock-history"></i>
-        <span>ประวัติ</span>
-      </a>
       <button type="button" id="toggleHeaderBtn" data-toggle-header-control="1" class="btn btn-sm btn-outline-secondary header-toggle-btn" title="ซ่อนส่วนหัวของระบบ" aria-label="ซ่อนส่วนหัวของระบบ" aria-pressed="false">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
         <span>ซ่อนหัวระบบ</span>
@@ -3409,10 +4239,6 @@
       <button type="button" id="clearChatBtn" data-clear-chat-control="1" class="btn btn-sm btn-outline-danger clear-chat-btn" title="ลบประวัติแชต" aria-label="ลบประวัติแชต">
         <i class="bi bi-trash-fill"></i>
         <span>ลบประวัติ</span>
-      </button>
-      <button type="button" class="floating-action-btn" data-bs-toggle="modal" data-bs-target="#developerModal" title="เกี่ยวกับระบบ" aria-label="เกี่ยวกับระบบ">
-        <i class="bi bi-info-circle"></i>
-        <span>เกี่ยวกับระบบ</span>
       </button>
     </div>
 
@@ -3442,8 +4268,107 @@
           ? "bi-person-badge-fill"
           : "bi-person-circle";
       const botPackageVariant = currentUser ? "admin" : "free";
+      const sidebarRecentItems = (
+        Array.isArray(data && data.suggestedQuestions) && data.suggestedQuestions.length
+          ? data.suggestedQuestions
+              .map((item) => String((item && (item.questionText || item.question || item.text)) || "").trim())
+              .filter(Boolean)
+              .slice(0, 5)
+          : [
+              "สมาชิกออกจากสหกรณ์ ต้องทำอย่างไร?",
+              "อำนาจหน้าที่ของคณะกรรมการดำเนินการสหกรณ์",
+              "การจัดสรรกำไรสุทธิของสหกรณ์",
+              "การตรวจสอบกิจการสหกรณ์",
+              "สหกรณ์ออมทรัพย์ คืออะไร",
+            ]
+      );
     %>
 
+    <div class="mobile-topbar" aria-label="แถบเมนูบนมือถือ">
+      <button type="button" class="mobile-topbar-btn" data-mobile-menu-control="1" aria-label="เมนู" aria-expanded="false">
+        <i class="bi bi-list"></i>
+      </button>
+      <div class="mobile-topbar-brand">
+        <div class="mobile-topbar-icon" aria-hidden="true">
+          <img src="/icon/coop-rope-watermark.svg" alt="" />
+        </div>
+        <div>
+          <strong>CoopLaw AI</strong>
+          <span>ผู้ช่วยค้นหาข้อมูลกฎหมายสหกรณ์</span>
+        </div>
+      </div>
+      <div class="mobile-topbar-actions">
+        <button type="button" class="mobile-topbar-btn mobile-topbar-clear" data-clear-chat-control="1" aria-label="เคลียร์ประวัติ">
+          <i class="bi bi-trash3"></i>
+        </button>
+        <a href="/user/search-history" class="mobile-topbar-btn" aria-label="ประวัติการสนทนา">
+          <i class="bi bi-clock-history"></i>
+        </a>
+      </div>
+    </div>
+
+    <div class="cooplaw-layout">
+      <button type="button" class="cooplaw-sidebar-backdrop" data-mobile-menu-control="1" aria-label="ปิดเมนู"></button>
+      <aside class="cooplaw-sidebar" aria-label="เมนูระบบ">
+        <div class="cooplaw-sidebar-brand">
+          <div class="cooplaw-sidebar-brand-icon" aria-hidden="true">
+            <img src="/icon/coop-rope-watermark.svg" alt="" />
+          </div>
+          <div class="cooplaw-sidebar-brand-copy">
+            <strong>CoopLaw AI</strong>
+            <span>ผู้ช่วยค้นหาข้อมูลกฎหมายสหกรณ์</span>
+          </div>
+          <button type="button" class="cooplaw-sidebar-close" data-mobile-menu-control="1" aria-label="ปิดเมนู">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+
+        <button type="button" class="cooplaw-new-chat-btn" data-clear-chat-control="1">
+          <i class="bi bi-plus-lg"></i>
+          <span>เริ่มต้นการค้นหาใหม่</span>
+        </button>
+
+        <nav class="cooplaw-sidebar-nav" aria-label="รายการเมนู">
+          <a href="/law-chatbot" class="cooplaw-sidebar-nav-item"><i class="bi bi-house"></i><span>หน้าหลัก</span></a>
+          <a href="#chatMessages" class="cooplaw-sidebar-nav-item is-active"><i class="bi bi-chat-dots"></i><span>การสนทนา</span></a>
+          <a href="#chatMessages" class="cooplaw-sidebar-nav-item"><i class="bi bi-journal-text"></i><span>กฎหมายสหกรณ์</span></a>
+          <a href="#chatMessages" class="cooplaw-sidebar-nav-item"><i class="bi bi-file-earmark-text"></i><span>ระเบียบ / ข้อบังคับ</span></a>
+          <a href="#composerSuggestions" class="cooplaw-sidebar-nav-item"><i class="bi bi-question-square"></i><span>คำถามที่พบบ่อย</span></a>
+          <a href="/user/search-history" class="cooplaw-sidebar-nav-item"><i class="bi bi-clock-history"></i><span>ประวัติการค้นหา</span></a>
+        </nav>
+
+        <section class="cooplaw-sidebar-recent" aria-label="การค้นหาล่าสุด">
+          <div class="cooplaw-sidebar-recent-head">
+            <strong>การค้นหาล่าสุด</strong>
+            <a href="/user/search-history">ดูทั้งหมด</a>
+          </div>
+          <div class="cooplaw-sidebar-recent-list">
+            <% sidebarRecentItems.forEach((item, index) => { %>
+              <button type="button" class="quick-btn cooplaw-sidebar-recent-item<%= index === 0 ? ' is-active' : '' %>" data-question="<%= item %>">
+                <i class="bi bi-clock-history"></i>
+                <span><%= item %></span>
+              </button>
+            <% }) %>
+          </div>
+        </section>
+
+        <div class="cooplaw-sidebar-legal">
+          <div class="cooplaw-sidebar-legal-icon" aria-hidden="true">
+            <i class="bi bi-bank2"></i>
+          </div>
+          <div class="cooplaw-sidebar-legal-copy">
+            <strong>ฐานข้อมูลกฎหมายอัปเดตล่าสุด</strong>
+            <span>ครอบคลุม พ.ร.บ. สหกรณ์ ระเบียบ และหนังสือเวียนที่เกี่ยวข้อง</span>
+          </div>
+        </div>
+
+        <div class="cooplaw-sidebar-version">
+          <strong>CoopLaw AI v1.0.0</strong>
+          <span>ข้อมูลนี้มีเพื่อการอ้างอิง ไม่ถือเป็นคำแนะนำทางกฎหมาย</span>
+        </div>
+      </aside>
+
+      <div class="cooplaw-main">
     <div class="page-header">
       <div class="page-brand">
         <div class="brand-icon" aria-hidden="true">
@@ -3451,10 +4376,10 @@
         </div>
         <div class="brand-title">
           <div class="brand-heading">
-            <h6><strong>ระบบค้นหากฎหมายสหกรณ์และกลุ่มเกษตรกร</strong></h6>
+            <h6><strong>ผู้ช่วยค้นหาข้อมูลกฎหมายสหกรณ์</strong></h6>
             <span id="onlineBadge" class="status-chip"><i class="bi bi-wifi"></i>ออนไลน์</span>
           </div>
-          <p>ระบบตอบคำถามกฎหมาย LawBot</p>
+          <p>AI ให้ข้อมูลตามกฎหมายที่บังคับใช้ล่าสุด</p>
         </div>
       </div>
       <div class="header-assistant" aria-label="ข้อมูลผู้ช่วยค้นหากฎหมาย">
@@ -3516,8 +4441,16 @@
         </div>
         <span class="page-toolbar-divider" aria-hidden="true"></span>
         <div class="page-actions">
+          <a href="/user/search-history" class="btn btn-sm btn-outline-secondary cooplaw-save-btn" title="บันทึกบทสนทนา">
+            <i class="bi bi-pencil-square"></i>
+            <span>บันทึกบทสนทนา</span>
+          </a>
+          <button type="button" class="btn btn-sm btn-outline-danger cooplaw-clear-history-btn" data-clear-chat-control="1" title="เคลียร์ประวัติ" aria-label="เคลียร์ประวัติ">
+            <i class="bi bi-trash3"></i>
+            <span>เคลียร์ประวัติ</span>
+          </button>
           <button type="button" class="btn btn-sm btn-outline-secondary icon-chip-btn" data-bs-toggle="modal" data-bs-target="#developerModal" title="ข้อมูลผู้พัฒนา" aria-label="ผู้พัฒนาระบบ">
-            <i class="bi bi-person-badge"></i>
+            <i class="bi bi-sun"></i>
             <span class="visually-hidden">ผู้พัฒนาระบบ</span>
           </button>
 
@@ -3604,12 +4537,12 @@
                 </div>
                 <div class="col-12">
                   <label for="adminKnowledgeTitle" class="form-label">หัวข้อ</label>
-                  <input id="adminKnowledgeTitle" name="title" type="text" class="form-control" placeholder="สรุปหัวข้อสำหรับเก็บเข้าฐานความรู้" required />
+                  <input id="adminKnowledgeTitle" name="title" type="text" class="form-control" placeholder="คำถามที่จะบันทึกเป็นคำถามแนะนำ" required />
                 </div>
                 <div class="col-12">
                   <label for="adminKnowledgeContent" class="form-label">คำตอบที่ถูกต้อง</label>
                   <textarea id="adminKnowledgeContent" name="content" class="form-control" rows="6" placeholder="พิมพ์คำตอบหรือรายละเอียดที่ต้องการให้บอทใช้อ้างอิง" required></textarea>
-                  <div class="admin-knowledge-hint mt-2">ระบบจะนำข้อมูลนี้ไปใช้เป็นฐานความรู้ในการตอบคำถามรอบถัดไป</div>
+                  <div class="admin-knowledge-hint mt-2">ระบบจะบันทึกเป็นคำถามแนะนำที่เปิดใช้งานทันที เพื่อให้ค้นเจอเป็นคำตอบหลักในรอบถัดไป</div>
                 </div>
                 <div class="col-12">
                   <label for="adminKnowledgeSourceNote" class="form-label">แหล่งที่มา / หมายเหตุ</label>
@@ -3619,7 +4552,7 @@
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
-              <button type="submit" id="adminKnowledgeSubmitBtn" class="btn btn-primary">บันทึกเข้าฐานความรู้</button>
+              <button type="submit" id="adminKnowledgeSubmitBtn" class="btn btn-primary">บันทึกเป็นคำถามแนะนำ</button>
             </div>
           </form>
         </div>
@@ -3785,6 +4718,8 @@
         <span>ระบบปลอดภัย<br />ข้อมูลของคุณได้รับการคุ้มครอง</span>
       </div>
     </footer>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -3865,6 +4800,8 @@
       const sendBtn = document.getElementById('sendBtn');
       const debugBtn = document.getElementById('debugBtn');
       const clearChatButtons = Array.from(document.querySelectorAll('[data-clear-chat-control="1"]'));
+      const mobileMenuButtons = Array.from(document.querySelectorAll('[data-mobile-menu-control="1"]'));
+      const mobileSidebarCloseTargets = Array.from(document.querySelectorAll('.cooplaw-sidebar a, .cooplaw-sidebar button'));
       const toggleHeaderButtons = Array.from(document.querySelectorAll('[data-toggle-header-control="1"]'));
       const togglePlanRibbonButtons = Array.from(document.querySelectorAll('[data-toggle-plan-ribbon-control="1"]'));
       const lawbotApp = document.querySelector('.lawbot-app');
@@ -3893,6 +4830,19 @@
       const knowledgeSuggestionSourceReferenceInput = document.getElementById('knowledgeSuggestionSourceReference');
       const knowledgeSuggestionSubmitBtn = document.getElementById('knowledgeSuggestionSubmitBtn');
       const knowledgeSuggestionVoiceBtn = document.getElementById('knowledgeSuggestionVoiceBtn');
+
+      function setMobileMenuOpen(open) {
+        if (!lawbotApp) {
+          return;
+        }
+
+        const shouldOpen = Boolean(open);
+        lawbotApp.classList.toggle('mobile-menu-open', shouldOpen);
+        document.body.classList.toggle('mobile-menu-open', shouldOpen);
+        mobileMenuButtons.forEach((button) => {
+          button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        });
+      }
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const isAndroidDevice = /android/i.test(window.navigator.userAgent || '');
       const isIosDevice = /iphone|ipad|ipod/i.test(window.navigator.userAgent || '');
@@ -4754,13 +5704,68 @@
           );
       }
 
+      function shouldBreakBeforeClauseMarker(contextText, currentLineText) {
+        const context = String(contextText || '').replace(/\s+/g, ' ').trim();
+        const currentLine = String(currentLineText || '').replace(/\s+/g, ' ').trim();
+
+        if (!context) {
+          return false;
+        }
+
+        if (/(?:ตาม|ในกรณีตาม|ตามข้อ|ตามวรรค|ตามอนุมาตรา|หรือ)\s*$/u.test(context)) {
+          return false;
+        }
+
+        if (
+          /(?:ดังนี้|ดังต่อไปนี้|ต่อไปนี้|มีกรณีดังต่อไปนี้|มีเหตุดังต่อไปนี้|เหตุหนึ่งเหตุใดต่อไปนี้|ได้แก่)\s*$/u.test(
+            context,
+          )
+        ) {
+          return true;
+        }
+
+        return /^\([0-9๐-๙]{1,3}\)/u.test(currentLine);
+      }
+
+      function normalizeClauseMarkerLineBreaks(text) {
+        const raw = String(text || '');
+        if (!raw) {
+          return raw;
+        }
+
+        let result = '';
+        let lastIndex = 0;
+        const markerPattern = /\s+\([0-9๐-๙]{1,3}\)/gu;
+
+        raw.replace(markerPattern, (match, offset) => {
+          const leadingSegment = raw.slice(lastIndex, offset);
+          result += leadingSegment;
+
+          const contextText = result.slice(-80);
+          const currentLineText = result.split('\n').pop() || '';
+          const markerText = String(match || '').trim();
+
+          if (shouldBreakBeforeClauseMarker(contextText, currentLineText)) {
+            result = result.replace(/[ \t]+$/g, '');
+            result += `\n${markerText}`;
+          } else {
+            result += ` ${markerText}`;
+          }
+
+          lastIndex = offset + match.length;
+          return match;
+        });
+
+        result += raw.slice(lastIndex);
+        return result;
+      }
+
       function sanitizeDisplayText(text) {
-        return replaceUserVisibleAiTerms(normalizeProtectedDisplayLineBreaks(text))
+        return normalizeClauseMarkerLineBreaks(replaceUserVisibleAiTerms(normalizeProtectedDisplayLineBreaks(text)))
           .replace(/(^|\n)\s*ข้อมูลที่พบจากฐานข้อมูลกฎหมาย(?:\s*\([^)]*\))?:?\s*(?=\n|$)/gu, '$1')
           .replace(/(^|\n)\s*\/\/\s*/g, '$1')
           .replace(/(^|[\s(])\/\/(?=[\s)]|$)/g, '$1')
           .replace(/[ \t]{2,}/g, ' ')
-          .replace(/([^\d๐-๙\n]) +(\([0-9๐-๙]{1,3}\))/g, '$1\n$2')
           .replace(
             /(มาตรา\s*[0-9๐-๙]+(?:\/[0-9๐-๙]+)?)\s*(?:\r?\n\s*)?((?:\([0-9๐-๙]{1,3}\)\s*){1,})/gu,
             (_, sectionRef, subsectionRefs) => `${sectionRef}${String(subsectionRefs || '').replace(/\s+/g, '')}`
@@ -4963,6 +5968,50 @@
         `;
       }
 
+      function resolvePreparedQaTitle(options = {}) {
+        const responseMeta = options && options.responseMeta ? options.responseMeta : null;
+        const usesPreparedQa = Boolean(
+          responseMeta && (
+            responseMeta.usesPreparedQa === true ||
+            responseMeta.kind === 'prepared_qa' ||
+            (Array.isArray(responseMeta.sourceTables) && responseMeta.sourceTables.includes('chatbot_suggested_questions'))
+          )
+        );
+
+        if (!usesPreparedQa) {
+          return '';
+        }
+
+        return String(
+          (responseMeta && responseMeta.preparedQaTitle)
+          || (options && options.question)
+          || ''
+        ).replace(/\s+/g, ' ').trim();
+      }
+
+      function restorePreparedQaTitle(text, options = {}) {
+        const raw = String(text || '').trim();
+        const title = resolvePreparedQaTitle(options);
+
+        if (!raw || !title) {
+          return raw;
+        }
+
+        const firstLine = raw.split('\n').map((line) => line.trim()).filter(Boolean)[0] || '';
+        const compactFirstLine = firstLine.replace(/\s+/g, ' ').trim();
+        const compactTitle = title.replace(/\s+/g, ' ').trim();
+
+        if (!compactFirstLine || compactFirstLine.includes(compactTitle) || compactTitle.includes(compactFirstLine)) {
+          return raw;
+        }
+
+        if (/^(?:\(?[0-9๐-๙]{1,3}\)|[0-9๐-๙]{1,3}\.)\s*/u.test(compactFirstLine)) {
+          return `${title}\n${raw}`;
+        }
+
+        return raw;
+      }
+
       function splitSummaryIntoBullets(text) {
         const raw = sanitizeDisplayText(text);
         if (!raw) return [];
@@ -5126,7 +6175,7 @@
       }
 
       function formatBotMessageHtml(text, terms, options = {}) {
-        const raw = stripBotUiNoiseText(sanitizeDisplayText(text));
+        const raw = restorePreparedQaTitle(stripBotUiNoiseText(sanitizeDisplayText(text)), options);
         const continuationHtml = buildContinuationActionHtml(options);
         if (!hasReferenceMarker(raw)) {
           const highlighted = formatBotDisplayLineHtml(raw, terms);
@@ -5286,7 +6335,7 @@
         }
 
         adminKnowledgeSubmitBtn.disabled = false;
-        adminKnowledgeSubmitBtn.textContent = 'บันทึกเข้าฐานความรู้';
+        adminKnowledgeSubmitBtn.textContent = 'บันทึกเป็นคำถามแนะนำ';
         adminKnowledgeModal.show();
         setTimeout(() => {
           adminKnowledgeTitleInput.focus();
@@ -6059,7 +7108,7 @@
             if (result && !result.cancelled) {
               wrap.insertAdjacentHTML(
                 'beforeend',
-                '<span class="text-primary small">บันทึกเข้าฐานความรู้แล้ว</span>'
+                '<span class="text-primary small">บันทึกเป็นคำถามแนะนำแล้ว</span>'
               );
               adminKnowledgeButton.remove();
             } else {
@@ -6173,7 +7222,7 @@
           } catch (error) {
             setAdminKnowledgeAlert(error.message || 'ไม่สามารถบันทึกคำตอบที่ถูกต้องได้');
             adminKnowledgeSubmitBtn.disabled = false;
-            adminKnowledgeSubmitBtn.textContent = 'บันทึกเข้าฐานความรู้';
+            adminKnowledgeSubmitBtn.textContent = 'บันทึกเป็นคำถามแนะนำ';
           }
         });
       }
@@ -6190,7 +7239,7 @@
           setAdminKnowledgeAlert('');
           if (adminKnowledgeSubmitBtn) {
             adminKnowledgeSubmitBtn.disabled = false;
-            adminKnowledgeSubmitBtn.textContent = 'บันทึกเข้าฐานความรู้';
+            adminKnowledgeSubmitBtn.textContent = 'บันทึกเป็นคำถามแนะนำ';
           }
         });
       }
@@ -6429,6 +7478,21 @@
           return;
         }
         hideComposerSuggestions();
+      });
+
+      mobileMenuButtons.forEach((button) => button.addEventListener('click', () => {
+        const isOpen = lawbotApp && lawbotApp.classList.contains('mobile-menu-open');
+        setMobileMenuOpen(!isOpen);
+      }));
+
+      mobileSidebarCloseTargets.forEach((target) => target.addEventListener('click', () => {
+        setMobileMenuOpen(false);
+      }));
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          setMobileMenuOpen(false);
+        }
       });
 
       quickButtons.forEach((button) => button.addEventListener('click', () => submitMessage(button.dataset.question || '')));
