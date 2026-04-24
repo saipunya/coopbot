@@ -1,7 +1,7 @@
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const { clearAnswerCache } = require("./answerStateService");
 const {
-  chunkText,
+  chunkTextWithMetadata,
   analyzeExtractedText,
   extractTextResultFromFile,
 } = require("./documentTextExtractor");
@@ -11,6 +11,7 @@ const {
 } = require("./keywordExtractionService");
 const { extractDocumentMetadata } = require("./documentMetadataService");
 const { uniqueTokens } = require("./thaiTextUtils");
+const { normalizeThai } = require("../utils/thaiNormalizer");
 
 const KEYWORD_CONCURRENCY = Number(process.env.KEYWORD_CONCURRENCY || 4);
 const PDF_CHUNK_ACCEPTED_QUALITY_SCORE = Number(process.env.PDF_CHUNK_ACCEPTED_QUALITY_SCORE || 60);
@@ -134,11 +135,16 @@ function decideDocumentIndexing(extractionResult, file = null, chunkCount = 0) {
   };
 }
 
-function analyzeChunkQuality(chunkText) {
-  const analysis = analyzeExtractedText(chunkText);
+function getChunkTextValue(chunk) {
+  return typeof chunk === "string" ? chunk : String(chunk?.chunkText || chunk?.text || "");
+}
+
+function analyzeChunkQuality(chunk) {
+  const text = getChunkTextValue(chunk);
+  const analysis = analyzeExtractedText(text);
   return {
     ...analysis,
-    chunkText,
+    chunkText: text,
   };
 }
 
@@ -157,10 +163,14 @@ function filterChunksByQuality(chunks, thresholds = {}) {
       qualityBand = "lowQuality";
     }
 
+    const text = getChunkTextValue(chunk);
     return {
       index,
       chunk,
       analysis,
+      qualityScore,
+      isLowQuality: qualityBand !== "accepted",
+      cleanText: normalizeThai(analysis.normalizedText || text),
       qualityBand,
     };
   });
@@ -190,15 +200,36 @@ function filterChunksByQuality(chunks, thresholds = {}) {
     acceptedChunks: acceptedChunks
       .slice()
       .sort((left, right) => left.index - right.index)
-      .map((item) => item.chunk),
+      .map((item) => ({
+        ...(typeof item.chunk === "string" ? { chunkText: item.chunk } : item.chunk),
+        chunkText: getChunkTextValue(item.chunk),
+        cleanText: item.cleanText,
+        qualityScore: item.qualityScore,
+        isLowQuality: false,
+        qualityBand: item.qualityBand,
+      })),
     lowQualityChunks: lowQualityChunks
       .slice()
       .sort((left, right) => left.index - right.index)
-      .map((item) => item.chunk),
+      .map((item) => ({
+        ...(typeof item.chunk === "string" ? { chunkText: item.chunk } : item.chunk),
+        chunkText: getChunkTextValue(item.chunk),
+        cleanText: item.cleanText,
+        qualityScore: item.qualityScore,
+        isLowQuality: true,
+        qualityBand: item.qualityBand,
+      })),
     rejectedChunks: rejectedChunks
       .slice()
       .sort((left, right) => left.index - right.index)
-      .map((item) => item.chunk),
+      .map((item) => ({
+        ...(typeof item.chunk === "string" ? { chunkText: item.chunk } : item.chunk),
+        chunkText: getChunkTextValue(item.chunk),
+        cleanText: item.cleanText,
+        qualityScore: item.qualityScore,
+        isLowQuality: true,
+        qualityBand: item.qualityBand,
+      })),
     summary: {
       chunk_total: analyzedChunks.length,
       chunk_accepted: acceptedChunks.length,
@@ -240,14 +271,18 @@ async function processUploadInBackground(file, uploadRecord) {
 
     const extractionResult = await extractTextResultFromFile(file);
     const extractedText = extractionResult.text;
-    const chunks = chunkText(extractedText, Number(process.env.CHUNK_SIZE || 1400));
+    const chunks = chunkTextWithMetadata(extractedText, Number(process.env.CHUNK_SIZE || 1400));
     const chunkQualityThresholds = getChunkQualityThresholds(file);
     const chunkFilterResult = filterChunksByQuality(chunks, chunkQualityThresholds);
     const acceptedChunks = chunkFilterResult.acceptedChunks;
     const extension = getFileExtension(file);
-    const indexableChunks = extension === "pdf"
-      ? acceptedChunks
-      : [...acceptedChunks, ...(chunkFilterResult.lowQualityChunks || [])];
+    const lowQualityChunks = chunkFilterResult.lowQualityChunks || [];
+    const flaggedLowQualityChunks = lowQualityChunks.map((chunk) => ({
+      ...chunk,
+      isActive: false,
+    }));
+    const indexableChunks = [...acceptedChunks, ...flaggedLowQualityChunks];
+    const hasAcceptedChunks = acceptedChunks.length > 0;
     const documentMetadata = await extractDocumentMetadata(extractedText, file);
     const extractionMethodLabel = getExtractionMethodLabel(extractionResult.extractionMethod);
     const extractionNoteLabel = (extractionResult.notes || [])
@@ -290,9 +325,9 @@ async function processUploadInBackground(file, uploadRecord) {
       extractionMethod: extractionResult.extractionMethod || "",
       extractionQualityScore: extractionResult.qualityScore,
       extractionNotes: (extractionResult.notes || []).filter(Boolean).join(" | "),
-      isSearchable: indexingDecision.isSearchable && indexableChunks.length > 0,
+      isSearchable: indexingDecision.isSearchable && hasAcceptedChunks,
       qualityStatus:
-        indexingDecision.isSearchable && indexableChunks.length > 0
+        indexingDecision.isSearchable && hasAcceptedChunks
           ? indexingDecision.qualityStatus
           : "quarantined",
     });
@@ -320,12 +355,20 @@ async function processUploadInBackground(file, uploadRecord) {
       indexableChunks,
       KEYWORD_CONCURRENCY,
       async (chunk) => {
-        const chunkKeywords = await extractKeywords(chunk);
+        const chunkTextValue = getChunkTextValue(chunk);
+        const chunkKeywords = await extractKeywords(chunk.cleanText || chunkTextValue);
         const mergedKeywords = uniqueTokens([...documentKeywords, ...chunkKeywords]).slice(0, 12);
 
         return {
           keyword: mergedKeywords.join(", ").slice(0, 255) || "document",
-          chunkText: chunk,
+          originalText: chunk.originalText || chunkTextValue,
+          chunkText: chunkTextValue,
+          cleanText: chunk.cleanText || normalizeThai(chunkTextValue),
+          chunkType: chunk.chunkType || "document",
+          sortOrder: chunk.sortOrder || 0,
+          qualityScore: chunk.qualityScore,
+          isActive: chunk.isActive !== false,
+          isLowQuality: Boolean(chunk.isLowQuality),
           documentId: documentRecord.id,
         };
       },
@@ -340,8 +383,8 @@ async function processUploadInBackground(file, uploadRecord) {
     });
 
     LawChatbotPdfChunkModel.updateUpload(uploadRecord.id, {
-      status: "completed",
-      processingMessage: `นำเข้าข้อมูลเรียบร้อยแล้ว${extractionSummary ? ` | ${extractionSummary}` : ""}`,
+      status: hasAcceptedChunks ? "completed" : "quarantined",
+      processingMessage: `${hasAcceptedChunks ? "นำเข้าข้อมูลเรียบร้อยแล้ว" : "นำเข้าแบบกักกันแล้ว ยังไม่ถูกใช้ค้นหา"}${extractionSummary ? ` | ${extractionSummary}` : ""}`,
       insertedChunkCount,
       title: documentRecord.title || file.originalname,
       documentNumber: documentRecord.documentNumber || "",

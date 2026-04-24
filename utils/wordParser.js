@@ -1,5 +1,6 @@
 const mammoth = require("mammoth");
 const { normalizeThai } = require("./thaiNormalizer");
+const { normalizeThaiPdfText } = require("../services/thaiPdfTextNormalizer");
 const { normalizeForSearch, segmentWords, uniqueTokens } = require("../services/thaiTextUtils");
 
 const SECTION_TITLES = {
@@ -17,14 +18,14 @@ const TYPE_LABELS = {
 };
 
 function normalizeText(text) {
-  return String(text || "")
+  return normalizeThaiPdfText(String(text || "")
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .replace(/\u00a0/g, " ")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .trim());
 }
 
 function appendText(currentValue, nextValue) {
@@ -153,6 +154,7 @@ function buildKeyword(parts = []) {
 }
 
 function buildChunkRecord(payload) {
+  const originalText = normalizeText(payload.originalText || payload.chunkText || "");
   const chunkText = normalizeText(payload.chunkText || "");
   const title = truncateTitle(payload.title || "");
   const question = normalizeText(payload.question || "");
@@ -172,6 +174,7 @@ function buildChunkRecord(payload) {
     stepNo: Number.isFinite(Number(payload.stepNo)) ? Number(payload.stepNo) : null,
     detail,
     referenceNote,
+    originalText,
     chunkText,
     cleanText: normalizeThai(chunkText),
     keyword: buildKeyword([

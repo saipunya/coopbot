@@ -12,14 +12,15 @@
     "import:pdf-chunks": "node scripts/import-pdf-chunks.js",
     "audit:pdf-chunks": "node scripts/audit-pdf-chunks.js",
     "debug:search": "node scripts/debug-search.js",
-    "test:search": "node --test tests/lawChatbotPdfChunkModel.search.test.js",
     "test:chunk-split": "node --test tests/chunkSplitter.test.js",
     "review:responsive": "node scripts/responsive_review_helper.js",
     "review:responsive:open": "node scripts/open_responsive_review_pages.js",
     "verify:group-bylaw": "node scripts/verify_group_bylaw_queries.js",
     "verify:ui": "node scripts/verify_ui_routes.js",
     "verify:free-preview": "node scripts/verify_free_preview.js",
-    "telegram:test": "node scripts/sendTelegramTest.js"
+    "telegram:test": "node scripts/sendTelegramTest.js",
+    "test": "node --test",
+    "test:search": "node --test tests/lawChatbotPdfChunkModel.search.test.js tests/liquidationAnswer.test.js"
   },
   "repository": {
     "type": "git",

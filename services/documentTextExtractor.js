@@ -38,7 +38,7 @@ function parseBooleanEnv(name, defaultValue = false) {
 }
 
 function normalizeText(text) {
-  return String(text || "")
+  const normalized = String(text || "")
     .replace(/\u0000/g, " ")
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
     .replace(/\r/g, "\n")
@@ -46,6 +46,8 @@ function normalizeText(text) {
     .replace(/[ ]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  return normalizeThaiPdfText(normalized);
 }
 
 function getPdfOcrLanguages() {
@@ -62,6 +64,7 @@ function analyzeExtractedText(text) {
   const thaiGarbledHits = (
     normalized.match(/[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/g) || []
   ).length;
+  const suspiciousSymbolHits = (normalized.match(/[\uFFFD\uF700-\uF8FF◊Ë‡∫≈¡¥åìîïñóôöùûü_^=<>[\]{}|\\`]/g) || []).length;
   // Exclude common whitespace controls (\t,\n,\r) which are normal in extracted documents.
   const controlCharHits = (normalized.match(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g) || []).length;
   const digitChars = (normalized.match(/[0-9๐-๙]/g) || []).length;
@@ -108,6 +111,11 @@ function analyzeExtractedText(text) {
     notes.push("พบรูปแบบ OCR ภาษาไทยที่เพี้ยน");
   }
 
+  if (suspiciousSymbolHits >= 3) {
+    qualityScore -= Math.min(35, suspiciousSymbolHits * 4);
+    notes.push("พบสัญลักษณ์ผิดปกติจำนวนมาก");
+  }
+
   if (controlCharHits > 5) {
     qualityScore -= Math.min(controlCharHits, 20);
     notes.push("พบ control characters มากผิดปกติ");
@@ -147,6 +155,7 @@ function analyzeExtractedText(text) {
     replacementGlyphHits,
     garbledSpacingHits,
     thaiGarbledHits,
+    suspiciousSymbolHits,
     controlCharHits,
     digitChars,
     commonThaiTermHits,
@@ -202,6 +211,64 @@ function splitTextIntoLegalSections(text) {
   }
 
   return sections.filter(Boolean);
+}
+
+function classifyStructuredChunk(text = "") {
+  const normalized = normalizeText(text);
+  if (/^คำถาม\s*[:：]/.test(normalized)) {
+    return "faq";
+  }
+  if (/^(?:ขั้นตอนที่|step)\s*[0-9๐-๙]+|^[0-9๐-๙]+[.)-]\s*/i.test(normalized)) {
+    return "process";
+  }
+  if (/^(?:มาตรา|ข้อ)\s*[0-9๐-๙]+/.test(normalized)) {
+    return "legal_section";
+  }
+  return "document";
+}
+
+function splitTextIntoStructuredSections(text) {
+  const normalized = normalizeText(text);
+  if (!normalized) {
+    return [];
+  }
+
+  const markerPattern =
+    /(?:^|\n)\s*((?:มาตรา|ข้อ)\s*[0-9๐-๙]+(?:\s*(?:ทวิ|ตรี|จัตวา|เบญจ))?|(?:Q|คำถาม)\s*[:：]|(?:ขั้นตอนที่|step)\s*[0-9๐-๙]+|[0-9๐-๙]+[.)-]\s*[^\n]{1,160})/gi;
+  const markers = [];
+  let match = markerPattern.exec(normalized);
+
+  while (match) {
+    const start = match.index + (match[0].startsWith("\n") ? 1 : 0);
+    markers.push({
+      index: start,
+      text: String(match[1] || "").trim(),
+    });
+    match = markerPattern.exec(normalized);
+  }
+
+  if (markers.length === 0) {
+    return [];
+  }
+
+  const sections = [];
+  if (markers[0].index > 0) {
+    const intro = normalized.slice(0, markers[0].index).trim();
+    if (intro) {
+      sections.push(intro);
+    }
+  }
+
+  for (let index = 0; index < markers.length; index += 1) {
+    const current = markers[index];
+    const next = markers[index + 1];
+    const sectionText = normalized.slice(current.index, next ? next.index : normalized.length).trim();
+    if (sectionText) {
+      sections.push(sectionText);
+    }
+  }
+
+  return sections;
 }
 
 function splitLargeSection(section, maxLength) {
@@ -273,15 +340,15 @@ function splitLargeSection(section, maxLength) {
 
 function chunkText(text, maxLength = 1400) {
   const normalizedText = normalizeText(text);
-  const legalSections = splitTextIntoLegalSections(normalizedText);
-  const sourceBlocks = legalSections.length > 0
-    ? legalSections
+  const structuredSections = splitTextIntoStructuredSections(normalizedText);
+  const sourceBlocks = structuredSections.length > 0
+    ? structuredSections
     : normalizedText
-        .split(/\n{2,}/)
-        .map((part) => part.trim())
-        .filter(Boolean);
+      .split(/\n{2,}/)
+      .map((part) => part.trim())
+      .filter(Boolean);
 
-  if (legalSections.length > 0) {
+  if (structuredSections.length > 0) {
     const chunks = [];
 
     for (const block of sourceBlocks) {
@@ -301,17 +368,6 @@ function chunkText(text, maxLength = 1400) {
 
   for (const paragraph of sourceBlocks) {
     if (paragraph.length > maxLength) {
-      if (legalSections.length > 0) {
-        if (currentChunk) {
-          chunks.push(currentChunk.trim());
-          currentChunk = "";
-        }
-
-        const sectionChunks = splitLargeSection(paragraph, maxLength);
-        chunks.push(...sectionChunks);
-        continue;
-      }
-
       if (currentChunk) {
         chunks.push(currentChunk.trim());
         currentChunk = "";
@@ -337,6 +393,15 @@ function chunkText(text, maxLength = 1400) {
   }
 
   return chunks.filter(Boolean);
+}
+
+function chunkTextWithMetadata(text, maxLength = 1400) {
+  return chunkText(text, maxLength).map((chunk, index) => ({
+    originalText: chunk,
+    chunkText: chunk,
+    chunkType: classifyStructuredChunk(chunk),
+    sortOrder: index + 1,
+  }));
 }
 
 async function loadPdfDocument(filePath) {
@@ -637,6 +702,7 @@ async function extractTextFromFile(file) {
 
 module.exports = {
   chunkText,
+  chunkTextWithMetadata,
   analyzeExtractedText,
   extractTextFromFile,
   extractTextResultFromFile,

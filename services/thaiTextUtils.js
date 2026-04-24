@@ -1,79 +1,4 @@
-const SEARCH_CONCEPT_EXPANSIONS = [
-  {
-    triggers: ["ข้อบังคับกลุ่มเกษตรกร", "ข้อบังคับของกลุ่มเกษตรกร"],
-    additions: [
-      "ข้อบังคับกลุ่มเกษตรกร",
-      "ข้อบังคับของกลุ่มเกษตรกร",
-      "รายการที่ต้องมีในข้อบังคับกลุ่มเกษตรกร",
-      "อย่างน้อยต้องมีรายการ",
-    ],
-  },
-  {
-    triggers: ["เลิกกลุ่มเกษตรกร", "การเลิกกลุ่มเกษตรกร", "ยุบเลิกกลุ่มเกษตรกร"],
-    additions: [
-      "เลิกกลุ่มเกษตรกร",
-      "การเลิกกลุ่มเกษตรกร",
-      "กลุ่มเกษตรกรย่อมเลิก",
-      "สั่งเลิกกลุ่มเกษตรกร",
-    ],
-  },
-  {
-    triggers: ["ชำระบัญชีกลุ่มเกษตรกร", "การชำระบัญชีกลุ่มเกษตรกร"],
-    additions: [
-      "ชำระบัญชีกลุ่มเกษตรกร",
-      "การชำระบัญชีกลุ่มเกษตรกร",
-      "ผู้ชำระบัญชีกลุ่มเกษตรกร",
-    ],
-  },
-  {
-    triggers: [
-      "จัดตั้งกลุ่มเกษตรกร",
-      "การจัดตั้งกลุ่มเกษตรกร",
-      "จดทะเบียนจัดตั้งกลุ่มเกษตรกร",
-      // Alias: users often say "ตั้งกลุ่มเกษตรกร" meaning "จัดตั้งกลุ่มเกษตรกร"
-      "ตั้งกลุ่มเกษตรกร",
-      "การตั้งกลุ่มเกษตรกร",
-    ],
-    additions: [
-      "ตั้งกลุ่มเกษตรกร",
-      "การตั้งกลุ่มเกษตรกร",
-      "จัดตั้งกลุ่มเกษตรกร",
-      "การจัดตั้งกลุ่มเกษตรกร",
-      "จดทะเบียนจัดตั้งกลุ่มเกษตรกร",
-      // Help keyword retrieval land on the right provision (cost-controlled; embeddings disabled).
-      "มาตรา 5",
-      "พรฎ กลุ่มเกษตรกร",
-      "พระราชกฤษฎีกากลุ่มเกษตรกร",
-    ],
-  },
-  {
-    triggers: ["ประชุมใหญ่สามัญประจำปี"],
-    additions: ["ประชุมใหญ่", "ประชุมใหญ่สามัญประจำปี"],
-  },
-  {
-    triggers: ["ประชุมใหญ่วิสามัญ"],
-    additions: ["ประชุมใหญ่", "ประชุมใหญ่วิสามัญ"],
-  },
-  {
-    triggers: ["ประชุมใหญ่"],
-    unless: ["ประชุมใหญ่สามัญประจำปี", "ประชุมใหญ่วิสามัญ"],
-    additions: ["ประชุมใหญ่", "ประชุมใหญ่สามัญประจำปี", "ประชุมใหญ่วิสามัญ"],
-  },
-  {
-    triggers: ["ประชุมกรรมการ", "ประชุมคณะกรรมการ", "ประชุมคณะกรรมการดำเนินการ"],
-    additions: ["ประชุมกรรมการ", "ประชุมคณะกรรมการ", "ประชุมคณะกรรมการดำเนินการ"],
-  },
-  {
-    triggers: ["คณะผู้จัดตั้ง", "ผู้จัดตั้งสหกรณ์", "ผู้เริ่มจัดตั้งสหกรณ์"],
-    additions: [
-      "คณะผู้จัดตั้ง",
-      "ผู้จัดตั้งสหกรณ์",
-      "ผู้เริ่มจัดตั้งสหกรณ์",
-      "ผู้ซึ่งประสงค์จะเป็นสมาชิก",
-      "เข้าชื่อขอจดทะเบียนสหกรณ์",
-    ],
-  },
-];
+const SEARCH_CONCEPT_EXPANSIONS = [];
 
 let QUERY_SYNONYMS = [];
 let TOPIC_FAMILIES = [];
@@ -736,6 +661,7 @@ function expandSearchConcepts(text) {
   // Config-driven synonym expansion (non-destructive): append additions when any trigger matches.
   for (const rule of Array.isArray(QUERY_SYNONYMS) ? QUERY_SYNONYMS : []) {
     const triggers = Array.isArray(rule?.triggers) ? rule.triggers : [];
+    const unless = Array.isArray(rule?.unless) ? rule.unless : [];
     const additions = Array.isArray(rule?.additions) ? rule.additions : [];
     if (triggers.length === 0 || additions.length === 0) {
       continue;
@@ -743,6 +669,11 @@ function expandSearchConcepts(text) {
 
     const matched = triggers.some((trigger) => normalized.includes(String(trigger || "").trim().toLowerCase()));
     if (!matched) {
+      continue;
+    }
+
+    const blocked = unless.some((trigger) => normalized.includes(String(trigger || "").trim().toLowerCase()));
+    if (blocked) {
       continue;
     }
 

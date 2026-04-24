@@ -17,6 +17,20 @@ function createLawSource({ lawNumber, content, score = 92 }) {
   };
 }
 
+function evaluateSources({ message, questionIntent = "general", selectedSources = [] }) {
+  return evaluateRetrievalResult({
+    message,
+    effectiveMessage: message,
+    questionIntent,
+    selectedSources,
+    databaseMatches: selectedSources,
+    internetMatches: [],
+    usedInternetFallback: false,
+    usedInternetSearch: false,
+    resolvedContext: { usedContext: false, topicHints: [] },
+  });
+}
+
 test("retrieval evaluation answers liquidation appointment query with strong section 75 evidence", () => {
   const message = "ใครเป็นผู้มีอำนาจแต่งตั้งผู้ชำระบัญชี";
   const selectedSources = [
@@ -41,6 +55,71 @@ test("retrieval evaluation answers liquidation appointment query with strong sec
 
   assert.equal(result.shouldAnswer, true);
   assert.equal(result.policy, "answer");
+});
+
+test("retrieval confidence high answers directly without note", () => {
+  const message = "ใครเป็นผู้มีอำนาจแต่งตั้งผู้ชำระบัญชี";
+  const result = evaluateSources({
+    message,
+    questionIntent: "law_section",
+    selectedSources: [
+      createLawSource({
+        lawNumber: 75,
+        score: 150,
+        content:
+          "มาตรา 75 การเลิกสหกรณ์และการชำระบัญชี ให้ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชี และต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์ หากไม่เลือกตั้งให้นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี",
+      }),
+    ],
+  });
+
+  assert.equal(result.shouldAnswer, true);
+  assert.equal(result.policy, "answer");
+  assert.equal(result.confidenceLevel, "high");
+  assert.equal(result.answerNote, "");
+});
+
+test("retrieval confidence medium answers with found-data note", () => {
+  const message = "การเลิกสหกรณ์ทำอย่างไร";
+  const result = evaluateSources({
+    message,
+    selectedSources: [
+      {
+        source: "admin_knowledge",
+        id: "knowledge-liquidation",
+        reference: "การเลิกสหกรณ์",
+        title: "การเลิกสหกรณ์",
+        content: "การเลิกสหกรณ์ ชำระบัญชี ผู้ชำระบัญชี นายทะเบียนสหกรณ์",
+        score: 120,
+      },
+    ],
+  });
+
+  assert.equal(result.shouldAnswer, true);
+  assert.equal(result.policy, "answer");
+  assert.equal(result.confidenceLevel, "medium");
+  assert.equal(result.answerNote, "อ้างอิงจากข้อมูลที่พบ");
+});
+
+test("retrieval confidence low returns no-answer instead of guessing", () => {
+  const message = "ผู้ชำระบัญชีคืออะไร";
+  const result = evaluateSources({
+    message,
+    selectedSources: [
+      {
+        source: "pdf_chunks",
+        id: "weak-pdf-chunk",
+        title: "เอกสารทั่วไป",
+        content: "เอกสารทั่วไป สหกรณ์",
+        score: 45,
+      },
+    ],
+  });
+
+  assert.equal(result.shouldAnswer, false);
+  assert.equal(result.policy, "no_answer");
+  assert.equal(result.shouldReturnNoAnswer, true);
+  assert.equal(result.confidenceLevel, "low");
+  assert.equal(result.answerNote, "");
 });
 
 test("generateChatSummary gives a direct liquidation appointment answer", async () => {

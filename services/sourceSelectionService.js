@@ -9,6 +9,7 @@ const { isStandaloneLawLookup } = require("./contextService");
 const { parseThaiDateToIso } = require("./documentMetadataService");
 const { normalizePlanCode } = require("./planService");
 const {
+  expandSearchConcepts,
   getQueryFocusProfile,
   normalizeForSearch,
   isTaxQuestion,
@@ -1302,12 +1303,12 @@ function getSourceRoutingPlan(intent) {
     case "explain":
       return {
         priorities: {
-          admin_knowledge: 7,
-          knowledge_suggestion: 6,
-          vinichai: 5,
-          structured_laws: 4,
+          structured_laws: 10,
+          pdf_chunks: 7,
+          admin_knowledge: 6,
+          knowledge_suggestion: 5,
+          vinichai: 4,
           documents: 2,
-          pdf_chunks: 1,
           knowledge_base: 1,
         },
         limits: {
@@ -1324,11 +1325,11 @@ function getSourceRoutingPlan(intent) {
       return {
         priorities: {
           structured_laws: 12,
-          admin_knowledge: 10,
-          knowledge_suggestion: 9,
-          vinichai: 8,
+          pdf_chunks: 7,
+          admin_knowledge: 6,
+          knowledge_suggestion: 5,
+          vinichai: 4,
           documents: 1,
-          pdf_chunks: 0,
           knowledge_base: 1,
         },
         limits: {
@@ -1337,19 +1338,19 @@ function getSourceRoutingPlan(intent) {
           knowledge_suggestion: 1,
           vinichai: 1,
           documents: 0,
-          pdf_chunks: 0,
+          pdf_chunks: 1,
           knowledge_base: 1,
         },
       };
     case "document":
       return {
         priorities: {
-          admin_knowledge: 7,
-          knowledge_suggestion: 6,
-          vinichai: 5,
-          structured_laws: 4,
+          structured_laws: 10,
+          pdf_chunks: 7,
+          admin_knowledge: 6,
+          knowledge_suggestion: 5,
+          vinichai: 4,
           documents: 3,
-          pdf_chunks: 2,
           knowledge_base: 1,
         },
         limits: {
@@ -1365,12 +1366,12 @@ function getSourceRoutingPlan(intent) {
     case "qa":
       return {
         priorities: {
-          admin_knowledge: 10,
-          knowledge_suggestion: 9,
-          vinichai: 8,
-          structured_laws: 7,
+          structured_laws: 10,
+          pdf_chunks: 7,
+          admin_knowledge: 6,
+          knowledge_suggestion: 5,
+          vinichai: 4,
           documents: 0,
-          pdf_chunks: 0,
           knowledge_base: 1,
         },
         limits: {
@@ -1379,19 +1380,19 @@ function getSourceRoutingPlan(intent) {
           vinichai: 2,
           structured_laws: 1,
           documents: 0,
-          pdf_chunks: 0,
+          pdf_chunks: 1,
           knowledge_base: 1,
         },
       };
     case "short_answer":
       return {
         priorities: {
-          admin_knowledge: 8,
-          knowledge_suggestion: 7,
-          structured_laws: 6,
+          structured_laws: 10,
+          pdf_chunks: 7,
+          admin_knowledge: 6,
+          knowledge_suggestion: 5,
           vinichai: 0,
           documents: 0,
-          pdf_chunks: 0,
           knowledge_base: 1,
         },
         limits: {
@@ -1400,19 +1401,19 @@ function getSourceRoutingPlan(intent) {
           structured_laws: 2,
           vinichai: 0,
           documents: 0,
-          pdf_chunks: 0,
+          pdf_chunks: 1,
           knowledge_base: 1,
         },
       };
     default:
       return {
         priorities: {
-          admin_knowledge: 8,
-          knowledge_suggestion: 7,
-          vinichai: 6,
-          structured_laws: 5,
+          structured_laws: 10,
+          pdf_chunks: 7,
+          admin_knowledge: 6,
+          knowledge_suggestion: 5,
+          vinichai: 4,
           documents: 1,
-          pdf_chunks: 1,
           knowledge_base: 1,
         },
         limits: {
@@ -1430,22 +1431,23 @@ function getSourceRoutingPlan(intent) {
 
 async function searchDatabaseSources(message, target, options = {}) {
   const retrievalMessage = String(message || "").trim();
+  const expandedRetrievalMessage = expandSearchConcepts(retrievalMessage) || retrievalMessage;
   const focusMessage = String(options.originalMessage || retrievalMessage).trim();
   const effectiveTarget = resolveSearchTarget(focusMessage || retrievalMessage, target);
-  const intent = classifyQuestionIntent(retrievalMessage || focusMessage);
+  const intent = classifyQuestionIntent(expandedRetrievalMessage || focusMessage);
   const routingPlan = getSourceRoutingPlan(intent);
-  const generalOverviewQuery = isGeneralOverviewQuery(retrievalMessage || focusMessage);
-  const legalIntent = hasLegalIntent(retrievalMessage || focusMessage);
+  const generalOverviewQuery = isGeneralOverviewQuery(expandedRetrievalMessage || focusMessage);
+  const legalIntent = hasLegalIntent(expandedRetrievalMessage || focusMessage);
   const freePlanSearch = isFreePlanSearch(options.planCode);
   const freeSourcePriorityPlan = freePlanSearch
-    ? getFreeSourcePriorityPlan(retrievalMessage || focusMessage, effectiveTarget)
+    ? getFreeSourcePriorityPlan(expandedRetrievalMessage || focusMessage, effectiveTarget)
     : null;
   const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
-  const lawPrioritySearch = isLawPrioritySearch(retrievalMessage || focusMessage);
+  const lawPrioritySearch = isLawPrioritySearch(expandedRetrievalMessage || focusMessage);
   const prioritizeStructuredLawSearch =
     lawPrioritySearch ||
-    isLiquidationPrioritySearch(retrievalMessage || focusMessage) ||
-    isDissolutionPrioritySearch(retrievalMessage || focusMessage);
+    isLiquidationPrioritySearch(expandedRetrievalMessage || focusMessage) ||
+    isDissolutionPrioritySearch(expandedRetrievalMessage || focusMessage);
 
   const shouldSkipLawSourcesForOverview =
     generalOverviewQuery && !legalIntent && intent === "general";
@@ -1453,24 +1455,32 @@ async function searchDatabaseSources(message, target, options = {}) {
   const [
     rawKnowledgeMatches,
     rawSuggestionMatches,
-    rawDocumentMatches,
-    rawPdfMatches,
     rawFallbackKnowledge,
     rawStructuredMatches,
     rawVinichaiMatches,
   ] = await Promise.all([
-    LawChatbotKnowledgeModel.searchKnowledge(retrievalMessage, effectiveTarget, 5),
-    LawChatbotKnowledgeSuggestionModel.searchApproved(retrievalMessage, effectiveTarget, 5),
-    LawChatbotPdfChunkModel.searchDocuments(retrievalMessage, 5),
-    withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(retrievalMessage, 6), hybridTimeoutMs, [], "hybrid-search"),
-    Promise.resolve(LawChatbotModel.searchKnowledge(retrievalMessage, effectiveTarget)),
+    LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5),
+    LawChatbotKnowledgeSuggestionModel.searchApproved(expandedRetrievalMessage, effectiveTarget, 5),
+    Promise.resolve(LawChatbotModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget)),
     shouldSkipLawSourcesForOverview
       ? Promise.resolve([])
-      : LawSearchModel.searchStructuredLaws(retrievalMessage, effectiveTarget, 6),
+      : LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6),
     shouldSkipLawSourcesForOverview
       ? Promise.resolve([])
-      : LawSearchModel.searchVinichai(retrievalMessage, 5),
+      : LawSearchModel.searchVinichai(expandedRetrievalMessage, 5),
   ]);
+  const hasHighPriorityStructuredLawMatch =
+    !shouldSkipLawSourcesForOverview &&
+    (intent === "law_section" || lawPrioritySearch) &&
+    Array.isArray(rawStructuredMatches) &&
+    rawStructuredMatches.some((item) => Number(item?.score || 0) >= 90);
+  const shouldSearchPdfLayer = !hasHighPriorityStructuredLawMatch;
+  const [rawDocumentMatches, rawPdfMatches] = shouldSearchPdfLayer
+    ? await Promise.all([
+        LawChatbotPdfChunkModel.searchDocuments(expandedRetrievalMessage, 5),
+        withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(expandedRetrievalMessage, 6), hybridTimeoutMs, [], "hybrid-search"),
+      ])
+    : [[], []];
 
   const knowledgeMatches = prioritizeMatches(rawKnowledgeMatches, {
     retrievalPriority:
@@ -1520,10 +1530,11 @@ async function searchDatabaseSources(message, target, options = {}) {
   const combinedMatches = [
     ...knowledgeMatches,
     ...suggestionMatches,
-    ...vinichaiMatches,
-    ...structuredMatches,
-    ...documentMatches,
+    ...structuredMatches.filter((item) => item && item.source === "tbl_laws"),
+    ...structuredMatches.filter((item) => item && item.source === "tbl_glaws"),
     ...pdfMatches,
+    ...documentMatches,
+    ...vinichaiMatches,
     ...fallbackKnowledge,
   ]
     .filter(Boolean)
@@ -2681,7 +2692,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
         admin_knowledge: 2,
         knowledge_suggestion: 1,
         ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 4, 3),
-        pdf_chunks: 0,
+        pdf_chunks: 1,
         tbl_vinichai: 1,
         documents: 0,
         knowledge_base: 1,
@@ -2709,7 +2720,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
         admin_knowledge: 3,
         knowledge_suggestion: 1,
         ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 2, 1),
-        pdf_chunks: 0,
+        pdf_chunks: 1,
         tbl_vinichai: 0,  // ตัด tbl_vinichai ออกจาก short_answer
         documents: 0,
         knowledge_base: 1,
@@ -2749,7 +2760,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
         admin_knowledge: 3,
         knowledge_suggestion: 2,
         ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 1, 0),
-        pdf_chunks: 0,
+        pdf_chunks: 1,
         tbl_vinichai: vinichaiPrioritySearch ? 2 : 1,
         documents: 0,
         knowledge_base: 1,
@@ -2790,7 +2801,7 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
         admin_knowledge: 3,
         knowledge_suggestion: 1,
         ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, freePlan ? 2 : 3, 1),
-        pdf_chunks: 0,
+        pdf_chunks: 1,
         tbl_vinichai: freePlan ? 2 : 1,
         documents: 0,
         knowledge_base: 1,
@@ -2803,15 +2814,14 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
 
 
 function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
-  const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(
-    options.originalMessage || options.message || "",
-    options.target || "all",
-  );
-  const structuredLawOrder = buildStructuredLawSourceOrder(primaryLawSource, secondaryLawSource);
-
   const focusMessage = options.originalMessage || options.message || "";
   const overviewQuery = isGeneralOverviewQuery(focusMessage);
   const legalQuery = hasLegalIntent(focusMessage);
+  const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(
+    focusMessage,
+    options.target || "all",
+  );
+  const structuredLawOrder = buildStructuredLawSourceOrder(primaryLawSource, secondaryLawSource);
 
   if (
     isDissolutionPrioritySearch(focusMessage) ||
@@ -2819,12 +2829,12 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
   ) {
     return [
       primaryLawSource,
+      secondaryLawSource,
+      "pdf_chunks",
       "admin_knowledge",
       "knowledge_suggestion",
-      secondaryLawSource,
       "tbl_vinichai",
       "documents",
-      "pdf_chunks",
       "knowledge_base",
     ];
   }
@@ -2832,10 +2842,10 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
   if (intent === "law_section") {
     return [
       ...structuredLawOrder,
+      "pdf_chunks",
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      "pdf_chunks",
       "documents",
       "knowledge_base",
     ];
@@ -2843,11 +2853,11 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
 
   if (intent === "qa" || isVinichaiPrioritySearch(focusMessage)) {
     return [
+      ...structuredLawOrder,
+      "pdf_chunks",
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      ...structuredLawOrder,
-      "pdf_chunks",
       "documents",
       "knowledge_base",
     ];
@@ -2867,11 +2877,11 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
       ];
     }
     return [
+      ...structuredLawOrder,
+      "pdf_chunks",
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      ...structuredLawOrder,
-      "pdf_chunks",
       "documents",
       "knowledge_base",
     ];
@@ -2879,11 +2889,11 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
 
   if (intent === "document") {
     return [
+      ...structuredLawOrder,
+      "pdf_chunks",
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      ...structuredLawOrder,
-      "pdf_chunks",
       "documents",
       "knowledge_base",
     ];
@@ -2891,11 +2901,11 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
 
   if (intent === "explain") {
     return [
+      ...structuredLawOrder,
+      "pdf_chunks",
       "admin_knowledge",
       "knowledge_suggestion",
       "tbl_vinichai",
-      ...structuredLawOrder,
-      "pdf_chunks",
       "documents",
       "knowledge_base",
     ];
@@ -2914,11 +2924,11 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
   }
 
   return [
+    ...structuredLawOrder,
+    "pdf_chunks",
     "admin_knowledge",
     "knowledge_suggestion",
     "tbl_vinichai",
-    ...structuredLawOrder,
-    "pdf_chunks",
     "documents",
     "knowledge_base",
   ];

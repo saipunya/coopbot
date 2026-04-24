@@ -28,6 +28,24 @@ test("managed suggested question matches queries that include source references"
   assert.match(match?.sourceReference || "", /มาตรา 33/);
 });
 
+test("managed suggested question lookup uses central query expansion", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+  const { findManagedSuggestedQuestionMatch } = loadFresh("../services/chatOrchestrationService");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การเลิกสหกรณ์ หมายถึง",
+    answerText: "การเลิกสหกรณ์ คือการสิ้นสภาพของสหกรณ์ตามกฎหมาย",
+    sourceReference: "คู่มือการเลิกสหกรณ์",
+    isActive: true,
+  });
+
+  const match = await findManagedSuggestedQuestionMatch("ปิดสหกรณ์", "coop");
+
+  assert.ok(match, "expected FAQ match through central expansion");
+  assert.match(match?.questionText || "", /การเลิกสหกรณ์/);
+});
+
 test("managed suggested question matches shorter exact phrases inside the stored question", async () => {
   const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
 

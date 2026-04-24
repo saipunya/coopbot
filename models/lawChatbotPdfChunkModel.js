@@ -6,6 +6,7 @@ const { expandKeywords } = require("../utils/synonyms");
 const {
   hasExclusiveMeaningMismatch,
   makeBigrams,
+  expandSearchConcepts,
   normalizeForSearch,
   scoreQueryFocusAlignment,
   segmentWords,
@@ -27,6 +28,9 @@ let pdfChunkFulltextSearchConfigCache = null;
 let pdfChunkColumnMetadataCache = null;
 const SEARCH_MISS_LOG_PATH = path.join(__dirname, "..", "logs", "search-misses.jsonl");
 const SEARCH_MISS_LOG_COOLDOWN_MS = 10 * 60 * 1000;
+const HYBRID_SEMANTIC_FALLBACK_MIN_SCORE = Number(
+  process.env.HYBRID_SEMANTIC_FALLBACK_MIN_SCORE || 70,
+);
 const searchMissLogTimestamps = new Map();
 let searchMissLogWarned = false;
 
@@ -581,17 +585,21 @@ function getMinimumTokenHits(queryTokens) {
 
 function buildSmartSearchTerms(message) {
   const normalizedMessage = normalizeSearchKeyword(message);
+  const expandedConceptText = normalizeSearchKeyword(expandSearchConcepts(message));
   const baseTerms = buildCandidateTerms(message).map((term) => normalizeSearchKeyword(term));
   const queryTokens = uniqueTokens([
     ...segmentWords(message),
     ...segmentWords(normalizedMessage),
+    ...segmentWords(expandedConceptText),
   ])
     .map((token) => normalizeSearchKeyword(token))
     .filter((token) => token && token.length >= 2);
   const expandedTerms = uniqueTokens([
     normalizedMessage,
+    expandedConceptText,
     ...baseTerms,
     ...expandKeywords(normalizedMessage),
+    ...expandKeywords(expandedConceptText),
     ...queryTokens.flatMap((token) => expandKeywords(token)),
   ]).filter(Boolean);
   const genericExpansionTerms = new Set([...GENERIC_QUERY_TOKENS, "coop", "สหกรณ"]);
@@ -628,6 +636,7 @@ function buildSmartSearchTerms(message) {
 
   return {
     normalizedMessage,
+    expandedConceptText,
     searchTerms,
     fallbackTerms,
     queryTokens: queryTokens.filter((token) => token.length >= 2 && !GENERIC_QUERY_TOKENS.has(token)),
@@ -979,6 +988,9 @@ class LawChatbotPdfChunkModel {
         hasCleanText: false,
         hasIsActive: false,
         hasQualityScore: false,
+        hasOriginalText: false,
+        hasChunkType: false,
+        hasSortOrder: false,
       };
     }
 
@@ -993,6 +1005,9 @@ class LawChatbotPdfChunkModel {
         hasCleanText: fields.has("clean_text"),
         hasIsActive: fields.has("is_active"),
         hasQualityScore: fields.has("quality_score"),
+        hasOriginalText: fields.has("original_text"),
+        hasChunkType: fields.has("chunk_type"),
+        hasSortOrder: fields.has("sort_order"),
         hasTitle: fields.has("title"),
         hasQuestion: fields.has("question"),
         hasAnswer: fields.has("answer"),
@@ -1002,6 +1017,9 @@ class LawChatbotPdfChunkModel {
         hasCleanText: false,
         hasIsActive: false,
         hasQualityScore: false,
+        hasOriginalText: false,
+        hasChunkType: false,
+        hasSortOrder: false,
         hasTitle: false,
         hasQuestion: false,
         hasAnswer: false,
@@ -1043,13 +1061,25 @@ class LawChatbotPdfChunkModel {
 
     limitedTerms.forEach((term) => {
       const like = `%${term}%`;
+      const cleanTextLikeSql = columnMetadata.hasCleanText ? " OR LOWER(c.clean_text) LIKE ?" : "";
       whereParts.push(
-        "(LOWER(c.keyword) LIKE ? OR LOWER(c.chunk_text) LIKE ? OR LOWER(COALESCE(d.title, '')) LIKE ? OR LOWER(COALESCE(d.document_number, '')) LIKE ? OR LOWER(COALESCE(d.document_source, '')) LIKE ? OR LOWER(COALESCE(d.originalname, '')) LIKE ?)",
+        `(LOWER(c.keyword) LIKE ? OR LOWER(c.chunk_text) LIKE ?${cleanTextLikeSql} OR LOWER(COALESCE(d.title, '')) LIKE ? OR LOWER(COALESCE(d.document_number, '')) LIKE ? OR LOWER(COALESCE(d.document_source, '')) LIKE ? OR LOWER(COALESCE(d.originalname, '')) LIKE ?)`,
       );
-      whereParams.push(like, like, like, like, like, like);
+      whereParams.push(
+        like,
+        like,
+        ...(columnMetadata.hasCleanText ? [like] : []),
+        like,
+        like,
+        like,
+        like,
+      );
 
       scoreParts.push(`CASE WHEN LOWER(c.keyword) LIKE ? THEN ${options.fallback ? 6 : 12} ELSE 0 END`);
       scoreParts.push(`CASE WHEN LOWER(c.chunk_text) LIKE ? THEN ${options.fallback ? 3 : 7} ELSE 0 END`);
+      if (columnMetadata.hasCleanText) {
+        scoreParts.push(`CASE WHEN LOWER(c.clean_text) LIKE ? THEN ${options.fallback ? 3 : 7} ELSE 0 END`);
+      }
       scoreParts.push(`CASE WHEN LOWER(COALESCE(d.title, '')) LIKE ? THEN ${options.fallback ? 5 : 11} ELSE 0 END`);
       scoreParts.push(
         `CASE WHEN LOWER(COALESCE(d.document_number, '')) LIKE ? THEN ${options.fallback ? 4 : 9} ELSE 0 END`,
@@ -1058,7 +1088,15 @@ class LawChatbotPdfChunkModel {
         `CASE WHEN LOWER(COALESCE(d.document_source, '')) LIKE ? THEN ${options.fallback ? 2 : 5} ELSE 0 END`,
       );
       scoreParts.push(`CASE WHEN LOWER(COALESCE(d.originalname, '')) LIKE ? THEN ${options.fallback ? 2 : 4} ELSE 0 END`);
-      scoreParams.push(like, like, like, like, like, like);
+      scoreParams.push(
+        like,
+        like,
+        ...(columnMetadata.hasCleanText ? [like] : []),
+        like,
+        like,
+        like,
+        like,
+      );
     });
 
     let fulltextSelect = "0 AS fulltext_score";
@@ -1368,7 +1406,12 @@ class LawChatbotPdfChunkModel {
     const normalizedChunks = chunks.map((chunk) => ({
       keyword: String(chunk.keyword || "").slice(0, 255),
       chunkText: String(chunk.chunkText || ""),
-      cleanText: normalizeThai(String(chunk.chunkText || "")),
+      originalText: String(chunk.originalText || chunk.original_text || chunk.chunkText || ""),
+      cleanText: String(chunk.cleanText || chunk.clean_text || normalizeThai(String(chunk.chunkText || ""))),
+      chunkType: String(chunk.chunkType || chunk.chunk_type || "").slice(0, 20),
+      sortOrder: Number.isFinite(Number(chunk.sortOrder || chunk.sort_order))
+        ? Number(chunk.sortOrder || chunk.sort_order)
+        : 0,
       isActive: chunk.isActive === false || Number(chunk.isActive) === 0 ? 0 : 1,
       qualityScore: Number.isFinite(Number(chunk.qualityScore))
         ? Number(chunk.qualityScore)
@@ -1386,7 +1429,10 @@ class LawChatbotPdfChunkModel {
           id: memoryChunks.length + index + 1,
           keyword: chunk.keyword,
           chunk_text: chunk.chunkText,
+          original_text: chunk.originalText,
           clean_text: chunk.cleanText,
+          chunk_type: chunk.chunkType,
+          sort_order: chunk.sortOrder,
           is_active: chunk.isActive,
           quality_score: chunk.qualityScore,
           document_id: chunk.documentId,
@@ -1401,6 +1447,15 @@ class LawChatbotPdfChunkModel {
     if (columnMetadata.hasCleanText) {
       columns.push("clean_text");
     }
+    if (columnMetadata.hasOriginalText) {
+      columns.push("original_text");
+    }
+    if (columnMetadata.hasChunkType) {
+      columns.push("chunk_type");
+    }
+    if (columnMetadata.hasSortOrder) {
+      columns.push("sort_order");
+    }
     if (columnMetadata.hasIsActive) {
       columns.push("is_active");
     }
@@ -1413,6 +1468,15 @@ class LawChatbotPdfChunkModel {
       const rowValues = [chunk.keyword, chunk.chunkText];
       if (columnMetadata.hasCleanText) {
         rowValues.push(chunk.cleanText);
+      }
+      if (columnMetadata.hasOriginalText) {
+        rowValues.push(chunk.originalText);
+      }
+      if (columnMetadata.hasChunkType) {
+        rowValues.push(chunk.chunkType);
+      }
+      if (columnMetadata.hasSortOrder) {
+        rowValues.push(chunk.sortOrder);
       }
       if (columnMetadata.hasIsActive) {
         rowValues.push(chunk.isActive);
@@ -1888,11 +1952,13 @@ class LawChatbotPdfChunkModel {
    * @returns {Promise<Array>} - Combined results
    */
   static async hybridSearch(message, limit = 10) {
-    // Run keyword and semantic search in parallel
-    const [keywordResults, semanticResults] = await Promise.all([
-      this.searchChunks(message, limit),
-      this.semanticSearch(message, limit),
-    ]);
+    const keywordResults = await this.searchChunksSmart(message, limit, { logMiss: false });
+    const topKeywordScore = Number(keywordResults[0]?.score || 0);
+    const shouldUseSemanticFallback =
+      keywordResults.length === 0 || topKeywordScore < HYBRID_SEMANTIC_FALLBACK_MIN_SCORE;
+    const semanticResults = shouldUseSemanticFallback
+      ? await this.semanticSearch(message, limit)
+      : [];
 
     // Merge results, preferring keyword matches but boosting with semantic scores
     const resultMap = new Map();
@@ -1924,9 +1990,12 @@ class LawChatbotPdfChunkModel {
     });
 
     // Sort by combined score and return top results
-    return Array.from(resultMap.values())
+    const results = Array.from(resultMap.values())
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
+
+    logSearchMissIfNeeded(message, buildSmartSearchTerms(message), results);
+    return results;
   }
 }
 

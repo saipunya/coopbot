@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const { randomUUID } = require("node:crypto");
 const { getDbPool } = require("../config/db");
 const { parseDocx } = require("../utils/wordParser");
+const { analyzeExtractedText } = require("./documentTextExtractor");
 
 const REQUIRED_COLUMNS = [
   "clean_text",
@@ -55,25 +56,85 @@ async function createFileHash(filePath) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
-function buildInsertValues(rows, context) {
-  return rows.map((row) => [
-    row.keyword,
-    row.chunkText,
-    row.cleanText,
-    null,
-    row.chunkType,
-    row.title || null,
-    row.question || null,
-    row.answer || null,
-    row.noteValue || null,
-    row.stepNo,
-    row.detail || null,
-    row.referenceNote || null,
-    context.sourceFileName,
-    context.sourceFileHash,
-    context.importBatchId,
-    row.sortOrder,
-  ]);
+function buildQualityMetadata(row = {}) {
+  const analysis = analyzeExtractedText(row.cleanText || row.chunkText || "");
+  const qualityScore = Number(analysis.qualityScore || 0);
+  const lowQualityThreshold = Number(process.env.WORD_IMPORT_LOW_QUALITY_SCORE || 45);
+
+  return {
+    qualityScore,
+    isActive: qualityScore >= lowQualityThreshold ? 1 : 0,
+    notes: Array.isArray(analysis.notes) ? analysis.notes : [],
+  };
+}
+
+function buildInsertColumns(columnSet) {
+  const columns = [
+    "keyword",
+    "chunk_text",
+    "clean_text",
+    "document_id",
+    "chunk_type",
+    "title",
+    "question",
+    "answer",
+    "note_value",
+    "step_no",
+    "detail",
+    "reference_note",
+    "source_file_name",
+    "source_file_hash",
+    "import_batch_id",
+    "sort_order",
+  ];
+
+  if (columnSet.has("original_text")) {
+    columns.push("original_text");
+  }
+  if (columnSet.has("quality_score")) {
+    columns.push("quality_score");
+  }
+  if (columnSet.has("is_active")) {
+    columns.push("is_active");
+  }
+
+  return columns;
+}
+
+function buildInsertValues(rows, context, columnSet) {
+  return rows.map((row) => {
+    const quality = buildQualityMetadata(row);
+    const values = [
+      row.keyword,
+      row.chunkText,
+      row.cleanText,
+      null,
+      row.chunkType,
+      row.title || null,
+      row.question || null,
+      row.answer || null,
+      row.noteValue || null,
+      row.stepNo,
+      row.detail || null,
+      row.referenceNote || null,
+      context.sourceFileName,
+      context.sourceFileHash,
+      context.importBatchId,
+      row.sortOrder,
+    ];
+
+    if (columnSet.has("original_text")) {
+      values.push(row.originalText || row.chunkText);
+    }
+    if (columnSet.has("quality_score")) {
+      values.push(quality.qualityScore);
+    }
+    if (columnSet.has("is_active")) {
+      values.push(quality.isActive);
+    }
+
+    return values;
+  });
 }
 
 async function importDocxToPdfChunks(file) {
@@ -96,35 +157,24 @@ async function importDocxToPdfChunks(file) {
   const sourceFileName = String(file.originalname || file.filename || "document.docx").trim();
   const sourceFileHash = await createFileHash(file.path);
   const importBatchId = randomUUID();
-  const values = buildInsertValues(parsed.rows, {
+  const columnSet = await resolvePdfChunkColumns(pool);
+  const columns = buildInsertColumns(columnSet);
+  const qualityRows = parsed.rows.map((row) => ({
+    ...row,
+    quality: buildQualityMetadata(row),
+  }));
+  const values = buildInsertValues(qualityRows, {
     sourceFileName,
     sourceFileHash,
     importBatchId,
-  });
+  }, columnSet);
 
   const connection = await pool.getConnection();
 
   try {
     await connection.beginTransaction();
     await connection.query(
-      `INSERT INTO pdf_chunks (
-        keyword,
-        chunk_text,
-        clean_text,
-        document_id,
-        chunk_type,
-        title,
-        question,
-        answer,
-        note_value,
-        step_no,
-        detail,
-        reference_note,
-        source_file_name,
-        source_file_hash,
-        import_batch_id,
-        sort_order
-      ) VALUES ?`,
+      `INSERT INTO pdf_chunks (${columns.join(", ")}) VALUES ?`,
       [values],
     );
     await connection.commit();
@@ -142,6 +192,11 @@ async function importDocxToPdfChunks(file) {
     insertedRows: values.length,
     stats: parsed.stats,
     warnings: parsed.messages,
+    quality: {
+      lowQualityRows: qualityRows.filter((row) => row.quality.isActive === 0).length,
+      inactiveFlagApplied: columnSet.has("is_active"),
+      qualityScoreApplied: columnSet.has("quality_score"),
+    },
     preview: parsed.rows.slice(0, 10).map((row) => ({
       chunkType: row.chunkType,
       title: row.title,

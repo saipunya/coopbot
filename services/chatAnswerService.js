@@ -1564,7 +1564,7 @@ function truncateContextText(text, limit = 0) {
     return normalized;
   }
 
-  return `${normalized.slice(0, safeLimit).trim()}...`;
+  return `${Array.from(normalized).slice(0, safeLimit).join("").trim()}...`;
 }
 
 function buildSourceBodyText(source = {}) {
@@ -4965,12 +4965,16 @@ async function generateChatSummary(message, sources, options = {}) {
     aiSourceLimit: explainMode ? 5 : 4,
     compareSources: false,
   };
+  if (options.answerDiagnostics && typeof options.answerDiagnostics === "object") {
+    options.answerDiagnostics.usedAI = false;
+    options.answerDiagnostics.aiSourceCount = 0;
+  }
   const finalizeSummary = (text) => finalizeGeneratedAnswer(text, explainMode, {
     ...options,
     promptProfile,
     sources: focusedAnswerSources,
   });
-  const aiSourceLimit = Math.max(1, Number(promptProfile.aiSourceLimit || (explainMode ? 5 : 4)));
+  const aiSourceLimit = Math.min(3, Math.max(1, Number(promptProfile.aiSourceLimit || (explainMode ? 5 : 4))));
   const databaseOnlyMode = Boolean(options.databaseOnlyMode) || !aiEnabled || !openAiConfig;
   const answerInputSources = filterSourcesByAnswerFocus(sources, {
     ...options,
@@ -5245,6 +5249,14 @@ async function generateChatSummary(message, sources, options = {}) {
     const conversationNote = options.conversationalFollowUp
       ? `\nบริบทก่อนหน้า: คำถามนี้เป็นคำถามต่อเนื่องเกี่ยวกับหัวข้อ "${options.topicLabel || "เรื่องเดิม"}"`
       : "";
+    if (options.answerDiagnostics && typeof options.answerDiagnostics === "object") {
+      options.answerDiagnostics.usedAI = true;
+      options.answerDiagnostics.aiSourceCount = effectiveSources.length;
+      options.answerDiagnostics.aiSourceContextCharLimit = Math.max(
+        280,
+        Number(promptProfile.aiSourceContextCharLimit || 700),
+      );
+    }
     const responseText = await generateOpenAiCompletion({
       model: promptProfile.aiModel || undefined,
       systemInstruction: instruction,

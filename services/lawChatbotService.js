@@ -108,9 +108,15 @@ const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SE
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
 const DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS = 1;
 const DB_ONLY_LAW_SECTION_MAX_SOURCE_CHUNKS = 6;
+const AI_SUMMARY_SOURCE_LIMIT = 3;
+const AI_SUMMARY_SOURCE_TEXT_LIMIT = Math.max(
+  280,
+  Number(process.env.LAW_CHATBOT_AI_SOURCE_CONTEXT_CHAR_LIMIT || 700),
+);
 const PREPARED_QA_NOTICE = "คำตอบนี้มาจาก Q&A/ฐานข้อมูลในระบบ โดยไม่ได้เรียก AI";
 const AI_SUMMARY_NOTICE = "คำตอบนี้สรุปโดย AI จากข้อมูลที่ระบบค้นพบ";
 const DB_LOOKUP_NOTICE = "คำตอบนี้มาจากการค้นฐานข้อมูลโดยตรง";
+const FAQ_HIGH_CONFIDENCE_THRESHOLD = Number(process.env.FAQ_HIGH_CONFIDENCE_THRESHOLD || 0.85);
 const LAW_CHATBOT_ASSISTANT_SESSION_KEY = "lawChatbotAssistantProfile";
 const LAW_CHATBOT_ASSISTANT_PROFILES = [
   {
@@ -192,6 +198,28 @@ function hasExplicitLawReferenceQuery(message = "") {
   return /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*[0-9๐-๙]{1,4}(?:\/[0-9๐-๙]{1,3})?/.test(normalized);
 }
 
+function shouldSkipFaqForQuestion(message = "") {
+  return hasExplicitLawReferenceQuery(message);
+}
+
+function isHighConfidenceFaqMatch(match = null, message = "") {
+  if (!match?.answerText) {
+    return false;
+  }
+
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  const normalizedQuestion = normalizeForSearch(
+    String(match.normalizedQuestion || match.questionText || ""),
+  ).toLowerCase();
+
+  if (normalizedMessage && normalizedQuestion && normalizedMessage === normalizedQuestion) {
+    return true;
+  }
+
+  const similarity = Number(match.similarity);
+  return Number.isFinite(similarity) && similarity >= FAQ_HIGH_CONFIDENCE_THRESHOLD;
+}
+
 function resolveDbOnlyMainChatMaxSourceChunks(message = "", questionIntent = "") {
   const normalizedIntent = String(questionIntent || "").trim().toLowerCase();
   if (normalizedIntent === "law_section" && hasExplicitLawReferenceQuery(message)) {
@@ -206,7 +234,33 @@ function shouldCollapseExactLawSectionPreview(message = "", questionIntent = "")
   return normalizedIntent === "law_section" && hasExplicitLawReferenceQuery(message);
 }
 
-function buildResponseMeta(answerMode = "", sources = []) {
+function resolveAnswerConfidenceLevel(retrievalEvaluation = null) {
+  if (!retrievalEvaluation || typeof retrievalEvaluation !== "object") {
+    return "";
+  }
+
+  return String(retrievalEvaluation.confidenceLevel || "").trim();
+}
+
+function applyAnswerConfidenceNotice(answer = "", retrievalEvaluation = null) {
+  const text = String(answer || "").trim();
+  if (!text || !retrievalEvaluation?.shouldAnswer) {
+    return text;
+  }
+
+  const note = String(retrievalEvaluation.answerNote || "").trim();
+  if (!note) {
+    return text;
+  }
+
+  if (text.includes(note)) {
+    return text;
+  }
+
+  return `${text}\n\n${note}`;
+}
+
+function buildResponseMeta(answerMode = "", sources = [], retrievalEvaluation = null, options = {}) {
   const sourceTables = getUniqueSourceTableNames(sources);
   const preparedQaModes = new Set(["prepared_qa_db_only", "managed_answer"]);
   const aiModes = new Set(["ai", "ai_preview", "ai_preview_compact", "mock_ai"]);
@@ -230,7 +284,73 @@ function buildResponseMeta(answerMode = "", sources = []) {
         : usesDatabaseLookup
           ? DB_LOOKUP_NOTICE
           : "",
+    answerConfidence: resolveAnswerConfidenceLevel(retrievalEvaluation),
+    answerConfidenceScore: retrievalEvaluation?.confidence ?? null,
+    usedAI: Boolean(options.usedAI),
     sourceTables,
+  };
+}
+
+function safeTruncateSourceText(text = "", limit = AI_SUMMARY_SOURCE_TEXT_LIMIT) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  const safeLimit = Math.max(0, Number(limit || 0));
+  if (!normalized || safeLimit <= 0 || normalized.length <= safeLimit) {
+    return normalized;
+  }
+
+  return `${Array.from(normalized).slice(0, safeLimit).join("").trim()}...`;
+}
+
+function prepareAiSummarySources(sources = [], options = {}) {
+  const limit = Math.max(1, Number(options.limit || AI_SUMMARY_SOURCE_LIMIT));
+  const textLimit = Math.max(280, Number(options.textLimit || AI_SUMMARY_SOURCE_TEXT_LIMIT));
+
+  return (Array.isArray(sources) ? sources : [])
+    .slice(0, limit)
+    .map((source) => ({
+      ...source,
+      content: safeTruncateSourceText(source?.content || "", textLimit),
+      chunk_text: safeTruncateSourceText(source?.chunk_text || "", textLimit),
+      comment: safeTruncateSourceText(source?.comment || "", textLimit),
+    }));
+}
+
+function isSummarizeModeEnabled(payload = {}) {
+  return payload?.summarizeMode !== false && payload?.summaryMode !== false;
+}
+
+function resolveSummaryAiControl(retrievalEvaluation = null, planContext = {}, payload = {}) {
+  const confidenceLevel = resolveAnswerConfidenceLevel(retrievalEvaluation);
+  const summarizeModeEnabled = isSummarizeModeEnabled(payload);
+
+  if (confidenceLevel === "high") {
+    return {
+      allowAI: false,
+      reason: "high_confidence",
+      summarizeModeEnabled,
+    };
+  }
+
+  if (confidenceLevel === "low") {
+    return {
+      allowAI: false,
+      reason: "low_confidence",
+      summarizeModeEnabled,
+    };
+  }
+
+  if (confidenceLevel === "medium" && summarizeModeEnabled && planContext?.useAI === true) {
+    return {
+      allowAI: true,
+      reason: "medium_confidence_summary",
+      summarizeModeEnabled,
+    };
+  }
+
+  return {
+    allowAI: false,
+    reason: summarizeModeEnabled ? "ai_disabled_for_plan" : "summary_mode_disabled",
+    summarizeModeEnabled,
   };
 }
 
@@ -886,7 +1006,7 @@ async function replyToDbOnlyMainChat(payload, session) {
   }
   let target = resolveSearchTarget(message, requestedTarget);
 
- if (!continueFromPrevious) {
+ if (!continueFromPrevious && !shouldSkipFaqForQuestion(message)) {
   const suggestedQuestionTargets = resolveSuggestedQuestionTargets(message, target);
 
   let managedSuggestedQuestionMatch = null;
@@ -895,22 +1015,13 @@ async function replyToDbOnlyMainChat(payload, session) {
   for (const candidateTarget of suggestedQuestionTargets) {
     managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(message, candidateTarget);
 
-    if (managedSuggestedQuestionMatch?.answerText) {
+    if (isHighConfidenceFaqMatch(managedSuggestedQuestionMatch, message)) {
       managedSuggestedQuestionTarget = candidateTarget;
       break;
     }
   }
 
-// 👇 ใส่ตรงนี้เลย
-  console.log("[SUGGESTED QUESTION MATCH]", {
-    message,
-    suggestedQuestionTargets,
-    finalTargetUsed: managedSuggestedQuestionTarget,
-    found: Boolean(managedSuggestedQuestionMatch),
-    questionText: managedSuggestedQuestionMatch?.questionText,
-    answerText: managedSuggestedQuestionMatch?.answerText,
-  });
-  if (managedSuggestedQuestionMatch?.answerText) {
+  if (isHighConfidenceFaqMatch(managedSuggestedQuestionMatch, message)) {
     // Override target with DB value if present
    if (managedSuggestedQuestionMatch.target) {
   target = managedSuggestedQuestionMatch.target;
@@ -1175,7 +1286,7 @@ async function replyToDbOnlyMainChat(payload, session) {
   }
   // Clean answer content before storing and returning
   const cleanedAnswer = cleanAssistantAnswer(answer, message);
-  answer = cleanedAnswer;
+  answer = applyAnswerConfidenceNotice(cleanedAnswer, retrievalEvaluation);
 
   LawChatbotModel.create({
     message,
@@ -1204,7 +1315,7 @@ async function replyToDbOnlyMainChat(payload, session) {
     highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
     usedFollowUpContext: Boolean(resolvedContext.usedContext),
     usedInternetFallback: false,
-    responseMeta: buildResponseMeta("db_only_main_chat", selectedSources),
+    responseMeta: buildResponseMeta("db_only_main_chat", selectedSources, retrievalEvaluation),
     fromCache: false,
     continuation: hasContinuation
       ? buildDbOnlyMainChatContinuation(message, nextContinuationState, {
@@ -1239,6 +1350,7 @@ async function replyToDbOnlyMainChat(payload, session) {
       databaseMatches: selectedSources.length,
       internetMatches: 0,
       answerMode: "db_only_main_chat",
+      usedAI: false,
       promptProfile: planContext.promptProfile?.code || "template",
       timing: {
         totalReplyMs: Math.round(nowMs() - startedAt),
@@ -1319,28 +1431,60 @@ async function summarizeChat(payload, session) {
   if (!retrievalEvaluation.shouldAnswer) {
     return {
       summary: retrievalEvaluation.userFacingMessage,
+      usedAI: false,
+      responseMeta: buildResponseMeta("db_only", sources, retrievalEvaluation, { usedAI: false }),
     };
   }
 
   const assistantProfile = getLawChatbotAssistantProfile(session);
-
-  return {
-    summary: personalizeAnswerWithAssistantProfile(await generateChatSummary(message, sources, {
-      conversationalFollowUp: resolvedContext.usedContext,
-      conversationHistory: getConversationHistory(session, target),
-      topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
-      questionIntent: evidence.questionIntent,
-      databaseOnlyMode: !planContext.useAI,
-      promptProfile: planContext.promptProfile,
-      planCode: planContext.code,
-      target,
-    }), assistantProfile),
+  const aiControl = resolveSummaryAiControl(retrievalEvaluation, planContext, payload);
+  const answerDiagnostics = {};
+  const summarySources = aiControl.allowAI
+    ? prepareAiSummarySources(sources)
+    : sources;
+  const summaryPromptProfile = aiControl.allowAI
+    ? {
+        ...planContext.promptProfile,
+        aiSourceLimit: AI_SUMMARY_SOURCE_LIMIT,
+        aiSourceContextCharLimit: AI_SUMMARY_SOURCE_TEXT_LIMIT,
+      }
+    : planContext.promptProfile;
+  const summary = personalizeAnswerWithAssistantProfile(await generateChatSummary(message, summarySources, {
+    conversationalFollowUp: resolvedContext.usedContext,
+    conversationHistory: getConversationHistory(session, target),
+    topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
+    questionIntent: evidence.questionIntent,
+    databaseOnlyMode: !aiControl.allowAI,
+    promptProfile: summaryPromptProfile,
+    planCode: planContext.code,
+    target,
+    answerDiagnostics,
+  }), assistantProfile);
+  const usedAI = answerDiagnostics.usedAI === true;
+  const responseMeta = buildResponseMeta(usedAI ? "ai" : "db_only", sources, retrievalEvaluation, { usedAI });
+  const result = {
+    summary: applyAnswerConfidenceNotice(summary, retrievalEvaluation),
+    usedAI,
+    responseMeta,
     assistantProfile: {
       id: assistantProfile.id,
       label: assistantProfile.label,
       gender: assistantProfile.gender,
     },
   };
+
+  if (payload?.debug === true || payload?.debug === "true") {
+    result.debug = {
+      usedAI,
+      aiControl,
+      aiSourceCount: usedAI ? Number(answerDiagnostics.aiSourceCount || 0) : 0,
+      confidenceLevel: retrievalEvaluation.confidenceLevel,
+      confidence: retrievalEvaluation.confidence,
+      sourceCount: sources.length,
+    };
+  }
+
+  return result;
 }
 
 function buildAutoSuggestionSourceReference(payload = {}) {
@@ -1573,4 +1717,9 @@ module.exports = {
   submitPaymentRequest,
   approvePaymentRequest,
   rejectPaymentRequest,
+  __private: {
+    prepareAiSummarySources,
+    resolveSummaryAiControl,
+    safeTruncateSourceText,
+  },
 };

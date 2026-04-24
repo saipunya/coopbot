@@ -1,10 +1,12 @@
 const { getDbPool } = require("../config/db");
 const { normalizeThai } = require("../utils/thaiNormalizer");
-const { normalizeForSearch, segmentWords, uniqueTokens } = require("./thaiTextUtils");
+const { expandSearchConcepts, normalizeForSearch, segmentWords, uniqueTokens } = require("./thaiTextUtils");
+const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 
 const DEFAULT_LIMIT = 10;
 const CANDIDATE_MULTIPLIER = 8;
 const MIN_FAQ_SCORE = 18;
+const MIN_KEYWORD_SCORE_BEFORE_SEMANTIC = Number(process.env.HYBRID_SEARCH_SEMANTIC_MIN_SCORE || 70);
 
 let cachedMetadata = null;
 let cachedFulltextAvailability = null;
@@ -17,10 +19,14 @@ function normalizeQuery(text) {
 
 function buildTerms(query) {
   const normalizedQuery = normalizeQuery(query);
-  const segmentedTokens = uniqueTokens(segmentWords(normalizedQuery));
-  const rawTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  const expandedQuery = normalizeQuery(expandSearchConcepts(query));
+  const segmentedTokens = uniqueTokens([
+    ...segmentWords(normalizedQuery),
+    ...segmentWords(expandedQuery),
+  ]);
+  const rawTokens = `${normalizedQuery} ${expandedQuery}`.split(/\s+/).filter(Boolean);
 
-  return uniqueTokens([normalizedQuery, ...segmentedTokens, ...rawTokens])
+  return uniqueTokens([normalizedQuery, expandedQuery, ...segmentedTokens, ...rawTokens])
     .filter((token) => token && token.length >= 2)
     .slice(0, 12);
 }
@@ -267,6 +273,28 @@ function pickTopAnswerCandidate(results) {
   };
 }
 
+function mapSemanticResult(result = {}) {
+  return {
+    id: result.id,
+    chunkType: result.chunkType || null,
+    title: result.title || null,
+    question: result.question || null,
+    answer: result.answer || result.chunk_text || result.chunkText || null,
+    noteValue: result.noteValue || null,
+    stepNo: result.stepNo || null,
+    detail: result.detail || null,
+    referenceNote: result.referenceNote || null,
+    keyword: result.keyword || "",
+    chunkText: result.chunk_text || result.chunkText || "",
+    cleanText: result.clean_text || result.cleanText || "",
+    sourceFileName: result.sourceFileName || result.originalname || null,
+    score: Number(result.score || 0),
+    debugScores: {
+      semantic: Number(result.similarity || 0),
+    },
+  };
+}
+
 async function fetchAndRank(query, typeFilter, limit) {
   const pool = getDbPool();
   if (!pool) {
@@ -327,11 +355,34 @@ async function searchPdfChunks(query, options = {}) {
       .slice(0, limit);
   }
 
+  const topKeywordScore = Number(mergedResults[0]?.score || 0);
+  let usedSemanticFallback = false;
+
+  if (mergedResults.length === 0 || topKeywordScore < MIN_KEYWORD_SCORE_BEFORE_SEMANTIC) {
+    const semanticResults = (await LawChatbotPdfChunkModel.semanticSearch(query, limit)).map(mapSemanticResult);
+    if (semanticResults.length > 0) {
+      usedSemanticFallback = true;
+      const seenIds = new Set();
+      mergedResults = [...mergedResults, ...semanticResults]
+        .filter((item) => {
+          if (seenIds.has(item.id)) {
+            return false;
+          }
+          seenIds.add(item.id);
+          return true;
+        })
+        .sort((left, right) => right.score - left.score || right.id - left.id)
+        .slice(0, limit);
+    }
+  }
+
   return {
     query: String(query || ""),
     normalizedQuery,
     total: mergedResults.length,
     usedFallback,
+    usedSemanticFallback,
+    expandedQuery: normalizeQuery(expandSearchConcepts(query)),
     results: mergedResults,
     debugScores: mergedResults.map((item) => ({
       id: item.id,

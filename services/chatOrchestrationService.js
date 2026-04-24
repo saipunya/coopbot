@@ -29,7 +29,7 @@ const {
   resolveUserPlanContext,
   shouldUseAIForPlan,
 } = require("./planService");
-const { extractExplicitTopicHints, normalizeForSearch } = require("./thaiTextUtils");
+const { expandSearchConcepts, extractExplicitTopicHints, normalizeForSearch } = require("./thaiTextUtils");
 
 const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
 const CHAT_BUDGET_BUFFER_MS = Number(process.env.CHAT_BUDGET_BUFFER_MS || 3000);
@@ -231,7 +231,12 @@ function findSeededLegalAnswer(message = "") {
 }
 
 async function findManagedSuggestedQuestionMatch(message, target = "all") {
-  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(message, target);
+  const expandedMessage = expandSearchConcepts(message) || String(message || "").trim();
+  const match =
+    await LawChatbotSuggestedQuestionModel.findAnswerMatch(message, target) ||
+    (expandedMessage !== String(message || "").trim()
+      ? await LawChatbotSuggestedQuestionModel.findAnswerMatch(expandedMessage, target)
+      : null);
   if (!match?.answerText) {
     return null;
   }

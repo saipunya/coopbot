@@ -21,6 +21,9 @@ const AUTHORITATIVE_SOURCES = new Set([
 ]);
 const PRIMARY_LAW_SOURCES = new Set(["tbl_laws", "tbl_glaws"]);
 const DOCUMENT_SOURCES = new Set(["documents", "pdf_chunks"]);
+const MEDIUM_ANSWER_CONFIDENCE_THRESHOLD = Number(process.env.RETRIEVAL_MEDIUM_ANSWER_CONFIDENCE_THRESHOLD || 50);
+const HIGH_ANSWER_CONFIDENCE_THRESHOLD = Number(process.env.RETRIEVAL_HIGH_ANSWER_CONFIDENCE_THRESHOLD || 75);
+const MEDIUM_CONFIDENCE_ANSWER_NOTE = "อ้างอิงจากข้อมูลที่พบ";
 const THRESHOLD_PROFILES = {
   general: {
     minAnswerability: 52,
@@ -497,6 +500,23 @@ function computeAnswerability(payload = {}, profile = resolveRetrievalThresholdP
   };
 }
 
+function resolveAnswerConfidenceLevel(confidence = 0) {
+  const normalizedConfidence = Number(confidence);
+  if (!Number.isFinite(normalizedConfidence) || normalizedConfidence < MEDIUM_ANSWER_CONFIDENCE_THRESHOLD) {
+    return "low";
+  }
+
+  if (normalizedConfidence >= HIGH_ANSWER_CONFIDENCE_THRESHOLD) {
+    return "high";
+  }
+
+  return "medium";
+}
+
+function resolveAnswerConfidenceNote(confidenceLevel = "") {
+  return confidenceLevel === "medium" ? MEDIUM_CONFIDENCE_ANSWER_NOTE : "";
+}
+
 function buildPositiveReasonParts(metrics = {}, payload = {}) {
   const reasons = [];
 
@@ -689,6 +709,7 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
   const metrics = answerability.metrics || collectRetrievalMetrics(payload, profile);
   const strongGroupFormationEvidence = hasStrongGroupFormationEvidence(payload);
   const strongLiquidationEvidence = hasStrongLiquidationEvidence(payload);
+  const confidenceLevel = resolveAnswerConfidenceLevel(answerability.confidence);
 
   const meetsTopScore = metrics.topScore >= profile.minTopScore;
   const meetsAggregateScore =
@@ -761,6 +782,10 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
     }
   }
 
+  if (confidenceLevel === "low") {
+    policy = "no_answer";
+  }
+
   const reasonCodes = buildReasonCodes(metrics, profile, policy);
   const humanReadableDecision = buildHumanReadableDecision(policy, metrics, payload, profile);
   const userFacingMessage =
@@ -772,6 +797,8 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
 
   return {
     policy,
+    confidenceLevel: policy === "answer" ? confidenceLevel : "low",
+    answerNote: policy === "answer" ? resolveAnswerConfidenceNote(confidenceLevel) : "",
     shouldAnswer: policy === "answer",
     shouldAskClarifyingQuestion: policy === "clarify",
     shouldReturnNoAnswer: policy === "no_answer",
@@ -792,6 +819,8 @@ function buildRetrievalDecisionTrace(payload = {}, answerability = computeAnswer
     shouldAskClarifyingQuestion: resolvedDecision.shouldAskClarifyingQuestion,
     shouldReturnNoAnswer: resolvedDecision.shouldReturnNoAnswer,
     confidence: answerability.confidence,
+    confidenceLevel: resolvedDecision.confidenceLevel,
+    answerNote: resolvedDecision.answerNote,
     answerabilityScore: answerability.answerabilityScore,
     reasonCodes: resolvedDecision.reasonCodes,
     humanReadableDecision: resolvedDecision.humanReadableDecision,
@@ -862,6 +891,8 @@ function evaluateRetrievalResult(payload = {}) {
 
   return {
     policy: decision.policy,
+    confidenceLevel: decision.confidenceLevel,
+    answerNote: decision.answerNote,
     shouldAnswer: decision.shouldAnswer,
     shouldAskClarifyingQuestion: decision.shouldAskClarifyingQuestion,
     shouldReturnNoAnswer: decision.shouldReturnNoAnswer,

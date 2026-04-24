@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const { normalizeThai } = require("../utils/thaiNormalizer");
 const { expandKeywords } = require("../utils/synonyms");
+const { expandSearchConcepts } = require("../services/thaiTextUtils");
 
 function buildChunk(id, keyword, chunkText, overrides = {}) {
   return {
@@ -131,7 +132,7 @@ function printTopResults(results) {
 }
 
 async function search(query, limit = 5) {
-  const results = await LawChatbotPdfChunkModel.searchChunksSmart(query, limit);
+  const results = await LawChatbotPdfChunkModel.searchChunksSmart(query, limit, { logMiss: false });
   if (process.env.DEBUG_SEARCH_TESTS === "1") {
     // eslint-disable-next-line no-console
     console.log(`\nQUERY: ${query}\n${printTopResults(results)}\n`);
@@ -150,6 +151,17 @@ test.after(() => {
 test("search helper sanity uses normalizer and synonym expansion", () => {
   assert.equal(normalizeThai("  คพช / สหกรณ์!!  "), "คพช สหกรณ์");
   assert.deepEqual(expandKeywords("คพช"), ["คพช", "คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ"]);
+});
+
+test("central query expansion covers dissolution and liquidation aliases", () => {
+  const cases = ["ปิดสหกรณ์", "เลิกสหกรณ์", "ชำระบัญชี", "ผู้ชำระบัญชี"];
+
+  cases.forEach((query) => {
+    const expanded = expandSearchConcepts(query);
+    assert.match(expanded, /เลิกสหกรณ์/, `expected เลิกสหกรณ์ in expansion for ${query}: ${expanded}`);
+    assert.match(expanded, /ชำระบัญชี/, `expected ชำระบัญชี in expansion for ${query}: ${expanded}`);
+    assert.match(expanded, /ผู้ชำระบัญชี/, `expected ผู้ชำระบัญชี in expansion for ${query}: ${expanded}`);
+  });
 });
 
 test("[Case 1] exact keyword returns the matching board row near the top", async () => {
@@ -189,6 +201,32 @@ test("[Case 3] synonym or near meaning keeps dissolution content in top results"
     /ชำระบัญชี|ยกเลิก|ยุบเลิก/.test(results[0].chunk_text),
     `expected top result to mention dissolution variants:\n${printTopResults(results)}`,
   );
+});
+
+test("[Case 3.1] close-coop wording expands to dissolution and liquidation terms", async () => {
+  const results = await search("ปิดสหกรณ์", 5);
+
+  assert.ok(results.length > 0, "should return results for close-coop alias");
+  assert.equal(results[0].id, 103, `expected dissolution row first:\n${printTopResults(results)}`);
+  assert.ok(
+    /ชำระบัญชี|ยกเลิก|ยุบเลิก/.test(results[0].chunk_text),
+    `expected close-coop alias to retrieve dissolution variants:\n${printTopResults(results)}`,
+  );
+});
+
+test("hybrid search does not call semantic fallback when keyword confidence is high", async () => {
+  const originalSemanticSearch = LawChatbotPdfChunkModel.semanticSearch;
+  LawChatbotPdfChunkModel.semanticSearch = async () => {
+    throw new Error("semantic fallback should not be called for high keyword score");
+  };
+
+  try {
+    const results = await LawChatbotPdfChunkModel.hybridSearch("เลิกสหกรณ์", 5);
+    assert.ok(results.length > 0, "should return keyword results");
+    assert.equal(results[0].id, 103, `expected keyword search to carry the result:\n${printTopResults(results)}`);
+  } finally {
+    LawChatbotPdfChunkModel.semanticSearch = originalSemanticSearch;
+  }
 });
 
 test("[Case 4] OCR-like typo still finds the related national committee row", async () => {
@@ -315,6 +353,15 @@ test("requested query set stays covered in the regression suite", async () => {
         assert.ok(
           getResultIds(results).slice(0, 2).includes(103),
           `expected dissolution/accounting row in top results:\n${printTopResults(results)}`,
+        );
+      },
+    },
+    {
+      query: "ผู้ชำระบัญชี",
+      expectResult: (results) => {
+        assert.ok(
+          getResultIds(results).slice(0, 2).includes(103),
+          `expected liquidator query to find dissolution/accounting row:\n${printTopResults(results)}`,
         );
       },
     },
