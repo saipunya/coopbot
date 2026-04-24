@@ -148,6 +148,30 @@ function getSourceTableName(sourceName = "") {
   const normalized = String(sourceName || "").trim();
   return SOURCE_TABLE_NAMES[normalized] || normalized;
 }
+function resolveSuggestedQuestionTargets(message = "", requestedTarget = "all") {
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  const normalizedRequestedTarget = String(requestedTarget || "").trim().toLowerCase();
+
+  const targets = [];
+
+  if (normalizedRequestedTarget === "group" || /กลุ่มเกษตรกร|กลุ่มเกษต/.test(normalizedMessage)) {
+    targets.push("group");
+  }
+
+  if (normalizedRequestedTarget === "coop" || /สหกรณ์/.test(normalizedMessage)) {
+    targets.push("coop");
+  }
+
+  if (normalizedRequestedTarget && !targets.includes(normalizedRequestedTarget)) {
+    targets.push(normalizedRequestedTarget);
+  }
+
+  if (!targets.includes("all")) {
+    targets.push("all");
+  }
+
+  return Array.from(new Set(targets.filter(Boolean)));
+}
 
 function getUniqueSourceTableNames(sources = []) {
   return Array.from(
@@ -860,100 +884,130 @@ async function replyToDbOnlyMainChat(payload, session) {
   if (!message) {
     return buildDbOnlyMainChatErrorResult("กรุณาระบุคำถามหรือประเด็นที่ต้องการสอบถามก่อนส่งข้อความ");
   }
-  const target = resolveSearchTarget(message, requestedTarget);
+  let target = resolveSearchTarget(message, requestedTarget);
 
-  if (!continueFromPrevious) {
-    const managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(message, target);
+ if (!continueFromPrevious) {
+  const suggestedQuestionTargets = resolveSuggestedQuestionTargets(message, target);
+
+  let managedSuggestedQuestionMatch = null;
+  let managedSuggestedQuestionTarget = target;
+
+  for (const candidateTarget of suggestedQuestionTargets) {
+    managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(message, candidateTarget);
+
     if (managedSuggestedQuestionMatch?.answerText) {
-      const selectedSources = managedSuggestedQuestionMatch.source ? [managedSuggestedQuestionMatch.source] : [];
-      const effectiveMessage = String(
-        managedSuggestedQuestionMatch.questionText ||
-          managedSuggestedQuestionMatch.topicHint ||
-          message,
-      ).trim() || message;
-      const answer = cleanAssistantAnswer(managedSuggestedQuestionMatch.answerText, "");
-
-      setSessionContinuationState(session, null);
-
-      if (answer && selectedSources.length > 0) {
-        storeConversationContext(
-          session,
-          target,
-          message,
-          effectiveMessage,
-          selectedSources,
-          { usedContext: false, topicHints: [] },
-          {
-            answerText: answer,
-            usedSourcesForContinuation: selectedSources.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT),
-            continuationSourceLimit: MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
-          },
-        );
-      }
-
-      LawChatbotModel.create({
-        message,
-        effectiveMessage,
-        target,
-        answer,
-        matchedSources: selectedSources.map((item) => ({
-          id: item.id || item.url || item.reference || item.title,
-          title: item.title || item.keyword || item.reference,
-          lawNumber: item.lawNumber || item.reference || item.keyword,
-          source: item.source || "",
-          url: item.url || "",
-          score: Number(item.score || 0),
-        })),
-      });
-
-      await recordUserSearchHistory(session, planContext, {
-        questionText: message,
-        target,
-        answerText: answer,
-      });
-
-      const result = {
-        hasContext: Boolean(answer),
-        answer,
-        highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
-        usedFollowUpContext: false,
-        usedInternetFallback: false,
-        responseMeta: buildResponseMeta("managed_answer", selectedSources),
-        fromCache: false,
-        continuation: {
-          available: false,
-          label: "ดูคำตอบต่อ",
-        },
-      };
-
-      if (debugMode) {
-        result.debug = {
-          selectedSourceTier: "managed_suggested_question",
-          selectedSourceTierLabel: "managed_suggested_question",
-          sourceTables: result.responseMeta?.sourceTables || [],
-          consideredSourceTables: ["chatbot_suggested_questions"],
-          sourceCount: selectedSources.length,
-          databaseMatches: selectedSources.length,
-          internetMatches: 0,
-          answerMode: "managed_answer",
-          promptProfile: planContext.promptProfile?.code || "template",
-          timing: {
-            totalReplyMs: Math.round(nowMs() - startedAt),
-          },
-          sources: selectedSources.map((item) => ({
-            source: item.source || "",
-            sourceLabel: getSourceDisplayLabel(item.source || ""),
-            sourceTable: getSourceTableName(item.source || ""),
-            reference: item.reference || item.title || "",
-            score: Number(item.score || 0),
-            preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
-          })),
-        };
-      }
-
-      return personalizeChatResult(session, result);
+      managedSuggestedQuestionTarget = candidateTarget;
+      break;
     }
   }
+
+// 👇 ใส่ตรงนี้เลย
+  console.log("[SUGGESTED QUESTION MATCH]", {
+    message,
+    suggestedQuestionTargets,
+    finalTargetUsed: managedSuggestedQuestionTarget,
+    found: Boolean(managedSuggestedQuestionMatch),
+    questionText: managedSuggestedQuestionMatch?.questionText,
+    answerText: managedSuggestedQuestionMatch?.answerText,
+  });
+  if (managedSuggestedQuestionMatch?.answerText) {
+    // Override target with DB value if present
+   if (managedSuggestedQuestionMatch.target) {
+  target = managedSuggestedQuestionMatch.target;
+} else if (managedSuggestedQuestionTarget) {
+  target = managedSuggestedQuestionTarget;
+}
+    const selectedSources = managedSuggestedQuestionMatch.source ? [managedSuggestedQuestionMatch.source] : [];
+    const effectiveMessage = String(
+      managedSuggestedQuestionMatch.questionText ||
+        managedSuggestedQuestionMatch.topicHint ||
+        message,
+    ).trim() || message;
+    const answer = cleanAssistantAnswer(managedSuggestedQuestionMatch.answerText, "");
+
+    setSessionContinuationState(session, null);
+
+    if (answer && selectedSources.length > 0) {
+      storeConversationContext(
+        session,
+        target,
+        message,
+        effectiveMessage,
+        selectedSources,
+        { usedContext: false, topicHints: [] },
+        {
+          answerText: answer,
+          usedSourcesForContinuation: selectedSources.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT),
+          continuationSourceLimit: MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
+        },
+      );
+    }
+
+    LawChatbotModel.create({
+      message,
+      effectiveMessage,
+      target,
+      answer,
+      matchedSources: selectedSources.map((item) => ({
+        id: item.id || item.url || item.reference || item.title,
+        title: item.title || item.keyword || item.reference,
+        lawNumber: item.lawNumber || item.reference || item.keyword,
+        source: item.source || "",
+        url: item.url || "",
+        score: Number(item.score || 0),
+      })),
+    });
+
+    await recordUserSearchHistory(session, planContext, {
+      questionText: message,
+      target,
+      answerText: answer,
+    });
+
+    const result = {
+      hasContext: Boolean(answer),
+      answer,
+      highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
+      usedFollowUpContext: false,
+      usedInternetFallback: false,
+      responseMeta: buildResponseMeta("managed_answer", selectedSources),
+      fromCache: false,
+      continuation: {
+        available: false,
+        label: "ดูคำตอบต่อ",
+      },
+    };
+
+    if (debugMode) {
+      result.debug = {
+        selectedSourceTier: "managed_suggested_question",
+        selectedSourceTierLabel: "managed_suggested_question",
+        sourceTables: result.responseMeta?.sourceTables || [],
+        consideredSourceTables: ["chatbot_suggested_questions"],
+        sourceCount: selectedSources.length,
+        databaseMatches: selectedSources.length,
+        internetMatches: 0,
+        answerMode: "managed_answer",
+        promptProfile: planContext.promptProfile?.code || "template",
+        timing: {
+          totalReplyMs: Math.round(nowMs() - startedAt),
+        },
+        suggestedQuestionTargets,
+        matchedSuggestedQuestionTarget: managedSuggestedQuestionTarget,
+        sources: selectedSources.map((item) => ({
+          source: item.source || "",
+          sourceLabel: getSourceDisplayLabel(item.source || ""),
+          sourceTable: getSourceTableName(item.source || ""),
+          reference: item.reference || item.title || "",
+          score: Number(item.score || 0),
+          preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
+        })),
+      };
+    }
+
+    return personalizeChatResult(session, result);
+  }
+}
 
   let effectiveMessage = message;
   let resolvedContext = { usedContext: false, topicHints: [] };
