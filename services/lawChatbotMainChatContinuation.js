@@ -211,8 +211,9 @@ function buildContinuationSourceState(source = {}) {
     continuationChunkOffset: Math.max(0, Number(source.continuationChunkOffset || 0)),
     continuationTotalLength: Math.max(0, Number(source.continuationTotalLength || 0)),
     continuationHasMore:
-      source.continuationHasMore === true ||
-      Boolean(source.id || documentId || source.content || source.chunk_text || source.comment),
+      typeof source.continuationHasMore === "boolean"
+        ? source.continuationHasMore
+        : Boolean(source.id || documentId || source.content || source.chunk_text || source.comment),
   };
 }
 

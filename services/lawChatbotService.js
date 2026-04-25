@@ -230,8 +230,9 @@ function resolveDbOnlyMainChatMaxSourceChunks(message = "", questionIntent = "")
 }
 
 function shouldCollapseExactLawSectionPreview(message = "", questionIntent = "") {
-  const normalizedIntent = String(questionIntent || "").trim().toLowerCase();
-  return normalizedIntent === "law_section" && hasExplicitLawReferenceQuery(message);
+  void message;
+  void questionIntent;
+  return false;
 }
 
 function resolveAnswerConfidenceLevel(retrievalEvaluation = null) {

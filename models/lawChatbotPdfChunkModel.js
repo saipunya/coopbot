@@ -874,12 +874,16 @@ const memoryChunks = [];
 const memoryDocuments = [];
 
 class LawChatbotPdfChunkModel {
+  static clearEmbeddingCache() {
+    embeddingCache = null;
+    embeddingCacheTime = 0;
+  }
+
   static __resetTestState() {
     uploadedFiles.length = 0;
     memoryChunks.length = 0;
     memoryDocuments.length = 0;
-    embeddingCache = null;
-    embeddingCacheTime = 0;
+    this.clearEmbeddingCache();
     pdfChunkFulltextSearchConfigCache = null;
     pdfChunkColumnMetadataCache = null;
   }
@@ -1371,6 +1375,7 @@ class LawChatbotPdfChunkModel {
         ...normalizedEntry,
       };
       memoryDocuments.unshift(record);
+      this.clearEmbeddingCache();
       return record;
     }
 
@@ -1395,6 +1400,8 @@ class LawChatbotPdfChunkModel {
         normalizedEntry.qualityStatus,
       ],
     );
+
+    this.clearEmbeddingCache();
 
     return {
       id: result.insertId,
@@ -1439,6 +1446,7 @@ class LawChatbotPdfChunkModel {
           created_at: new Date().toISOString(),
         });
       });
+      this.clearEmbeddingCache();
       return normalizedChunks.length;
     }
 
@@ -1490,6 +1498,7 @@ class LawChatbotPdfChunkModel {
 
     if (values.length > 0) {
       await pool.query(`INSERT INTO pdf_chunks (${columns.join(", ")}) VALUES ?`, [values]);
+      this.clearEmbeddingCache();
     }
     return values.length;
   }

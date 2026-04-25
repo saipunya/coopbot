@@ -29,6 +29,9 @@ async function getKnowledgeAdminData(options = {}) {
   const suggestedQuestionsPage = normalizePageNumber(options.suggestedQuestionsPage || options.sqPage || 1);
   const knowledgePage = normalizePageNumber(options.knowledgePage || 1);
   const pendingSuggestionsPage = normalizePageNumber(options.pendingSuggestionsPage || options.pendingPage || 1);
+  const suggestedQuestionSearch = String(
+    options.suggestedQuestionSearch || options.sqSearch || options.q || "",
+  ).trim();
   const pendingSuggestionSourceTypeFilter = ["text", "voice", "auto_feedback", "auto_no_answer"].includes(String(options.pendingSourceType || options.sourceType || "").trim())
     ? String(options.pendingSourceType || options.sourceType || "").trim()
     : "all";
@@ -48,7 +51,7 @@ async function getKnowledgeAdminData(options = {}) {
     LawChatbotKnowledgeSuggestionModel.countPending(pendingSuggestionSourceTypeFilter),
     LawChatbotKnowledgeSuggestionModel.countPendingBySourceType(),
     LawChatbotKnowledgeSuggestionModel.countCreatedTodayBySourceType(),
-    LawChatbotSuggestedQuestionModel.countAll(),
+    LawChatbotSuggestedQuestionModel.countAll({ questionSearch: suggestedQuestionSearch }),
     LawChatbotSuggestedQuestionModel.countActive(),
   ]);
 
@@ -78,6 +81,7 @@ async function getKnowledgeAdminData(options = {}) {
     LawChatbotSuggestedQuestionModel.listRecent(
       suggestedQuestionsPagination.pageSize,
       suggestedQuestionsPagination.offset,
+      { questionSearch: suggestedQuestionSearch },
     ),
   ]);
 
@@ -93,6 +97,7 @@ async function getKnowledgeAdminData(options = {}) {
     suggestedQuestionCount,
     activeSuggestedQuestionCount,
     suggestedQuestions,
+    suggestedQuestionSearch,
     suggestedQuestionsPagination,
     knowledgePagination,
     pendingSuggestionsPagination,

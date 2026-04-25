@@ -90,6 +90,60 @@ function normalizeQuestionText(value) {
   return normalizeForSearch(String(value || "")).toLowerCase();
 }
 
+function compactQuestionText(value) {
+  return normalizeQuestionText(value).replace(/\s+/g, "");
+}
+
+function buildAdminSearchTermGroups(query = "") {
+  const normalizedQuery = normalizeQuestionText(query);
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const segmenter = new Intl.Segmenter("th", { granularity: "word" });
+  const rawTerms = [];
+  for (const segment of segmenter.segment(normalizedQuery)) {
+    const token = String(segment.segment || "").trim().toLowerCase();
+    if (!token || /^[^\p{L}\p{M}\p{N}]+$/u.test(token)) {
+      continue;
+    }
+    rawTerms.push(token);
+  }
+
+  const groups = uniqueTokens(rawTerms).map((term) => {
+    if (/^(?:พรบ|พ\.ร\.บ\.?)$/i.test(term)) {
+      return ["พรบ", "พ.ร.บ", "พระราชบัญญัติ"];
+    }
+
+    return [term];
+  });
+
+  return groups.slice(0, 8);
+}
+
+function adminSearchMatchesEntry(entry = {}, termGroups = []) {
+  if (termGroups.length === 0) {
+    return true;
+  }
+
+  const searchable = normalizeQuestionText([
+    entry.questionText || entry.question_text || "",
+    entry.sourceReference || entry.source_reference || "",
+  ].filter(Boolean).join(" "));
+  const compactSearchable = compactQuestionText(searchable);
+
+  return termGroups.every((group) =>
+    group.some((term) => {
+      const normalizedTerm = normalizeQuestionText(term);
+      const compactTerm = compactQuestionText(normalizedTerm);
+      return (
+        (normalizedTerm && searchable.includes(normalizedTerm)) ||
+        (compactTerm && compactSearchable.includes(compactTerm))
+      );
+    }),
+  );
+}
+
 function inferSuggestedQuestionTarget(question = "", requestedTarget = "all") {
   const normalizedRequestedTarget = normalizeSuggestedQuestionTarget(requestedTarget);
   const normalizedQuestion = normalizeQuestionText(question);
@@ -810,14 +864,38 @@ class LawChatbotSuggestedQuestionModel {
     });
   }
 
-  static async countAll() {
+  static async countAll(options = {}) {
+    const questionSearch = String(options.questionSearch || "").trim();
+    const searchTermGroups = buildAdminSearchTermGroups(questionSearch);
     const pool = getDbPool();
     if (!pool) {
-      return memorySuggestedQuestions.length;
+      return memorySuggestedQuestions.filter((item) => {
+        return adminSearchMatchesEntry(item, searchTermGroups);
+      }).length;
     }
 
     await ensureTable();
-    const [rows] = await pool.query("SELECT COUNT(*) AS total FROM chatbot_suggested_questions");
+    const params = [];
+    const whereClause = searchTermGroups.length
+      ? `WHERE ${searchTermGroups
+          .map((group) =>
+            `(${group
+              .map(() => "(question_text LIKE ? OR normalized_question LIKE ? OR COALESCE(source_reference, '') LIKE ?)")
+              .join(" OR ")})`,
+          )
+          .join(" AND ")}`
+      : "";
+    searchTermGroups.forEach((group) => {
+      group.forEach((term) => {
+        const like = `%${term}%`;
+        params.push(like, like, like);
+      });
+    });
+
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) AS total FROM chatbot_suggested_questions ${whereClause}`,
+      params,
+    );
     return Number(rows[0]?.total || 0);
   }
 
@@ -858,13 +936,18 @@ class LawChatbotSuggestedQuestionModel {
     return rows[0] ? mapRow(rows[0]) : null;
   }
 
-  static async listRecent(limit = 20, offset = 0) {
+  static async listRecent(limit = 20, offset = 0, options = {}) {
     const normalizedLimit = Math.max(1, Number(limit || 20));
     const normalizedOffset = Math.max(0, Number(offset || 0));
+    const questionSearch = String(options.questionSearch || "").trim();
+    const searchTermGroups = buildAdminSearchTermGroups(questionSearch);
     const pool = getDbPool();
 
     if (!pool) {
       return memorySuggestedQuestions
+        .filter((item) => {
+          return adminSearchMatchesEntry(item, searchTermGroups);
+        })
         .slice()
         .sort((left, right) => {
           const activeDiff = Number(Boolean(right.isActive)) - Number(Boolean(left.isActive));
@@ -884,12 +967,30 @@ class LawChatbotSuggestedQuestionModel {
     }
 
     await ensureTable();
+    const params = [];
+    const whereClause = searchTermGroups.length
+      ? `WHERE ${searchTermGroups
+          .map((group) =>
+            `(${group
+              .map(() => "(question_text LIKE ? OR normalized_question LIKE ? OR COALESCE(source_reference, '') LIKE ?)")
+              .join(" OR ")})`,
+          )
+          .join(" AND ")}`
+      : "";
+    searchTermGroups.forEach((group) => {
+      group.forEach((term) => {
+        const like = `%${term}%`;
+        params.push(like, like, like);
+      });
+    });
+
     const [rows] = await pool.query(
       `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
          FROM chatbot_suggested_questions
+        ${whereClause}
         ORDER BY is_active DESC, display_order ASC, id DESC
         LIMIT ? OFFSET ?`,
-      [normalizedLimit, normalizedOffset],
+      [...params, normalizedLimit, normalizedOffset],
     );
 
     return rows.map(mapRow);

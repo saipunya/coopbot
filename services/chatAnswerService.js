@@ -2924,12 +2924,20 @@ function splitContentSegments(text) {
 }
 
 function normalizeDbOnlyMainChatListBreaks(text) {
-  return normalizeProtectedLineBreaks(String(text || ""))
+  const inlineReferenceSpace = "__LAW_INLINE_REFERENCE_SPACE__";
+  const protectedText = normalizeProtectedLineBreaks(String(text || ""))
+    .replace(
+      /(\S)\s+((?:\([0-9๐-๙]{1,3}\)\s*){2,}(?:(?:หรือ|และ)\s*\([0-9๐-๙]{1,3}\))?)/gu,
+      (_match, prefix, references) => `${prefix}${inlineReferenceSpace}${String(references || "").replace(/\s+/g, inlineReferenceSpace)}`,
+    );
+
+  return protectedText
     .replace(/\r/g, "\n")
     .replace(/([^\n])\s+(?=(?:ข้อ\s*)?\([0-9๐-๙]{1,3}\))/gu, "$1\n")
     .replace(/([^\n])\s+(?=(?:ข้อ\s*)?[0-9๐-๙]{1,3}[.)])/gu, "$1\n")
     .replace(/([;:])\s*(?=(?:ข้อ\s*)?\([0-9๐-๙]{1,3}\))/gu, "$1\n")
-    .replace(/([;:])\s*(?=(?:ข้อ\s*)?[0-9๐-๙]{1,3}[.)])/gu, "$1\n");
+    .replace(/([;:])\s*(?=(?:ข้อ\s*)?[0-9๐-๙]{1,3}[.)])/gu, "$1\n")
+    .replaceAll(inlineReferenceSpace, " ");
 }
 
 function splitInlineDbOnlyNumberedItems(line) {
@@ -2958,6 +2966,49 @@ function splitInlineDbOnlyNumberedItems(line) {
   }
 
   return parts;
+}
+
+function mergeInlineClauseReferenceLines(lines = []) {
+  const merged = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const current = String(lines[index] || "").trim();
+    if (!/(?:ตาม|ใน|ของ)\s*$/u.test(current)) {
+      merged.push(lines[index]);
+      continue;
+    }
+
+    let combined = current;
+    let cursor = index + 1;
+    let consumed = false;
+
+    while (cursor < lines.length) {
+      const next = cleanLine(lines[cursor]);
+      const match = next.match(/^(\([0-9๐-๙]{1,3}\))(?:\s*(หรือ|และ))?(?:\s+(.+))?$/u);
+      if (!match) {
+        break;
+      }
+
+      consumed = true;
+      combined = [combined, match[1], match[2] || "", match[3] || ""]
+        .filter(Boolean)
+        .join(" ");
+      cursor += 1;
+
+      if (match[3]) {
+        break;
+      }
+    }
+
+    if (consumed) {
+      merged.push(combined);
+      index = cursor - 1;
+    } else {
+      merged.push(lines[index]);
+    }
+  }
+
+  return merged;
 }
 
 function stripDbOnlySectionPrefix(line) {
@@ -3037,9 +3088,9 @@ function formatDbOnlyMainChatSourceLines(source = {}) {
     return [];
   }
 
-  const rawLines = rawText
+  const rawLines = mergeInlineClauseReferenceLines(rawText
     .split(/\n+/)
-    .flatMap((line) => splitInlineDbOnlyNumberedItems(line));
+    .flatMap((line) => splitInlineDbOnlyNumberedItems(line)));
   const results = [];
 
   for (const rawLine of rawLines) {

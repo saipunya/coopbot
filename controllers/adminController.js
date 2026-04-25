@@ -308,6 +308,7 @@ async function renderSuggestedQuestions(req, res) {
   const data = await lawChatbotService.getKnowledgeAdminData({
     sqPage: req.query.page || 1,
     sqPerPage: req.query.perPage || 12,
+    suggestedQuestionSearch: req.query.q || "",
   });
 
   res.render("admin/suggestedQuestions", {

@@ -4295,6 +4295,15 @@
   margin-bottom: 0.45rem;
   line-height: 1.7;
 }
+.answer-item-note {
+  background: #fffdf7;
+  border-color: #ead9ad;
+  color: #3f3a2d;
+}
+.answer-plain br {
+  display: none;
+}
+
   </style>
 </head>
 <body data-bot-plan="free">
@@ -5973,27 +5982,62 @@
     //   return html;
     // }
 
-    function formatBotDisplayLineHtml(text, terms) {
-      let html =
-        formatFollowUpPromptHtml(text, terms) ||
-        applyHighlightHtml(text, terms);
+    // function formatBotDisplayLineHtml(text, terms) {
+    //   let html =
+    //     formatFollowUpPromptHtml(text, terms) ||
+    //     applyHighlightHtml(text, terms);
 
-      // 🔥 ถ้าไม่มี (1)(2)(3) → ใช้แบบเดิม
-      if (!/\([0-9๐-๙]{1,3}\)/.test(html)) {
-        return html.replace(/\n/g, '<br>');
+    //   // 🔥 ถ้าไม่มี (1)(2)(3) → ใช้แบบเดิม
+    //   if (!/\([0-9๐-๙]{1,3}\)/.test(html)) {
+    //     return html.replace(/\n/g, '<br>');
+    //   }
+
+    //   // 🔥 แยกเป็นข้อ (1)(2)(3)
+    //   const parts = html.split(/(?=\([0-9๐-๙]{1,3}\))/g);
+
+    //   return parts
+    //     .map((part) => `
+    //       <div class="answer-item">
+    //         ${part.trim().replace(/\n/g, '<br>')}
+    //       </div>
+    //     `)
+    //     .join('');
+    // }
+
+
+
+
+function formatBotDisplayLineHtml(text, terms) {
+  let html =
+    formatFollowUpPromptHtml(text, terms) ||
+    applyHighlightHtml(text, terms);
+
+  const hasListMarker = /(?:^|<br\s*\/?>|\n)\s*\([0-9๐-๙]{1,3}\)/i.test(html);
+  // ถ้าไม่มี (1)(2)(3) ให้แสดงแบบปกติ ไม่ทำเป็น card
+  if (!hasListMarker) {
+    return html.replace(/\n/g, '<br>');
+  }
+
+  const normalizedHtml = html.replace(/\n/g, '<br>');
+  return normalizedHtml
+    .split(/<br\s*\/?>/gi)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      if (/^\([0-9๐-๙]{1,3}\)/u.test(line)) {
+        return `<div class="answer-item">${line}</div>`;
       }
 
-      // 🔥 แยกเป็นข้อ (1)(2)(3)
-      const parts = html.split(/(?=\([0-9๐-๙]{1,3}\))/g);
+      return line;
+    })
+    .join('<br>');
+    console.log("🧾 FORMAT INPUT:", text);
+  }
 
-      return parts
-        .map((part) => `
-          <div class="answer-item">
-            ${part.trim().replace(/\n/g, '<br>')}
-          </div>
-        `)
-        .join('');
-    }
+
+
+
+
 
       function decorateBotFallbackHtml(html) {
         let decorated = String(html || '');
@@ -6264,10 +6308,22 @@
       }
       function normalizeAnswerLineBreaksForDisplay(text) {
         // console.log('🔥 normalizeAnswerLineBreaksForDisplay CALLED');
+        const inlineReferenceSpace = '__LAW_INLINE_REFERENCE_SPACE__';
         return String(text || '')
           .replace(/\r\n/g, '\n')
           .replace(/\r/g, '\n')
-          .replace(/\s+(\([0-9๐-๙]{1,3}\))/g, '\n$1')
+          .replace(
+            /(\S)\s+((?:\([0-9๐-๙]{1,3}\)\s*){2,}(?:(?:หรือ|และ)\s*\([0-9๐-๙]{1,3}\))?)/gu,
+            (_match, prefix, references) => `${prefix}${inlineReferenceSpace}${String(references || '').replace(/\s+/g, inlineReferenceSpace)}`
+          )
+          .replace(/([^\n])\s+(\([0-9๐-๙]{1,3}\))(?=\s*[^\s(])/g, (match, prefix, marker, offset, fullText) => {
+            const context = String(fullText || '').slice(Math.max(0, Number(offset || 0) - 80), Number(offset || 0)).replace(/\s+/g, ' ').trim();
+            if (/(?:ตาม|ในกรณีตาม|ตามข้อ|ตามวรรค|ตามอนุมาตรา|หรือ|และ)$/u.test(context)) {
+              return `${prefix} ${marker}`;
+            }
+            return `${prefix}\n${marker}`;
+          })
+          .replaceAll(inlineReferenceSpace, ' ')
           .replace(/\n{3,}/g, '\n\n')
           .trim();
       }

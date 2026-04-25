@@ -6,6 +6,7 @@ const UserModel = require("../models/userModel");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const { importDocxToPdfChunks } = require("../services/wordImportService");
 const { searchPdfChunks } = require("../services/hybridSearchService");
+const { setSessionContinuationState } = require("../services/lawChatbotMainChatContinuation");
 const {
   markLawChatbotNoticeAccepted,
   LAW_CHATBOT_NOTICE_VERSION,
@@ -275,6 +276,7 @@ async function resetContext(req, res) {
   setNoStoreHeaders(res);
   if (req.session) {
     req.session.lawChatbotContext = [];
+    setSessionContinuationState(req.session, null);
   }
 
   res.json({ success: true });

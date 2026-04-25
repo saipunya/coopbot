@@ -36,7 +36,10 @@
       .danger-btn { background:#922f24; }
       .section-toolbar { display:flex; justify-content:flex-end; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem; }
       .section-toolbar form { display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap; }
+      .section-toolbar .search-form { flex:1 1 360px; justify-content:flex-start; }
+      .section-toolbar input[type="search"] { min-width:min(320px, 100%); border:1px solid #c9d8e4; border-radius:12px; padding:0.62rem 0.82rem; font:inherit; background:#fff; color:#1f2a37; }
       .section-toolbar select { border:1px solid #c9d8e4; border-radius:12px; padding:0.62rem 0.82rem; font:inherit; background:#fff; color:#1f2a37; }
+      .section-toolbar .clear-link { color:#0f4667; font-weight:700; text-decoration:none; padding:0.62rem 0; }
       .section-toolbar button { border:none; border-radius:12px; padding:0.66rem 0.9rem; font:inherit; font-weight:700; color:#fff; background:#0f5f8f; cursor:pointer; }
       .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.8rem; }
       .soft-list li { padding:0.95rem 1rem; border:1px solid #d8e2ea; border-radius:16px; background: rgba(255,255,255,0.82); min-width:0; }
@@ -64,9 +67,9 @@
         .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
         .card, .topbar { padding: 1rem; }
         .topbar { flex-direction: column; align-items: stretch; }
-        .field input, .field select, .field textarea, .primary-btn, .secondary-btn, .danger-btn, .section-toolbar select, .section-toolbar button { font-size:16px; }
+        .field input, .field select, .field textarea, .primary-btn, .secondary-btn, .danger-btn, .section-toolbar input[type="search"], .section-toolbar select, .section-toolbar button { font-size:16px; }
         .section-toolbar, .suggestion-actions, .knowledge-actions, .pagination-bar { flex-direction:column; align-items:stretch; }
-        .section-toolbar form, .section-toolbar select, .section-toolbar button, .suggestion-actions form, .suggestion-actions button, .knowledge-actions form, .knowledge-actions button { width:100%; }
+        .section-toolbar form, .section-toolbar input[type="search"], .section-toolbar select, .section-toolbar button, .section-toolbar .clear-link, .suggestion-actions form, .suggestion-actions button, .knowledge-actions form, .knowledge-actions button { width:100%; }
         .pagination-links { justify-content:center; }
       }
     </style>
@@ -140,8 +143,21 @@
       <section class="card">
         <h2 style="margin-top:0; color:#0f4667;">รายการคำถามแนะนำที่ตั้งค่าไว้</h2>
         <div class="section-toolbar">
+          <form class="search-form" action="/admin/suggested-questions" method="get">
+            <input type="hidden" name="page" value="1" />
+            <input type="hidden" name="perPage" value="<%= data.suggestedQuestionsPagination?.pageSize || 12 %>" />
+            <label for="suggestedQuestionSearch">ค้นหา Q&A</label>
+            <input id="suggestedQuestionSearch" name="q" type="search" value="<%= data.suggestedQuestionSearch || '' %>" placeholder="พิมพ์หัวข้อคำถามหรือแหล่งอ้างอิง" />
+            <button type="submit">ค้นหา</button>
+            <% if (data.suggestedQuestionSearch) { %>
+              <a class="clear-link" href="/admin/suggested-questions?perPage=<%= data.suggestedQuestionsPagination?.pageSize || 12 %>">ล้างคำค้น</a>
+            <% } %>
+          </form>
           <form action="/admin/suggested-questions" method="get">
             <input type="hidden" name="page" value="1" />
+            <% if (data.suggestedQuestionSearch) { %>
+              <input type="hidden" name="q" value="<%= data.suggestedQuestionSearch %>" />
+            <% } %>
             <label for="perPage">จำนวนรายการต่อหน้า</label>
             <select id="perPage" name="perPage" aria-label="จำนวนรายการคำถามแนะนำต่อหน้า">
               <% [8, 16, 24].forEach((size) => { %>
@@ -151,9 +167,12 @@
             <button type="submit">แสดงผล</button>
           </form>
         </div>
+        <% if (data.suggestedQuestionSearch) { %>
+          <p class="section-note">ผลการค้นหา “<%= data.suggestedQuestionSearch %>” พบ <strong><%= data.suggestedQuestionsPagination?.totalItems || 0 %></strong> รายการ</p>
+        <% } %>
         <ul class="soft-list">
           <% if (!data.suggestedQuestions || data.suggestedQuestions.length === 0) { %>
-            <li>ยังไม่มีคำถามแนะนำที่ผู้ดูแลสร้างไว้</li>
+            <li><%= data.suggestedQuestionSearch ? 'ไม่พบ Q&A ที่ตรงกับคำค้นนี้' : 'ยังไม่มีคำถามแนะนำที่ผู้ดูแลสร้างไว้' %></li>
           <% } %>
           <% (data.suggestedQuestions || []).forEach((item) => { %>
             <li>
@@ -223,7 +242,7 @@
             </li>
           <% }) %>
         </ul>
-        <%- include("partials/pagination", { pagination: data.suggestedQuestionsPagination, basePath: "/admin/suggested-questions", query: { perPage: data.suggestedQuestionsPagination?.pageSize || 12 }, pageKey: "page", itemLabel: "รายการคำถามแนะนำ" }) %>
+        <%- include("partials/pagination", { pagination: data.suggestedQuestionsPagination, basePath: "/admin/suggested-questions", query: { perPage: data.suggestedQuestionsPagination?.pageSize || 12, q: data.suggestedQuestionSearch || "" }, pageKey: "page", itemLabel: "รายการคำถามแนะนำ" }) %>
       </section>
     </div>
   </body>

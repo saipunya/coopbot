@@ -307,11 +307,14 @@ async function findExactLawRows(pool, tableConfig, queryLawNumber) {
             ${detailField} AS law_detail, ${commentField} AS law_comment${
               searchField ? `, ${searchField} AS law_search` : ", NULL AS law_search"
             }
-       FROM ${tableName}
-      WHERE TRIM(${numberField}) IN (${exactTerms.map(() => "?").join(", ")})
-         OR REPLACE(TRIM(${numberField}), ' ', '') IN (${exactTerms
+      FROM ${tableName}
+      WHERE (
+        TRIM(${numberField}) IN (${exactTerms.map(() => "?").join(", ")})
+        OR REPLACE(TRIM(${numberField}), ' ', '') IN (${exactTerms
            .map(() => "?")
            .join(", ")})
+      )
+        AND ${partField} NOT LIKE 'SMOKE_FIXTURE_%'
       LIMIT 20`,
     [...exactTerms, ...exactTerms.map((term) => term.replace(/\s+/g, ""))],
   );
