@@ -10,8 +10,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="กฎหมายสหกรณ์" />
   <link rel="manifest" href="<%= manifestPath || '/manifest-law-chatbot.json' %>" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/icon/robot-icon-192.png" />
-  <link rel="apple-touch-icon" href="/icon/robot-icon-180.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon/newRobot.png" />
+  <link rel="apple-touch-icon" href="/icon/newRobot.png" />
   <title><%= title || 'แชตบอทกฎหมายสหกรณ์' %></title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
@@ -1144,12 +1144,8 @@
       font-size: 0.82rem;
     }
 
-    .bubble-assistant-name-male i {
-      color: #2c78b5;
-    }
-
-    .bubble-assistant-name-female i {
-      color: #c05d8d;
+    .bubble-assistant-name::after {
+      content: none;
     }
 
     .bot-answer-main {
@@ -3478,7 +3474,19 @@
       display: flex;
       flex-direction: column;
       gap: 0.96rem;
-      min-height: calc(100dvh - 2.5rem);
+      max-height: 100dvh;
+      overflow: hidden;
+    }
+
+    .cooplaw-sidebar-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      padding-bottom: 1rem;
     }
 
     .cooplaw-sidebar-brand {
@@ -3580,6 +3588,7 @@
       gap: 0.18rem;
       padding-bottom: 0.62rem;
       border-bottom: 1px solid #d7dee4;
+      flex-shrink: 0;
     }
 
     .cooplaw-sidebar-nav-item {
@@ -3624,6 +3633,7 @@
       flex-direction: column;
       gap: 0.62rem;
       min-height: 0;
+      flex-shrink: 0;
     }
 
     .cooplaw-sidebar-recent-head {
@@ -3695,7 +3705,8 @@
     }
 
     .cooplaw-sidebar-legal {
-      margin-top: auto;
+      margin-top:0;
+      flex-shrink: 0;
       border-radius: 0.88rem;
       border: 1px solid #cee2d5;
       background: linear-gradient(180deg, #e7f3ec, #ecf5f0);
@@ -3734,17 +3745,23 @@
     }
 
     .cooplaw-sidebar-version {
+      flex-shrink : 0;
       margin-top: 0.12rem;
       color: #6f7f8d;
       font-size: 0.8rem;
       display: grid;
       gap: 0.12rem;
-      padding: 0 0.2rem;
+      padding: 0 0.2rem 0;
+      border-top : 1px solid #d7dee4;
+      background: #fff;
     }
 
     .cooplaw-sidebar-version strong {
+      display: block;
       color: #485767;
       font-size: 0.82rem;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
     }
 
     .cooplaw-main {
@@ -4075,6 +4092,23 @@
         overflow-wrap: anywhere;
       }
 
+      .cooplaw-sidebar-version {
+        gap: 0.1rem;
+        padding: 0 0.12rem;
+      }
+
+      .cooplaw-sidebar-version strong {
+        font-size: 0.74rem;
+        line-height: 1.2;
+        white-space: normal;
+      }
+
+      .cooplaw-sidebar-version span {
+        font-size: 0.68rem;
+        line-height: 1.22;
+        overflow-wrap: anywhere;
+      }
+
       .cooplaw-sidebar-close {
         width: 2.2rem;
         height: 2.2rem;
@@ -4304,6 +4338,1845 @@
   display: none;
 }
 
+/* --- CoopLaw blue cockpit refresh (UI only) --- */
+:root {
+  --coop-blue: #0b6cff;
+  --coop-blue-strong: #0647b8;
+  --coop-blue-soft: #eaf3ff;
+  --coop-ink: #10224a;
+  --coop-muted: #6c7aa0;
+  --coop-line: #dce7f6;
+  --coop-panel: rgba(255, 255, 255, 0.94);
+  --coop-shadow: 0 18px 48px rgba(31, 83, 155, 0.12);
+}
+
+body {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(74, 144, 255, 0.12), transparent 34%),
+    linear-gradient(180deg, #f7fbff 0%, #eef5ff 100%);
+  color: var(--coop-ink);
+}
+
+.lawbot-app {
+  max-width: 1420px;
+  min-height: 100dvh;
+  padding: 0.5rem;
+  gap: 0;
+  align-items: stretch;
+}
+
+.cooplaw-layout {
+  grid-template-columns: 294px minmax(0, 1fr);
+  gap: 1.15rem;
+  min-height: calc(100dvh - 1rem);
+}
+
+.cooplaw-sidebar {
+  position: sticky;
+  top: 0.5rem;
+  height: calc(100dvh - 1rem);
+  max-height: none;
+  padding: 1.45rem 1.1rem;
+  border-radius: 1.35rem;
+  border-color: rgba(204, 220, 242, 0.86);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 22px 54px rgba(33, 70, 125, 0.11);
+  backdrop-filter: blur(18px);
+}
+
+.cooplaw-sidebar-body {
+  gap: 1.3rem;
+  padding-bottom: 0.5rem;
+}
+
+.cooplaw-sidebar-brand {
+  padding: 0.3rem 0.2rem 1.15rem;
+  gap: 0.72rem;
+}
+
+.cooplaw-sidebar-brand-icon {
+  width: 3.55rem;
+  height: 3.55rem;
+  border-radius: 1rem;
+  background: linear-gradient(145deg, #2fb7ff, #0b6cff);
+  box-shadow: 0 12px 24px rgba(11, 108, 255, 0.22);
+}
+
+.cooplaw-sidebar-brand-icon img {
+  width: 2.35rem;
+  height: 2.35rem;
+}
+
+.cooplaw-sidebar-brand-copy strong {
+  font-size: 1.34rem;
+  color: #121a31;
+  letter-spacing: 0;
+}
+
+.cooplaw-sidebar-brand-copy span {
+  color: #657391;
+  font-size: 0.84rem;
+}
+
+.cooplaw-new-chat-btn {
+  display: none;
+}
+
+.cooplaw-sidebar-nav {
+  gap: 0.65rem;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.cooplaw-sidebar-nav-item {
+  min-height: 4.18rem;
+  padding: 0.78rem 1rem;
+  border-radius: 1rem;
+  color: #24345e;
+  font-weight: 700;
+  background: transparent;
+}
+
+.cooplaw-sidebar-nav-item i {
+  width: 1.6rem;
+  color: #6477af;
+  font-size: 1.35rem;
+  text-align: center;
+}
+
+.cooplaw-sidebar-nav-item:hover,
+.cooplaw-sidebar-nav-item:focus-visible,
+.cooplaw-sidebar-nav-item.is-active {
+  background: linear-gradient(180deg, #f4f9ff, #eef6ff);
+  border: 1px solid #bed8ff;
+  color: var(--coop-blue);
+  box-shadow: 0 10px 24px rgba(44, 119, 235, 0.08);
+}
+
+.cooplaw-sidebar-nav-item.is-active i,
+.cooplaw-sidebar-nav-item:hover i,
+.cooplaw-sidebar-nav-item:focus-visible i {
+  color: var(--coop-blue);
+}
+
+.cooplaw-sidebar-recent {
+  margin-top: auto;
+  border: 1px solid var(--coop-line);
+  border-radius: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.cooplaw-sidebar-recent-head strong {
+  color: var(--coop-blue);
+  font-size: 0.96rem;
+}
+
+.cooplaw-sidebar-recent-head a {
+  color: var(--coop-blue);
+}
+
+.cooplaw-sidebar-recent-list {
+  gap: 0;
+}
+
+.cooplaw-sidebar-recent-item {
+  border: 0;
+  border-bottom: 1px solid #e7eef9;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.78rem 0;
+  box-shadow: none;
+  color: #1f2e55;
+  font-size: 0.82rem;
+}
+
+.cooplaw-sidebar-recent-item:last-child {
+  border-bottom: 0;
+}
+
+.cooplaw-sidebar-recent-item i,
+.cooplaw-sidebar-recent-item.is-active i {
+  color: #8da3d6;
+}
+
+.cooplaw-sidebar-recent-item.is-active {
+  background: transparent;
+  border-color: #e7eef9;
+  color: #1f2e55;
+}
+
+.cooplaw-sidebar-legal {
+  margin-top: 0.6rem;
+  padding: 0.2rem 0.35rem 0.4rem;
+  border: 0;
+  background: transparent;
+  align-items: center;
+}
+
+.cooplaw-sidebar-legal-icon {
+  width: 3.65rem;
+  height: 3.65rem;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #d7e6fb;
+  box-shadow: 0 10px 26px rgba(62, 131, 229, 0.14);
+  overflow: hidden;
+}
+
+.cooplaw-sidebar-legal-icon img {
+  width: 88%;
+  height: 88%;
+  object-fit: contain;
+}
+
+.cooplaw-sidebar-legal-copy strong {
+  color: #10224a;
+  font-size: 0.95rem;
+}
+
+.cooplaw-sidebar-legal-copy span {
+  color: #687696;
+  font-size: 0.78rem;
+}
+
+.cooplaw-plan-pill {
+  margin-top: 0.78rem;
+  min-height: 2.35rem;
+  padding: 0.45rem 1rem;
+  border: 1px solid #e0e9f6;
+  border-radius: 999px;
+  background: #fff;
+  color: #1f2e55;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(31, 83, 155, 0.08);
+}
+
+.cooplaw-plan-pill i {
+  color: #f59e0b;
+}
+
+.cooplaw-sidebar-version {
+  display: none;
+}
+
+.cooplaw-main {
+  position: relative;
+  gap: 1.15rem;
+  min-height: calc(100dvh - 1rem);
+}
+
+.page-header {
+  position: absolute;
+  top: 1.3rem;
+  right: 1.3rem;
+  z-index: 8;
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.page-brand,
+.page-actions .cooplaw-save-btn,
+.page-actions .cooplaw-clear-history-btn {
+  display: none !important;
+}
+
+.page-toolbar,
+.page-actions {
+  gap: 0.66rem;
+}
+
+.page-identity,
+.page-actions .icon-chip-btn {
+  width: 3.2rem;
+  min-width: 3.2rem;
+  height: 3.2rem;
+  border-radius: 999px;
+  border: 1px solid #dce8fa;
+  background: rgba(255, 255, 255, 0.86);
+  color: #6375a6;
+  box-shadow: 0 10px 28px rgba(48, 96, 170, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.page-identity-avatar {
+  width: 2.2rem;
+  height: 2.2rem;
+  color: #6476a5;
+  background: transparent;
+}
+
+.page-identity-actions {
+  display: none;
+}
+
+.cooplaw-welcome,
+.cooplaw-popular,
+.chat-shell {
+  border: 1px solid var(--coop-line);
+  background: var(--coop-panel);
+  border-radius: 1.35rem;
+  box-shadow: var(--coop-shadow);
+}
+
+.cooplaw-welcome {
+  min-height: 302px;
+  padding: 4.65rem 2.7rem 2.4rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 430px);
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.cooplaw-welcome::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.9) 44%, rgba(242, 248, 255, 0.72) 100%),
+    radial-gradient(circle at 78% 44%, rgba(52, 139, 255, 0.16), transparent 34%);
+  pointer-events: none;
+}
+
+.cooplaw-welcome-copy,
+.cooplaw-welcome-art {
+  position: relative;
+  z-index: 1;
+}
+
+.cooplaw-kicker {
+  display: block;
+  margin-bottom: 1.15rem;
+  color: var(--coop-blue);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.cooplaw-welcome h1 {
+  margin: 0;
+  color: #101d45;
+  font-size: 2.55rem;
+  line-height: 1.12;
+  font-weight: 800;
+}
+
+.cooplaw-welcome p {
+  margin: 1rem 0 0;
+  color: #1c2b55;
+  font-size: 1.08rem;
+  line-height: 1.65;
+}
+
+.cooplaw-welcome-art {
+  min-height: 230px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cooplaw-circuit-ring {
+  position: relative;
+  width: min(290px, 72%);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2c83ff;
+  font-size: 5.2rem;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.96) 0 34%, rgba(196, 220, 255, 0.22) 35% 43%, transparent 44%),
+    repeating-radial-gradient(circle, rgba(45, 132, 255, 0.22) 0 2px, transparent 2px 13px);
+  border: 1px solid rgba(91, 157, 255, 0.2);
+  box-shadow:
+    inset 0 0 0 1.25rem rgba(235, 244, 255, 0.72),
+    0 0 0 2.2rem rgba(235, 244, 255, 0.46),
+    0 24px 54px rgba(45, 132, 255, 0.16);
+}
+
+.cooplaw-circuit-ring::before,
+.cooplaw-circuit-ring::after {
+  content: "";
+  position: absolute;
+  width: 46%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(44, 131, 255, 0.46), transparent);
+}
+
+.cooplaw-circuit-ring::before {
+  transform: translateX(-108%);
+}
+
+.cooplaw-circuit-ring::after {
+  transform: translateX(108%);
+}
+
+.cooplaw-popular {
+  padding: 1.55rem 2.1rem;
+  display: grid;
+  gap: 1.1rem;
+}
+
+.cooplaw-popular-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.cooplaw-popular-head strong {
+  color: var(--coop-blue);
+  font-size: 1.05rem;
+}
+
+.cooplaw-popular-head a {
+  color: var(--coop-blue);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.cooplaw-popular-list {
+  display: flex;
+  gap: 0.72rem;
+  flex-wrap: wrap;
+}
+
+.cooplaw-popular-chip {
+  min-height: 3rem;
+  padding: 0.56rem 1.18rem;
+  border-radius: 0.78rem;
+  border-color: #d5e1f2;
+  color: #1b2a50;
+  background: #fff;
+  box-shadow: 0 7px 18px rgba(47, 90, 150, 0.08);
+}
+
+.chat-shell {
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.chat-messages {
+  min-height: 460px;
+  background: #fff;
+  padding: 1.7rem 2rem;
+  gap: 1.05rem;
+}
+
+.chat-day-pill {
+  display: none;
+}
+
+.message-row {
+  gap: 0.8rem;
+}
+
+.message-avatar {
+  width: 4.15rem;
+  height: 4.15rem;
+  border: 1px solid #d9e8ff;
+  box-shadow: 0 10px 24px rgba(40, 107, 204, 0.12);
+}
+
+.message-avatar-bot {
+  overflow: hidden;
+  background: #fff !important;
+}
+
+.message-avatar-bot .bot-avatar-icon,
+.message-avatar-bot .bot-avatar-badge {
+  display: none;
+}
+
+.message-avatar-bot::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: url('/icon/newRobot.png') center / contain no-repeat;
+}
+
+.message-avatar-user {
+  display: none;
+}
+
+.bubble {
+  max-width: min(78%, 820px);
+  padding: 0;
+  border-radius: 1.05rem;
+  box-shadow: 0 14px 30px rgba(30, 70, 130, 0.1);
+}
+
+.bubble-user {
+  min-width: min(410px, 72%);
+  background: linear-gradient(135deg, #6ca6ff, #2f7cff) !important;
+  border: 0;
+  border-bottom-right-radius: 0.35rem;
+}
+
+.bubble-content {
+  padding: 1.05rem 1.35rem;
+}
+
+.bubble-content-user {
+  color: #fff;
+}
+
+.bubble-bot {
+  border: 1px solid #dce7f6;
+  border-left-width: 1px;
+  border-bottom-left-radius: 1.05rem;
+  background: #fff;
+}
+
+.bubble-bot .bubble-message {
+  line-height: 0.3;
+}
+
+.bubble-assistant-name {
+  margin-bottom: 0.58rem;
+  color: #121a31;
+  font-size: 1rem;
+}
+
+.bubble-assistant-name::after {
+  content: "AI Assistant";
+  margin-left: 0.32rem;
+  padding: 0.16rem 0.48rem;
+  border-radius: 999px;
+  background: #dff0ff;
+  color: #2780ff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.bot-answer-section-title {
+  background: transparent;
+  color: var(--coop-blue);
+  padding: 0;
+  border-radius: 0;
+  font-size: 1.08rem;
+}
+
+.answer-plain {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: #17264c;
+}
+
+.bot-reference-block {
+  border-top: 1px solid #e2ebf7;
+}
+
+.bot-reference-toggle,
+.feedback-actions .feedback-icon-btn,
+.feedback-actions .btn-knowledge-suggestion,
+.feedback-actions .btn-admin-knowledge {
+  border-color: #dce7f6;
+  background: #fff;
+  color: #6477af;
+}
+
+.chat-input-wrap {
+  margin: 1rem 2rem 1.2rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #dce7f6;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 14px 34px rgba(32, 78, 145, 0.1);
+}
+
+.chat-input-wrap .input-group {
+  align-items: center;
+  gap: 0.62rem;
+}
+
+.chat-input-wrap .input-group > .form-control {
+  min-height: 3.25rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  padding-left: 0.55rem;
+  color: #22325e;
+}
+
+.chat-input-wrap .input-group > .form-control:focus {
+  box-shadow: none;
+}
+
+#voiceBtn {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #7384b4;
+  font-size: 0;
+}
+
+#voiceBtn i {
+  margin: 0 !important;
+  font-size: 1.28rem;
+}
+
+#sendBtn {
+  width: 3.35rem;
+  min-width: 3.35rem;
+  height: 3.35rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #4c94ff, #0b6cff);
+  box-shadow: 0 12px 26px rgba(11, 108, 255, 0.26);
+}
+
+.composer-hint {
+  justify-content: center;
+  color: #91a0c6;
+  font-size: 0.82rem;
+}
+
+.composer-hint span:first-child {
+  display: none;
+}
+
+.composer-hint span:last-child {
+  display: inline-flex;
+}
+
+.composer-hint span:last-child::before {
+  content: "CoopLaw AI อาจมีความคลาดเคลื่อน โปรดตรวจสอบข้อมูลอีกครั้ง";
+}
+
+.composer-hint span:last-child > * {
+  display: none;
+}
+
+@media (max-width: 991.98px) {
+  .lawbot-app {
+    padding: 0.65rem;
+  }
+
+  .cooplaw-layout {
+    min-height: 0;
+  }
+
+  .cooplaw-sidebar {
+    top: 0;
+    height: 100dvh;
+    border-radius: 0 1.2rem 1.2rem 0;
+  }
+
+  .page-header {
+    display: none;
+  }
+
+  .mobile-topbar-icon {
+    background: linear-gradient(145deg, #2fb7ff, #0b6cff);
+  }
+
+  .mobile-topbar-brand strong {
+    color: #13224d;
+  }
+
+  .cooplaw-welcome {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding: 1.65rem;
+  }
+
+  .cooplaw-welcome-art {
+    display: none;
+  }
+
+  .cooplaw-welcome h1 {
+    font-size: 2rem;
+  }
+
+  .cooplaw-popular {
+    padding: 1.2rem;
+  }
+
+  .chat-messages {
+    min-height: calc(100dvh - 420px);
+    padding: 1rem;
+  }
+
+  .chat-input-wrap {
+    margin: 0.8rem;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .cooplaw-welcome,
+  .cooplaw-popular,
+  .chat-shell {
+    border-radius: 1rem;
+  }
+
+  .cooplaw-popular-list {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
+  }
+
+  .cooplaw-popular-chip {
+    flex: 0 0 auto;
+    max-width: 82vw;
+  }
+
+  .message-avatar {
+    width: 3.1rem;
+    height: 3.1rem;
+  }
+
+  .bubble,
+  .bubble-user {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .chat-input-wrap .input-group > .form-control {
+    min-height: 3rem;
+  }
+
+  #voiceBtn,
+  #sendBtn {
+    width: 3rem;
+    min-width: 3rem;
+    height: 3rem;
+  }
+}
+
+/* --- CoopLaw layout stabilization (UI/CSS only) --- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: #eef5ff;
+}
+
+body {
+  min-width: 320px;
+  overflow-x: hidden;
+}
+
+.lawbot-app {
+  width: 100%;
+}
+
+.cooplaw-layout {
+  width: min(100%, 1440px);
+  margin: 0 auto;
+  align-items: stretch;
+}
+
+.cooplaw-sidebar {
+  min-width: 0;
+}
+
+.cooplaw-sidebar-body {
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(93, 137, 202, 0.34) transparent;
+}
+
+.cooplaw-sidebar-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.cooplaw-sidebar-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(93, 137, 202, 0.32);
+}
+
+.cooplaw-sidebar-brand {
+  flex: 0 0 auto;
+}
+
+.cooplaw-sidebar-brand-copy strong,
+.cooplaw-sidebar-brand-copy span,
+.mobile-topbar-brand strong,
+.mobile-topbar-brand span {
+  letter-spacing: 0;
+}
+
+.cooplaw-sidebar-nav {
+  flex: 0 0 auto;
+  gap: 0.44rem;
+}
+
+.cooplaw-sidebar-nav-item {
+  min-height: 3.35rem;
+  border: 1px solid transparent;
+  line-height: 1.25;
+}
+
+.cooplaw-sidebar-nav-item span {
+  display: block;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cooplaw-sidebar-recent {
+  flex: 1 1 auto;
+  margin-top: 0;
+  min-height: 11rem;
+  max-height: 20rem;
+  overflow: hidden;
+}
+
+.cooplaw-sidebar-recent-list {
+  overflow: auto;
+  padding-right: 0.12rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(93, 137, 202, 0.28) transparent;
+}
+
+.cooplaw-sidebar-recent-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.cooplaw-sidebar-recent-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(93, 137, 202, 0.26);
+}
+
+.cooplaw-sidebar-legal {
+  flex: 0 0 auto;
+}
+
+.cooplaw-plan-pill {
+  max-width: 100%;
+}
+
+.cooplaw-main {
+  min-width: 0;
+}
+
+.page-header {
+  max-width: calc(100% - 2rem);
+}
+
+.page-toolbar {
+  display: inline-flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.page-actions .icon-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.page-actions .btn-install,
+.page-actions .btn-install-ios {
+  display: none !important;
+}
+
+.cooplaw-welcome {
+  min-width: 0;
+  padding-top: clamp(2.1rem, 4.4vw, 4.65rem);
+}
+
+.cooplaw-welcome-copy {
+  min-width: 0;
+}
+
+.cooplaw-welcome h1,
+.cooplaw-welcome p {
+  max-width: 38rem;
+}
+
+.cooplaw-welcome-art {
+  min-width: 0;
+}
+
+.cooplaw-circuit-ring i {
+  position: relative;
+  z-index: 1;
+}
+
+.cooplaw-popular {
+  min-width: 0;
+}
+
+.cooplaw-popular-head {
+  min-width: 0;
+}
+
+.cooplaw-popular-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cooplaw-popular-head a {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.cooplaw-popular-chip {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.chat-shell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-messages {
+  flex: 1 1 auto;
+  min-height: clamp(24rem, 38vh, 34rem);
+  max-height: none;
+  overflow-y: auto;
+  scroll-padding: 1rem;
+}
+
+.message-row {
+  min-width: 0;
+}
+
+.message-bot {
+  align-items: flex-start;
+}
+
+.message-user {
+  align-items: flex-end;
+}
+
+.message-avatar {
+  flex: 0 0 auto;
+}
+
+.bubble {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.bubble-user {
+  max-width: min(70%, 520px);
+  min-width: 0;
+}
+
+.bubble-bot {
+  max-width: min(82%, 860px);
+}
+
+.bubble-content,
+.bubble-message,
+.bot-answer-main,
+.bot-answer-summary,
+.answer-plain {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.bubble-message,
+.answer-plain,
+.answer-bullet-card-content {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.feedback-actions {
+  gap: 0.5rem;
+}
+
+.chat-input-wrap {
+  flex: 0 0 auto;
+  position: sticky;
+  bottom: 0.75rem;
+}
+
+.chat-input-wrap .input-group {
+  display: flex;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+#chatInput {
+  flex: 1 1 auto;
+  min-width: 4rem;
+}
+
+#voiceBtn,
+#sendBtn,
+#debugBtn {
+  flex: 0 0 auto;
+}
+
+#debugBtn {
+  border-radius: 999px;
+  min-height: 2.75rem;
+}
+
+.composer-suggestions {
+  left: 1rem;
+  right: 1rem;
+}
+
+.composer-suggestions-card {
+  max-width: min(100%, 34rem);
+}
+
+.modal {
+  color: #1f2a37;
+}
+
+@media (min-width: 1200px) {
+  .lawbot-app {
+    min-height: 100dvh;
+  }
+
+  .cooplaw-layout {
+    min-height: calc(100dvh - 1rem);
+    flex: 1 1 auto;
+  }
+
+  .cooplaw-main {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    min-height: calc(100dvh - 1rem);
+  }
+
+  .chat-shell {
+    min-height: calc(100dvh - 26rem);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .chat-messages {
+    min-height: 0;
+  }
+
+  .chat-input-wrap {
+    margin: 0.9rem 1.1rem 1rem;
+    padding: 0.72rem 0.85rem;
+    position: sticky;
+    bottom: 0.9rem;
+  }
+
+  .chat-input-wrap .input-group {
+    gap: 0.5rem;
+  }
+
+  .chat-input-wrap .input-group > .form-control {
+    min-height: 2.9rem;
+  }
+
+  #voiceBtn,
+  #sendBtn {
+    width: 2.9rem;
+    min-width: 2.9rem;
+    height: 2.9rem;
+  }
+}
+
+@media (max-width: 1199.98px) and (min-width: 992px) {
+  .lawbot-app {
+    min-height: 100dvh;
+  }
+
+  .cooplaw-layout {
+    min-height: calc(100dvh - 1rem);
+  }
+
+  .cooplaw-main {
+    min-height: calc(100dvh - 1rem);
+  }
+
+  .cooplaw-layout {
+    grid-template-columns: 270px minmax(0, 1fr);
+    gap: 0.9rem;
+  }
+
+  .cooplaw-sidebar {
+    padding: 1.15rem 0.9rem;
+  }
+
+  .cooplaw-sidebar-nav-item {
+    min-height: 3.05rem;
+    padding: 0.62rem 0.72rem;
+    font-size: 0.92rem;
+  }
+
+  .cooplaw-sidebar-recent {
+    max-height: 16rem;
+  }
+
+  .cooplaw-welcome {
+    grid-template-columns: minmax(0, 1fr) 280px;
+    min-height: 240px;
+    padding: 2.5rem 1.8rem 1.8rem;
+  }
+
+  .cooplaw-circuit-ring {
+    width: min(220px, 82%);
+    font-size: 4.1rem;
+  }
+
+  .bubble-user {
+    max-width: min(76%, 500px);
+  }
+
+  .chat-input-wrap {
+    margin: 0.85rem 1rem 0.95rem;
+    padding: 0.68rem 0.8rem;
+  }
+
+  .chat-input-wrap .input-group {
+    gap: 0.42rem;
+  }
+
+  .chat-input-wrap .input-group > .form-control {
+    min-height: 2.8rem;
+  }
+
+  #voiceBtn,
+  #sendBtn {
+    width: 2.8rem;
+    min-width: 2.8rem;
+    height: 2.8rem;
+  }
+}
+
+@media (max-width: 991.98px) {
+  .lawbot-app {
+    gap: 0.65rem;
+  }
+
+  .cooplaw-layout {
+    width: 100%;
+  }
+
+  .cooplaw-sidebar {
+    max-height: 100dvh;
+    padding: 1rem;
+  }
+
+  .cooplaw-sidebar-body {
+    overflow-y: auto;
+  }
+
+  .cooplaw-sidebar-recent {
+    flex: 0 0 auto;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .cooplaw-sidebar-recent-list {
+    max-height: 16rem;
+  }
+
+  .cooplaw-main {
+    gap: 0.75rem;
+    min-height: 0;
+  }
+
+  .cooplaw-welcome {
+    padding: 1.45rem;
+  }
+
+  .cooplaw-popular {
+    padding: 1rem;
+  }
+
+  .chat-shell {
+    min-height: 0;
+  }
+
+  .chat-messages {
+    min-height: clamp(20rem, 52dvh, 34rem);
+    overflow-y: auto;
+  }
+
+  .chat-input-wrap {
+    bottom: 0.5rem;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .lawbot-app {
+    padding: 0.55rem;
+  }
+
+  .mobile-topbar {
+    min-width: 0;
+  }
+
+  .mobile-topbar-brand {
+    min-width: 0;
+  }
+
+  .mobile-topbar-actions {
+    flex-shrink: 0;
+  }
+
+  .cooplaw-welcome {
+    padding: 1.15rem;
+  }
+
+  .cooplaw-kicker {
+    margin-bottom: 0.7rem;
+    font-size: 0.86rem;
+  }
+
+  .cooplaw-welcome h1 {
+    font-size: 1.72rem;
+  }
+
+  .cooplaw-welcome p {
+    margin-top: 0.55rem;
+    font-size: 0.94rem;
+  }
+
+  .cooplaw-popular-head {
+    align-items: flex-start;
+  }
+
+  .cooplaw-popular-head a {
+    font-size: 0.86rem;
+  }
+
+  .chat-messages {
+    min-height: 52dvh;
+    padding: 0.9rem 0.75rem;
+    gap: 0.85rem;
+  }
+
+  .message-row {
+    gap: 0.55rem;
+  }
+
+  .message-avatar {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .bubble-user,
+  .bubble-bot {
+    max-width: calc(100% - 3.25rem);
+  }
+
+  .message-user .bubble-user {
+    max-width: 88%;
+  }
+
+  .bubble-content {
+    padding: 0.86rem 0.95rem;
+  }
+
+  .chat-input-wrap {
+    margin: 0.65rem;
+    padding: 0.45rem;
+    border-radius: 1.15rem;
+  }
+
+  .chat-input-wrap .input-group {
+    gap: 0.35rem;
+  }
+
+  #chatInput {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    padding-left: 0.55rem;
+  }
+
+  #voiceBtn,
+  #sendBtn {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .composer-suggestions {
+    left: 0.5rem;
+    right: 0.5rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .mobile-topbar-brand span {
+    display: none;
+  }
+
+  .cooplaw-popular-head {
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .cooplaw-popular-list {
+    gap: 0.55rem;
+  }
+
+  .cooplaw-popular-chip {
+    min-height: 2.65rem;
+    padding: 0.52rem 0.85rem;
+  }
+
+  .message-avatar-bot {
+    display: none;
+  }
+
+  .bubble-user,
+  .bubble-bot,
+  .message-user .bubble-user {
+    max-width: 100%;
+  }
+}
+
+/* --- Compact welcome section: give more space to content below --- */
+.cooplaw-welcome {
+  min-height: clamp(9.5rem, 18vw, 13.5rem);
+  padding: clamp(1.15rem, 2.2vw, 1.85rem) clamp(1.25rem, 2.8vw, 2.25rem);
+  grid-template-columns: minmax(0, 1fr) minmax(11rem, 18rem);
+}
+
+.cooplaw-kicker {
+  margin-bottom: 0.55rem;
+  font-size: 0.92rem;
+}
+
+.cooplaw-welcome h1 {
+  font-size: clamp(1.65rem, 3vw, 2.18rem);
+  line-height: 1.08;
+}
+
+.cooplaw-welcome p {
+  margin-top: 0.55rem;
+  font-size: clamp(0.9rem, 1.25vw, 1rem);
+  line-height: 1.45;
+}
+
+.cooplaw-welcome-art {
+  min-height: 8.5rem;
+}
+
+.cooplaw-circuit-ring {
+  width: min(10.5rem, 70%);
+  font-size: 3.35rem;
+  box-shadow:
+    inset 0 0 0 0.72rem rgba(235, 244, 255, 0.72),
+    0 0 0 1.15rem rgba(235, 244, 255, 0.46),
+    0 16px 34px rgba(45, 132, 255, 0.14);
+}
+
+@media (max-width: 1199.98px) and (min-width: 992px) {
+  .cooplaw-welcome {
+    grid-template-columns: minmax(0, 1fr) 13rem;
+    min-height: 10.5rem;
+    padding: 1.25rem 1.45rem;
+  }
+
+  .cooplaw-welcome-art {
+    min-height: 7.5rem;
+  }
+
+  .cooplaw-circuit-ring {
+    width: min(8.75rem, 78%);
+    font-size: 2.85rem;
+  }
+}
+
+@media (max-width: 991.98px) {
+  .cooplaw-welcome {
+    min-height: 0;
+    padding: 1rem 1.1rem;
+  }
+
+  .cooplaw-kicker {
+    margin-bottom: 0.42rem;
+    font-size: 0.82rem;
+  }
+
+  .cooplaw-welcome h1 {
+    font-size: 1.55rem;
+  }
+
+  .cooplaw-welcome p {
+    margin-top: 0.38rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .cooplaw-welcome {
+    padding: 0.85rem 0.95rem;
+  }
+
+  .cooplaw-welcome h1 {
+    font-size: 1.38rem;
+  }
+
+  .cooplaw-welcome p {
+    font-size: 0.84rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .cooplaw-welcome {
+    padding: 0.75rem 0.82rem;
+  }
+
+  .cooplaw-kicker {
+    font-size: 0.76rem;
+  }
+
+  .cooplaw-welcome h1 {
+    font-size: 1.22rem;
+  }
+
+  .cooplaw-welcome p {
+    font-size: 0.8rem;
+  }
+}
+
+/* --- Tight mobile spacing: sidebar nav + welcome proximity --- */
+@media (max-width: 991.98px) {
+  .lawbot-app {
+    gap: 0.35rem;
+  }
+
+  .mobile-topbar {
+    padding-bottom: 0.2rem;
+    margin-bottom: 0;
+  }
+
+  .cooplaw-layout {
+    margin-top: 0;
+  }
+
+  .cooplaw-main {
+    gap: 0.42rem;
+  }
+
+  .cooplaw-welcome {
+    margin-top: 0;
+  }
+
+  .cooplaw-sidebar {
+    gap: 0.55rem;
+  }
+
+  .cooplaw-sidebar-brand {
+    padding-bottom: 0.55rem;
+  }
+
+  .cooplaw-sidebar-body {
+    gap: 0.65rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .cooplaw-sidebar-nav {
+    gap: 0.28rem;
+  }
+
+  .cooplaw-sidebar-nav-item {
+    min-height: 2.72rem;
+    padding: 0.46rem 0.68rem;
+    border-radius: 0.8rem;
+    font-size: 0.9rem;
+  }
+
+  .cooplaw-sidebar-nav-item i {
+    font-size: 1.08rem;
+    width: 1.25rem;
+  }
+
+  .cooplaw-sidebar-recent {
+    padding: 0.78rem;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .lawbot-app {
+    gap: 0.28rem;
+  }
+
+  .mobile-topbar {
+    padding-bottom: 0.1rem;
+  }
+
+  .cooplaw-main {
+    gap: 0.35rem;
+  }
+
+  .cooplaw-welcome {
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
+  }
+
+  .cooplaw-sidebar-nav-item {
+    min-height: 2.5rem;
+    padding: 0.42rem 0.62rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .lawbot-app {
+    gap: 0.22rem;
+  }
+
+  .mobile-topbar {
+    padding-bottom: 0;
+  }
+
+  .cooplaw-main {
+    gap: 0.3rem;
+  }
+
+  .cooplaw-welcome {
+    padding-top: 0.62rem;
+    padding-bottom: 0.62rem;
+  }
+}
+
+/* --- Mobile flow fix: remove blank space between topbar and welcome --- */
+@media (max-width: 991.98px) {
+  .lawbot-app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    height: auto;
+    padding-top: 0.35rem;
+  }
+
+  .mobile-topbar {
+    margin: 0;
+    padding-bottom: 0.15rem;
+  }
+
+  .cooplaw-layout {
+    display: flex !important;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0 !important;
+    height: auto !important;
+    margin-top: 10px;
+    padding: 0 !important;
+  }
+
+  .cooplaw-layout > .cooplaw-sidebar-backdrop {
+    position: fixed !important;
+    width: 0;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .cooplaw-sidebar {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    height: 100dvh;
+    min-height: 0;
+  }
+
+  .cooplaw-main {
+    display: flex !important;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 0.35rem;
+  }
+
+  .page-header {
+    display: none !important;
+    position: static !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .cooplaw-welcome {
+    margin: 0 !important;
+    min-height: 0 !important;
+  }
+}
+
+/* --- Welcome height cap --- */
+@media (min-width: 992px) {
+  .cooplaw-welcome {
+    height: 200px;
+    max-height: 200px;
+    min-height: 200px;
+    padding: 1rem 1.25rem;
+    grid-template-columns: minmax(0, 1fr) 11.5rem;
+  }
+
+  .cooplaw-welcome-art {
+    min-height: 0;
+  }
+
+  .cooplaw-circuit-ring {
+    width: 9rem;
+    font-size: 2.8rem;
+    box-shadow:
+      inset 0 0 0 0.65rem rgba(235, 244, 255, 0.72),
+      0 0 0 0.95rem rgba(235, 244, 255, 0.46),
+      0 14px 28px rgba(45, 132, 255, 0.14);
+  }
+
+  .cooplaw-kicker {
+    margin-bottom: 0.35rem;
+    font-size: 0.82rem;
+  }
+
+  .cooplaw-welcome h1 {
+    font-size: 1.5rem;
+    line-height: 1.05;
+  }
+
+  .cooplaw-welcome p {
+    margin-top: 0.35rem;
+    font-size: 0.86rem;
+    line-height: 1.35;
+  }
+}
+
+@media (max-width: 991.98px) {
+  .cooplaw-welcome {
+    height: 200px;
+    max-height: 200px;
+    min-height: 200px;
+    padding: 0.75rem 0.9rem;
+    grid-template-columns: minmax(0, 1fr) 9rem;
+  }
+
+  .cooplaw-welcome-copy {
+    align-self: center;
+  }
+
+  .cooplaw-welcome-art {
+    min-height: 0;
+  }
+
+  .cooplaw-circuit-ring {
+    width: 6.75rem;
+    font-size: 2.15rem;
+    box-shadow:
+      inset 0 0 0 0.5rem rgba(235, 244, 255, 0.72),
+      0 0 0 0.72rem rgba(235, 244, 255, 0.46),
+      0 10px 22px rgba(45, 132, 255, 0.12);
+  }
+
+  .cooplaw-kicker {
+    margin-bottom: 0.22rem;
+    font-size: 0.72rem;
+  }
+
+  .cooplaw-welcome h1 {
+    font-size: 1.15rem;
+  }
+
+  .cooplaw-welcome p {
+    margin-top: 0.22rem;
+    font-size: 0.76rem;
+    line-height: 1.28;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .lawbot-app {
+    padding-top: 0.25rem;
+  }
+
+  .mobile-topbar {
+    padding-bottom: 0.08rem;
+  }
+
+  .cooplaw-main {
+    gap: 0.28rem;
+  }
+}
+
+/* --- Final desktop full-height + composer balance overrides --- */
+@media (min-width: 992px) {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  .lawbot-app {
+    min-height: 100dvh;
+    align-items: stretch;
+  }
+
+  .cooplaw-layout {
+    min-height: calc(100dvh - 1rem);
+    height: calc(100dvh - 1rem);
+    align-items: stretch;
+  }
+
+  .cooplaw-main {
+    display: flex !important;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: calc(100dvh - 1rem);
+    height: 100%;
+    align-self: stretch;
+  }
+
+  .page-header,
+  .lawbot-hero {
+    flex: 0 0 auto;
+  }
+
+  .chat-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .chat-messages {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .chat-input-wrap {
+    margin: 0.85rem 1rem 1rem;
+    padding: 0.7rem 0.85rem;
+    border-radius: 1rem;
+  }
+
+  .chat-input-wrap .input-group {
+    gap: 0.4rem;
+    align-items: center;
+  }
+
+  .chat-input-wrap .input-group > .form-control {
+    min-height: 3rem;
+    padding-top: 0.72rem;
+    padding-bottom: 0.72rem;
+    border-radius: 0.85rem;
+  }
+
+  .chat-input-wrap .input-group > .btn {
+    min-height: 3rem;
+    padding-top: 0.56rem;
+    padding-bottom: 0.56rem;
+  }
+
+  #voiceBtn,
+  #sendBtn {
+    width: 3rem;
+    min-width: 3rem;
+    height: 3rem;
+  }
+
+  #voiceBtn {
+    padding: 0;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .chat-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .chat-input-wrap {
+    margin: 0.58rem;
+    padding: 0.42rem 0.5rem;
+    border-radius: 1rem;
+  }
+
+  .chat-input-wrap .input-group {
+    gap: 0.3rem;
+  }
+
+  .chat-input-wrap .input-group > .form-control {
+    min-height: 2.7rem;
+    border-radius: 0.78rem;
+    padding-left: 0.6rem;
+    padding-right: 0.6rem;
+  }
+
+  #voiceBtn,
+  #sendBtn {
+    width: 2.7rem;
+    min-width: 2.7rem;
+    height: 2.7rem;
+  }
+
+  #voiceBtn {
+    font-size: 0;
+    padding: 0;
+  }
+
+  #voiceBtn i {
+    margin: 0 !important;
+    font-size: 1.2rem;
+  }
+
+  #debugBtn {
+    min-height: 2.7rem;
+    padding-inline: 0.7rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .chat-input-wrap {
+    margin: 0.5rem;
+    padding: 0.38rem 0.45rem;
+  }
+
+  .chat-input-wrap .input-group {
+    gap: 0.24rem;
+  }
+
+  .chat-input-wrap .input-group > .form-control {
+    min-height: 2.55rem;
+  }
+
+  #voiceBtn,
+  #sendBtn,
+  #debugBtn {
+    min-height: 2.55rem;
+  }
+}
+
   </style>
 </head>
 <body data-bot-plan="free">
@@ -4345,7 +6218,7 @@
           ? "bi-person-badge-fill"
           : "bi-person-circle";
       const botPackageVariant = currentUser ? "admin" : "free";
-      const sidebarRecentItems = (
+      const sidebarFaqItems = (
         Array.isArray(data && data.suggestedQuestions) && data.suggestedQuestions.length
           ? data.suggestedQuestions
               .map((item) => String((item && (item.questionText || item.question || item.text)) || "").trim())
@@ -4353,12 +6226,13 @@
               .slice(0, 5)
           : [
               "สมาชิกออกจากสหกรณ์ ต้องทำอย่างไร?",
-              "อำนาจหน้าที่ของคณะกรรมการดำเนินการสหกรณ์",
+              "การประชุมใหญ่สามัญ ต้องมีองค์ประชุมเท่าใด?",
               "การจัดสรรกำไรสุทธิของสหกรณ์",
-              "การตรวจสอบกิจการสหกรณ์",
-              "สหกรณ์ออมทรัพย์ คืออะไร",
+              "กรรมการพ้นจากตำแหน่งเมื่อใด?",
+              "สหกรณ์สามารถกู้เงินจากแหล่งใดได้บ้าง?",
             ]
       );
+      const heroSuggestionItems = sidebarFaqItems.slice(0, 5);
     %>
 
     <div class="mobile-topbar" aria-label="แถบเมนูบนมือถือ">
@@ -4389,40 +6263,36 @@
       <aside class="cooplaw-sidebar" aria-label="เมนูระบบ">
         <div class="cooplaw-sidebar-brand">
           <div class="cooplaw-sidebar-brand-icon" aria-hidden="true">
-            <img src="/icon/coop-rope-watermark.svg" alt="" />
+            <img src="/icon/newRobot.png" alt="" />
           </div>
           <div class="cooplaw-sidebar-brand-copy">
             <strong>CoopLaw AI</strong>
-            <span>ผู้ช่วยค้นหาข้อมูลกฎหมายสหกรณ์</span>
+            <span>ผู้ช่วยค้นหากฎหมายสหกรณ์</span>
           </div>
           <button type="button" class="cooplaw-sidebar-close" data-mobile-menu-control="1" aria-label="ปิดเมนู">
             <i class="bi bi-x-lg"></i>
           </button>
         </div>
-
-        <button type="button" class="cooplaw-new-chat-btn" data-clear-chat-control="1">
-          <i class="bi bi-plus-lg"></i>
-          <span>เริ่มต้นการค้นหาใหม่</span>
-        </button>
-
+      <div class="cooplaw-sidebar-body">
         <nav class="cooplaw-sidebar-nav" aria-label="รายการเมนู">
-          <a href="/law-chatbot" class="cooplaw-sidebar-nav-item"><i class="bi bi-house"></i><span>หน้าหลัก</span></a>
-          <a href="#chatMessages" class="cooplaw-sidebar-nav-item is-active"><i class="bi bi-chat-dots"></i><span>การสนทนา</span></a>
-          <a href="#chatMessages" class="cooplaw-sidebar-nav-item"><i class="bi bi-journal-text"></i><span>กฎหมายสหกรณ์</span></a>
-          <a href="#chatMessages" class="cooplaw-sidebar-nav-item"><i class="bi bi-file-earmark-text"></i><span>ระเบียบ / ข้อบังคับ</span></a>
-          <a href="#composerSuggestions" class="cooplaw-sidebar-nav-item"><i class="bi bi-question-square"></i><span>คำถามที่พบบ่อย</span></a>
+          <a href="/law-chatbot" class="cooplaw-sidebar-nav-item is-active"><i class="bi bi-house-door"></i><span>หน้าหลัก</span></a>
+          <a href="#chatMessages" class="cooplaw-sidebar-nav-item"><i class="bi bi-search"></i><span>ค้นหากฎหมาย</span></a>
+          <a href="#composerSuggestions" class="cooplaw-sidebar-nav-item"><i class="bi bi-chat-left-text"></i><span>ถามแบบเจาะจง</span></a>
           <a href="/user/search-history" class="cooplaw-sidebar-nav-item"><i class="bi bi-clock-history"></i><span>ประวัติการค้นหา</span></a>
+          <a href="/user/search-history" class="cooplaw-sidebar-nav-item"><i class="bi bi-star"></i><span>บันทึก / รายการโปรด</span></a>
+          <a href="#composerSuggestions" class="cooplaw-sidebar-nav-item"><i class="bi bi-file-earmark-text"></i><span>สรุปสาระสำคัญ</span></a>
+          <a href="#" class="cooplaw-sidebar-nav-item" data-bs-toggle="modal" data-bs-target="#developerModal"><i class="bi bi-gear"></i><span>ตั้งค่า</span></a>
         </nav>
 
-        <section class="cooplaw-sidebar-recent" aria-label="การค้นหาล่าสุด">
+        <section class="cooplaw-sidebar-recent" aria-label="คำถามที่ถามบ่อย">
           <div class="cooplaw-sidebar-recent-head">
-            <strong>การค้นหาล่าสุด</strong>
-            <a href="/user/search-history">ดูทั้งหมด</a>
+            <strong>คำถามที่ถามบ่อย</strong>
+            <a href="#composerSuggestions">ดูทั้งหมด</a>
           </div>
           <div class="cooplaw-sidebar-recent-list">
-            <% sidebarRecentItems.forEach((item, index) => { %>
+            <% sidebarFaqItems.forEach((item, index) => { %>
               <button type="button" class="quick-btn cooplaw-sidebar-recent-item<%= index === 0 ? ' is-active' : '' %>" data-question="<%= item %>">
-                <i class="bi bi-clock-history"></i>
+                <i class="bi bi-question-circle"></i>
                 <span><%= item %></span>
               </button>
             <% }) %>
@@ -4431,16 +6301,20 @@
 
         <div class="cooplaw-sidebar-legal">
           <div class="cooplaw-sidebar-legal-icon" aria-hidden="true">
-            <i class="bi bi-bank2"></i>
+            <img src="/icon/newRobot.png" alt="" />
           </div>
           <div class="cooplaw-sidebar-legal-copy">
-            <strong>ฐานข้อมูลกฎหมายอัปเดตล่าสุด</strong>
-            <span>ครอบคลุม พ.ร.บ. สหกรณ์ ระเบียบ และหนังสือเวียนที่เกี่ยวข้อง</span>
+            <strong>Coop Officer</strong>
+            <span>เจ้าหน้าที่สหกรณ์</span>
+            <button type="button" class="cooplaw-plan-pill" data-bs-toggle="modal" data-bs-target="#developerModal">
+              <i class="bi bi-award"></i>
+              <span>Pro Plan</span>
+            </button>
           </div>
         </div>
-
+      </div>
         <div class="cooplaw-sidebar-version">
-          <strong>CoopLaw AI v1.0.0</strong>
+          <strong>CoopLaw AI</strong>
           <span>ข้อมูลนี้มีเพื่อการอ้างอิง ไม่ถือเป็นคำแนะนำทางกฎหมาย</span>
         </div>
       </aside>
@@ -4462,10 +6336,10 @@
       <div class="header-assistant" aria-label="ข้อมูลผู้ช่วยค้นหากฎหมาย">
         <div class="header-assistant-brand">
           <div class="header-assistant-icon" aria-hidden="true">
-            <img src="/icon/robot-icon.svg" alt="" />
+            <img src="/icon/newRobot.png" alt="" />
           </div>
           <div class="header-assistant-copy">
-            <strong>LawBot AI Assistant</strong>
+            <strong>Coopbot</strong>
             <span>ค้นหาและสรุปกฎหมายสหกรณ์และกลุ่มเกษตรกร</span>
           </div>
         </div>
@@ -4684,10 +6558,10 @@
     <section class="lawbot-hero" aria-label="ข้อมูลผู้ช่วยค้นหากฎหมาย">
       <div class="lawbot-hero-brand">
         <div class="lawbot-hero-icon" aria-hidden="true">
-          <img src="/icon/robot-icon.svg" alt="" />
+          <img src="/icon/newRobot.png" alt="" />
         </div>
         <div>
-          <h1>LawBot AI Assistant</h1>
+          <h1>Coopbot</h1>
           <p>ผู้ช่วยค้นหาและสรุปกฎหมายสหกรณ์และกลุ่มเกษตรกร</p>
         </div>
       </div>
@@ -5021,55 +6895,26 @@
       }
 
       function getAssistantAvatarConfig(profile) {
-        const botAvatarConfig = getBotAvatarConfig();
-        const variant = getAssistantProfileVariant(profile);
-        const override = assistantAvatarConfigs[variant];
-
-        if (!override) {
-          return botAvatarConfig;
-        }
-
-        return {
-          ...botAvatarConfig,
-          iconClass: override.iconClass || botAvatarConfig.iconClass,
-          avatarClass: `${botAvatarConfig.avatarClass || ''} ${override.avatarClass || ''}`.trim(),
-          badgeClass: `${botAvatarConfig.badgeClass || ''} ${override.badgeClass || ''}`.trim(),
-          badgeText: override.badgeText || botAvatarConfig.badgeText,
-        };
+        void profile;
+        return getBotAvatarConfig();
       }
 
       function buildAssistantProfileHtml(profile) {
-        const normalizedProfile = normalizeAssistantProfile(profile) || currentAssistantProfile;
-        if (!normalizedProfile || !normalizedProfile.label) {
-          return '';
-        }
-
-        const variant = getAssistantProfileVariant(normalizedProfile);
-        const variantClass = variant ? ` bubble-assistant-name-${variant}` : '';
-
-        return `<div class="bubble-assistant-name${variantClass}"><i class="bi bi-person-badge"></i><span>${escapeHtml(normalizedProfile.label)}</span></div>`;
+        void profile;
+        return `<div class="bubble-assistant-name"><i class="bi bi-robot"></i><span>Coopbot</span></div>`;
       }
 
       function getAssistantPoliteParticle(profile) {
-        const variant = getAssistantProfileVariant(profile);
-        return variant === 'female' ? 'ค่ะ' : 'ครับ';
+        void profile;
+        return 'ครับ';
       }
 
       function buildAssistantWelcomeText(options = {}) {
-        const normalizedProfile = normalizeAssistantProfile(options.assistantProfile) || currentAssistantProfile;
-        const politeParticle = getAssistantPoliteParticle(normalizedProfile);
-        const variant = getAssistantProfileVariant(normalizedProfile);
+        void options;
+        const politeParticle = 'ครับ';
 
         if (options.afterClear) {
-          if (variant === 'female') {
-            return `จัดหน้าแชตให้โล่งเรียบร้อยแล้ว${politeParticle} ถ้าอยากเริ่มเรื่องใหม่พิมพ์มาได้เลย`;
-          }
-
           return `เคลียร์บทสนทนาให้เรียบร้อยแล้ว${politeParticle} พร้อมลุยคำถามใหม่ได้ทันที`;
-        }
-
-        if (variant === 'female') {
-          return `พร้อมช่วยสรุปกฎหมายสหกรณ์และกลุ่มเกษตรกรแบบอ่านง่ายให้${politeParticle} ส่งคำถามเข้ามาได้เลย`;
         }
 
         return `พร้อมช่วยค้นข้อกฎหมายและประเด็นสำคัญให้แบบตรงประเด็น${politeParticle} ถามมาได้เลย`;
@@ -5727,8 +7572,6 @@
             chatInput.focus();
             return;
           }
-
-          if (!hasText) setVoiceStatus('กดปุ่มไมค์เพื่อเริ่มค้นหาด้วยเสียง');
         };
       }
 
@@ -6204,13 +8047,10 @@ function formatBotDisplayLineHtml(text, terms) {
 
         const normalizedTitle = String(title || '').trim();
         const normalizedProfile = normalizeAssistantProfile(currentAssistantProfile);
-        const assistantLabel = normalizedProfile && normalizedProfile.label
-          ? normalizedProfile.label
-          : 'ผู้ช่วยกฎหมาย';
-        const assistantVariant = getAssistantProfileVariant(normalizedProfile);
+        const assistantLabel = 'Coopbot';
         const assistantAvatarConfig = getAssistantAvatarConfig(normalizedProfile);
         const titleClass = normalizedTitle === 'สรุปสาระสำคัญ'
-          ? `bot-answer-section-title bot-answer-section-title-assistant${assistantVariant ? ` bot-answer-section-title-assistant-${assistantVariant}` : ''}`
+          ? 'bot-answer-section-title bot-answer-section-title-assistant'
           : 'bot-answer-section-title';
         const titleIconClass = normalizedTitle === 'สรุปสาระสำคัญ'
           ? (assistantAvatarConfig.iconClass || icon)
@@ -6246,7 +8086,7 @@ function formatBotDisplayLineHtml(text, terms) {
         }
 
         if (isLoading) {
-          return true;
+          return false;
         }
 
         return !String(renderedHtml || '').includes('bot-answer-section-title-assistant');
@@ -6747,9 +8587,7 @@ function formatBotDisplayLineHtml(text, terms) {
 
       function buildLoadingBubbleHtml(text, hint = '') {
         const loadingAvatarConfig = getAssistantAvatarConfig(currentAssistantProfile);
-        const assistantProfileHtml = buildAssistantProfileHtml(currentAssistantProfile);
         return `
-          ${assistantProfileHtml}
           <span class="loading-status">
             <span class="loading-status-icon"><i class="bi ${loadingAvatarConfig.iconClass || 'bi-robot'}"></i></span>
             <span class="loading-status-text">
