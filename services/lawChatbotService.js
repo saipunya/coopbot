@@ -80,7 +80,7 @@ const {
   submitPaymentRequest,
   updatePaymentRequestPlan,
 } = require("./userAdminPaymentService");
-const { isTimeFollowUpQuestion, normalizeForSearch } = require("./thaiTextUtils");
+const { expandSearchConcepts, isTimeFollowUpQuestion, normalizeForSearch } = require("./thaiTextUtils");
 const {
   classifyQuestionIntent,
   resolveSearchTarget,
@@ -88,6 +88,7 @@ const {
 } = require("./sourceSelectionService");
 const { evaluateRetrievalResult } = require("./retrievalEvaluationService");
 const { searchInternetSources } = require("./internetSearchService");
+const { logSearchQuery } = require("./searchLogService");
 const { canUseAiPreview } = require("./planService");
 const { buildPaginationMeta, normalizePageNumber, normalizePageSize } = require("./paginationUtils");
 const {
@@ -199,7 +200,7 @@ function hasExplicitLawReferenceQuery(message = "") {
 }
 
 function shouldSkipFaqForQuestion(message = "") {
-  return hasExplicitLawReferenceQuery(message);
+  return hasExplicitLawReferenceQuery(message) || classifyQuestionIntent(message) === "law_section";
 }
 
 function isHighConfidenceFaqMatch(match = null, message = "") {
@@ -222,7 +223,7 @@ function isHighConfidenceFaqMatch(match = null, message = "") {
 
 function resolveDbOnlyMainChatMaxSourceChunks(message = "", questionIntent = "") {
   const normalizedIntent = String(questionIntent || "").trim().toLowerCase();
-  if (normalizedIntent === "law_section" && hasExplicitLawReferenceQuery(message)) {
+  if (normalizedIntent === "law_section") {
     return DB_ONLY_LAW_SECTION_MAX_SOURCE_CHUNKS;
   }
 
@@ -292,6 +293,15 @@ function buildResponseMeta(answerMode = "", sources = [], retrievalEvaluation = 
   };
 }
 
+async function recordSearchQueryLog(query, effectiveQuery, retrievalEvaluation, usedAI) {
+  await logSearchQuery({
+    query,
+    expandedQuery: expandSearchConcepts(effectiveQuery || query),
+    confidence: retrievalEvaluation?.confidence ?? null,
+    usedAI,
+  });
+}
+
 function safeTruncateSourceText(text = "", limit = AI_SUMMARY_SOURCE_TEXT_LIMIT) {
   const normalized = String(text || "").replace(/\s+/g, " ").trim();
   const safeLimit = Math.max(0, Number(limit || 0));
@@ -317,7 +327,7 @@ function prepareAiSummarySources(sources = [], options = {}) {
 }
 
 function isSummarizeModeEnabled(payload = {}) {
-  return payload?.summarizeMode !== false && payload?.summaryMode !== false;
+  return payload?.summarizeMode === true || payload?.summaryMode === true;
 }
 
 function resolveSummaryAiControl(retrievalEvaluation = null, planContext = {}, payload = {}) {
@@ -353,6 +363,19 @@ function resolveSummaryAiControl(retrievalEvaluation = null, planContext = {}, p
     reason: summarizeModeEnabled ? "ai_disabled_for_plan" : "summary_mode_disabled",
     summarizeModeEnabled,
   };
+}
+
+function logAiUsageGuardViolation(aiControl = {}, retrievalEvaluation = null, details = {}) {
+  if (aiControl?.allowAI === true) {
+    return;
+  }
+
+  console.warn("[law-chatbot] blocked AI usage rule violation", {
+    confidenceLevel: resolveAnswerConfidenceLevel(retrievalEvaluation) || "unknown",
+    reason: aiControl?.reason || "unknown",
+    summarizeModeEnabled: aiControl?.summarizeModeEnabled === true,
+    query: String(details.query || "").slice(0, 160),
+  });
 }
 
 function getLawChatbotAssistantProfile(session) {
@@ -1289,6 +1312,10 @@ async function replyToDbOnlyMainChat(payload, session) {
   const cleanedAnswer = cleanAssistantAnswer(answer, message);
   answer = applyAnswerConfidenceNotice(cleanedAnswer, retrievalEvaluation);
 
+  if (!continueFromPrevious) {
+    await recordSearchQueryLog(message, effectiveMessage, retrievalEvaluation, false);
+  }
+
   LawChatbotModel.create({
     message,
     effectiveMessage,
@@ -1430,6 +1457,8 @@ async function summarizeChat(payload, session) {
   });
 
   if (!retrievalEvaluation.shouldAnswer) {
+    await recordSearchQueryLog(message, evidence.effectiveMessage || message, retrievalEvaluation, false);
+
     return {
       summary: retrievalEvaluation.userFacingMessage,
       usedAI: false,
@@ -1462,7 +1491,11 @@ async function summarizeChat(payload, session) {
     answerDiagnostics,
   }), assistantProfile);
   const usedAI = answerDiagnostics.usedAI === true;
+  if (usedAI && !aiControl.allowAI) {
+    logAiUsageGuardViolation(aiControl, retrievalEvaluation, { query: message });
+  }
   const responseMeta = buildResponseMeta(usedAI ? "ai" : "db_only", sources, retrievalEvaluation, { usedAI });
+  await recordSearchQueryLog(message, evidence.effectiveMessage || message, retrievalEvaluation, usedAI);
   const result = {
     summary: applyAnswerConfidenceNotice(summary, retrievalEvaluation),
     usedAI,
@@ -1720,7 +1753,9 @@ module.exports = {
   rejectPaymentRequest,
   __private: {
     prepareAiSummarySources,
+    logAiUsageGuardViolation,
     resolveSummaryAiControl,
     safeTruncateSourceText,
+    shouldSkipFaqForQuestion,
   },
 };

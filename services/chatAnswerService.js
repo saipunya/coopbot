@@ -3122,6 +3122,15 @@ function isDbOnlyDissolutionWhenQuestion(message = "") {
   return /สหกรณ์.*เลิก.*เมื่อ(?:ใด|ไหร่)|เลิกสหกรณ์.*เมื่อ(?:ใด|ไหร่)|สหกรณ์ย่อมเลิก/.test(normalized);
 }
 
+function isDbOnlyDissolutionTopicQuestion(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|ปิดสหกรณ์|เลิกกิจการสหกรณ์|สหกรณ์ย่อมเลิก|สหกรณ์ต้องเลิก)/.test(normalized);
+}
+
 function dedupeDbOnlyAnswerLines(lines = [], limit = 60) {
   const deduped = [];
   for (const line of Array.isArray(lines) ? lines : []) {
@@ -3211,11 +3220,16 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
       entry.lawNumber === normalizedQueryLawNumber;
     const subsectionOrder = extractLawSubsectionOrder(entry.source);
     const subsectionLabel = normalizeComparisonText(
-      `${entry.source?.title || ""} ${entry.source?.reference || ""} ${entry.source?.keyword || ""}`,
+      `${entry.source?.title || entry.source?.lawPart || ""} ${entry.source?.reference || ""} ${entry.source?.keyword || ""}`,
     );
-    const lawKey = isExactStructuredLawSection
-      ? `${entry.sourceName}::${entry.lawNumber}::${subsectionOrder}::${subsectionLabel}`
-      : `${entry.sourceName}::${entry.lawNumber || normalizeComparisonText(entry.source?.reference || "")}`;
+    const lawKey =
+      isStructuredLawSource(entry.source)
+        ? entry.source?.id
+          ? `${entry.sourceName}::id::${entry.source.id}`
+          : `${entry.sourceName}::${entry.lawNumber || normalizeComparisonText(entry.source?.reference || "")}::${subsectionOrder}::${subsectionLabel}`
+        : isExactStructuredLawSection
+          ? `${entry.sourceName}::${entry.lawNumber}::${subsectionOrder}::${subsectionLabel}`
+          : `${entry.sourceName}::${entry.lawNumber || normalizeComparisonText(entry.source?.reference || "")}`;
     const existing = bestByLawKey.get(lawKey);
     if (!existing || entry.score > existing.score) {
       bestByLawKey.set(lawKey, entry);
@@ -3253,10 +3267,12 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
   });
 
   let selectedEntries = dedupedEntries.slice(0, effectiveMaxPrimarySections);
-  if (isDbOnlyDissolutionWhenQuestion(message)) {
-    const section70 = dedupedEntries.find((entry) => entry.lawNumber === "70");
-    if (section70) {
-      selectedEntries = [section70];
+  if (isDbOnlyDissolutionWhenQuestion(message) || isDbOnlyDissolutionTopicQuestion(message)) {
+    const section70Entries = dedupedEntries
+      .filter((entry) => isStructuredLawSource(entry.source) && entry.lawNumber === "70")
+      .sort((left, right) => sortLawSectionSources(left.source, right.source, "70"));
+    if (section70Entries.length > 0) {
+      selectedEntries = section70Entries.slice(0, Math.max(effectiveMaxPrimarySections, 6));
     }
   } else if (isLiquidationAppointmentQuestion(message)) {
     const section75 = dedupedEntries.find((entry) => entry.lawNumber === "75");

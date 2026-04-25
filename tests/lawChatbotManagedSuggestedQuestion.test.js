@@ -91,3 +91,11 @@ test("replyToChat returns the saved managed Q&A answer before generic DB lookup"
   assert.equal(createdEntries.length, 1);
   assert.equal(createdEntries[0]?.matchedSources?.[0]?.source, "managed_suggested_question");
 });
+
+test("FAQ short-circuit is skipped for specific law questions", () => {
+  const { __private } = require("../services/lawChatbotService");
+
+  assert.equal(__private.shouldSkipFaqForQuestion("มาตรา 75 ว่าอย่างไร"), true);
+  assert.equal(__private.shouldSkipFaqForQuestion("ใครเป็นผู้มีอำนาจแต่งตั้งผู้ชำระบัญชี"), true);
+  assert.equal(__private.shouldSkipFaqForQuestion("สหกรณ์คืออะไร"), false);
+});

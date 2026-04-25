@@ -174,6 +174,29 @@ function isDirectLawNumberQuery(text) {
   return /^(มาตรา|ข้อ|วรรค|อนุมาตรา)\s*\d+(?:\s*\/\s*\d+)?(?:\s|$)/.test(normalized);
 }
 
+function isSmokeFixtureLawRow(row = {}) {
+  return /^SMOKE_FIXTURE_/i.test(String(row.law_part || row.title || "").trim());
+}
+
+function isCoopDissolutionTopicQuery(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก|ปิดสหกรณ์|เลิกกิจการสหกรณ์)/.test(
+    normalized,
+  );
+}
+
+function getTopicExpansionLawNumbers(message = "", sourceName = "") {
+  if (String(sourceName || "").trim().toLowerCase() === "tbl_laws" && isCoopDissolutionTopicQuery(message)) {
+    return ["70"];
+  }
+
+  return [];
+}
+
 function getFocusedIntentTerms(intent = "general") {
   if (intent === "qualification") {
     return ["คุณสมบัติ", "ลักษณะต้องห้าม", "วิธีการรับสมัคร", "ขาดจากการเป็น", "ไม่มีสิทธิ"];
@@ -374,8 +397,9 @@ async function findFocusedLawRows(pool, tableConfig, query) {
             ${detailField} AS law_detail, ${commentField} AS law_comment${
               searchField ? `, ${searchField} AS law_search` : ", NULL AS law_search"
             }
-       FROM ${tableName}
+      FROM ${tableName}
       WHERE (${topicClause})${intentClause}
+        AND ${partField} NOT LIKE 'SMOKE_FIXTURE_%'
       LIMIT 20`,
     [...topicParams, ...intentParams],
   );
@@ -402,13 +426,82 @@ async function findKeywordLawRows(pool, tableConfig, query) {
     `SELECT ${idField} AS id, ${numberField} AS law_number, ${partField} AS law_part,
             ${detailField} AS law_detail, ${commentField} AS law_comment, ${searchField} AS law_search
        FROM ${tableName}
-      WHERE ${whereClause}
+      WHERE (${whereClause})
+        AND ${partField} NOT LIKE 'SMOKE_FIXTURE_%'
       ORDER BY CASE WHEN LOWER(${searchField}) LIKE ? THEN 0 ELSE 1 END, ${idField} ASC
       LIMIT 40`,
     [...params, exactPhrase],
   );
 
   return rows.map((row) => ({ ...row, __sourceName: sourceName, __keywordMatch: true }));
+}
+
+async function findTopicExpansionLawRows(pool, tableConfigs, message) {
+  const expandedGroups = await Promise.all(
+    tableConfigs.map(async (tableConfig) => {
+      const sourceName = tableConfig[6];
+      const lawNumbers = getTopicExpansionLawNumbers(message, sourceName);
+      if (lawNumbers.length === 0) {
+        return [];
+      }
+
+      const rowGroups = await Promise.all(
+        lawNumbers.map((lawNumber) => findExactLawRows(pool, tableConfig, lawNumber)),
+      );
+
+      return rowGroups.flat().map((row) => ({ ...row, __topicExpansion: true }));
+    }),
+  );
+
+  return expandedGroups.flat();
+}
+
+function mapStructuredLawRow(message, row, options = {}) {
+  const combinedText = [
+    row.law_number,
+    row.law_part,
+    row.law_detail,
+    row.law_comment,
+    row.law_search,
+  ].join(" ");
+  const inferredScope = options.inferredScope || "all";
+  const queryLawNumber = options.queryLawNumber || null;
+
+  let score = scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`);
+  score += scoreStructuredLawKeywordMatch(message, row.law_search);
+  score += scoreDissolutionTopicPriority(message, combinedText);
+
+  if (queryLawNumber && extractLawNumber(row.law_number) === queryLawNumber) {
+    score += 90;
+  }
+
+  if (queryLawNumber && hasExactLawNumberText(row.law_number, queryLawNumber)) {
+    score += 50;
+  }
+
+  if (inferredScope === "coop" && row.__sourceName === "tbl_laws") {
+    score += 40;
+  }
+
+  if (inferredScope === "group" && row.__sourceName === "tbl_glaws") {
+    score += 40;
+  }
+
+  if (row.__topicExpansion) {
+    score = Math.max(score, 998);
+  }
+
+  return {
+    id: row.id,
+    source: row.__sourceName,
+    title: row.law_part || row.law_number || "กฎหมายที่เกี่ยวข้อง",
+    reference: row.law_number || row.law_part || row.__sourceName,
+    lawNumber: row.law_number || "",
+    content: row.law_detail || "",
+    comment: row.law_comment || "",
+    score: score + (row.__focusedMatch ? 60 : 0) + (row.__keywordMatch ? 100 : 0),
+    topicExpansion: row.__topicExpansion === true,
+  };
 }
 
 function scoreResult(query, text, primaryLabel) {
@@ -825,6 +918,7 @@ class LawSearchModel {
       tableConfigs.map((tableConfig) => findKeywordLawRows(pool, tableConfig, message)),
     );
     const keywordRows = keywordRowGroups.flat();
+    const topicExpansionRows = await findTopicExpansionLawRows(pool, tableConfigs, message);
     const focusedResults = focusedRows
       .map((row) => {
         const combinedText = [
@@ -840,6 +934,7 @@ class LawSearchModel {
           source: row.__sourceName,
           title: row.law_part || row.law_number || "กฎหมายที่เกี่ยวข้อง",
           reference: row.law_number || row.law_part || row.__sourceName,
+          lawNumber: row.law_number || "",
           content: row.law_detail || "",
           comment: row.law_comment || "",
           score:
@@ -872,6 +967,7 @@ class LawSearchModel {
           source: row.__sourceName,
           title: row.law_part || row.law_number || "กฎหมายที่เกี่ยวข้อง",
           reference: row.law_number || row.law_part || row.__sourceName,
+          lawNumber: row.law_number || "",
           content: row.law_detail || "",
           comment: row.law_comment || "",
           score: 999,
@@ -905,7 +1001,8 @@ class LawSearchModel {
                     searchField ? `, ${searchField} AS law_search` : ", NULL AS law_search"
                   }
            FROM ${tableName}
-           WHERE ${whereClause}
+           WHERE (${whereClause})
+             AND ${partField} NOT LIKE 'SMOKE_FIXTURE_%'
            LIMIT 50`,
           params,
         );
@@ -914,58 +1011,21 @@ class LawSearchModel {
       }),
     );
 
-    const rankedResults = [...keywordRows, ...focusedRows, ...rowGroups.flat()]
-      .map((row) => {
-        const combinedText = [
-          row.law_number,
-          row.law_part,
-          row.law_detail,
-          row.law_comment,
-          row.law_search,
-        ].join(" ");
-
-        let score = scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`);
-        score += scoreStructuredLawKeywordMatch(message, row.law_search);
-        score += scoreDissolutionTopicPriority(message, combinedText);
-
-        if (queryLawNumber && extractLawNumber(row.law_number) === queryLawNumber) {
-          score += 90;
-        }
-
-        if (queryLawNumber && hasExactLawNumberText(row.law_number, queryLawNumber)) {
-          score += 50;
-        }
-
-        if (
-          inferredScope === "coop" &&
-          row.__sourceName === "tbl_laws"
-        ) {
-          score += 40;
-        }
-
-        if (
-          inferredScope === "group" &&
-          row.__sourceName === "tbl_glaws"
-        ) {
-          score += 40;
-        }
-
-        return {
-          id: row.id,
-          source: row.__sourceName,
-          title: row.law_part || row.law_number || "กฎหมายที่เกี่ยวข้อง",
-          reference: row.law_number || row.law_part || row.__sourceName,
-          content: row.law_detail || "",
-          comment: row.law_comment || "",
-          score: score + (row.__focusedMatch ? 60 : 0) + (row.__keywordMatch ? 100 : 0),
-        };
-      })
+    const rankedResults = [...topicExpansionRows, ...keywordRows, ...focusedRows, ...rowGroups.flat()]
+      .filter((row) => !isSmokeFixtureLawRow(row))
+      .map((row) => mapStructuredLawRow(message, row, { inferredScope, queryLawNumber }))
       .filter((row) => row.score > 0)
       .filter((row, index, list) => {
         const key = `${row.source || ""}::${row.id || ""}`;
         return list.findIndex((item) => `${item.source || ""}::${item.id || ""}` === key) === index;
       })
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => {
+        if (a.topicExpansion !== b.topicExpansion) {
+          return a.topicExpansion ? -1 : 1;
+        }
+
+        return b.score - a.score;
+      });
 
     if (queryLawNumber && isDirectLawNumberQuery(message)) {
       const exactLawMatches = rankedResults.filter(

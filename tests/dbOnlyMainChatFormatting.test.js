@@ -224,3 +224,65 @@ test("exact structured law query keeps all subsections under the same section nu
   assert.match(result.answer, /รองนายทะเบียนสหกรณ์เป็นผู้ช่วยนายทะเบียนกลุ่มเกษตรกร/);
   assert.match(result.answer, /ให้รัฐมนตรีแต่งตั้งพนักงานเจ้าหน้าที่/);
 });
+
+test("dissolution topic query displays multiple section 70 parts when available", () => {
+  const result = buildDbOnlyMainChatAnswerResult(
+    [
+      {
+        id: 138,
+        source: "tbl_laws",
+        lawNumber: "มาตรา 70",
+        reference: "มาตรา 70",
+        title: "วรรคแรก",
+        score: 998,
+        content:
+          "สหกรณ์ย่อมเลิกด้วยเหตุหนึ่งเหตุใด ดังต่อไปนี้ (1) มีเหตุตามที่กำหนดในข้อบังคับ (2) สหกรณ์มีจำนวนสมาชิกน้อยกว่าสิบคน",
+      },
+      {
+        id: 139,
+        source: "tbl_laws",
+        lawNumber: "มาตรา 70",
+        reference: "มาตรา 70",
+        title: "วรรคสอง",
+        score: 998,
+        content:
+          "ให้สหกรณ์ที่เลิกตาม (1) (2) (3) หรือ (4) แจ้งให้นายทะเบียนสหกรณ์ทราบ ภายในสิบห้าวันนับแต่วันที่เลิก",
+      },
+      {
+        id: 140,
+        source: "tbl_laws",
+        lawNumber: "มาตรา 70",
+        reference: "มาตรา 70",
+        title: "วรรคสาม",
+        score: 998,
+        content:
+          "ให้นายทะเบียนสหกรณ์ปิดประกาศการเลิกสหกรณ์ไว้ที่สำนักงานของสหกรณ์ ที่ทำการสหกรณ์อำเภอหรือหน่วยส่งเสริมสหกรณ์",
+      },
+      {
+        id: 141,
+        source: "tbl_laws",
+        lawNumber: "มาตรา 71",
+        reference: "มาตรา 71",
+        title: "วรรคแรก",
+        score: 900,
+        content:
+          "นายทะเบียนสหกรณ์มีอำนาจสั่งเลิกสหกรณ์ได้เมื่อปรากฏว่าสหกรณ์ไม่เริ่มดำเนินกิจการ",
+      },
+    ],
+    {
+      message: "การเลิกสหกรณ์",
+      questionIntent: "law_section",
+      maxPrimarySections: 1,
+    },
+  );
+
+  assert.equal(result.selectedSources.length, 3);
+  assert.deepEqual(
+    result.selectedSources.map((item) => item.id),
+    [138, 139, 140],
+  );
+  assert.match(result.answer, /สหกรณ์ย่อมเลิกด้วยเหตุหนึ่งเหตุใด/);
+  assert.match(result.answer, /แจ้งให้นายทะเบียนสหกรณ์ทราบ ภายในสิบห้าวัน/);
+  assert.match(result.answer, /ปิดประกาศการเลิกสหกรณ์/);
+  assert.doesNotMatch(result.answer, /ไม่เริ่มดำเนินกิจการ/);
+});

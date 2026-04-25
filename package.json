@@ -12,6 +12,7 @@
     "import:pdf-chunks": "node scripts/import-pdf-chunks.js",
     "audit:pdf-chunks": "node scripts/audit-pdf-chunks.js",
     "debug:search": "node scripts/debug-search.js",
+    "review:search-log": "node scripts/review-search-log.js",
     "test:chunk-split": "node --test tests/chunkSplitter.test.js",
     "review:responsive": "node scripts/responsive_review_helper.js",
     "review:responsive:open": "node scripts/open_responsive_review_pages.js",

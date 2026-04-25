@@ -37,6 +37,14 @@ test("summary AI control blocks high and low confidence, allows medium only in s
     true,
   );
   assert.equal(
+    __private.resolveSummaryAiControl({ confidenceLevel: "medium" }, premiumAiPlan, {}).allowAI,
+    false,
+  );
+  assert.equal(
+    __private.resolveSummaryAiControl({ confidenceLevel: "medium" }, premiumAiPlan, { summaryMode: true }).allowAI,
+    true,
+  );
+  assert.equal(
     __private.resolveSummaryAiControl({ confidenceLevel: "medium" }, premiumAiPlan, { summarizeMode: false }).allowAI,
     false,
   );
@@ -44,6 +52,30 @@ test("summary AI control blocks high and low confidence, allows medium only in s
     __private.resolveSummaryAiControl({ confidenceLevel: "medium" }, { useAI: false }, { summarizeMode: true }).allowAI,
     false,
   );
+});
+
+test("AI guard logs violations outside confidence rules", () => {
+  const { __private } = require("../services/lawChatbotService");
+  const originalWarn = console.warn;
+  const warnings = [];
+
+  console.warn = (...args) => {
+    warnings.push(args);
+  };
+
+  try {
+    __private.logAiUsageGuardViolation(
+      { allowAI: false, reason: "high_confidence", summarizeModeEnabled: true },
+      { confidenceLevel: "high" },
+      { query: "ทดสอบการเรียก AI" },
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(warnings.length, 1);
+  assert.match(String(warnings[0][0]), /blocked AI usage rule violation/);
+  assert.equal(warnings[0][1]?.confidenceLevel, "high");
 });
 
 test("AI summary sources are limited to top 3 and safely truncated", () => {
