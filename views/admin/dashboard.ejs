@@ -665,6 +665,34 @@
             <span class="status-pill override">Env override: USE_MOCK_AI=true</span>
           <% } %>
         </div>
+        <div class="grid" style="margin-top: 1rem;">
+          <article class="card metric-card" style="margin-bottom: 0;">
+            <p class="metric-label">AI rewrite วันนี้</p>
+            <p class="metric"><%= aiUsageStats.todayCalls || 0 %></p>
+          </article>
+          <article class="card metric-card" style="margin-bottom: 0;">
+            <p class="metric-label">AI rewrite ทั้งหมด</p>
+            <p class="metric"><%= aiUsageStats.totalCalls || 0 %></p>
+          </article>
+          <article class="card metric-card" style="margin-bottom: 0;">
+            <p class="metric-label">สำเร็จ / ล้มเหลว</p>
+            <p class="metric"><%= aiUsageStats.successCalls || 0 %> / <%= aiUsageStats.failureCalls || 0 %></p>
+          </article>
+          <article class="card metric-card payment" style="margin-bottom: 0;">
+            <p class="metric-label">ประมาณค่าใช้จ่ายทั้งหมด</p>
+            <p class="metric">฿<%= aiUsageStats.estimatedTotalCost?.estimatedThb || 0 %></p>
+            <p class="subtle-text">
+              วันนี้ ฿<%= aiUsageStats.estimatedTodayCost?.estimatedThb || 0 %>
+              | ประมาณ $<%= aiUsageStats.estimatedTotalCost?.estimatedUsd || 0 %>
+            </p>
+          </article>
+        </div>
+        <p class="subtle-text" style="margin-top: 0.65rem;">
+          คำนวณคร่าว ๆ จาก <strong><%= aiUsageStats.estimatedTotalCost?.model || "gpt-5.4-mini" %></strong>
+          โดยสมมติ <strong><%= aiUsageStats.estimatedTotalCost?.assumptions?.inputTokensPerCall || 700 %></strong> input tokens
+          และ <strong><%= aiUsageStats.estimatedTotalCost?.assumptions?.outputTokensPerCall || 250 %></strong> output tokens ต่อครั้ง
+          ที่อัตราแลกเปลี่ยนประมาณ <strong><%= aiUsageStats.estimatedTotalCost?.usdToThbRate || 32.69 %></strong> บาท/USD
+        </p>
         <p class="subtle-text">
           <% if (aiSettings.updatedAt) { %>
             อัปเดตล่าสุดโดย <strong><%= aiSettings.updatedBy || "admin" %></strong> เมื่อ <strong><%= aiSettings.updatedAt %></strong>
@@ -716,6 +744,7 @@
           <li><a href="/admin/suggested-questions">จัดการคำถามแนะนำ / คำถามที่พบบ่อย</a></li>
           <li><a href="/admin/knowledge">จัดการความรู้แชตบอท</a></li>
           <li><a href="/admin/knowledge-suggestions">ตรวจข้อเสนอจากผู้ใช้งาน</a></li>
+          <li><a href="/admin/search-misses">ดู Search miss logs</a></li>
           <li><a href="/admin/vinichai">จัดการฐานข้อมูลวินิจฉัย</a></li>
         </ul>
       </section>

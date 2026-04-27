@@ -11,6 +11,7 @@ const adminController = require("./controllers/adminController");
 const adminRoutes = require("./routes/admin");
 const adminImportRoutes = require("./routes/adminImport");
 const adminKnowledgeWorkflowRoutes = require("./routes/adminKnowledgeWorkflow");
+const adminSearchMissRoutes = require("./routes/adminSearchMisses");
 const lawChatbotRoutes = require("./routes/lawChatbot");
 const userRoutes = require("./routes/user");
 const { attachCurrentUser, redirectIfAuthenticated } = require("./middlewares/authMiddleware");
@@ -146,6 +147,7 @@ app.get("/auth/google/callback", adminController.handleGoogleCallback);
 app.use("/admin", adminRoutes);
 app.use("/admin", adminImportRoutes);
 app.use("/admin", adminKnowledgeWorkflowRoutes);
+app.use("/admin", adminSearchMissRoutes);
 app.use("/law-chatbot", lawChatbotRoutes);
 app.use("/user", userRoutes);
 

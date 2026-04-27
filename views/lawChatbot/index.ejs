@@ -4334,7 +4334,7 @@
   color: #3f3a2d;
 }
 .answer-plain br {
-  display: none;
+  display: initial;
 }
 
 /* --- CoopLaw blue cockpit refresh (UI only) --- */
@@ -7686,8 +7686,43 @@ body {
         return result;
       }
 
+      function shouldBreakBeforeDisplayListMarker(contextText, markerText) {
+        const context = String(contextText || '').replace(/\s+/g, ' ').trim();
+        const marker = String(markerText || '').trim();
+        if (!context || !marker) {
+          return false;
+        }
+
+        if (/(?:ตาม|ในกรณีตาม|ตามข้อ|ตามวรรค|ตามอนุมาตรา|มาตรา|วรรค|อนุมาตรา|หรือ|และ|พ\.ศ\.?|ค\.ศ\.?|วันที่|เลขที่|ครั้งที่)\s*$/u.test(context)) {
+          return false;
+        }
+
+        return true;
+      }
+
+      function normalizeDisplayListMarkerLineBreaks(text) {
+        const raw = String(text || '');
+        if (!raw) {
+          return raw;
+        }
+
+        return raw.replace(
+          /([^\n])\s+((?:[0-9๐-๙]{1,3}[.)])|(?:ข้อ\s*[0-9๐-๙]{1,3}[.)]?))(?=\s*[^\s])/gu,
+          (match, prefix, marker, offset, fullText) => {
+            const context = String(fullText || '').slice(Math.max(0, Number(offset || 0) - 80), Number(offset || 0));
+            if (!shouldBreakBeforeDisplayListMarker(context, marker)) {
+              return match;
+            }
+
+            return `${prefix}\n${marker}`;
+          },
+        );
+      }
+
       function sanitizeDisplayText(text) {
-        return normalizeClauseMarkerLineBreaks(replaceUserVisibleAiTerms(normalizeProtectedDisplayLineBreaks(text)))
+        return normalizeDisplayListMarkerLineBreaks(
+          normalizeClauseMarkerLineBreaks(replaceUserVisibleAiTerms(normalizeProtectedDisplayLineBreaks(text)))
+        )
           .replace(/(^|\n)\s*ข้อมูลที่พบจากฐานข้อมูลกฎหมาย(?:\s*\([^)]*\))?:?\s*(?=\n|$)/gu, '$1')
           .replace(/(^|\n)\s*\/\/\s*/g, '$1')
           .replace(/(^|[\s(])\/\/(?=[\s)]|$)/g, '$1')
@@ -7849,32 +7884,45 @@ body {
 
 
 
-function formatBotDisplayLineHtml(text, terms) {
-  let html =
-    formatFollowUpPromptHtml(text, terms) ||
-    applyHighlightHtml(text, terms);
-
-  const hasListMarker = /(?:^|<br\s*\/?>|\n)\s*\([0-9๐-๙]{1,3}\)/i.test(html);
-  // ถ้าไม่มี (1)(2)(3) ให้แสดงแบบปกติ ไม่ทำเป็น card
-  if (!hasListMarker) {
-    return html.replace(/\n/g, '<br>');
-  }
-
-  const normalizedHtml = html.replace(/\n/g, '<br>');
-  return normalizedHtml
-    .split(/<br\s*\/?>/gi)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      if (/^\([0-9๐-๙]{1,3}\)/u.test(line)) {
-        return `<div class="answer-item">${line}</div>`;
+      function isDisplayListLine(line) {
+        return /^(?:\([0-9๐-๙]{1,3}\)|[0-9๐-๙]{1,3}[.)]|ข้อ\s*[0-9๐-๙]{1,3}[.)]?|[-•])\s+/u.test(String(line || '').trim());
       }
 
-      return line;
-    })
-    .join('<br>');
-    console.log("🧾 FORMAT INPUT:", text);
-  }
+      function formatAnswerLabelLineHtml(line) {
+        const text = String(line || '').trim();
+        if (!/^(?:คำตอบแบบเข้าใจง่าย|คำตอบจากฐานข้อมูล|สรุปใจความสำคัญ|ข้อมูลเพิ่มเติม)\s*:/u.test(text)) {
+          return text;
+        }
+
+        return text.replace(/^([^:]+:)/u, '<strong>$1</strong>');
+      }
+
+      function formatBotDisplayLineHtml(text, terms) {
+        const html =
+          formatFollowUpPromptHtml(text, terms) ||
+          applyHighlightHtml(text, terms);
+        const normalizedHtml = html.replace(/\n/g, '<br>');
+        const lines = normalizedHtml
+          .split(/<br\s*\/?>/gi)
+          .map((line) => line.trim())
+          .filter(Boolean);
+
+        if (!lines.some(isDisplayListLine)) {
+          return lines
+            .map((line) => formatAnswerLabelLineHtml(line))
+            .join('<br>');
+        }
+
+        return lines
+          .map((line) => {
+            if (isDisplayListLine(line)) {
+              return `<div class="answer-item">${line}</div>`;
+            }
+
+            return formatAnswerLabelLineHtml(line);
+          })
+          .join('');
+      }
 
 
 
@@ -8989,7 +9037,12 @@ function formatBotDisplayLineHtml(text, terms) {
 
           loadingController.dispose();
           removeLoadingBubble();
+          const simplifiedAnswer = data && typeof data.simplifiedAnswer === 'string' ? data.simplifiedAnswer.trim() : '';
+          const rawAnswer = data && typeof data.rawAnswer === 'string' ? data.rawAnswer.trim() : '';
           const answerText = data && typeof data.answer === 'string' ? data.answer.trim() : '';
+          const displayAnswerText = simplifiedAnswer && rawAnswer
+            ? `สรุปใจความสำคัญ:\n${simplifiedAnswer}\n\nข้อมูลเพิ่มเติม:\n${rawAnswer}`
+            : answerText;
           const dbHighlightTerms = data && Array.isArray(data.highlightTerms) && data.highlightTerms.length
             ? data.highlightTerms
             : buildHighlightTerms(trimmed);
@@ -9000,11 +9053,11 @@ function formatBotDisplayLineHtml(text, terms) {
             clearPendingPostLoginChat();
           }
 
-          if (answerText) {
-            const botRow = addBubble(answerText, 'bot', false, dbHighlightTerms, {
+          if (displayAnswerText) {
+            const botRow = addBubble(displayAnswerText, 'bot', false, dbHighlightTerms, {
               question: trimmed,
               target: options.target || selectedTarget,
-              variant: 'db',
+              variant: simplifiedAnswer ? 'ai' : 'db',
               debug: data && data.debug ? data.debug : null,
               usedFollowUpContext: Boolean(data && data.usedFollowUpContext),
               guestLimitReached: Boolean(data && data.guestLimitReached),

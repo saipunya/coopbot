@@ -9,6 +9,7 @@ const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
 const runtimeFlags = require("../config/runtimeFlags");
 const { isAiEnabled } = require("./runtimeSettingsService");
 const { getOpenAiConfig } = require("./openAiService");
+const { rewriteLegalText } = require("./aiRewriteService");
 const { buildQuestionCacheIdentity } = require("./lawChatbotAnswerCacheUtils");
 const {
   buildDbOnlyMainChatAnswerResult,
@@ -447,6 +448,33 @@ function personalizeChatResult(session, result = {}) {
       gender: assistantProfile.gender,
     },
   };
+}
+
+async function applyAiRewriteLayer(result = {}, options = {}) {
+  const rawAnswer = String(result?.answer || "").trim();
+  if (!rawAnswer) {
+    return result;
+  }
+
+  try {
+    const simplifiedAnswer = await rewriteLegalText(rawAnswer, {
+      explicitLawSectionQuery: hasExplicitLawReferenceQuery(options.message || ""),
+    });
+
+    if (!simplifiedAnswer) {
+      return result;
+    }
+
+    return {
+      ...result,
+      answer: simplifiedAnswer,
+      simplifiedAnswer,
+      rawAnswer,
+    };
+  } catch (error) {
+    console.error("[law-chatbot] AI rewrite failed:", error.message || error);
+    return result;
+  }
 }
 
 function getInitialAssistantProfile(session) {
@@ -976,7 +1004,7 @@ async function buildDbOnlyMainChatAnswer(message, target, sources, options = {})
     originalMessage: message,
     questionIntent: options.questionIntent || "",
     collapseExactLawSectionPreview: options.collapseExactLawSectionPreview === true,
-    maxPrimarySections: 1,
+    maxPrimarySections: 3,
   });
 }
 
@@ -1231,7 +1259,7 @@ async function replyToDbOnlyMainChat(payload, session) {
       answerSourcePool = selectDbOnlyMainChatAnswerEntries(selectedSources, {
         message: effectiveMessage,
         originalMessage: message,
-        maxPrimarySections: 1,
+        maxPrimarySections: 3,
       }).map((entry) => entry.source).filter(Boolean);
       contextCarrySources = answerSourcePool.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT);
       const collapseExactLawSectionPreview = shouldCollapseExactLawSectionPreview(message, questionIntent);
@@ -1355,8 +1383,10 @@ async function replyToDbOnlyMainChat(payload, session) {
         },
   };
 
+  const rewrittenResult = await applyAiRewriteLayer(result, { message });
+
   if (retrievalEvaluation?.shouldReturnNoAnswer) {
-    result.reviewQueue = await queueNoAnswerKnowledgeSuggestion(
+    rewrittenResult.reviewQueue = await queueNoAnswerKnowledgeSuggestion(
       message,
       target,
       retrievalEvaluation,
@@ -1369,10 +1399,10 @@ async function replyToDbOnlyMainChat(payload, session) {
   }
 
   if (debugMode) {
-    result.debug = {
+    rewrittenResult.debug = {
       selectedSourceTier: continueFromPrevious ? `continuation_${continuationSource}` : "db_only_main_chat",
       selectedSourceTierLabel: continueFromPrevious ? `continuation_${continuationSource}` : "db_only_main_chat",
-      sourceTables: result.responseMeta?.sourceTables || [],
+      sourceTables: rewrittenResult.responseMeta?.sourceTables || [],
       consideredSourceTables: [],
       sourceCount: selectedSources.length,
       databaseMatches: selectedSources.length,
@@ -1394,7 +1424,7 @@ async function replyToDbOnlyMainChat(payload, session) {
     };
   }
 
-  return personalizeChatResult(session, result);
+  return personalizeChatResult(session, rewrittenResult);
 }
 
 async function replyToChat(payload, session) {

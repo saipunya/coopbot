@@ -3179,7 +3179,7 @@ function buildDbOnlyReferenceSection(entries = []) {
 function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
   const sourceItems = Array.isArray(sources) ? sources : [];
   const message = String(options.message || options.originalMessage || "").trim();
-  const maxPrimarySections = Math.min(2, Math.max(1, Number(options.maxPrimarySections || 1)));
+  const maxPrimarySections = Math.min(3, Math.max(1, Number(options.maxPrimarySections || 1)));
   const collapseExactLawSectionPreview = options.collapseExactLawSectionPreview === true;
   const queryLawNumber = extractQueryLawNumber(message);
   const questionIntent = String(

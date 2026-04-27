@@ -8,6 +8,7 @@ const {
 } = require("../services/adminGoogleAuthService");
 const { hasAcceptedLawChatbotNotice } = require("../middlewares/authMiddleware");
 const runtimeSettingsService = require("../services/runtimeSettingsService");
+const { getAiRewriteUsageSummary } = require("../services/aiUsageStatsService");
 const vinichaiAdminService = require("../services/vinichaiAdminService");
 const {
   generateKeywordFromChunk,
@@ -282,12 +283,13 @@ async function handleGoogleCallback(req, res) {
 }
 
 async function renderDashboard(req, res) {
-  const [uploadData, feedbackData, knowledgeData, paymentRequestData, aiSettings] = await Promise.all([
+  const [uploadData, feedbackData, knowledgeData, paymentRequestData, aiSettings, aiUsageStats] = await Promise.all([
     lawChatbotService.getUploadPageData(),
     lawChatbotService.getFeedbackPageData(),
     lawChatbotService.getKnowledgeAdminSummaryData(),
     lawChatbotService.getAdminPaymentRequestsData({ page: 1 }),
     runtimeSettingsService.getAiAdminState(),
+    getAiRewriteUsageSummary(),
   ]);
 
   res.render("admin/dashboard", {
@@ -300,6 +302,7 @@ async function renderDashboard(req, res) {
     knowledgeData,
     paymentRequestData,
     aiSettings,
+    aiUsageStats,
     dashboardReturnPath: req.originalUrl || "/admin",
   });
 }
