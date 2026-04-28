@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= title %></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet" />
+    <style>
+      body {
+        font-family: "Sarabun", Arial, sans-serif;
+        background:
+          radial-gradient(circle at 15% 15%, rgba(18, 118, 153, 0.12), transparent 32%),
+          radial-gradient(circle at 85% 8%, rgba(15, 70, 103, 0.12), transparent 26%),
+          linear-gradient(160deg, #e9f1f7, #f8fbfd);
+        color: #1f2a37;
+      }
+      .page-shell {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 3rem;
+      }
+      .hero-card,
+      .panel-card {
+        border: 1px solid #d8e2ea;
+        border-radius: 22px;
+        box-shadow: 0 16px 42px rgba(18, 52, 77, 0.12);
+      }
+      .hero-card {
+        background: linear-gradient(135deg, rgba(21, 84, 122, 0.96), rgba(15, 70, 103, 0.92));
+        color: #fff;
+        overflow: hidden;
+        position: relative;
+      }
+      .hero-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.22), transparent 34%),
+          radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.14), transparent 25%);
+        pointer-events: none;
+      }
+      .hero-card > * {
+        position: relative;
+        z-index: 1;
+      }
+      .form-label,
+      .table thead th {
+        font-weight: 700;
+      }
+      textarea {
+        min-height: 170px;
+        resize: vertical;
+      }
+      .preview-text {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .sticky-actions {
+        position: sticky;
+        bottom: 1rem;
+        z-index: 20;
+      }
+      .sample-block {
+        white-space: pre-wrap;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 16px;
+        padding: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page-shell">
+      <% if (successMessage) { %>
+        <div class="alert alert-success shadow-sm"><%= successMessage %></div>
+      <% } %>
+      <% if (errorMessage) { %>
+        <div class="alert alert-danger shadow-sm"><%= errorMessage %></div>
+      <% } %>
+
+      <section class="card hero-card mb-4">
+        <div class="card-body p-4 p-lg-5 d-flex flex-column flex-lg-row justify-content-between gap-4">
+          <div class="col-lg-7">
+            <div class="badge text-bg-light text-dark mb-3">Bulk Import Q&A</div>
+            <h1 class="display-6 fw-bold mb-3">นำเข้า Q&A หลายข้อเข้า `chatbot_suggested_questions`</h1>
+            <p class="lead mb-4">
+              วาง Q&A ตามรูปแบบเลขลำดับ แล้วระบบจะ preview ก่อนบันทึกลงฐานข้อมูล
+              โดยใช้ `source_reference` เดียวกันทั้งชุด
+            </p>
+            <div class="sample-block small">
+1. คำถาม...
+คำตอบ: ...
+2. คำถาม...
+คำตอบ: ...
+            </div>
+          </div>
+          <div class="col-lg-4 d-flex flex-column gap-2">
+            <a class="btn btn-light btn-lg fw-bold" href="/admin/suggested-questions">กลับไปหน้าคำถามแนะนำ</a>
+            <a class="btn btn-outline-light btn-lg fw-bold" href="/admin">กลับไปแดชบอร์ด</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="card panel-card mb-4">
+        <div class="card-body p-4">
+          <form action="/import/qa-bulk/preview" method="post">
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label" for="qa_text">qa_text</label>
+                <textarea class="form-control" id="qa_text" name="qa_text" placeholder="1. คำถาม...&#10;คำตอบ: ...&#10;2. คำถาม...&#10;คำตอบ: ..." required><%= form.qaText || '' %></textarea>
+                <div class="form-text">รองรับภาษาไทย และต้องเริ่มแต่ละข้อด้วยเลขลำดับ เช่น 1., 2., 3.</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="source_reference">source_reference</label>
+                <input class="form-control" id="source_reference" name="source_reference" type="text" value="<%= form.sourceReference || '' %>" placeholder="แหล่งอ้างอิงเดียวกันสำหรับทุกข้อ" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="domain">domain</label>
+                <select class="form-select" id="domain" name="domain">
+                  <% ['legal', 'general', 'mixed'].forEach((value) => { %>
+                    <option value="<%= value %>" <%= (form.domain || 'legal') === value ? 'selected' : '' %>><%= value %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="target">target</label>
+                <select class="form-select" id="target" name="target">
+                  <% ['all', 'coop', 'group', 'general'].forEach((value) => { %>
+                    <option value="<%= value %>" <%= (form.target || 'all') === value ? 'selected' : '' %>><%= value %></option>
+                  <% }) %>
+                </select>
+              </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mt-4">
+              <button class="btn btn-primary btn-lg fw-bold" type="submit">Preview Q&A</button>
+              <a class="btn btn-outline-secondary btn-lg fw-bold" href="/import/qa-bulk">ล้างฟอร์ม</a>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <% if (previewRows && previewRows.length > 0) { %>
+        <section class="card panel-card mb-4">
+          <div class="card-body p-4">
+            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2 mb-3">
+              <div>
+                <h2 class="h4 mb-1">Preview</h2>
+                <p class="text-secondary mb-0">ตรวจสอบความถูกต้องก่อนกดบันทึกลงฐานข้อมูล</p>
+              </div>
+              <span class="badge text-bg-primary fs-6 align-self-start"><%= previewRows.length %> รายการ</span>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table table-striped table-hover align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width: 90px;">ลำดับ</th>
+                    <th style="min-width: 280px;">คำถาม</th>
+                    <th style="min-width: 320px;">คำตอบ</th>
+                    <th style="min-width: 220px;">อ้างอิง</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% previewRows.forEach((row) => { %>
+                    <tr>
+                      <td><%= row.displayOrder %></td>
+                      <td class="preview-text"><%= row.questionText %></td>
+                      <td class="preview-text"><%= row.answerText %></td>
+                      <td class="preview-text"><%= row.sourceReference || '-' %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+
+            <form action="/import/qa-bulk/save" method="post" class="sticky-actions mt-4">
+              <input type="hidden" name="preview_rows_json" value="<%= previewRowsJson || JSON.stringify(previewRows) %>" />
+              <input type="hidden" name="qa_text" value="<%= form.qaText || '' %>" />
+              <input type="hidden" name="source_reference" value="<%= form.sourceReference || '' %>" />
+              <input type="hidden" name="domain" value="<%= form.domain || 'legal' %>" />
+              <input type="hidden" name="target" value="<%= form.target || 'all' %>" />
+
+              <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-success btn-lg fw-bold" type="submit">Save to DB</button>
+                <a class="btn btn-outline-secondary btn-lg fw-bold" href="/import/qa-bulk">แก้ไขข้อมูล</a>
+              </div>
+            </form>
+          </div>
+        </section>
+      <% } %>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>

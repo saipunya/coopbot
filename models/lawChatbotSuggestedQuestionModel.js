@@ -864,6 +864,85 @@ class LawChatbotSuggestedQuestionModel {
     });
   }
 
+  static async createMany(entries = []) {
+    const normalizedEntries = Array.isArray(entries)
+      ? entries
+          .map((entry) => normalizeEntry(entry))
+          .filter((entry) => entry.questionText && entry.answerText)
+      : [];
+
+    if (normalizedEntries.length === 0) {
+      return {
+        insertedRows: 0,
+      };
+    }
+
+    const pool = getDbPool();
+    const rows = normalizedEntries.map((normalized) => [
+      normalized.domain,
+      normalized.target,
+      normalized.questionText,
+      normalizeQuestionText(normalized.questionText),
+      normalized.answerText,
+      normalized.sourceReference || null,
+      normalized.sourceId,
+      normalized.draftId,
+      normalized.displayOrder,
+      normalized.isActive,
+    ]);
+
+    if (!pool) {
+      const createdAt = new Date().toISOString();
+      const createdRows = normalizedEntries.map((normalized, index) => ({
+        id: memorySuggestedQuestions.length + index + 1,
+        domain: normalized.domain,
+        target: normalized.target,
+        questionText: normalized.questionText,
+        normalizedQuestion: normalizeQuestionText(normalized.questionText),
+        answerText: normalized.answerText,
+        sourceReference: normalized.sourceReference,
+        sourceId: normalized.sourceId,
+        draftId: normalized.draftId,
+        displayOrder: normalized.displayOrder,
+        isActive: normalized.isActive === 1,
+        createdAt,
+        updatedAt: createdAt,
+      }));
+
+      memorySuggestedQuestions.push(...createdRows);
+      invalidateAnswerCache();
+
+      return {
+        insertedRows: createdRows.length,
+      };
+    }
+
+    await ensureTable();
+    const connection = await pool.getConnection();
+
+    try {
+      await connection.beginTransaction();
+      await connection.query(
+        `INSERT INTO chatbot_suggested_questions
+          (domain, target, question_text, normalized_question, answer_text, source_reference, source_id, draft_id, display_order, is_active)
+         VALUES ?`,
+        [rows],
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+
+    invalidateAnswerCache();
+
+    return {
+      insertedRows: rows.length,
+    };
+  }
+
   static async countAll(options = {}) {
     const questionSearch = String(options.questionSearch || "").trim();
     const searchTermGroups = buildAdminSearchTermGroups(questionSearch);

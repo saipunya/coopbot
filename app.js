@@ -12,6 +12,7 @@ const adminRoutes = require("./routes/admin");
 const adminImportRoutes = require("./routes/adminImport");
 const adminKnowledgeWorkflowRoutes = require("./routes/adminKnowledgeWorkflow");
 const adminSearchMissRoutes = require("./routes/adminSearchMisses");
+const importRoutes = require("./routes/importRoutes");
 const lawChatbotRoutes = require("./routes/lawChatbot");
 const userRoutes = require("./routes/user");
 const { attachCurrentUser, redirectIfAuthenticated } = require("./middlewares/authMiddleware");
@@ -148,6 +149,7 @@ app.use("/admin", adminRoutes);
 app.use("/admin", adminImportRoutes);
 app.use("/admin", adminKnowledgeWorkflowRoutes);
 app.use("/admin", adminSearchMissRoutes);
+app.use("/", importRoutes);
 app.use("/law-chatbot", lawChatbotRoutes);
 app.use("/user", userRoutes);
 
