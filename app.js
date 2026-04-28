@@ -69,6 +69,7 @@ function resolveGitCommit() {
 const runtimeGitCommit = resolveGitCommit();
 const runtimeAppVersion = String(process.env.APP_VERSION || packageJson.version || "0.0.0").trim();
 const runtimeBuildTag = String(process.env.APP_BUILD_TAG || "").trim();
+const requestBodyLimit = String(process.env.REQUEST_BODY_LIMIT || "10mb").trim() || "10mb";
 
 function buildRuntimeVersionPayload() {
   return {
@@ -91,8 +92,21 @@ app.set("trust proxy", 1);
 
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads/paymentRequests", express.static(path.join(__dirname, "uploads", "paymentRequests")));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.urlencoded({ extended: true, limit: requestBodyLimit }));
+app.use(express.json({ limit: requestBodyLimit }));
+app.use((error, req, res, next) => {
+  if (error?.type !== "entity.too.large") {
+    return next(error);
+  }
+
+  const message = `ข้อมูลที่ส่งมีขนาดใหญ่เกินกำหนด (${requestBodyLimit}) กรุณาแบ่งนำเข้าเป็นชุดเล็กลง หรือเพิ่มค่า REQUEST_BODY_LIMIT`;
+
+  if (req.path === "/import/qa-bulk/preview" || req.path === "/import/qa-bulk/save") {
+    return res.redirect(`/import/qa-bulk?error=${encodeURIComponent(message)}`);
+  }
+
+  return res.status(413).send(message);
+});
 app.use((req, res, next) => {
   res.set("X-Coopbot-Version", runtimeAppVersion);
   res.set("X-Coopbot-Commit", runtimeGitCommit);
