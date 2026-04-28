@@ -88,6 +88,48 @@ test("database-only law-section selection prioritizes group structured law when 
   assert.equal(result.selectedSources[0].source, "tbl_glaws");
 });
 
+test("database-only law-section selection defaults ambiguous shared topics to coop law", () => {
+  const result = selectDatabaseOnlySources(
+    {
+      structured_laws: [
+        {
+          source: "tbl_glaws",
+          reference: "มาตรา 20",
+          title: "การประชุมใหญ่สามัญประจำปี",
+          content: "กลุ่มเกษตรกรต้องจัดให้มีการประชุมใหญ่สามัญประจำปี",
+          score: 900,
+        },
+        {
+          source: "tbl_laws",
+          reference: "มาตรา 54",
+          title: "การประชุมใหญ่สามัญประจำปี",
+          content: "ให้คณะกรรมการดำเนินการเรียกประชุมใหญ่สามัญประจำปีของสหกรณ์",
+          score: 500,
+        },
+      ],
+      admin_knowledge: [],
+      knowledge_suggestion: [],
+      vinichai: [],
+      documents: [],
+      pdf_chunks: [],
+      knowledge_base: [],
+      internet: [],
+    },
+    "law_section",
+    {
+      databaseOnlyMode: true,
+      message: "การประชุมใหญ่สามัญประจำปี",
+      originalMessage: "การประชุมใหญ่สามัญประจำปี",
+      target: "all",
+      planCode: "free",
+    },
+  );
+
+  assert.equal(result.selectedSources.length >= 1, true);
+  assert.equal(result.selectedSources[0].source, "tbl_laws");
+  assert.match(result.selectedSources[0].content || "", /สหกรณ์/);
+});
+
 test("database-only source selection ranks coop formation evidence ahead of dissolution evidence", () => {
   const result = selectDatabaseOnlySources(
     {

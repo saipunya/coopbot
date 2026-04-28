@@ -50,6 +50,29 @@ test("keeps legal substance while stripping section-number metadata prefix", () 
   assert.match(answer, /การชำระบัญชีให้เป็นไปตามกฎหมายว่าด้วยล้มละลาย/);
 });
 
+test("exact law section answer does not truncate long paragraph text", () => {
+  const longTail = " และให้ผู้ชำระบัญชีรายงานความคืบหน้าตามขั้นตอนที่เกี่ยวข้อง".repeat(8);
+  const answer = formatDbOnlyMainChatAnswer(
+    [
+      {
+        source: "tbl_laws",
+        reference: "มาตรา 80",
+        content:
+          `มาตรา 80 ผู้ชำระบัญชีต้องทำงบการเงินของสหกรณ์ ณ วันที่เลิกสหกรณ์โดยไม่ชักช้า และให้นายทะเบียนสหกรณ์ตั้งผู้สอบบัญชีเพื่อตรวจสอบงบการเงินของสหกรณ์นั้น${longTail}`,
+      },
+    ],
+    {
+      message: "มาตรา 80",
+      questionIntent: "law_section",
+    },
+  );
+
+  assert.match(answer, /ผู้สอบบัญชีเพื่อตรวจสอบงบการเงินของสหกรณ์นั้น/);
+  assert.match(answer, /รายงานความคืบหน้าตามขั้นตอนที่เกี่ยวข้อง/);
+  assert.doesNotMatch(answer, /งบก\.\.\./);
+  assert.doesNotMatch(answer, /\.\.\./);
+});
+
 test("removes inline keyword metadata tails from legal body lines", () => {
   const answer = formatDbOnlyMainChatAnswer([
     {
@@ -147,6 +170,42 @@ test("liquidation appointment question keeps only section 75 as the answer sourc
   assert.match(result.answer, /นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี/);
   assert.doesNotMatch(result.answer, /คณะกรรมการดำเนินการมีอำนาจหน้าที่จัดการทั่วไป/);
   assert.doesNotMatch(result.answer, /มาตรา 28/);
+});
+
+test("liquidation appointment answer stays focused on appointment authority", () => {
+  const result = buildDbOnlyMainChatAnswerResult(
+    [
+      {
+        source: "tbl_laws",
+        score: 980,
+        reference: "มาตรา 75",
+        content:
+          "ในกรณีสหกรณ์เลิกด้วยเหตุอื่นนอกจากล้มละลาย ให้ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชีภายในสามสิบวันนับแต่วันที่เลิก และการตั้งผู้ชำระบัญชีต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์ ถ้าที่ประชุมใหญ่ไม่เลือกตั้งหรือเลือกตั้งแล้วไม่ได้รับความเห็นชอบ ให้นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี",
+      },
+      {
+        source: "tbl_laws",
+        score: 960,
+        reference: "มาตรา 74",
+        content: "ถ้าสหกรณ์ล้มละลาย การชำระบัญชีให้เป็นไปตามกฎหมายว่าด้วยล้มละลาย",
+      },
+      {
+        source: "tbl_laws",
+        score: 940,
+        reference: "มาตรา 81",
+        content:
+          "ผู้ชำระบัญชีมีอำนาจหน้าที่ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น เรียกประชุมใหญ่ และจำหน่ายทรัพย์สินของสหกรณ์",
+      },
+    ],
+    {
+      message: "ใครเป็นผู้มีอำนาจแต่งตั้งผู้ชำระบัญชี",
+      maxPrimarySections: 3,
+    },
+  );
+
+  assert.match(result.answer, /ผู้มีอำนาจตั้งผู้ชำระบัญชี คือที่ประชุมใหญ่/);
+  assert.match(result.answer, /นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีแทนได้/);
+  assert.doesNotMatch(result.answer, /ล้มละลาย/);
+  assert.doesNotMatch(result.answer, /จำหน่ายทรัพย์สินของสหกรณ์/);
 });
 
 test("formation query does not select dissolution sources when formation evidence exists", () => {

@@ -16,7 +16,7 @@ const {
   generateChatSummary,
   selectDbOnlyMainChatAnswerEntries,
   normalizeResponseTone,
-  applyTone,
+  buildTonePresentation,
   wantsExplanation,
   SOURCE_LABELS,
 } = require("./chatAnswerService");
@@ -202,8 +202,38 @@ function hasExplicitLawReferenceQuery(message = "") {
   return /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*[0-9๐-๙]{1,4}(?:\/[0-9๐-๙]{1,3})?/.test(normalized);
 }
 
+function isFaqFriendlyLegalTopic(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const asksLiquidatorDefinition =
+    /ผู้ชำระบัญชี/.test(normalized) &&
+    /(คือใคร|คืออะไร|ใครคือ|หมายถึง|ความหมาย|นิยาม)/.test(normalized) &&
+    !/(แต่งตั้ง|ตั้ง|เลือกตั้ง|ผู้มีอำนาจ|อำนาจ|โดยใคร)/.test(normalized);
+
+  if (asksLiquidatorDefinition) {
+    return true;
+  }
+
+  return (
+    /ข้อบังคับ/.test(normalized) &&
+    /(สหกรณ์|กลุ่มเกษตรกร)/.test(normalized) &&
+    /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน|ขั้นตอน)/.test(normalized)
+  );
+}
+
 function shouldSkipFaqForQuestion(message = "") {
-  return hasExplicitLawReferenceQuery(message) || classifyQuestionIntent(message) === "law_section";
+  if (hasExplicitLawReferenceQuery(message)) {
+    return true;
+  }
+
+  if (isFaqFriendlyLegalTopic(message)) {
+    return false;
+  }
+
+  return classifyQuestionIntent(message) === "law_section";
 }
 
 function isHighConfidenceFaqMatch(match = null, message = "") {
@@ -312,7 +342,19 @@ function safeTruncateSourceText(text = "", limit = AI_SUMMARY_SOURCE_TEXT_LIMIT)
     return normalized;
   }
 
-  return `${Array.from(normalized).slice(0, safeLimit).join("").trim()}...`;
+  const clipped = Array.from(normalized).slice(0, safeLimit).join("").trim();
+  const boundaryIndex = Math.max(
+    clipped.lastIndexOf(" "),
+    clipped.lastIndexOf("。"),
+    clipped.lastIndexOf("."),
+    clipped.lastIndexOf(";"),
+    clipped.lastIndexOf(":"),
+  );
+
+  return (boundaryIndex >= Math.floor(safeLimit * 0.7)
+    ? clipped.slice(0, boundaryIndex)
+    : clipped
+  ).trim();
 }
 
 function prepareAiSummarySources(sources = [], options = {}) {
@@ -434,16 +476,19 @@ function personalizeAnswerWithAssistantProfile(answer = "", assistantProfile = L
   return `${applyThaiPoliteParticle(mainAnswer, assistantProfile.politeParticle)}${referenceSection}`;
 }
 
-function personalizeChatResult(session, result = {}) {
+function personalizeChatResult(session, result = {}, options = {}) {
   if (!result || typeof result !== "object") {
     return result;
   }
 
   const assistantProfile = getLawChatbotAssistantProfile(session);
+  const answer = options.applyPoliteEnding === true
+    ? personalizeAnswerWithAssistantProfile(result.answer, assistantProfile)
+    : result.answer;
 
   return {
     ...result,
-    answer: personalizeAnswerWithAssistantProfile(result.answer, assistantProfile),
+    answer,
     assistantProfile: {
       id: assistantProfile.id,
       label: assistantProfile.label,
@@ -980,6 +1025,7 @@ function buildDbOnlyMainChatContinuation(message = "", nextState = null, options
   return {
     available: true,
     label,
+    target: String(nextState.target || "all").trim() || "all",
     token: signContinuationToken(nextState),
   };
 }
@@ -1432,9 +1478,19 @@ async function replyToDbOnlyMainChat(payload, session) {
 async function replyToChat(payload, session) {
   const responseTone = normalizeResponseTone(payload?.responseTone);
   const result = await replyToDbOnlyMainChat(payload, session);
+  const continueFromPrevious =
+    payload?.continueFromPrevious === true || payload?.continueFromPrevious === "true";
+  const hasMoreContinuation = result?.continuation?.available === true;
+  const tonePresentation = buildTonePresentation(result?.answer, responseTone, payload?.message, {
+    includeIntro: !continueFromPrevious,
+    includeClosing: !hasMoreContinuation,
+  });
+
   return {
     ...result,
-    answer: applyTone(result?.answer, responseTone),
+    answer: tonePresentation.answer,
+    responseIntro: tonePresentation.intro,
+    responseClosing: tonePresentation.closing,
     responseTone,
   };
 }

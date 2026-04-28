@@ -107,20 +107,74 @@ function normalizeResponseTone(value) {
   return ["formal", "semi_formal", "friendly"].includes(tone) ? tone : "semi_formal";
 }
 
-function applyTone(answer, tone) {
-  const text = String(answer || "").trim();
+function truncateDisplayQuestion(question = "", maxLength = 50) {
+  const chars = Array.from(String(question || "").replace(/\s+/g, " ").trim());
+  if (chars.length <= maxLength) {
+    return chars.join("");
+  }
+
+  return chars.slice(0, maxLength).join("");
+}
+
+function hasToneIntro(answer = "") {
+  return /^(?:ตามประเด็น|สำหรับ|เรื่อง)\s*["“][\s\S]{0,80}["”]\s*(?:ขอสรุปข้อมูล ดังนี้|ผมสรุปให้เข้าใจง่ายแบบทางการนะครับ|เดี๋ยวผมสรุปให้เข้าใจง่ายนะครับ)/u.test(
+    String(answer || "").trim(),
+  );
+}
+
+function hasToneClosing(answer = "") {
+  return /(หากมีข้อสงสัยเพิ่มเติม สามารถสอบถามได้|หากต้องการรายละเอียดเพิ่มเติม แจ้งผมได้ครับ|ถ้ายังงงตรงไหน บอกผมได้เลยนะครับ(?: 😄)?)\s*$/u.test(
+    String(answer || "").trim(),
+  );
+}
+
+function buildTonePresentation(answer, tone, originalQuestion = "", options = {}) {
+  const originalAnswer = String(answer || "");
+  const text = originalAnswer.trim();
+  const presentation = {
+    intro: "",
+    answer: originalAnswer,
+    closing: "",
+  };
+
   if (!text || Array.from(text).length < 100) {
-    return text;
+    return presentation;
   }
 
   const normalizedTone = normalizeResponseTone(tone);
-  const prefixes = {
-    formal: "ขอสรุปข้อมูลตามประเด็นที่สอบถาม ดังนี้",
-    semi_formal: "ขอสรุปแบบเข้าใจง่ายและยังคงความเป็นทางการนะครับ",
-    friendly: "สรุปให้อ่านง่าย ๆ นะครับ 👇",
+  const question = truncateDisplayQuestion(originalQuestion || "คำถามนี้");
+  const intros = {
+    formal: `ตามประเด็น "${question}" ขอสรุปข้อมูล ดังนี้`,
+    semi_formal: `สำหรับ "${question}" ผมสรุปให้เข้าใจง่ายแบบทางการนะครับ`,
+    friendly: `เรื่อง "${question}" เดี๋ยวผมสรุปให้เข้าใจง่ายนะครับ 👇`,
+  };
+  const closings = {
+    formal: "หากมีข้อสงสัยเพิ่มเติม สามารถสอบถามได้",
+    semi_formal: "หากต้องการรายละเอียดเพิ่มเติม แจ้งผมได้ครับ",
+    friendly: "ถ้ายังงงตรงไหน บอกผมได้เลยนะครับ",
   };
 
-  return `${prefixes[normalizedTone]}\n\n${text}`;
+  const shouldIncludeIntro = options.includeIntro !== false && !hasToneIntro(text);
+  const shouldIncludeClosing =
+    options.includeClosing !== false &&
+    Array.from(text).length >= 150 &&
+    !hasToneClosing(text);
+
+  if (shouldIncludeIntro) {
+    presentation.intro = intros[normalizedTone];
+  }
+  if (shouldIncludeClosing) {
+    presentation.closing = closings[normalizedTone];
+  }
+
+  return presentation;
+}
+
+function applyTone(answer, tone, originalQuestion = "", options = {}) {
+  void tone;
+  void originalQuestion;
+  void options;
+  return String(answer || "");
 }
 
 function isFreePlanDisplay(options = {}) {
@@ -882,6 +936,13 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
       selectBestLawSourceByNumbers(sources, ["81"], allowedSources);
     const completionSource = selectBestLawSourceByNumbers(sources, ["87"], allowedSources);
 
+    if (asksAppointmentAuthority && appointmentSource) {
+      summaryLines.push("ผู้มีอำนาจตั้งผู้ชำระบัญชี คือที่ประชุมใหญ่ โดยมาตรา 75 ให้ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชี และต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์");
+      summaryLines.push("หากที่ประชุมใหญ่ไม่เลือกตั้งภายในกำหนด หรือเลือกตั้งแล้วไม่ได้รับความเห็นชอบ นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีแทนได้");
+      detailLines.push("มาตรา 75 กำหนดให้ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชีภายในสามสิบวันนับแต่วันที่สหกรณ์เลิก");
+      detailLines.push("การตั้งผู้ชำระบัญชีต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์ จึงไม่ใช่อำนาจของคณะกรรมการดำเนินการโดยลำพัง");
+      pushUniqueReference(appointmentSource);
+    } else {
     if (openingSource) {
       summaryLines.push("เมื่อสหกรณ์เลิกตามเหตุที่กฎหมายกำหนด ต้องจัดการชำระบัญชีตามหมวด 4 ว่าด้วยการชำระบัญชี");
       detailLines.push("จุดเริ่มต้นของการชำระบัญชีคือการที่สหกรณ์เลิกตามเหตุที่กฎหมายกำหนดไว้ก่อน แล้วจึงเข้าสู่กระบวนการสะสางทรัพย์สินและหนี้สินตามหมวด 4");
@@ -925,6 +986,7 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
       summaryLines.push("เมื่อชำระบัญชีเสร็จ ผู้ชำระบัญชีต้องทำรายงานการชำระบัญชีและเสนอต่อนายทะเบียนสหกรณ์เพื่อให้การชำระบัญชีสิ้นสุดตามกฎหมาย");
       detailLines.push("ขั้นตอนสุดท้ายคือการสรุปรายงานการชำระบัญชีเสนอให้นายทะเบียนสหกรณ์ตรวจรับ เพื่อให้กระบวนการชำระบัญชีสิ้นสุดลงอย่างสมบูรณ์ตามกฎหมาย");
       pushUniqueReference(completionSource);
+    }
     }
   }
 
@@ -1607,7 +1669,19 @@ function truncateContextText(text, limit = 0) {
     return normalized;
   }
 
-  return `${Array.from(normalized).slice(0, safeLimit).join("").trim()}...`;
+  const clipped = Array.from(normalized).slice(0, safeLimit).join("").trim();
+  const boundaryIndex = Math.max(
+    clipped.lastIndexOf(" "),
+    clipped.lastIndexOf("。"),
+    clipped.lastIndexOf("."),
+    clipped.lastIndexOf(";"),
+    clipped.lastIndexOf(":"),
+  );
+
+  return (boundaryIndex >= Math.floor(safeLimit * 0.7)
+    ? clipped.slice(0, boundaryIndex)
+    : clipped
+  ).trim();
 }
 
 function buildSourceBodyText(source = {}) {
@@ -3345,6 +3419,23 @@ function buildDbOnlyMainChatAnswerResult(sources = [], options = {}) {
     };
   }
 
+  const message = String(options.message || options.originalMessage || "").trim();
+  const selectedSources = selectedEntries.map((entry) => entry.source).filter(Boolean);
+  if (isLiquidationAppointmentQuestion(message)) {
+    const focusedAnswer = buildLiquidationFocusedAnswer(selectedSources, {
+      ...options,
+      message,
+      originalMessage: message,
+    });
+    if (focusedAnswer) {
+      return {
+        answer: focusedAnswer,
+        selectedSources,
+        selectedEntries,
+      };
+    }
+  }
+
   const renderedBlocks = [];
   for (const entry of selectedEntries) {
     const lines = dedupeDbOnlyAnswerLines(entry.lines, 80);
@@ -3364,7 +3455,7 @@ function buildDbOnlyMainChatAnswerResult(sources = [], options = {}) {
   const referenceSection = buildDbOnlyReferenceSection(selectedEntries);
   return {
     answer: [renderedBlocks.join("\n\n"), referenceSection].filter(Boolean).join("\n\n").trim(),
-    selectedSources: selectedEntries.map((entry) => entry.source).filter(Boolean),
+    selectedSources,
     selectedEntries,
   };
 }
@@ -3796,11 +3887,10 @@ function buildStructuredLawSectionDisplayLines(source, options = {}) {
 
   const fallbackText = cleanLine(normalizeProtectedLineBreaks(rawText));
   if (fallbackText && !isNoisyLine(fallbackText)) {
-    const trimmed = fallbackText.slice(0, 360);
     if (displayLines.length > 0) {
       return displayLines;
     }
-    return ["สรุปสาระสำคัญ:", trimmed];
+    return ["สรุปสาระสำคัญ:", fallbackText];
   }
   return displayLines.length > 0 ? displayLines : [];
 }
@@ -5559,6 +5649,7 @@ module.exports = {
   formatDbOnlyMainChatAnswer,
   selectDbOnlyMainChatAnswerEntries,
   normalizeResponseTone,
+  buildTonePresentation,
   applyTone,
   wantsExplanation,
   SOURCE_LABELS,

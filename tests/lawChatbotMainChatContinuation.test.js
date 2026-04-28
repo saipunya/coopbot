@@ -82,6 +82,51 @@ test("rejects expired continuation tokens", () => {
   }
 });
 
+test("allows all-target continuation requests to resume a scoped token", () => {
+  const tokenState = createContinuationSessionState({
+    target: "coop",
+    originalMessage: "แก้ไขเพิ่มเติมข้อบังคับสหกรณ์",
+    effectiveMessage: "แก้ไขเพิ่มเติมข้อบังคับสหกรณ์",
+    sources: [
+      {
+        source: "custom",
+        id: "source-1",
+        content: "คำตอบต่อของสหกรณ์",
+      },
+    ],
+  });
+
+  const resolved = resolveContinuationState({
+    continuationToken: signContinuationToken(tokenState),
+    target: "all",
+    sessionState: null,
+  });
+
+  assert.equal(resolved.source, "token");
+  assert.equal(resolved.state.target, "coop");
+  assert.equal(resolved.state.sources[0].id, "source-1");
+});
+
+test("rejects continuation tokens for a different explicit target", () => {
+  const tokenState = createContinuationSessionState({
+    target: "coop",
+    originalMessage: "แก้ไขเพิ่มเติมข้อบังคับสหกรณ์",
+    effectiveMessage: "แก้ไขเพิ่มเติมข้อบังคับสหกรณ์",
+    sources: [
+      {
+        source: "custom",
+        id: "source-1",
+        content: "คำตอบต่อของสหกรณ์",
+      },
+    ],
+  });
+
+  assert.throws(
+    () => verifyContinuationToken(signContinuationToken(tokenState), "group"),
+    /continuation token target mismatch/,
+  );
+});
+
 test("token continuation takes precedence over session continuation state", () => {
   const tokenState = createContinuationSessionState({
     target: "all",

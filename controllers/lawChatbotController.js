@@ -68,6 +68,9 @@ async function renderIndex(req, res) {
 
   const data = await lawChatbotService.getDashboardData(req.signedInUser);
   const assistantProfile = lawChatbotService.getInitialAssistantProfile(req.session);
+  const responseTone = normalizeResponseTone(
+    req.session?.responseTone || data?.signedInSummary?.user?.responseTone || req.signedInUser?.responseTone,
+  );
 
   res.render("lawChatbot/index", {
     title: "แชตบอทกฎหมายสหกรณ์",
@@ -76,6 +79,7 @@ async function renderIndex(req, res) {
     data: {
       ...data,
       assistantProfile,
+      responseTone,
     },
   });
 }
@@ -124,6 +128,13 @@ async function chat(req, res) {
     const submittedBy = submittedByName && submittedByEmail && submittedByName !== submittedByEmail
       ? `${submittedByName} (${submittedByEmail})`
       : submittedByName || submittedByEmail || "";
+    const hasRequestTone = Object.prototype.hasOwnProperty.call(req.body || {}, "responseTone");
+    const responseTone = normalizeResponseTone(
+      hasRequestTone ? req.body?.responseTone : req.session?.responseTone || signedInUser?.responseTone,
+    );
+    if (hasRequestTone && req.session) {
+      req.session.responseTone = responseTone;
+    }
 
     // Force main chat to be DB-only with signed continuation tokens.
     const forcedPayload = {
@@ -132,7 +143,7 @@ async function chat(req, res) {
       useInternet: false,
       databaseOnlyMode: true,
       answerMode: 'db_only_main_chat',
-      responseTone: normalizeResponseTone(req.body?.responseTone || signedInUser?.responseTone),
+      responseTone,
       requestMeta: {
         submittedBy,
         submittedByUserId,

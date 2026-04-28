@@ -96,8 +96,8 @@ test("AI summary sources are limited to top 3 and safely truncated", () => {
 
   assert.equal(prepared.length, 3);
   assert.deepEqual(prepared.map((item) => item.id), [1, 2, 3]);
-  assert.match(prepared[0].content, /\.\.\.$/);
-  assert.ok(Array.from(prepared[0].content.replace(/\.\.\.$/, "")).length <= 280);
+  assert.doesNotMatch(prepared[0].content, /\.\.\.$/);
+  assert.ok(Array.from(prepared[0].content).length <= 280);
   assert.equal(sources[0].content.endsWith("..."), false);
 });
 
@@ -163,5 +163,5 @@ test("generateChatSummary records usedAI and limits AI prompt context to 3 sourc
   assert.ok(answerDiagnostics.aiSourceCount <= 3);
   assert.match(capturedContents, /แหล่งข้อมูลที่ 3/);
   assert.doesNotMatch(capturedContents, /แหล่งข้อมูลที่ 4/);
-  assert.match(capturedContents, /\.\.\./);
+  assert.doesNotMatch(capturedContents, /\.\.\./);
 });

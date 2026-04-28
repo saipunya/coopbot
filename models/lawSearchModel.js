@@ -107,7 +107,7 @@ function detectLawScope(text) {
     return "coop";
   }
 
-  return "all";
+  return "coop";
 }
 
 function scoreDissolutionTopicPriority(query, text) {

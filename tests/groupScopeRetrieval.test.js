@@ -57,3 +57,11 @@ test("searchDatabaseSources prefers group-target knowledge and suggestions when 
   assert.equal(approvedSuggestionResult.target, "group");
   assert.match(approvedSuggestionResult.reference || "", /กลุ่มเกษตรกร/);
 });
+
+test("resolveSearchTarget defaults ambiguous shared topics to coop unless group is explicit", () => {
+  const { resolveSearchTarget } = loadFresh("../services/sourceSelectionService");
+
+  assert.equal(resolveSearchTarget("การประชุมใหญ่สามัญประจำปี", "all"), "coop");
+  assert.equal(resolveSearchTarget("การประชุมใหญ่สามัญประจำปีของกลุ่มเกษตรกร", "all"), "group");
+  assert.equal(resolveSearchTarget("การประชุมใหญ่สามัญประจำปี", "group"), "group");
+});

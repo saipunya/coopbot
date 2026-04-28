@@ -1203,7 +1203,7 @@
     .bot-answer-section {
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
+      gap: 0.5rem;
       white-space: normal;
     }
 
@@ -1236,7 +1236,8 @@
       padding: 0;
       display: flex;
       flex-direction: column;
-      gap: 0.6rem;
+      align-items: flex-start;
+      gap: 0.5rem;
       white-space: normal;
     }
 
@@ -4324,9 +4325,14 @@
   padding: 0.75rem 0.9rem;
   border-radius: 0.75rem;
   border: 1px solid #e5e7eb;
-  background: #f9fbfa;
-  margin-bottom: 0.45rem;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
   line-height: 1.7;
+}
+.answer-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  transition: all 0.15s ease;
 }
 .answer-item-note {
   background: #fffdf7;
@@ -4891,7 +4897,7 @@ body {
 }
 
 .bubble-bot .bubble-message {
-  line-height: 0.3;
+  line-height: 0.5;
 }
 
 .bubble-assistant-name {
@@ -6129,6 +6135,7 @@ body {
     border-radius: 1rem;
   }
 
+
   .chat-input-wrap .input-group {
     gap: 0.4rem;
     align-items: center;
@@ -6170,6 +6177,26 @@ body {
     padding: 0.42rem 0.5rem;
     border-radius: 1rem;
   }
+  .bubble-bot .bubble-message {
+  line-height: 0;
+}
+    .chat-intro {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 0.25rem 0;
+  padding: 0.55rem 0;
+  line-height: 1.7;
+  color: #334155;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.chat-response {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
 
   .chat-input-wrap .input-group {
     gap: 0.3rem;
@@ -6224,6 +6251,11 @@ body {
   #debugBtn {
     min-height: 2.55rem;
   }
+}
+
+.ai-answer-item {
+  background: #f8fbff;
+  border-color: #bfdbfe;
 }
 
   </style>
@@ -6737,7 +6769,7 @@ body {
       const isGoogleSignedIn = <%- JSON.stringify(Boolean(isGoogleUser)) %>;
       const isSignedInUser = isAdminUser || isGoogleSignedIn;
       const signedInUserAvatarUrl = <%- JSON.stringify(headerUserImage || "") %>;
-      const configuredResponseTone = <%- JSON.stringify((data && data.signedInSummary && data.signedInSummary.user && data.signedInSummary.user.responseTone) || (signedInUser && signedInUser.responseTone) || "semi_formal") %>;
+      const configuredResponseTone = <%- JSON.stringify((data && data.responseTone) || (data && data.signedInSummary && data.signedInSummary.user && data.signedInSummary.user.responseTone) || (signedInUser && signedInUser.responseTone) || "semi_formal") %>;
       const botPackageVariant = <%- JSON.stringify(botPackageVariant) %>;
       const initialAssistantProfile = <%- JSON.stringify(data && data.assistantProfile ? data.assistantProfile : null) %>;
       const botAvatarConfigs = {
@@ -7953,37 +7985,57 @@ body {
         return text.replace(/^([^:]+:)/u, '<strong>$1</strong>');
       }
 
-      function formatBotDisplayLineHtml(text, terms) {
-        const html =
-          formatFollowUpPromptHtml(text, terms) ||
-          applyHighlightHtml(text, terms);
-        const normalizedHtml = html.replace(/\n/g, '<br>');
-        const lines = normalizedHtml
-          .split(/<br\s*\/?>/gi)
-          .map((line) => line.trim())
-          .filter(Boolean);
+      // function formatBotDisplayLineHtml(text, terms) {
+      //   const html =
+      //     formatFollowUpPromptHtml(text, terms) ||
+      //     applyHighlightHtml(text, terms);
+      //   const normalizedHtml = html.replace(/\n/g, '<br>');
+      //   const lines = normalizedHtml
+      //     .split(/<br\s*\/?>/gi)
+      //     .map((line) => line.trim())
+      //     .filter(Boolean);
 
-        if (!lines.some(isDisplayListLine)) {
-          return lines
-            .map((line) => formatAnswerLabelLineHtml(line))
-            .join('<br>');
-        }
+      //   if (!lines.some(isDisplayListLine)) {
+      //     return lines
+      //       .map((line) => formatAnswerLabelLineHtml(line))
+      //       .join('<br>');
+      //   }
 
-        return lines
-          .map((line) => {
-            if (isDisplayListLine(line)) {
-              return `<div class="answer-item">${line}</div>`;
-            }
+      //   return lines
+      //     .map((line) => {
+      //       if (isDisplayListLine(line)) {
+      //         return `<div class="answer-item">${line}</div>`;
+      //       }
 
-            return formatAnswerLabelLineHtml(line);
-          })
-          .join('');
-      }
-
-
+      //       return formatAnswerLabelLineHtml(line);
+      //     })
+      //     .join('');
+      // }
 
 
 
+
+function formatBotDisplayLineHtml(text, terms , options ={}) {
+  const html =
+    formatFollowUpPromptHtml(text, terms) ||
+    applyHighlightHtml(text, terms);
+
+  const normalizedHtml = html.replace(/\n/g, '<br>');
+
+  const lines = normalizedHtml
+    .split(/<br\s*\/?>/gi)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return lines
+    .map((line) => {
+      const formattedLine = formatAnswerLabelLineHtml(line);
+      const aiClass = options.useAi ? 'ai-answer-item' : '';
+      const highlightClass = line.includes('มาตรา') ? ' answer-item-highlight' : '';
+      return `<div class="answer-item${aiClass}${highlightClass}">${formattedLine}</div>`;
+    })
+    .join('');
+}
 
       function decorateBotFallbackHtml(html) {
         let decorated = String(html || '');
@@ -8061,6 +8113,71 @@ body {
           </div>
         `;
       }
+
+
+      
+  // function buildToneWrappedResponseHtml(answerHtml, terms, options = {}) {
+  //   let resolvedAnswerHtml = String(answerHtml || '').trim();
+  //   const introText = String(options.responseIntro || '').trim();
+  //   const closingText = String(options.responseClosing || '').trim();
+
+  //   if (!introText && !closingText) {
+  //     return resolvedAnswerHtml;
+  //   }
+
+  //   const introHtml = introText
+  //     ? `<div class="chat-intro">${escapeHtml(introText)}</div>`
+  //     : '';
+
+  //   const closingHtml = closingText
+  //     ? `<div class="chat-closing">${escapeHtml(closingText)}</div>`
+  //     : '';
+
+  //   // 🔥 จุดสำคัญ: แทรก closing ก่อน reference / actions
+  //     if (closingHtml) {
+  //       if (resolvedAnswerHtml.includes('bot-answer-actions')) {
+  //         resolvedAnswerHtml = resolvedAnswerHtml.replace(
+  //           /<div class="bot-answer-actions">/,
+  //           `${closingHtml}<div class="bot-answer-actions">`
+  //         );
+  //       } else if (resolvedAnswerHtml.includes('reference-section')) {
+  //         resolvedAnswerHtml = resolvedAnswerHtml.replace(
+  //           /<div class="reference-section">/,
+  //           `${closingHtml}<div class="reference-section">`
+  //         );
+  //       } else {
+  //         resolvedAnswerHtml += closingHtml;
+  //       }
+  //     }
+
+  //     return `
+  //       <div class="chat-response">
+  //         ${introHtml}
+  //         <div class="chat-answer">
+  //           ${resolvedAnswerHtml}
+  //         </div>
+  //       </div>
+  //     `;
+  // }
+
+function buildToneWrappedResponseHtml(answerHtml, terms, options = {}) {
+  const resolvedAnswerHtml = String(answerHtml || '').trim();
+  const introText = String(options.responseIntro || '').trim();
+
+  if (!introText) {
+    return resolvedAnswerHtml;
+  }
+
+  const introHtml = `<div class="chat-intro">${escapeHtml(introText)}</div>`;
+
+  return `
+    <div class="chat-response">
+      ${introHtml}
+      ${resolvedAnswerHtml}
+    </div>
+  `;
+}
+
 
       function resolvePreparedQaTitle(options = {}) {
         const responseMeta = options && options.responseMeta ? options.responseMeta : null;
@@ -8144,43 +8261,85 @@ body {
         return `<li><div class="${cardClass}"><div class="answer-bullet-card-content">${formatBotDisplayLineHtml(line, terms)}</div></div></li>`;
       }
 
-      function buildAnswerSectionHtml(title, icon, text, terms) {
-        const cleaned = String(text || '').trim();
-        if (!cleaned) return '';
+function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
+  const cleaned = String(text || '').trim();
+  if (!cleaned) return '';
 
-        const normalizedTitle = String(title || '').trim();
-        const normalizedProfile = normalizeAssistantProfile(currentAssistantProfile);
-        const assistantLabel = 'Coopbot';
-        const assistantAvatarConfig = getAssistantAvatarConfig(normalizedProfile);
-        const titleClass = normalizedTitle === 'สรุปสาระสำคัญ'
-          ? 'bot-answer-section-title bot-answer-section-title-assistant'
-          : 'bot-answer-section-title';
-        const titleIconClass = normalizedTitle === 'สรุปสาระสำคัญ'
-          ? (assistantAvatarConfig.iconClass || icon)
-          : icon;
-        const sectionTitle = normalizedTitle === 'สรุปสาระสำคัญ'
-          ? `${assistantLabel} ขอสรุปข้อมูล ดังนี้`
-          : normalizedTitle;
+  const normalizedTitle = String(title || '').trim();
+  const normalizedProfile = normalizeAssistantProfile(currentAssistantProfile);
+  const assistantLabel = 'Coopbot';
+  const assistantAvatarConfig = getAssistantAvatarConfig(normalizedProfile);
 
-        const bulletLines = splitSummaryIntoBullets(cleaned);
-       
+  const titleClass = normalizedTitle === 'สรุปสาระสำคัญ'
+    ? 'bot-answer-section-title bot-answer-section-title-assistant'
+    : 'bot-answer-section-title';
 
-       const items = [cleaned]
-  .map((line) => `
-    <div class="answer-plain">
-      ${formatBotDisplayLineHtml(line, terms)}
+  const titleIconClass = normalizedTitle === 'สรุปสาระสำคัญ'
+    ? (assistantAvatarConfig.iconClass || icon)
+    : icon;
+
+  const hasToneIntro =
+    options &&
+    typeof options.responseIntro === 'string' &&
+    options.responseIntro.trim().length > 0;
+
+  const sectionTitle = normalizedTitle === 'สรุปสาระสำคัญ'
+    ? (hasToneIntro ? '' : `${assistantLabel} ขอสรุปข้อมูล ดังนี้`)
+    : normalizedTitle;
+
+  const titleHtml = sectionTitle
+    ? `
+      <div class="${titleClass}">
+        <i class="bi ${titleIconClass}"></i>${escapeHtml(sectionTitle)}
+      </div>
+    `
+    : '';
+
+  const items = formatBotDisplayLineHtml(cleaned, terms, options);
+
+  return `
+    <div class="bot-answer-section">
+      ${titleHtml}
+      <div class="bot-answer-bullets">${items}</div>
     </div>
-  `)
-  .join('');
+  `;
+}
+      function isPresentationLine(line) {
+        return /^(?:ตามประเด็น\s*["“]|สำหรับ\s*["“]|เรื่อง\s*["“]|หากมีข้อสงสัยเพิ่มเติม|หากต้องการรายละเอียดเพิ่มเติม|ถ้ายังงงตรงไหน)/u.test(
+          String(line || '').trim()
+        );
+      }
 
-        return `
-        <div class="bot-answer-section">
-          <div class="${titleClass}">
-            <i class="bi ${titleIconClass}"></i>${escapeHtml(sectionTitle)}
-          </div>
-          <div class="bot-answer-bullets">${items}</div>
-        </div>
-        `;
+      function buildPlainAnswerCardsHtml(text, terms) {
+        return String(text || '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => `
+            <div class="answer-plain">
+              ${formatBotDisplayLineHtml(line, terms)}
+            </div>
+          `)
+          .join('');
+      }
+
+      function splitPresentationAndBodyText(text) {
+        const presentation = [];
+        const body = [];
+        String(text || '')
+          .split('\n')
+          .forEach((line) => {
+            if (isPresentationLine(line)) {
+              presentation.push(line);
+            } else {
+              body.push(line);
+            }
+          });
+
+        return {
+          presentationText: presentation.join('\n').trim(),
+          bodyText: body.join('\n').trim(),
+        };
       }
 
       function shouldShowAssistantBubbleHeader(role, isLoading, renderedHtml) {
@@ -8227,7 +8386,13 @@ body {
         const continuation = options && options.continuation ? options.continuation : null;
         const token = String(continuation && continuation.token ? continuation.token : '').trim();
         const question = String(options && options.question ? options.question : '').trim();
-        const target = String(options && options.target ? options.target : selectedTarget || 'all').trim();
+        const target = String(
+          continuation && continuation.target
+            ? continuation.target
+            : options && options.target
+              ? options.target
+              : selectedTarget || 'all'
+        ).trim();
         if (!continuation || continuation.available !== true || !token || !question) {
           return '';
         }
@@ -8311,22 +8476,40 @@ body {
 
         const continuationHtml = buildContinuationActionHtml(options);
         if (!hasReferenceMarker(raw)) {
-          const highlighted = formatBotDisplayLineHtml(raw, terms);
-          const fallbackHtml = decorateBotFallbackHtml(highlighted);
-          return buildBotAnswerWrapperHtml(fallbackHtml, '', terms, continuationHtml);
+          const fallbackHtml = buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', raw, terms);
+          return buildToneWrappedResponseHtml(
+            buildBotAnswerWrapperHtml(fallbackHtml, '', terms, continuationHtml),
+            terms,
+            options
+          );
         }
 
         const { mainText, referenceText } = extractReferenceParts(raw);
         const normalizedMain = String(mainText || raw).trim();
         const summaryMatch = normalizedMain.match(/สรุปสาระสำคัญ:\s*([\s\S]*?)(?:\n\s*\nรายละเอียดเพิ่มเติม:\s*|$)/i);
         const detailMatch = normalizedMain.match(/รายละเอียดเพิ่มเติม:\s*([\s\S]*)$/i);
-        const summaryHtml = [
-          buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', summaryMatch ? summaryMatch[1] : normalizedMain, terms),
-          detailMatch ? buildAnswerSectionHtml('รายละเอียดเพิ่มเติม', 'bi-info-circle', detailMatch[1], terms) : ''
-        ].filter(Boolean).join('');
+        const introText = summaryMatch && typeof summaryMatch.index === 'number'
+          ? normalizedMain.slice(0, summaryMatch.index).trim()
+          : '';
+        const presentationHtml = buildPlainAnswerCardsHtml(introText, terms);
+        const cleanedIntroText = splitPresentationAndBodyText(introText).bodyText;
+        const summaryText = summaryMatch
+          ? [cleanedIntroText, summaryMatch[1]].filter(Boolean).join('\n')
+          : normalizedMain;
+       const summaryHtml = [
+  presentationHtml,
+  buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', summaryText, terms, options),
+  detailMatch
+    ? buildAnswerSectionHtml('รายละเอียดเพิ่มเติม', 'bi-info-circle', detailMatch[1], terms, options)
+    : ''
+].filter(Boolean).join('');
         const resolvedSummaryHtml = summaryHtml || decorateBotFallbackHtml(formatBotDisplayLineHtml(normalizedMain, terms));
 
-        return buildBotAnswerWrapperHtml(resolvedSummaryHtml, referenceText, terms, continuationHtml);
+        return buildToneWrappedResponseHtml(
+          buildBotAnswerWrapperHtml(resolvedSummaryHtml, referenceText, terms, continuationHtml),
+          terms,
+          options
+        );
       }
 
       function syncReferenceToggleState(button, expanded) {
@@ -9124,6 +9307,8 @@ body {
               signInPath: data && typeof data.signInPath === 'string' ? data.signInPath : '',
               freeAiPreview: data && data.freeAiPreview ? data.freeAiPreview : null,
               continuation: data && data.continuation ? data.continuation : null,
+              responseIntro: data && typeof data.responseIntro === 'string' ? data.responseIntro : '',
+              responseClosing: data && typeof data.responseClosing === 'string' ? data.responseClosing : '',
               responseMeta: data && data.responseMeta ? data.responseMeta : null,
               assistantProfile: data && data.assistantProfile ? data.assistantProfile : currentAssistantProfile
             });

@@ -1236,7 +1236,9 @@ function resolveSearchTarget(message = "", target = "all") {
     return "coop";
   }
 
-  return "all";
+  // Default ambiguous cooperative-law topics to สหกรณ์. The group law path
+  // should be selected only when the user or explicit target says กลุ่มเกษตรกร.
+  return "coop";
 }
 
 function buildStructuredLawQuota(primaryLawSource, secondaryLawSource, primaryCount, secondaryCount = 0) {

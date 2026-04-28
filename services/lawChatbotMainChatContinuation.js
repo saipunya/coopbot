@@ -134,7 +134,12 @@ function verifyContinuationToken(token, expectedTarget = "") {
   }
 
   const normalizedExpectedTarget = String(expectedTarget || "").trim();
-  if (normalizedExpectedTarget && String(payload.target || "").trim() !== normalizedExpectedTarget) {
+  const tokenTarget = String(payload.target || "").trim();
+  if (
+    normalizedExpectedTarget &&
+    normalizedExpectedTarget !== "all" &&
+    tokenTarget !== normalizedExpectedTarget
+  ) {
     throw new Error("continuation token target mismatch");
   }
 

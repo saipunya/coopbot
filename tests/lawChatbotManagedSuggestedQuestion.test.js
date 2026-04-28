@@ -97,5 +97,11 @@ test("FAQ short-circuit is skipped for specific law questions", () => {
 
   assert.equal(__private.shouldSkipFaqForQuestion("มาตรา 75 ว่าอย่างไร"), true);
   assert.equal(__private.shouldSkipFaqForQuestion("ใครเป็นผู้มีอำนาจแต่งตั้งผู้ชำระบัญชี"), true);
+  assert.equal(__private.shouldSkipFaqForQuestion("ผู้ชำระบัญชีคือใคร"), false);
+  assert.equal(__private.shouldSkipFaqForQuestion("ผู้ชำระบัญชีคืออะไร"), false);
+  assert.equal(__private.shouldSkipFaqForQuestion("แก้ไขเพิ่มเติมข้อบังคับสหกรณ์"), false);
+  assert.equal(__private.shouldSkipFaqForQuestion("ขั้นตอนการแก้ไขเพิ่มเติมข้อบังคับสหกรณ์"), false);
+  assert.equal(__private.shouldSkipFaqForQuestion("การแก้ไขเพิ่มเติมข้อบังคับกลุ่มเกษตรกร"), false);
+  assert.equal(__private.shouldSkipFaqForQuestion("ขั้นตอนการจดทะเบียนแก้ไขข้อบังคับกลุ่มเกษตรกร"), false);
   assert.equal(__private.shouldSkipFaqForQuestion("สหกรณ์คืออะไร"), false);
 });
