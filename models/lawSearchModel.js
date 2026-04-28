@@ -189,9 +189,27 @@ function isCoopDissolutionTopicQuery(message = "") {
   );
 }
 
+function isCoopBylawAmendmentQuery(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    /ข้อบังคับ/.test(normalized) &&
+    /สหกรณ์/.test(normalized) &&
+    /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน)/.test(normalized) &&
+    !/กลุ่มเกษตรกร/.test(normalized)
+  );
+}
+
 function getTopicExpansionLawNumbers(message = "", sourceName = "") {
   if (String(sourceName || "").trim().toLowerCase() === "tbl_laws" && isCoopDissolutionTopicQuery(message)) {
     return ["70"];
+  }
+
+  if (String(sourceName || "").trim().toLowerCase() === "tbl_laws" && isCoopBylawAmendmentQuery(message)) {
+    return ["44"];
   }
 
   return [];

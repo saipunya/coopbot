@@ -3,6 +3,37 @@
 
 module.exports = [
   {
+    id: "coop_bylaw_amendment",
+    matchAny: [
+      "แก้ไขเพิ่มเติมข้อบังคับสหกรณ์",
+      "การแก้ไขเพิ่มเติมข้อบังคับสหกรณ์",
+      "แก้ไขข้อบังคับสหกรณ์",
+      "การแก้ไขข้อบังคับสหกรณ์",
+    ],
+    preferredSources: ["tbl_laws", "admin_knowledge", "knowledge_suggestion"],
+    boostTerms: [
+      "แก้ไขเพิ่มเติมข้อบังคับ",
+      "ข้อบังคับสหกรณ์",
+      "ที่ประชุมใหญ่",
+      "มติ",
+      "สองในสาม",
+      "นายทะเบียนสหกรณ์",
+      "จดทะเบียน",
+      "สามสิบวัน",
+      "มาตรา 44",
+    ],
+    penaltyTerms: [
+      "คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ",
+      "คพช",
+      "นโยบายและแผนพัฒนาการสหกรณ์",
+    ],
+    weights: {
+      boostPerHit: 12,
+      penaltyPerHit: 24,
+    },
+    answerStyle: "steps",
+  },
+  {
     id: "coop_dissolution",
     matchAny: [
       "การเลิกสหกรณ์",

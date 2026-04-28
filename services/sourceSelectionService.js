@@ -349,6 +349,59 @@ function getGroupBylawStructuredLawFocusBoost(message = "", item = {}) {
   return boost;
 }
 
+function isCoopBylawAmendmentQuestion(message = "") {
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  return (
+    Boolean(normalizedMessage) &&
+    /ข้อบังคับ/.test(normalizedMessage) &&
+    /สหกรณ์/.test(normalizedMessage) &&
+    /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน)/.test(normalizedMessage) &&
+    !/กลุ่มเกษตรกร/.test(normalizedMessage)
+  );
+}
+
+function getCoopBylawAmendmentFocusBoost(message = "", item = {}) {
+  const sourceName = String(item.source || "").trim().toLowerCase();
+  if (sourceName !== "tbl_laws" && sourceName !== "admin_knowledge" && sourceName !== "knowledge_suggestion") {
+    return 0;
+  }
+
+  if (!isCoopBylawAmendmentQuestion(message)) {
+    return 0;
+  }
+
+  const sourceText = buildSourceFocusSearchText(item);
+  if (!sourceText) {
+    return 0;
+  }
+
+  let boost = 0;
+  if (/ข้อบังคับ/.test(sourceText) && /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง)/.test(sourceText)) {
+    boost += 52;
+  }
+
+  if (/(มาตรา 44|มาตรา44)/.test(sourceText)) {
+    boost += 44;
+  }
+
+  if (/(ที่ประชุมใหญ่|มติ|สองในสาม|2\/3|นายทะเบียนสหกรณ์|จดทะเบียน|สามสิบวัน|30\s*วัน)/.test(sourceText)) {
+    boost += 28;
+  }
+
+  if (
+    /(คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ|คพช|นโยบายและแผนพัฒนาการสหกรณ์)/.test(sourceText) &&
+    !/(แก้ไข|เพิ่มเติม|ข้อบังคับ|มาตรา 44|มาตรา44)/.test(sourceText)
+  ) {
+    boost -= 100;
+  }
+
+  if (sourceName === "tbl_laws") {
+    boost += 12;
+  }
+
+  return boost;
+}
+
 function getGroupFormationStructuredLawFocusBoost(message = "", item = {}) {
   const sourceName = String(item.source || "").trim().toLowerCase();
   if (sourceName !== "tbl_glaws") {
@@ -474,6 +527,7 @@ function getSourceAwareFocusScore(message = "", item = {}) {
   let score =
     baseFocusScore +
     getGroupBylawStructuredLawFocusBoost(message, item) +
+    getCoopBylawAmendmentFocusBoost(message, item) +
     getGroupFormationStructuredLawFocusBoost(message, item);
 
   // Family guard: prevent unrelated timeline topics (e.g., meeting 150 days) from leaking into dissolution answers.
@@ -2241,6 +2295,26 @@ function rankSourcesForMessageFocus(items, message = "") {
       .map((item) => ({
         ...item,
         __messageFocusRank: scoreCoopFormationSourceFocus(item),
+      }))
+      .sort((left, right) => {
+        const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+        if (focusDiff !== 0) {
+          return focusDiff;
+        }
+        return Number(right.score || 0) - Number(left.score || 0);
+      })
+      .map((item) => {
+        const normalized = { ...item };
+        delete normalized.__messageFocusRank;
+        return normalized;
+      });
+  }
+
+  if (isCoopBylawAmendmentQuestion(message)) {
+    return ranked
+      .map((item) => ({
+        ...item,
+        __messageFocusRank: getCoopBylawAmendmentFocusBoost(message, item),
       }))
       .sort((left, right) => {
         const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);

@@ -130,3 +130,46 @@ test("database-only source selection ranks coop formation evidence ahead of diss
   assert.equal(result.selectedSources.length >= 1, true);
   assert.equal(result.selectedSources[0].reference, "มาตรา 33");
 });
+
+test("database-only law-section selection prioritizes coop bylaw amendment over national committee source", () => {
+  const result = selectDatabaseOnlySources(
+    {
+      structured_laws: [
+        {
+          source: "tbl_laws",
+          reference: "มาตรา 10",
+          title: "คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ",
+          content:
+            "ให้มีคณะกรรมการพัฒนาการสหกรณ์แห่งชาติ มีหน้าที่กำหนดนโยบายและแผนพัฒนาการสหกรณ์",
+          score: 900,
+        },
+        {
+          source: "tbl_laws",
+          reference: "มาตรา 44",
+          title: "การแก้ไขเพิ่มเติมข้อบังคับ",
+          content:
+            "การแก้ไขเพิ่มเติมข้อบังคับจะกระทำได้ก็แต่โดยมติของที่ประชุมใหญ่ และต้องนำข้อบังคับที่ได้แก้ไขเพิ่มเติมไปจดทะเบียนต่อนายทะเบียนสหกรณ์ภายในสามสิบวัน",
+          score: 500,
+        },
+      ],
+      admin_knowledge: [],
+      knowledge_suggestion: [],
+      vinichai: [],
+      documents: [],
+      pdf_chunks: [],
+      knowledge_base: [],
+      internet: [],
+    },
+    "law_section",
+    {
+      databaseOnlyMode: true,
+      message: "การแก้ไขเพิ่มเติมข้อบังคับสหกรณ์",
+      originalMessage: "การแก้ไขเพิ่มเติมข้อบังคับสหกรณ์",
+      target: "coop",
+      planCode: "free",
+    },
+  );
+
+  assert.equal(result.selectedSources.length >= 1, true);
+  assert.equal(result.selectedSources[0].reference, "มาตรา 44");
+});
