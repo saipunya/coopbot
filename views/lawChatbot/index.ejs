@@ -4615,6 +4615,56 @@ body {
   display: none;
 }
 
+.page-identity {
+  position: relative;
+  cursor: pointer;
+}
+
+.page-identity.is-open .page-identity-actions {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  z-index: 1200;
+  min-width: 11rem;
+  padding: 0.5rem;
+  border: 1px solid rgba(205, 219, 239, 0.92);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 36px rgba(24, 62, 111, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.page-identity.is-open .page-identity-actions::before {
+  content: "";
+  position: absolute;
+  top: -0.42rem;
+  right: 1.06rem;
+  width: 0.78rem;
+  height: 0.78rem;
+  background: rgba(255, 255, 255, 0.98);
+  border-left: 1px solid rgba(205, 219, 239, 0.92);
+  border-top: 1px solid rgba(205, 219, 239, 0.92);
+  transform: rotate(45deg);
+}
+
+.page-identity.is-open .page-identity-action {
+  width: 100%;
+  min-height: 2.28rem;
+  justify-content: flex-start;
+  border-radius: 0.7rem;
+  border-color: rgba(58, 113, 181, 0.16);
+  background: #f7fbff !important;
+  color: #1c4f8e !important;
+  font-size: 0.78rem;
+}
+
+.page-identity.is-open .page-identity-action.primary {
+  background: linear-gradient(145deg, #457ec3, #336caf) !important;
+  color: #fff !important;
+}
+
 .cooplaw-welcome,
 .cooplaw-popular,
 .chat-shell {
@@ -6355,7 +6405,7 @@ body {
         </div>
       </div>
       <div class="page-toolbar">
-        <div class="page-identity page-identity-<%= headerUserVariant %>" tabindex="0" aria-label="เมนูผู้ใช้">
+        <div id="pageIdentityMenu" class="page-identity page-identity-<%= headerUserVariant %>" tabindex="0" role="button" aria-label="เมนูผู้ใช้" aria-expanded="false">
           <div class="page-identity-avatar" aria-hidden="true">
             <% if (headerUserImage) { %>
               <img src="<%= headerUserImage %>" alt="โปรไฟล์ผู้ใช้" />
@@ -6687,6 +6737,7 @@ body {
       const isGoogleSignedIn = <%- JSON.stringify(Boolean(isGoogleUser)) %>;
       const isSignedInUser = isAdminUser || isGoogleSignedIn;
       const signedInUserAvatarUrl = <%- JSON.stringify(headerUserImage || "") %>;
+      const configuredResponseTone = <%- JSON.stringify((data && data.signedInSummary && data.signedInSummary.user && data.signedInSummary.user.responseTone) || (signedInUser && signedInUser.responseTone) || "semi_formal") %>;
       const botPackageVariant = <%- JSON.stringify(botPackageVariant) %>;
       const initialAssistantProfile = <%- JSON.stringify(data && data.assistantProfile ? data.assistantProfile : null) %>;
       const botAvatarConfigs = {
@@ -6738,6 +6789,7 @@ body {
       const chatMessages = document.getElementById('chatMessages');
       const chatForm = document.getElementById('chatForm');
       const chatInput = document.getElementById('chatInput');
+      const pageIdentityMenu = document.getElementById('pageIdentityMenu');
       const composerSuggestions = document.getElementById('composerSuggestions');
       const composerSuggestionsLabelText = document.getElementById('composerSuggestionsLabelText');
       const composerSuggestionsNav = document.getElementById('composerSuggestionsNav');
@@ -6780,6 +6832,16 @@ body {
       const knowledgeSuggestionSourceReferenceInput = document.getElementById('knowledgeSuggestionSourceReference');
       const knowledgeSuggestionSubmitBtn = document.getElementById('knowledgeSuggestionSubmitBtn');
       const knowledgeSuggestionVoiceBtn = document.getElementById('knowledgeSuggestionVoiceBtn');
+
+      function setPageIdentityMenuOpen(open) {
+        if (!pageIdentityMenu) {
+          return;
+        }
+
+        const shouldOpen = Boolean(open);
+        pageIdentityMenu.classList.toggle('is-open', shouldOpen);
+        pageIdentityMenu.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      }
 
       function setMobileMenuOpen(open) {
         if (!lawbotApp) {
@@ -7832,14 +7894,8 @@ body {
       }
 
       function applyHighlightHtml(text, terms) {
-        let html = escapeHtml(text);
-        if (!Array.isArray(terms) || !terms.length) return html;
-        terms.forEach((term) => {
-          if (!term) return;
-          const re = new RegExp(`(${escapeRegExp(escapeHtml(term))})`, 'gi');
-          html = html.replace(re, '<mark class="hl-hit">$1</mark>');
-        });
-        return html;
+        void terms;
+        return escapeHtml(text);
       }
 
       function formatFollowUpPromptHtml(text, terms) {
@@ -9023,6 +9079,7 @@ body {
               debug: Boolean(options.debug),
               continueFromPrevious: Boolean(options.continueFromPrevious),
               continuationToken: typeof options.continuationToken === 'string' ? options.continuationToken : '',
+              responseTone: configuredResponseTone || 'semi_formal',
               guestDeviceHint: isSignedInUser ? '' : buildGuestDeviceHint()
             }),
             signal: controller.signal
@@ -9560,6 +9617,32 @@ body {
         hideComposerSuggestions();
       });
 
+      if (pageIdentityMenu) {
+        pageIdentityMenu.addEventListener('click', (event) => {
+          if (event.target.closest('.page-identity-action')) {
+            setPageIdentityMenuOpen(false);
+            return;
+          }
+
+          setPageIdentityMenuOpen(!pageIdentityMenu.classList.contains('is-open'));
+        });
+
+        pageIdentityMenu.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setPageIdentityMenuOpen(!pageIdentityMenu.classList.contains('is-open'));
+          }
+        });
+
+        document.addEventListener('click', (event) => {
+          if (pageIdentityMenu.contains(event.target)) {
+            return;
+          }
+
+          setPageIdentityMenuOpen(false);
+        });
+      }
+
       mobileMenuButtons.forEach((button) => button.addEventListener('click', () => {
         const isOpen = lawbotApp && lawbotApp.classList.contains('mobile-menu-open');
         setMobileMenuOpen(!isOpen);
@@ -9572,6 +9655,7 @@ body {
       document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
           setMobileMenuOpen(false);
+          setPageIdentityMenuOpen(false);
         }
       });
 

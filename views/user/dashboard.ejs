@@ -137,6 +137,37 @@
     margin-top: 0.2rem;
   }
 
+  .settings-card {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid rgba(28, 72, 117, 0.12);
+    border-radius: 0.9rem;
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  .settings-card h3 {
+    margin: 0;
+    color: var(--accent-strong);
+    font-size: 1rem;
+  }
+
+  .settings-card p {
+    margin: 0;
+    color: var(--text-muted);
+  }
+
+  .settings-card select {
+    width: 100%;
+    min-height: 2.5rem;
+    border: 1px solid #cbd8e6;
+    border-radius: 0.65rem;
+    padding: 0.45rem 0.7rem;
+    background: #fff;
+    color: var(--text-main);
+    font: inherit;
+  }
+
   .chip-row {
     display: flex;
     gap: 0.55rem;
@@ -432,6 +463,9 @@
     pro: "ทำงานต่อเนื่อง",
     premium: "วิเคราะห์เชิงลึก",
   };
+  const responseTone = ["formal", "semi_formal", "friendly"].includes(String(profile.responseTone || "").toLowerCase())
+    ? String(profile.responseTone || "").toLowerCase()
+    : "semi_formal";
 %>
 
 <% if (errorMessage) { %>
@@ -511,6 +545,18 @@
       <h2 style="margin: 0 0 0.35rem; color: var(--accent-strong);">ทางลัดสำหรับผู้ใช้</h2>
       <p style="margin: 0;">เข้าสู่หน้าใช้งานหลัก ดูสถานะแพ็กเกจ และส่งคำขออัปเกรดได้จากที่นี่</p>
     </div>
+    <form class="settings-card" action="/user/settings" method="post">
+      <div>
+        <h3>รูปแบบน้ำเสียงคำตอบ</h3>
+        <p>ใช้กับคำตอบในหน้าแชตบอท</p>
+      </div>
+      <select id="responseTone" name="responseTone">
+        <option value="semi_formal" <%= responseTone === "semi_formal" ? "selected" : "" %>>กึ่งทางการ</option>
+        <option value="formal" <%= responseTone === "formal" ? "selected" : "" %>>ทางการ</option>
+        <option value="friendly" <%= responseTone === "friendly" ? "selected" : "" %>>เป็นกันเอง</option>
+      </select>
+      <button type="submit" class="button action-link">บันทึกการตั้งค่า</button>
+    </form>
     <div class="action-stack">
       <a class="button action-link" href="/law-chatbot">ไปหน้าแชตบอท</a>
       <a class="button action-link ghost-button" href="/user/search-history">ดูประวัติการค้นหา</a>

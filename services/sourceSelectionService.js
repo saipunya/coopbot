@@ -408,6 +408,67 @@ function getGroupFormationStructuredLawFocusBoost(message = "", item = {}) {
   return boost;
 }
 
+function isCoopFormationPrioritySearch(message = "") {
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalizedMessage) {
+    return false;
+  }
+
+  const family = detectTopicFamily(normalizedMessage);
+  if (family && String(family.id || "").trim().toLowerCase() === "coop_formation") {
+    return true;
+  }
+
+  return /จัดตั้งสหกรณ์|จดทะเบียนจัดตั้งสหกรณ์|ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|ประชุมจัดตั้ง/.test(
+    normalizedMessage,
+  );
+}
+
+function scoreCoopFormationSourceFocus(item = {}) {
+  const sourceText = buildSourceFocusSearchText(item);
+  if (!sourceText) {
+    return 0;
+  }
+
+  let score = 0;
+  const strongHits = [
+    /ผู้เริ่มก่อการ/,
+    /สมาชิกผู้ก่อการ/,
+    /ผู้ซึ่งประสงค์จะเป็นสมาชิก/,
+    /เข้าชื่อกัน/,
+    /ตั้งขึ้นได้โดยการจดทะเบียน/,
+    /จดทะเบียนจัดตั้ง/,
+    /คำขอจดทะเบียน/,
+    /ประชุมจัดตั้ง/,
+    /มาตรา\s*(?:33|34|35)\b/,
+  ].filter((pattern) => pattern.test(sourceText)).length;
+  const supportingHits = [
+    /จัดตั้งสหกรณ์/,
+    /ผู้จัดตั้งสหกรณ์/,
+    /ข้อบังคับ/,
+    /ขอจดทะเบียน/,
+    /ยื่นจดทะเบียน/,
+    /รับจดทะเบียน/,
+  ].filter((pattern) => pattern.test(sourceText)).length;
+  const dissolutionHits = [
+    /เลิกสหกรณ์/,
+    /สหกรณ์ย่อมเลิก/,
+    /สหกรณ์ต้องเลิก/,
+    /สั่งเลิกสหกรณ์/,
+    /ลงมติให้เลิก/,
+    /ล้มละลาย/,
+    /ชำระบัญชี/,
+    /ผู้ชำระบัญชี/,
+    /ถอนชื่อออกจากทะเบียน/,
+  ].filter((pattern) => pattern.test(sourceText)).length;
+
+  score += Math.min(48, strongHits * 12);
+  score += Math.min(18, supportingHits * 6);
+  score -= Math.min(60, dissolutionHits * (strongHits > 0 ? 8 : 20));
+
+  return score;
+}
+
 function getSourceAwareFocusScore(message = "", item = {}) {
   const baseFocusScore = Number(scoreQueryFocusAlignment(message, buildSourceFocusSearchText(item)) || 0);
   let score =
@@ -429,6 +490,10 @@ function getSourceAwareFocusScore(message = "", item = {}) {
     if (looksLikeMeetingTimeline && !hasDissolutionSignal) {
       score -= 80;
     }
+  }
+
+  if (isCoopFormationPrioritySearch(message)) {
+    score += scoreCoopFormationSourceFocus(item);
   }
 
   return score;
@@ -2157,6 +2222,26 @@ function rankSourcesForMessageFocus(items, message = "") {
           __messageFocusRank: scoreLiquidationSourceFocus(item, message) + bonus,
         };
       })
+      .sort((left, right) => {
+        const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+        if (focusDiff !== 0) {
+          return focusDiff;
+        }
+        return Number(right.score || 0) - Number(left.score || 0);
+      })
+      .map((item) => {
+        const normalized = { ...item };
+        delete normalized.__messageFocusRank;
+        return normalized;
+      });
+  }
+
+  if (isCoopFormationPrioritySearch(message)) {
+    return ranked
+      .map((item) => ({
+        ...item,
+        __messageFocusRank: scoreCoopFormationSourceFocus(item),
+      }))
       .sort((left, right) => {
         const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
         if (focusDiff !== 0) {

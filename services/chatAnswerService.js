@@ -102,6 +102,27 @@ function normalizePlanCode(planCode) {
   return String(planCode || "").trim().toLowerCase();
 }
 
+function normalizeResponseTone(value) {
+  const tone = String(value || "").trim().toLowerCase();
+  return ["formal", "semi_formal", "friendly"].includes(tone) ? tone : "semi_formal";
+}
+
+function applyTone(answer, tone) {
+  const text = String(answer || "").trim();
+  if (!text || Array.from(text).length < 100) {
+    return text;
+  }
+
+  const normalizedTone = normalizeResponseTone(tone);
+  const prefixes = {
+    formal: "ขอสรุปข้อมูลตามประเด็นที่สอบถาม ดังนี้",
+    semi_formal: "ขอสรุปแบบเข้าใจง่ายและยังคงความเป็นทางการนะครับ",
+    friendly: "สรุปให้อ่านง่าย ๆ นะครับ 👇",
+  };
+
+  return `${prefixes[normalizedTone]}\n\n${text}`;
+}
+
 function isFreePlanDisplay(options = {}) {
   return normalizePlanCode(options.planCode || "free") === "free";
 }
@@ -1158,6 +1179,28 @@ function isCoopFormationQuestion(message) {
   }
 
   return /(?:การ)?จัดตั้ง(?:สหกรณ์)?|จดทะเบียนจัดตั้ง|ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|ประชุมจัดตั้ง/.test(text);
+}
+
+function sourceMatchesCoopFormationAnswerFocus(source = {}) {
+  const sourceText = normalizeForSearch(buildSourceSearchText(source)).toLowerCase();
+  if (!sourceText) {
+    return false;
+  }
+
+  const hasStrongFormationSignal =
+    /ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|ผู้ซึ่งประสงค์จะเป็นสมาชิก|เข้าชื่อกัน|ตั้งขึ้นได้โดยการจดทะเบียน|จดทะเบียนจัดตั้ง|คำขอจดทะเบียน|ประชุมจัดตั้ง|มาตรา\s*(?:33|34|35)\b/.test(sourceText);
+  const hasSupportingFormationSignal =
+    /จัดตั้งสหกรณ์|ผู้จัดตั้งสหกรณ์|ข้อบังคับ|ขอจดทะเบียน|ยื่นจดทะเบียน|รับจดทะเบียน|จดทะเบียน/.test(sourceText);
+
+  if (!hasStrongFormationSignal && !hasSupportingFormationSignal) {
+    return false;
+  }
+
+  const hasDissolutionSignal =
+    /เลิกสหกรณ์|สหกรณ์ย่อมเลิก|สหกรณ์ต้องเลิก|สั่งเลิกสหกรณ์|ลงมติให้เลิก|ล้มละลาย|ชำระบัญชี|ผู้ชำระบัญชี|ถอนชื่อออกจากทะเบียน/.test(
+      sourceText,
+    );
+  return hasStrongFormationSignal || !hasDissolutionSignal;
 }
 
 function buildCoopFormationFocusedAnswer(sources, options = {}) {
@@ -3251,7 +3294,15 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
     }
   }
 
-  dedupedEntries.sort((left, right) => {
+  let answerEntries = dedupedEntries;
+  if (isCoopFormationQuestion(message)) {
+    const formationEntries = dedupedEntries.filter((entry) => sourceMatchesCoopFormationAnswerFocus(entry.source));
+    if (formationEntries.length > 0) {
+      answerEntries = formationEntries;
+    }
+  }
+
+  answerEntries.sort((left, right) => {
     if (questionIntent === "law_section" && queryLawNumber) {
       const exactDiff = sortLawSectionSources(left.source, right.source, queryLawNumber);
       if (exactDiff !== 0) {
@@ -3266,16 +3317,16 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
     return Number(right.score || 0) - Number(left.score || 0);
   });
 
-  let selectedEntries = dedupedEntries.slice(0, effectiveMaxPrimarySections);
+  let selectedEntries = answerEntries.slice(0, effectiveMaxPrimarySections);
   if (isDbOnlyDissolutionWhenQuestion(message) || isDbOnlyDissolutionTopicQuestion(message)) {
-    const section70Entries = dedupedEntries
+    const section70Entries = answerEntries
       .filter((entry) => isStructuredLawSource(entry.source) && entry.lawNumber === "70")
       .sort((left, right) => sortLawSectionSources(left.source, right.source, "70"));
     if (section70Entries.length > 0) {
       selectedEntries = section70Entries.slice(0, Math.max(effectiveMaxPrimarySections, 6));
     }
   } else if (isLiquidationAppointmentQuestion(message)) {
-    const section75 = dedupedEntries.find((entry) => entry.lawNumber === "75");
+    const section75 = answerEntries.find((entry) => entry.lawNumber === "75");
     if (section75) {
       selectedEntries = [section75];
     }
@@ -5507,6 +5558,8 @@ module.exports = {
   buildDbOnlyMainChatAnswerResult,
   formatDbOnlyMainChatAnswer,
   selectDbOnlyMainChatAnswerEntries,
+  normalizeResponseTone,
+  applyTone,
   wantsExplanation,
   SOURCE_LABELS,
 };

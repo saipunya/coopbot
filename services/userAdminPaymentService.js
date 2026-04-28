@@ -21,6 +21,7 @@ const {
   normalizePlanCode,
   resolveUserPlanContext,
 } = require("./planService");
+const { normalizeResponseTone } = require("./chatAnswerService");
 const { getContributionRewardSummary } = require("./contributionRewardService");
 const { sendPaymentRequestNotification } = require("./telegramService");
 
@@ -190,6 +191,7 @@ function buildSignedInProfile(signedInUser = {}, persistedUser = null) {
     planExpiresAt: persistedUser.plan_expires_at || signedInUser.planExpiresAt || null,
     status: persistedUser.status || signedInUser.status || "active",
     premiumExpiresAt: persistedUser.premium_expires_at || signedInUser.premiumExpiresAt || null,
+    responseTone: normalizeResponseTone(persistedUser.response_tone || signedInUser.responseTone),
     lawChatbotNoticeAcceptedVersion:
       persistedUser.law_chatbot_notice_accepted_version ||
       signedInUser.lawChatbotNoticeAcceptedVersion ||

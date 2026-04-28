@@ -149,6 +149,36 @@ test("liquidation appointment question keeps only section 75 as the answer sourc
   assert.doesNotMatch(result.answer, /มาตรา 28/);
 });
 
+test("formation query does not select dissolution sources when formation evidence exists", () => {
+  const result = buildDbOnlyMainChatAnswerResult(
+    [
+      {
+        source: "tbl_laws",
+        score: 1200,
+        reference: "มาตรา 70",
+        content:
+          "สหกรณ์ย่อมเลิก เมื่อมีเหตุดังต่อไปนี้ (1) มีเหตุตามที่กำหนดในข้อบังคับ (2) สมาชิกเหลือน้อยกว่าสิบคน (3) ที่ประชุมใหญ่ลงมติให้เลิก (4) ล้มละลาย (5) นายทะเบียนสหกรณ์สั่งให้เลิก",
+      },
+      {
+        source: "tbl_laws",
+        score: 900,
+        reference: "มาตรา 33",
+        content:
+          "สหกรณ์จะตั้งขึ้นได้โดยการจดทะเบียนตามพระราชบัญญัตินี้ และต้องมีผู้ซึ่งประสงค์จะเป็นสมาชิกของสหกรณ์นั้นเข้าชื่อกันไม่น้อยกว่าสิบคน",
+      },
+    ],
+    {
+      message: "การจัดตั้งสหกรณ์",
+      maxPrimarySections: 1,
+    },
+  );
+
+  assert.equal(result.selectedSources.length, 1);
+  assert.equal(result.selectedSources[0].reference, "มาตรา 33");
+  assert.match(result.answer, /จดทะเบียนตามพระราชบัญญัตินี้/);
+  assert.doesNotMatch(result.answer, /สหกรณ์ย่อมเลิก/);
+});
+
 test("exact section query prefers matching structured law over nearby section suggestions", () => {
   const result = buildDbOnlyMainChatAnswerResult(
     [

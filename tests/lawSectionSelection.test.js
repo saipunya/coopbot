@@ -87,3 +87,46 @@ test("database-only law-section selection prioritizes group structured law when 
   assert.equal(result.selectedSources[0].reference, "ข้อ 6");
   assert.equal(result.selectedSources[0].source, "tbl_glaws");
 });
+
+test("database-only source selection ranks coop formation evidence ahead of dissolution evidence", () => {
+  const result = selectDatabaseOnlySources(
+    {
+      structured_laws: [
+        {
+          source: "tbl_laws",
+          reference: "มาตรา 70",
+          title: "การเลิกสหกรณ์",
+          content:
+            "สหกรณ์ย่อมเลิก เมื่อมีเหตุดังต่อไปนี้ นายทะเบียนสหกรณ์สั่งให้เลิกสหกรณ์",
+          score: 900,
+        },
+        {
+          source: "tbl_laws",
+          reference: "มาตรา 33",
+          title: "การจัดตั้งสหกรณ์",
+          content:
+            "สหกรณ์จะตั้งขึ้นได้โดยการจดทะเบียน และต้องมีผู้ซึ่งประสงค์จะเป็นสมาชิกเข้าชื่อกันไม่น้อยกว่าสิบคน",
+          score: 700,
+        },
+      ],
+      admin_knowledge: [],
+      knowledge_suggestion: [],
+      vinichai: [],
+      documents: [],
+      pdf_chunks: [],
+      knowledge_base: [],
+      internet: [],
+    },
+    "general",
+    {
+      databaseOnlyMode: true,
+      message: "การจัดตั้งสหกรณ์",
+      originalMessage: "การจัดตั้งสหกรณ์",
+      target: "coop",
+      planCode: "free",
+    },
+  );
+
+  assert.equal(result.selectedSources.length >= 1, true);
+  assert.equal(result.selectedSources[0].reference, "มาตรา 33");
+});

@@ -7,6 +7,7 @@ const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
 const { importDocxToPdfChunks } = require("../services/wordImportService");
 const { searchPdfChunks } = require("../services/hybridSearchService");
 const { setSessionContinuationState } = require("../services/lawChatbotMainChatContinuation");
+const { normalizeResponseTone } = require("../services/chatAnswerService");
 const {
   markLawChatbotNoticeAccepted,
   LAW_CHATBOT_NOTICE_VERSION,
@@ -131,6 +132,7 @@ async function chat(req, res) {
       useInternet: false,
       databaseOnlyMode: true,
       answerMode: 'db_only_main_chat',
+      responseTone: normalizeResponseTone(req.body?.responseTone || signedInUser?.responseTone),
       requestMeta: {
         submittedBy,
         submittedByUserId,

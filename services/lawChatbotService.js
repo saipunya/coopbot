@@ -15,6 +15,8 @@ const {
   buildDbOnlyMainChatAnswerResult,
   generateChatSummary,
   selectDbOnlyMainChatAnswerEntries,
+  normalizeResponseTone,
+  applyTone,
   wantsExplanation,
   SOURCE_LABELS,
 } = require("./chatAnswerService");
@@ -131,7 +133,7 @@ const LAW_CHATBOT_ASSISTANT_PROFILES = [
     id: "female",
     label: "ผู้ช่วยดาว",
     gender: "female",
-    politeParticle: "ค่ะ",
+    politeParticle: "ครับ",
   },
 ];
 
@@ -1428,7 +1430,13 @@ async function replyToDbOnlyMainChat(payload, session) {
 }
 
 async function replyToChat(payload, session) {
-  return replyToDbOnlyMainChat(payload, session);
+  const responseTone = normalizeResponseTone(payload?.responseTone);
+  const result = await replyToDbOnlyMainChat(payload, session);
+  return {
+    ...result,
+    answer: applyTone(result?.answer, responseTone),
+    responseTone,
+  };
 }
 
 async function summarizeChat(payload, session) {

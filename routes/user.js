@@ -7,6 +7,7 @@ const router = express.Router();
 
 router.get("/", requireGoogleUser, userController.renderDashboard);
 router.get("/search-history", requireGoogleUser, userController.renderSearchHistory);
+router.post("/settings", requireGoogleUser, userController.updateSettings);
 router.post("/logout", requireGoogleUser, userController.logout);
 
 module.exports = router;

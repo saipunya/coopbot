@@ -29,6 +29,15 @@ async function ensureUserNoticeColumns() {
           "ALTER TABLE users ADD COLUMN law_chatbot_notice_accepted_at timestamp NULL DEFAULT NULL AFTER law_chatbot_notice_accepted_version",
         );
       }
+
+      const [responseToneColumns] = await pool.query(
+        "SHOW COLUMNS FROM users LIKE 'response_tone'",
+      );
+      if (!Array.isArray(responseToneColumns) || responseToneColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE users ADD COLUMN response_tone varchar(32) NOT NULL DEFAULT 'semi_formal' AFTER law_chatbot_notice_accepted_at",
+        );
+      }
     })().catch((error) => {
       userNoticeColumnsReadyPromise = null;
       throw error;
@@ -64,7 +73,7 @@ class UserModel {
     const [rows] = await pool.query(
       `SELECT id, google_id, email, name, avatar_url, plan, plan_started_at, plan_expires_at,
               premium_expires_at, status, law_chatbot_notice_accepted_version,
-              law_chatbot_notice_accepted_at, created_at, updated_at
+              law_chatbot_notice_accepted_at, response_tone, created_at, updated_at
        FROM users
        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
        ORDER BY updated_at DESC, id DESC
@@ -144,7 +153,7 @@ class UserModel {
     const [rows] = await pool.query(
       `SELECT id, google_id, email, name, avatar_url, plan, plan_started_at, plan_expires_at,
               premium_expires_at, status, law_chatbot_notice_accepted_version,
-              law_chatbot_notice_accepted_at, created_at, updated_at
+              law_chatbot_notice_accepted_at, response_tone, created_at, updated_at
        FROM users
        WHERE id = ?
        LIMIT 1`,
@@ -188,7 +197,7 @@ class UserModel {
     const [rows] = await pool.query(
       `SELECT id, google_id, email, name, avatar_url, plan, plan_started_at, plan_expires_at,
               premium_expires_at, status, law_chatbot_notice_accepted_version,
-              law_chatbot_notice_accepted_at, created_at, updated_at
+              law_chatbot_notice_accepted_at, response_tone, created_at, updated_at
        FROM users
        WHERE google_id = ? OR email = ?
        ORDER BY id DESC
@@ -223,6 +232,35 @@ class UserModel {
     );
 
     return Number(result.affectedRows || 0) > 0;
+  }
+
+  static async updateResponseTone(userId, responseTone) {
+    const pool = getDbPool();
+    if (!pool) {
+      throw new Error("Database connection is required for response tone update.");
+    }
+
+    await ensureUserNoticeColumns();
+
+    const normalizedUserId = Number(userId || 0);
+    const normalizedTone = String(responseTone || "").trim().toLowerCase();
+    if (!normalizedUserId || !["formal", "semi_formal", "friendly"].includes(normalizedTone)) {
+      return null;
+    }
+
+    const [result] = await pool.query(
+      `UPDATE users
+       SET response_tone = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [normalizedTone, normalizedUserId],
+    );
+
+    if (Number(result.affectedRows || 0) <= 0) {
+      return null;
+    }
+
+    return this.findById(normalizedUserId);
   }
 
   static async activatePlan(userId, planCode, options = {}) {
