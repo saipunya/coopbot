@@ -6818,6 +6818,7 @@ body {
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/markdown-renderer.js"></script>
   <script>
     (() => {
       const ENABLE_CHAT_CACHE = false;
@@ -6828,6 +6829,7 @@ body {
       const POST_LOGIN_PENDING_CHAT_KEY = 'lawbot-post-login-pending-chat-v1';
       const POST_LOGIN_PENDING_CHAT_MAX_AGE_MS = 30 * 60 * 1000;
       const LEGACY_CHAT_CACHE_KEYS = ['lawbot-chat-cache-v1', 'lawbot-chat-cache-v2', 'lawbot-chat-cache-v3'];
+      const markdownRenderer = window.CoopbotMarkdownRenderer || null;
       const isAdminUser = <%- JSON.stringify(Boolean(currentUser)) %>;
       const isGoogleSignedIn = <%- JSON.stringify(Boolean(isGoogleUser)) %>;
       const isSignedInUser = isAdminUser || isGoogleSignedIn;
@@ -7990,7 +7992,27 @@ body {
 
       function applyHighlightHtml(text, terms) {
         void terms;
+        return renderAnswerInlineMarkdownHtml(text);
+      }
+
+      function renderAnswerInlineMarkdownHtml(text) {
+        if (markdownRenderer && typeof markdownRenderer.renderInlineMarkdownHtml === 'function') {
+          return markdownRenderer.renderInlineMarkdownHtml(text);
+        }
+
         return escapeHtml(text);
+      }
+
+      function renderAnswerMarkdownHtml(text) {
+        if (markdownRenderer && typeof markdownRenderer.renderMarkdownHtml === 'function') {
+          return markdownRenderer.renderMarkdownHtml(text);
+        }
+
+        return String(text || '')
+          .replace(/\r\n?/g, '\n')
+          .split('\n')
+          .map((line) => escapeHtml(line))
+          .join('<br>');
       }
 
       function formatFollowUpPromptHtml(text, terms) {
@@ -8041,6 +8063,8 @@ body {
 
       function formatAnswerLabelLineHtml(line) {
         const text = String(line || '').trim();
+
+        // Input here is already HTML from the markdown renderer; do not render it again.
         if (!/^(?:คำตอบแบบเข้าใจง่าย|คำตอบจากฐานข้อมูล|สรุปใจความสำคัญ|ข้อมูลเพิ่มเติม)\s*:/u.test(text)) {
           return text;
         }
@@ -8078,27 +8102,27 @@ body {
 
 
 
-function formatBotDisplayLineHtml(text, terms , options ={}) {
-  const html =
-    formatFollowUpPromptHtml(text, terms) ||
-    applyHighlightHtml(text, terms);
+      function formatBotDisplayLineHtml(text, terms, options = {}) {
+        const html =
+          formatFollowUpPromptHtml(text, terms) ||
+          applyHighlightHtml(text, terms);
 
-  const normalizedHtml = html.replace(/\n/g, '<br>');
+        const normalizedHtml = String(html || '').replace(/\n/g, '<br>');
 
-  const lines = normalizedHtml
-    .split(/<br\s*\/?>/gi)
-    .map((line) => line.trim())
-    .filter(Boolean);
+        const lines = normalizedHtml
+          .split(/<br\s*\/?>/gi)
+          .map((line) => line.trim())
+          .filter(Boolean);
 
-  return lines
-    .map((line) => {
-      const formattedLine = formatAnswerLabelLineHtml(line);
-      const aiClass = options.useAi ? 'ai-answer-item' : '';
-      const highlightClass = line.includes('มาตรา') ? ' answer-item-highlight' : '';
-      return `<div class="answer-item${aiClass}${highlightClass}">${formattedLine}</div>`;
-    })
-    .join('');
-}
+        return lines
+          .map((line) => {
+            const formattedLine = formatAnswerLabelLineHtml(line);
+            const aiClass = options.useAi ? 'ai-answer-item' : '';
+            const highlightClass = line.includes('มาตรา') ? ' answer-item-highlight' : '';
+            return `<div class="answer-item${aiClass}${highlightClass}">${formattedLine}</div>`;
+          })
+          .join('');
+      }
 
       function decorateBotFallbackHtml(html) {
         let decorated = String(html || '');
@@ -8526,15 +8550,10 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
         };
       }
 
-  function formatBotMessageHtml(text, terms, options = {}) {
-  console.log("🔥 formatBotMessageHtml CALLED", {
-    text,
-    options,
-  });
-
-  const raw = normalizeAnswerLineBreaksForDisplay(
-    restorePreparedQaTitle(stripBotUiNoiseText(sanitizeDisplayText(text)), options)
-  );
+      function formatBotMessageHtml(text, terms, options = {}) {
+        const raw = normalizeAnswerLineBreaksForDisplay(
+          restorePreparedQaTitle(stripBotUiNoiseText(sanitizeDisplayText(text)), options)
+        );
 
 
         const continuationHtml = buildContinuationActionHtml(options);
@@ -8631,7 +8650,7 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
 
         let html = '';
         if (headerLine) {
-          html += `<div class="ai-summary-header">${escapeHtml(headerLine)}</div>`;
+          html += `<div class="ai-summary-header">${renderAnswerInlineMarkdownHtml(headerLine)}</div>`;
         }
 
         if (sections.length) {
@@ -9020,7 +9039,7 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
         const content = document.createElement('div');
         content.className = `bubble-content ${role === 'user' ? 'bubble-content-user' : ''}`;
 
-        const message = document.createElement('span');
+        const message = document.createElement('div');
         message.className = 'bubble-message';
         if (role === 'bot' && isLoading) {
           message.innerHTML = buildLoadingBubbleHtml(displayText || 'กำลังประมวลผลคำถาม', 'กำลังค้นหาข้อมูลที่เกี่ยวข้องในระบบ');
