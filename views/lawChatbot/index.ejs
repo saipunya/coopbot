@@ -187,6 +187,18 @@
       flex: 1;
     }
 
+    .lawbot-app.sidebar-collapsed .cooplaw-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .lawbot-app.sidebar-collapsed .cooplaw-sidebar {
+      display: none;
+    }
+
+    .lawbot-app.sidebar-collapsed .cooplaw-main {
+      width: 100%;
+    }
+
     @media (min-width: 768px) {
       .plan-ribbon-head {
         display: flex;
@@ -2152,15 +2164,6 @@
         gap: 0.38rem;
       }
 
-      .floating-controls {
-        top: auto;
-        bottom: calc(env(safe-area-inset-bottom) + 6.2rem);
-        right: 0.6rem;
-        gap: 0.68rem;
-        flex-direction: column;
-        align-items: stretch;
-      }
-
       .header-toggle-btn {
         width: 3rem;
         height: 3rem;
@@ -2467,8 +2470,9 @@
 
     .floating-controls {
       position: fixed;
-      top: calc(env(safe-area-inset-top) + 5.65rem);
-      right: 0.9rem;
+      top: auto;
+      bottom: calc(env(safe-area-inset-bottom) + 6.8rem);
+      right: 0.75rem;
       z-index: 220;
       display: inline-flex;
       flex-direction: column;
@@ -2476,6 +2480,7 @@
       gap: 0.68rem;
     }
 
+    .floating-controls .account-btn,
     .floating-controls .header-toggle-btn,
     .floating-controls .clear-chat-btn,
     .floating-action-btn {
@@ -2495,6 +2500,10 @@
       backdrop-filter: blur(10px);
       text-decoration: none;
       font-size: 1.08rem;
+    }
+
+    .floating-controls .account-btn {
+      background: rgba(67, 126, 194, 0.94);
     }
 
     .floating-controls .clear-chat-btn {
@@ -3442,9 +3451,14 @@
 
     .mobile-topbar-actions {
       display: inline-flex;
-      align-items: center;
+      flex-direction: column;
+      align-items: stretch;
       gap: 0.45rem;
       flex: 0 0 auto;
+    }
+
+    .mobile-topbar-account {
+      color: #1f4734;
     }
 
     .mobile-topbar-clear {
@@ -3456,6 +3470,31 @@
       color: #8a1f14;
       border-color: #f0c6c0;
       background: #fff7f5;
+    }
+
+    @media (max-width: 991.98px) {
+      .floating-controls {
+        display: inline-flex !important;
+        top: auto;
+        bottom: calc(env(safe-area-inset-bottom) + 6.4rem);
+        right: 0.6rem;
+        z-index: 240;
+        gap: 0.5rem;
+      }
+
+      .floating-controls .header-toggle-btn {
+        display: none !important;
+      }
+
+      .floating-controls .account-btn,
+      .floating-controls .clear-chat-btn {
+        width: 2.75rem;
+        height: 2.75rem;
+        min-width: 2.75rem;
+        min-height: 2.75rem;
+        border-radius: 0.85rem;
+        font-size: 1rem;
+      }
     }
 
     .cooplaw-layout {
@@ -6135,7 +6174,6 @@ body {
     border-radius: 1rem;
   }
 
-
   .chat-input-wrap .input-group {
     gap: 0.4rem;
     align-items: center;
@@ -6258,14 +6296,42 @@ body {
   border-color: #bfdbfe;
 }
 
+@media (min-width: 992px) {
+  .floating-controls {
+    display: inline-flex !important;
+    position: fixed;
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom) + 8.8rem);
+    right: 0.9rem;
+    z-index: 220;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.68rem;
+  }
+
+  .page-identity,
+  .page-toolbar-divider {
+    display: none !important;
+  }
+}
+
   </style>
 </head>
 <body data-bot-plan="free">
   <div class="lawbot-app">
     <div class="floating-controls">
-      <button type="button" id="toggleHeaderBtn" data-toggle-header-control="1" class="btn btn-sm btn-outline-secondary header-toggle-btn" title="ซ่อนส่วนหัวของระบบ" aria-label="ซ่อนส่วนหัวของระบบ" aria-pressed="false">
-        <i class="bi bi-layout-text-sidebar-reverse"></i>
-        <span>ซ่อนหัวระบบ</span>
+      <a
+        href="<%= currentUser || isGoogleUser ? '/user' : '/auth/google?returnTo=%2Flaw-chatbot' %>"
+        class="btn btn-sm btn-outline-secondary account-btn"
+        title="บัญชีผู้ใช้"
+        aria-label="บัญชีผู้ใช้"
+      >
+        <i class="bi <%= currentUser ? 'bi-shield-lock-fill' : (isGoogleUser ? 'bi-person-badge-fill' : 'bi-person-circle') %>"></i>
+        <span>บัญชี</span>
+      </a>
+      <button type="button" id="toggleHeaderBtn" data-toggle-header-control="1" class="btn btn-sm btn-outline-secondary header-toggle-btn" title="ซ่อน sidebar" aria-label="ซ่อน sidebar" aria-pressed="false">
+        <i class="bi bi-layout-sidebar-inset"></i>
+        <span>ซ่อน sidebar</span>
       </button>
       <button type="button" id="clearChatBtn" data-clear-chat-control="1" class="btn btn-sm btn-outline-danger clear-chat-btn" title="ลบประวัติแชต" aria-label="ลบประวัติแชต">
         <i class="bi bi-trash-fill"></i>
@@ -6330,9 +6396,6 @@ body {
         </div>
       </div>
       <div class="mobile-topbar-actions">
-        <button type="button" class="mobile-topbar-btn mobile-topbar-clear" data-clear-chat-control="1" aria-label="เคลียร์ประวัติ">
-          <i class="bi bi-trash3"></i>
-        </button>
         <a href="/user/search-history" class="mobile-topbar-btn" aria-label="ประวัติการสนทนา">
           <i class="bi bi-clock-history"></i>
         </a>
@@ -7507,19 +7570,19 @@ body {
 
       function setHeaderCollapsed(collapsed) {
         if (!lawbotApp || !toggleHeaderButtons.length) return;
-        lawbotApp.classList.toggle('headers-collapsed', collapsed);
+        lawbotApp.classList.toggle('sidebar-collapsed', collapsed);
 
         toggleHeaderButtons.forEach((button) => {
           button.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
 
           if (collapsed) {
-            button.innerHTML = '<i class="bi bi-layout-sidebar-inset"></i><span>แสดงหัวระบบ</span>';
-            button.title = 'แสดงส่วนหัวของระบบ';
-            button.setAttribute('aria-label', 'แสดงส่วนหัวของระบบ');
+            button.innerHTML = '<i class="bi bi-layout-sidebar-reverse"></i><span>แสดง sidebar</span>';
+            button.title = 'แสดง sidebar';
+            button.setAttribute('aria-label', 'แสดง sidebar');
           } else {
-            button.innerHTML = '<i class="bi bi-layout-text-sidebar-reverse"></i><span>ซ่อนหัวระบบ</span>';
-            button.title = 'ซ่อนส่วนหัวของระบบ';
-            button.setAttribute('aria-label', 'ซ่อนส่วนหัวของระบบ');
+            button.innerHTML = '<i class="bi bi-layout-sidebar-inset"></i><span>ซ่อน sidebar</span>';
+            button.title = 'ซ่อน sidebar';
+            button.setAttribute('aria-label', 'ซ่อน sidebar');
           }
         });
 
@@ -9862,9 +9925,9 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
 
       toggleHeaderButtons.forEach((button) => button.addEventListener('click', () => {
         if (!lawbotApp) return;
-          const collapsed = lawbotApp && lawbotApp.classList.contains('headers-collapsed');
-          setHeaderCollapsed(!collapsed);
-        }));
+        const collapsed = lawbotApp.classList.contains('sidebar-collapsed');
+        setHeaderCollapsed(!collapsed);
+      }));
 
       togglePlanRibbonButtons.forEach((button) => button.addEventListener('click', () => {
         if (!lawbotApp || !planRibbon) return;
