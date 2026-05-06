@@ -54,6 +54,22 @@ async function withTimeout(task, timeoutMs, fallbackValue, label = "task") {
   }
 }
 
+async function withSafeSearch(task, fallbackValue = [], label = "source-search") {
+  try {
+    return await (typeof task === "function" ? task() : task);
+  } catch (error) {
+    const code = String(error?.code || "").trim();
+    if (code === "ETIMEDOUT" || code === "ER_QUERY_TIMEOUT" || code === "PROTOCOL_SEQUENCE_TIMEOUT") {
+      if (process.env.CHATBOT_DEBUG === "1") {
+        console.warn(`[law-chatbot] ${label} timed out: ${error.message || error}`);
+      }
+      return fallbackValue;
+    }
+
+    throw error;
+  }
+}
+
 function prioritizeMatches(matches, options = {}) {
   const retrievalPriority = Number(options.retrievalPriority || 0);
   const scoreBoost = Number(options.scoreBoost || 0);
@@ -1580,15 +1596,31 @@ async function searchDatabaseSources(message, target, options = {}) {
     rawStructuredMatches,
     rawVinichaiMatches,
   ] = await Promise.all([
-    LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5),
-    LawChatbotKnowledgeSuggestionModel.searchApproved(expandedRetrievalMessage, effectiveTarget, 5),
-    Promise.resolve(LawChatbotModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget)),
+    withSafeSearch(
+      () => LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5),
+      [],
+      "admin-knowledge",
+    ),
+    withSafeSearch(
+      () => LawChatbotKnowledgeSuggestionModel.searchApproved(expandedRetrievalMessage, effectiveTarget, 5),
+      [],
+      "approved-qa",
+    ),
+    withSafeSearch(
+      () => Promise.resolve(LawChatbotModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget)),
+      [],
+      "fallback-knowledge",
+    ),
     shouldSkipLawSourcesForOverview
       ? Promise.resolve([])
-      : LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6),
+      : withSafeSearch(
+          () => LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6),
+          [],
+          "structured-laws",
+        ),
     shouldSkipLawSourcesForOverview
       ? Promise.resolve([])
-      : LawSearchModel.searchVinichai(expandedRetrievalMessage, 5),
+      : withSafeSearch(() => LawSearchModel.searchVinichai(expandedRetrievalMessage, 5), [], "vinichai"),
   ]);
   const hasHighPriorityStructuredLawMatch =
     !shouldSkipLawSourcesForOverview &&

@@ -83,7 +83,7 @@ const {
   submitPaymentRequest,
   updatePaymentRequestPlan,
 } = require("./userAdminPaymentService");
-const { expandSearchConcepts, isTimeFollowUpQuestion, normalizeForSearch } = require("./thaiTextUtils");
+const { expandSearchConcepts, isTimeFollowUpQuestion, normalizeForSearch, detectTopicFamily } = require("./thaiTextUtils");
 const {
   classifyQuestionIntent,
   resolveSearchTarget,
@@ -212,8 +212,15 @@ function isFaqFriendlyLegalTopic(message = "") {
     /ผู้ชำระบัญชี/.test(normalized) &&
     /(คือใคร|คืออะไร|ใครคือ|หมายถึง|ความหมาย|นิยาม)/.test(normalized) &&
     !/(แต่งตั้ง|ตั้ง|เลือกตั้ง|ผู้มีอำนาจ|อำนาจ|โดยใคร)/.test(normalized);
+  const asksLiquidationTopic =
+    /ชำระบัญชี/.test(normalized) &&
+    !/ผู้ชำระบัญชี/.test(normalized) &&
+    !/(แต่งตั้ง|ตั้ง|เลือกตั้ง|ผู้มีอำนาจ|อำนาจ|โดยใคร)/.test(normalized);
+  const asksRegulationModification =
+    /ข้อบังคับ/.test(normalized) &&
+    /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน|ขั้นตอน)/.test(normalized);
 
-  if (asksLiquidatorDefinition) {
+  if (asksLiquidatorDefinition || asksLiquidationTopic || asksRegulationModification) {
     return true;
   }
 
@@ -252,6 +259,48 @@ function isHighConfidenceFaqMatch(match = null, message = "") {
 
   const similarity = Number(match.similarity);
   return Number.isFinite(similarity) && similarity >= FAQ_HIGH_CONFIDENCE_THRESHOLD;
+}
+
+function isBylawAmendmentQuestion(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  return (
+    /ข้อบังคับ/.test(normalized) &&
+    /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน|ขั้นตอน)/.test(normalized)
+  );
+}
+
+function isRelevantFaqMatchForQuestion(match = null, message = "") {
+  if (!match) {
+    return false;
+  }
+
+  if (!isBylawAmendmentQuestion(message)) {
+    return true;
+  }
+
+  const normalizedMatchText = normalizeForSearch(
+    [
+      match.questionText,
+      match.topicHint,
+      match.answerText,
+      match.source?.title,
+      match.source?.reference,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).toLowerCase();
+
+  if (!normalizedMatchText) {
+    return false;
+  }
+
+  const hasBylawAmendmentSignal =
+    /ข้อบังคับ/.test(normalizedMatchText) &&
+    /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน|ขั้นตอน)/.test(normalizedMatchText);
+  const hasCommitteeAuthoritySignal =
+    /(คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ|คพช)/.test(normalizedMatchText);
+
+  return hasBylawAmendmentSignal && !hasCommitteeAuthoritySignal;
 }
 
 function resolveDbOnlyMainChatMaxSourceChunks(message = "", questionIntent = "") {
@@ -972,12 +1021,47 @@ async function collectAnswerSources(message, target, session, options = {}) {
     internet: internetMatches,
   };
 
+  const isBylawAmendmentFamily =
+    String(detectTopicFamily(resolvedEffectiveMessage || message)?.id || "").trim().toLowerCase() ===
+    "coop_bylaw_amendment";
+  const hasBylawAmendmentSignal = (item = {}) => {
+    const sourceText = normalizeForSearch(
+      [
+        item?.reference,
+        item?.title,
+        item?.keyword,
+        item?.content,
+        item?.chunk_text,
+        item?.comment,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    ).toLowerCase();
+    return (
+      /แก้ไข(?:เพิ่มเติม)?ข้อบังคับ/.test(sourceText) ||
+      /ข้อบังคับสหกรณ์/.test(sourceText) ||
+      /ข้อบังคับ/.test(sourceText) && /(ที่ประชุมใหญ่|มติสองในสาม|นายทะเบียนสหกรณ์|มาตรา 44)/.test(sourceText)
+    );
+  };
+
+  const knowledgeBasePool =
+    isBylawAmendmentFamily
+      ? grouped.knowledge_base.filter((item) => hasBylawAmendmentSignal(item))
+      : grouped.knowledge_base;
+
+  const filteredGroups = isBylawAmendmentFamily
+    ? {
+        ...grouped,
+        knowledge_base: knowledgeBasePool,
+      }
+    : grouped;
+
   const {
     selectedSourceTier,
     selectedSources,
     selectionTrace,
     selectionDiagnostics,
-  } = selectTieredSources(grouped, questionIntent, {
+  } = selectTieredSources(filteredGroups, questionIntent, {
     databaseOnlyMode: options.databaseOnlyMode === true,
     sourceLimit: options.sourceLimit,
     planCode: options.planCode,
@@ -1056,6 +1140,144 @@ async function buildDbOnlyMainChatAnswer(message, target, sources, options = {})
   });
 }
 
+async function tryResolveFaqAnswer(message, target, session, planContext, startedAt, debugMode) {
+  if (shouldSkipFaqForQuestion(message)) {
+    return null;
+  }
+
+  const suggestedQuestionTargets = resolveSuggestedQuestionTargets(message, target);
+  let managedSuggestedQuestionMatch = null;
+  let managedSuggestedQuestionTarget = target;
+
+  for (const candidateTarget of suggestedQuestionTargets) {
+    managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(message, candidateTarget);
+
+    if (isHighConfidenceFaqMatch(managedSuggestedQuestionMatch, message)) {
+      managedSuggestedQuestionTarget = candidateTarget;
+      break;
+    }
+  }
+
+  if (!isHighConfidenceFaqMatch(managedSuggestedQuestionMatch, message)) {
+    return null;
+  }
+  if (!isRelevantFaqMatchForQuestion(managedSuggestedQuestionMatch, message)) {
+    return null;
+  }
+
+  const resolvedTarget = managedSuggestedQuestionMatch.target || managedSuggestedQuestionTarget || target;
+  const selectedSources = managedSuggestedQuestionMatch.source ? [managedSuggestedQuestionMatch.source] : [];
+  const effectiveMessage = String(
+    managedSuggestedQuestionMatch.questionText ||
+      managedSuggestedQuestionMatch.topicHint ||
+      message,
+  ).trim() || message;
+  const answer = cleanAssistantAnswer(managedSuggestedQuestionMatch.answerText, "");
+  const faqSource = selectedSources.length > 0
+    ? {
+        ...selectedSources[0],
+        source: "managed_suggested_question",
+        title: managedSuggestedQuestionMatch.questionText || selectedSources[0].title || "",
+        content: answer,
+        reference: selectedSources[0].reference || "Q&A ที่ผู้ดูแลเตรียมไว้",
+        score: Math.max(Number(selectedSources[0].score || 0), 1000),
+      }
+    : null;
+
+  setSessionContinuationState(session, null);
+
+  if (answer && selectedSources.length > 0) {
+    storeConversationContext(
+      session,
+      resolvedTarget,
+      message,
+      effectiveMessage,
+      selectedSources,
+      { usedContext: false, topicHints: [] },
+      {
+        answerText: answer,
+        usedSourcesForContinuation: selectedSources.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT),
+        continuationSourceLimit: MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
+      },
+    );
+  }
+
+  LawChatbotModel.create({
+    message,
+    effectiveMessage,
+    target: resolvedTarget,
+    answer,
+    matchedSources: selectedSources.map((item) => ({
+      id: item.id || item.url || item.reference || item.title,
+      title: item.title || item.keyword || item.reference,
+      lawNumber: item.lawNumber || item.reference || item.keyword,
+      source: item.source || "",
+      url: item.url || "",
+      score: Number(item.score || 0),
+    })),
+  });
+
+  await recordUserSearchHistory(session, planContext, {
+    questionText: message,
+    target: resolvedTarget,
+    answerText: answer,
+  });
+
+  const result = {
+    hasContext: Boolean(answer),
+    answer,
+    highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
+    usedFollowUpContext: false,
+    usedInternetFallback: false,
+    responseMeta: buildResponseMeta("managed_answer", selectedSources),
+    fromCache: false,
+    continuation: {
+      available: false,
+      label: "ดูคำตอบต่อ",
+    },
+  };
+
+  if (debugMode) {
+    result.debug = {
+      selectedSourceTier: "managed_suggested_question",
+      selectedSourceTierLabel: "managed_suggested_question",
+      sourceTables: result.responseMeta?.sourceTables || [],
+      consideredSourceTables: ["chatbot_suggested_questions"],
+      sourceCount: selectedSources.length,
+      databaseMatches: selectedSources.length,
+      internetMatches: 0,
+      answerMode: "managed_answer",
+      promptProfile: planContext.promptProfile?.code || "template",
+      timing: {
+        totalReplyMs: Math.round(nowMs() - startedAt),
+      },
+      suggestedQuestionTargets,
+      matchedSuggestedQuestionTarget: managedSuggestedQuestionTarget,
+      sources: selectedSources.map((item) => ({
+        source: item.source || "",
+        sourceLabel: getSourceDisplayLabel(item.source || ""),
+        sourceTable: getSourceTableName(item.source || ""),
+        reference: item.reference || item.title || "",
+        score: Number(item.score || 0),
+        preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
+      })),
+    };
+  }
+
+  return { result, resolvedTarget, source: faqSource };
+}
+
+function composeFaqAndDatabaseAnswer(faqAnswer = "", databaseAnswer = "") {
+  const preparedFaqAnswer = cleanAssistantAnswer(faqAnswer, "");
+  const preparedDatabaseAnswer = cleanAssistantAnswer(databaseAnswer, "");
+
+  if (preparedFaqAnswer && preparedDatabaseAnswer) {
+    return `${preparedFaqAnswer}\n\nเพิ่มเติมจากข้อมูลอื่น:\n${preparedDatabaseAnswer}`.trim();
+  }
+
+  return preparedFaqAnswer || preparedDatabaseAnswer;
+}
+
 async function replyToDbOnlyMainChat(payload, session) {
   const startedAt = nowMs();
   const requestedMessage = String(payload.message || "").trim();
@@ -1105,120 +1327,15 @@ async function replyToDbOnlyMainChat(payload, session) {
     return buildDbOnlyMainChatErrorResult("กรุณาระบุคำถามหรือประเด็นที่ต้องการสอบถามก่อนส่งข้อความ");
   }
   let target = resolveSearchTarget(message, requestedTarget);
+  let faqSource = null;
 
- if (!continueFromPrevious && !shouldSkipFaqForQuestion(message)) {
-  const suggestedQuestionTargets = resolveSuggestedQuestionTargets(message, target);
-
-  let managedSuggestedQuestionMatch = null;
-  let managedSuggestedQuestionTarget = target;
-
-  for (const candidateTarget of suggestedQuestionTargets) {
-    managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(message, candidateTarget);
-
-    if (isHighConfidenceFaqMatch(managedSuggestedQuestionMatch, message)) {
-      managedSuggestedQuestionTarget = candidateTarget;
-      break;
+  if (!continueFromPrevious) {
+    const faqResolution = await tryResolveFaqAnswer(message, target, session, planContext, startedAt, debugMode);
+    if (faqResolution) {
+      target = faqResolution.resolvedTarget;
+      faqSource = faqResolution.source || null;
     }
   }
-
-  if (isHighConfidenceFaqMatch(managedSuggestedQuestionMatch, message)) {
-    // Override target with DB value if present
-   if (managedSuggestedQuestionMatch.target) {
-  target = managedSuggestedQuestionMatch.target;
-} else if (managedSuggestedQuestionTarget) {
-  target = managedSuggestedQuestionTarget;
-}
-    const selectedSources = managedSuggestedQuestionMatch.source ? [managedSuggestedQuestionMatch.source] : [];
-    const effectiveMessage = String(
-      managedSuggestedQuestionMatch.questionText ||
-        managedSuggestedQuestionMatch.topicHint ||
-        message,
-    ).trim() || message;
-    const answer = cleanAssistantAnswer(managedSuggestedQuestionMatch.answerText, "");
-
-    setSessionContinuationState(session, null);
-
-    if (answer && selectedSources.length > 0) {
-      storeConversationContext(
-        session,
-        target,
-        message,
-        effectiveMessage,
-        selectedSources,
-        { usedContext: false, topicHints: [] },
-        {
-          answerText: answer,
-          usedSourcesForContinuation: selectedSources.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT),
-          continuationSourceLimit: MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
-        },
-      );
-    }
-
-    LawChatbotModel.create({
-      message,
-      effectiveMessage,
-      target,
-      answer,
-      matchedSources: selectedSources.map((item) => ({
-        id: item.id || item.url || item.reference || item.title,
-        title: item.title || item.keyword || item.reference,
-        lawNumber: item.lawNumber || item.reference || item.keyword,
-        source: item.source || "",
-        url: item.url || "",
-        score: Number(item.score || 0),
-      })),
-    });
-
-    await recordUserSearchHistory(session, planContext, {
-      questionText: message,
-      target,
-      answerText: answer,
-    });
-
-    const result = {
-      hasContext: Boolean(answer),
-      answer,
-      highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
-      usedFollowUpContext: false,
-      usedInternetFallback: false,
-      responseMeta: buildResponseMeta("managed_answer", selectedSources),
-      fromCache: false,
-      continuation: {
-        available: false,
-        label: "ดูคำตอบต่อ",
-      },
-    };
-
-    if (debugMode) {
-      result.debug = {
-        selectedSourceTier: "managed_suggested_question",
-        selectedSourceTierLabel: "managed_suggested_question",
-        sourceTables: result.responseMeta?.sourceTables || [],
-        consideredSourceTables: ["chatbot_suggested_questions"],
-        sourceCount: selectedSources.length,
-        databaseMatches: selectedSources.length,
-        internetMatches: 0,
-        answerMode: "managed_answer",
-        promptProfile: planContext.promptProfile?.code || "template",
-        timing: {
-          totalReplyMs: Math.round(nowMs() - startedAt),
-        },
-        suggestedQuestionTargets,
-        matchedSuggestedQuestionTarget: managedSuggestedQuestionTarget,
-        sources: selectedSources.map((item) => ({
-          source: item.source || "",
-          sourceLabel: getSourceDisplayLabel(item.source || ""),
-          sourceTable: getSourceTableName(item.source || ""),
-          reference: item.reference || item.title || "",
-          score: Number(item.score || 0),
-          preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
-        })),
-      };
-    }
-
-    return personalizeChatResult(session, result);
-  }
-}
 
   let effectiveMessage = message;
   let resolvedContext = { usedContext: false, topicHints: [] };
@@ -1285,7 +1402,8 @@ async function replyToDbOnlyMainChat(payload, session) {
 
     effectiveMessage = evidence.effectiveMessage || message;
     resolvedContext = evidence.resolvedContext || resolvedContext;
-    selectedSources = evidence.sources || [];
+    const databaseSources = evidence.sources || [];
+    selectedSources = databaseSources;
     questionIntent = evidence.questionIntent || questionIntent;
     retrievalEvaluation = evaluateRetrievalResult({
       message,
@@ -1294,17 +1412,20 @@ async function replyToDbOnlyMainChat(payload, session) {
       queryRewriteTrace: evidence.queryRewriteTrace,
       databaseMatches: evidence.databaseMatches,
       internetMatches: [],
-      selectedSources,
+      selectedSources: databaseSources,
       usedInternetFallback: false,
       usedInternetSearch: false,
       resolvedContext,
     });
+    const combinedSources = faqSource ? [faqSource, ...databaseSources] : databaseSources;
+    const faqAnswer = faqSource ? String(faqSource.content || faqSource.answer || "").trim() : "";
 
     if (!retrievalEvaluation.shouldAnswer) {
       setSessionContinuationState(session, null);
-      answer = retrievalEvaluation.userFacingMessage;
+      answer = faqAnswer || retrievalEvaluation.userFacingMessage;
+      selectedSources = combinedSources;
     } else {
-      answerSourcePool = selectDbOnlyMainChatAnswerEntries(selectedSources, {
+      answerSourcePool = selectDbOnlyMainChatAnswerEntries(databaseSources, {
         message: effectiveMessage,
         originalMessage: message,
         maxPrimarySections: 3,
@@ -1317,7 +1438,8 @@ async function replyToDbOnlyMainChat(payload, session) {
 
       if (answerSourcePool.length === 0) {
         setSessionContinuationState(session, null);
-        answer = retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้";
+        answer = composeFaqAndDatabaseAnswer(faqAnswer, retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้");
+        selectedSources = combinedSources;
       } else {
         continuationSessionState = createContinuationSessionState({
           target,
@@ -1335,7 +1457,8 @@ async function replyToDbOnlyMainChat(payload, session) {
 
         if (selectedSources.length === 0) {
           setSessionContinuationState(session, null);
-          answer = retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้";
+          answer = composeFaqAndDatabaseAnswer(faqAnswer, retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้");
+          selectedSources = combinedSources;
         } else {
           const answerResult = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
             effectiveMessage,
@@ -1349,8 +1472,8 @@ async function replyToDbOnlyMainChat(payload, session) {
             promptProfile: planContext.promptProfile,
             planCode: planContext.code,
           });
-          answer = answerResult.answer;
-          selectedSources = answerResult.selectedSources;
+          answer = composeFaqAndDatabaseAnswer(faqAnswer, answerResult.answer);
+          selectedSources = combinedSources;
         }
       }
     }

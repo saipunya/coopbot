@@ -7,6 +7,10 @@ const {
 
 let pool = null;
 
+function shouldRunSchemaMaintenanceOnStartup() {
+  return String(process.env.RUN_SCHEMA_MAINTENANCE_ON_STARTUP || "").trim() === "1";
+}
+
 function buildGlawSearchKeywords(row = {}) {
   const normalizedLawNumber = normalizeForSearch(row.glaw_number || "").toLowerCase();
   const normalizedLawPart = normalizeForSearch(row.glaw_part || "").toLowerCase();
@@ -421,6 +425,10 @@ async function ensureSchema() {
 
     `);
 
+  if (!shouldRunSchemaMaintenanceOnStartup()) {
+    return;
+  }
+
   try {
     await pool.query("ALTER TABLE law_chatbot_answer_cache ADD COLUMN metadata_json longtext DEFAULT NULL");
   } catch (_) {}
@@ -747,8 +755,17 @@ async function ensureSchema() {
     await pool.query("ALTER TABLE tbl_glaws ADD COLUMN glaw_search text DEFAULT NULL");
   } catch (_) {}
 
-  await backfillGlawSearchKeywords();
+  if (String(process.env.RUN_GLAW_BACKFILL_ON_STARTUP || "").trim() === "1") {
+    setImmediate(() => {
+      void backfillGlawSearchKeywords();
+    });
+  }
 
+  if (!shouldRunSchemaMaintenanceOnStartup()) {
+    return;
+  }
+
+  // Schema maintenance can be expensive, so only run it on explicit startup opt-in.
   try {
     await pool.query(`
       UPDATE users
