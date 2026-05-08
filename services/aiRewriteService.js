@@ -26,12 +26,35 @@ function shouldRewriteAnswer(rawAnswer = "", options = {}) {
   return true;
 }
 
+function splitAnswerReferenceSection(answer = "") {
+  const rawAnswer = String(answer || "");
+  const referenceMatch = rawAnswer.match(/(\n\s*\n?\s*(?:แหล่งอ้างอิง|อ้างอิง)\s*[:：][\s\S]*)$/u);
+  if (!referenceMatch) {
+    return {
+      mainText: rawAnswer.trim(),
+      referenceText: "",
+    };
+  }
+
+  const referenceText = String(referenceMatch[1] || "").trim();
+  const mainText = rawAnswer.slice(0, rawAnswer.length - referenceMatch[1].length).trim();
+
+  return {
+    mainText,
+    referenceText,
+  };
+}
+
+function stripReferenceSection(answer = "") {
+  return splitAnswerReferenceSection(answer).mainText;
+}
+
 async function rewriteLegalText(rawAnswer = "", options = {}) {
   if (!shouldRewriteAnswer(rawAnswer, options)) {
     return "";
   }
 
-  const text = limitRewriteInput(rawAnswer);
+  const text = limitRewriteInput(stripReferenceSection(rawAnswer));
   if (!text) {
     return "";
   }
@@ -58,4 +81,6 @@ module.exports = {
   rewriteLegalText,
   shouldRewriteAnswer,
   limitRewriteInput,
+  splitAnswerReferenceSection,
+  stripReferenceSection,
 };

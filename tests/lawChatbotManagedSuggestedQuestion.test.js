@@ -120,13 +120,23 @@ test("replyToChat uses the saved Q&A answer first and appends DB explanation", a
       findManagedSuggestedQuestionMatch: async () => ({
         id: 101,
         questionText: "การแก้ไขข้อบังคับบางข้อ",
-        answerText: "ให้เสนอร่างแก้ไขต่อที่ประชุมและให้มติอนุมัติตามขั้นตอน",
+        answerText: [
+          "ให้เสนอร่างแก้ไขต่อที่ประชุมและให้มติอนุมัติตามขั้นตอน",
+          "",
+          "แหล่งอ้างอิง:",
+          "- คู่มือสหกรณ์",
+        ].join("\n"),
         source: {
           id: 101,
           source: "managed_suggested_question",
           reference: "Q&A ผู้ดูแลระบบ",
           title: "การแก้ไขข้อบังคับบางข้อ",
-          content: "ให้เสนอร่างแก้ไขต่อที่ประชุมและให้มติอนุมัติตามขั้นตอน",
+          content: [
+            "ให้เสนอร่างแก้ไขต่อที่ประชุมและให้มติอนุมัติตามขั้นตอน",
+            "",
+            "แหล่งอ้างอิง:",
+            "- คู่มือสหกรณ์",
+          ].join("\n"),
           score: 1000,
         },
       }),
@@ -172,6 +182,7 @@ test("replyToChat uses the saved Q&A answer first and appends DB explanation", a
 
   restoreCallbacks.push(
     setMockedModule(rewritePath, {
+      ...require(rewritePath),
       rewriteLegalText: async (text) => text,
     }),
   );
@@ -202,6 +213,8 @@ test("replyToChat uses the saved Q&A answer first and appends DB explanation", a
   assert.match(result.answer, /^ให้เสนอร่างแก้ไขต่อที่ประชุมและให้มติอนุมัติตามขั้นตอน/);
   assert.match(result.answer, /ข้อมูลเพิ่มเติม/);
   assert.match(result.answer, /ต้องจัดทำร่างแก้ไข แจ้งสมาชิก และดำเนินการตามมติที่ประชุม/);
+  assert.ok(result.answer.indexOf("เพิ่มเติมจากข้อมูลอื่น") < result.answer.indexOf("แหล่งอ้างอิง:"));
+  assert.doesNotMatch(result.answer.split("แหล่งอ้างอิง:")[1] || "", /เพิ่มเติมจากข้อมูลอื่น/);
   assert.equal(result.responseMeta?.answerMode, "db_only_main_chat");
   assert.ok(result.responseMeta?.sourceTables?.includes("chatbot_suggested_questions"));
 
@@ -289,6 +302,7 @@ test("replyToChat ignores unrelated FAQ matches for bylaw amendment questions", 
 
   restoreCallbacks.push(
     setMockedModule(rewritePath, {
+      ...require(rewritePath),
       rewriteLegalText: async (text) => text,
     }),
   );

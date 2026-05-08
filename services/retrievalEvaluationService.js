@@ -657,17 +657,19 @@ function buildHintExamples(payload = {}, metrics = {}) {
 
 function buildClarifyingQuestion(payload = {}, metrics = {}, profile = {}) {
   const hintExamples = buildHintExamples(payload, metrics);
-  const suffix = hintExamples ? ` เช่น คำเต็มของ${hintExamples} หรือคำที่เกี่ยวข้อง` : "";
+  const possibleMeaning = hintExamples
+    ? `คุณอาจจะหมายถึง “${hintExamples}” ใช่ไหมครับ`
+    : "ผมยังไม่มั่นใจว่าคุณหมายถึงเรื่องใดครับ";
 
   if (profile.intent === "law_section") {
-    return `เพื่อหามาตราที่ตรงขึ้น รบกวนระบุชื่อเรื่องหรือมาตราที่ต้องการเพิ่มเติมอีกนิด${suffix}`;
+    return `${possibleMeaning}\n\nเพื่อหามาตราที่ตรงขึ้น รบกวนระบุชื่อเรื่องหรือมาตราที่ต้องการเพิ่มเติมอีกนิด`;
   }
 
   if (profile.intent === "document") {
-    return `เพื่อค้นเอกสารให้ตรงขึ้น รบกวนระบุชื่อเอกสาร เลขที่หนังสือ หน่วยงาน หรือวันที่เพิ่มเติม${hintExamples}`;
+    return `${possibleMeaning}\n\nเพื่อค้นเอกสารให้ตรงขึ้น รบกวนระบุชื่อเอกสาร เลขที่หนังสือ หน่วยงาน หรือวันที่เพิ่มเติม`;
   }
 
-  return `เพื่อหาคำตอบให้ตรงขึ้น รบกวนเพิ่มคำสำคัญหรือรายละเอียดที่ต้องการสอบถามอีกนิด${suffix}`;
+  return `${possibleMeaning}\n\nเพื่อหาคำตอบให้ตรงขึ้น รบกวนเพิ่มคำสำคัญหรือรายละเอียดที่ต้องการสอบถามอีกนิด`;
 }
 
 function buildNoAnswerMessage(payload = {}, metrics = {}, profile = {}) {

@@ -1611,7 +1611,10 @@ async function searchDatabaseSources(message, target, options = {}) {
     isDissolutionPrioritySearch(expandedRetrievalMessage || focusMessage);
 
   const shouldSkipLawSourcesForOverview =
-    generalOverviewQuery && !legalIntent && intent === "general";
+    options.forceStructuredLawFallback !== true &&
+    generalOverviewQuery &&
+    !legalIntent &&
+    intent === "general";
 
   const [
     rawKnowledgeMatches,
@@ -2924,6 +2927,21 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
     };
   }
 
+  if (options.forceStructuredLawFallback === true) {
+    return {
+      totalLimit: 5,
+      quotas: {
+        admin_knowledge: 1,
+        knowledge_suggestion: 0,
+        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 4, 0),
+        pdf_chunks: 0,
+        tbl_vinichai: 0,
+        documents: 0,
+        knowledge_base: 0,
+      },
+    };
+  }
+
   switch (intent) {
   case "law_section":
     return {
@@ -3079,6 +3097,18 @@ function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
     ];
   }
 
+  if (options.forceStructuredLawFallback === true) {
+    return [
+      ...structuredLawOrder,
+      "admin_knowledge",
+      "knowledge_suggestion",
+      "pdf_chunks",
+      "tbl_vinichai",
+      "documents",
+      "knowledge_base",
+    ];
+  }
+
   if (intent === "law_section") {
     return [
       ...structuredLawOrder,
@@ -3180,6 +3210,7 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   const usedTiers = [];
   const focusMessage = String(options.originalMessage || options.message || "").trim();
   const overviewStrict =
+    options.forceStructuredLawFallback !== true &&
     isGeneralOverviewQuery(focusMessage) &&
     !hasLegalIntent(focusMessage) &&
     (intent === "general" || intent === "short_answer");
