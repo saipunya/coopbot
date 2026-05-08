@@ -122,6 +122,34 @@ test("retrieval confidence low returns no-answer instead of guessing", () => {
   assert.equal(result.answerNote, "");
 });
 
+test("retrieval clarification suggests possible intended topic when uncertain", () => {
+  const selectedSources = [
+    {
+      source: "admin_knowledge",
+      reference: "การประชุมใหญ่",
+      title: "การประชุมใหญ่",
+      content: "การประชุมใหญ่ของสหกรณ์ต้องดำเนินการตามข้อบังคับและกฎหมายที่เกี่ยวข้อง",
+      score: 120,
+    },
+  ];
+  const result = evaluateRetrievalResult({
+    message: "มาตราไหน",
+    effectiveMessage: "มาตราไหน",
+    questionIntent: "law_section",
+    selectedSources,
+    databaseMatches: selectedSources,
+    internetMatches: [],
+    usedInternetFallback: false,
+    usedInternetSearch: false,
+    resolvedContext: { usedContext: true, topicHints: ["การประชุมใหญ่"] },
+  });
+
+  assert.equal(result.policy, "clarify");
+  assert.equal(result.shouldAskClarifyingQuestion, true);
+  assert.match(result.userFacingMessage, /คุณอาจจะหมายถึง “การประชุมใหญ่” ใช่ไหมครับ/);
+  assert.match(result.userFacingMessage, /เพื่อหามาตราที่ตรงขึ้น/);
+});
+
 test("generateChatSummary gives a direct liquidation appointment answer", async () => {
   const originalFindByKey = RuntimeSettingModel.findByKey;
   RuntimeSettingModel.findByKey = async () => null;

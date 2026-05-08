@@ -130,6 +130,151 @@ test("database-only law-section selection defaults ambiguous shared topics to co
   assert.match(result.selectedSources[0].content || "", /สหกรณ์/);
 });
 
+test("database-only FAQ fallback uses coop law when Q&A misses and query mentions สหกรณ์", () => {
+  const result = selectDatabaseOnlySources(
+    {
+      structured_laws: [
+        {
+          source: "tbl_laws",
+          reference: "มาตรา 33",
+          title: "การจดทะเบียนสหกรณ์",
+          content: "สหกรณ์จะตั้งขึ้นได้โดยการจดทะเบียนตามพระราชบัญญัตินี้",
+          score: 500,
+        },
+        {
+          source: "tbl_glaws",
+          reference: "มาตรา 5",
+          title: "การจัดตั้งกลุ่มเกษตรกร",
+          content: "กลุ่มเกษตรกรจะจัดตั้งได้ตามหลักเกณฑ์ที่กำหนด",
+          score: 900,
+        },
+      ],
+      admin_knowledge: [
+        {
+          source: "admin_knowledge",
+          reference: "คู่มือทั่วไป",
+          title: "ภาพรวม",
+          content: "ข้อมูลทั่วไปเกี่ยวกับองค์กร",
+          score: 950,
+        },
+      ],
+      knowledge_suggestion: [],
+      vinichai: [],
+      documents: [],
+      pdf_chunks: [],
+      knowledge_base: [],
+      internet: [],
+    },
+    "general",
+    {
+      databaseOnlyMode: true,
+      forceStructuredLawFallback: true,
+      message: "สหกรณ์คืออะไร",
+      originalMessage: "สหกรณ์คืออะไร",
+      target: "all",
+      planCode: "free",
+    },
+  );
+
+  assert.equal(result.selectedSources.length >= 1, true);
+  assert.equal(result.selectedSources[0].source, "tbl_laws");
+  assert.equal(result.selectedSources[0].reference, "มาตรา 33");
+});
+
+test("database-only FAQ fallback defaults unspecified cooperative topic to coop law", () => {
+  const result = selectDatabaseOnlySources(
+    {
+      structured_laws: [
+        {
+          source: "tbl_laws",
+          reference: "มาตรา 54",
+          title: "การประชุมใหญ่สามัญประจำปี",
+          content: "ให้คณะกรรมการดำเนินการเรียกประชุมใหญ่สามัญประจำปีของสหกรณ์",
+          score: 500,
+        },
+        {
+          source: "tbl_glaws",
+          reference: "มาตรา 20",
+          title: "การประชุมใหญ่สามัญประจำปี",
+          content: "กลุ่มเกษตรกรต้องจัดให้มีการประชุมใหญ่สามัญประจำปี",
+          score: 900,
+        },
+      ],
+      admin_knowledge: [],
+      knowledge_suggestion: [],
+      vinichai: [],
+      documents: [],
+      pdf_chunks: [],
+      knowledge_base: [],
+      internet: [],
+    },
+    "general",
+    {
+      databaseOnlyMode: true,
+      forceStructuredLawFallback: true,
+      message: "การประชุมใหญ่สามัญประจำปี",
+      originalMessage: "การประชุมใหญ่สามัญประจำปี",
+      target: "all",
+      planCode: "free",
+    },
+  );
+
+  assert.equal(result.selectedSources.length >= 1, true);
+  assert.equal(result.selectedSources[0].source, "tbl_laws");
+  assert.equal(result.selectedSources[0].reference, "มาตรา 54");
+});
+
+test("database-only FAQ fallback uses group law when Q&A misses and query mentions กลุ่มเกษตรกร", () => {
+  const result = selectDatabaseOnlySources(
+    {
+      structured_laws: [
+        {
+          source: "tbl_laws",
+          reference: "มาตรา 33",
+          title: "การจดทะเบียนสหกรณ์",
+          content: "สหกรณ์จะตั้งขึ้นได้โดยการจดทะเบียนตามพระราชบัญญัตินี้",
+          score: 900,
+        },
+        {
+          source: "tbl_glaws",
+          reference: "มาตรา 5",
+          title: "การจัดตั้งกลุ่มเกษตรกร",
+          content: "กลุ่มเกษตรกรจะจัดตั้งได้ตามหลักเกณฑ์ที่กำหนด",
+          score: 500,
+        },
+      ],
+      admin_knowledge: [
+        {
+          source: "admin_knowledge",
+          reference: "คู่มือทั่วไป",
+          title: "ภาพรวม",
+          content: "ข้อมูลทั่วไปเกี่ยวกับองค์กร",
+          score: 950,
+        },
+      ],
+      knowledge_suggestion: [],
+      vinichai: [],
+      documents: [],
+      pdf_chunks: [],
+      knowledge_base: [],
+      internet: [],
+    },
+    "general",
+    {
+      databaseOnlyMode: true,
+      forceStructuredLawFallback: true,
+      message: "กลุ่มเกษตรกรคืออะไร",
+      originalMessage: "กลุ่มเกษตรกรคืออะไร",
+      target: "all",
+      planCode: "free",
+    },
+  );
+
+  assert.equal(result.selectedSources.length >= 1, true);
+  assert.equal(result.selectedSources[0].source, "tbl_glaws");
+  assert.equal(result.selectedSources[0].reference, "มาตรา 5");
+});
+
 test("database-only source selection ranks coop formation evidence ahead of dissolution evidence", () => {
   const result = selectDatabaseOnlySources(
     {
