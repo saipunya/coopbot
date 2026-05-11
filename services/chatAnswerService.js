@@ -426,7 +426,7 @@ function buildTaxCautiousAnswer(sources, options = {}) {
 }
 
 function cleanupAnswerText(answerText, sources = [], options = {}) {
-  const raw = normalizeParagraph(answerText);
+  const raw = stripTrailingReferenceSection(normalizeParagraph(answerText));
   if (!raw) {
     return "";
   }
@@ -491,6 +491,12 @@ function cleanupAnswerText(answerText, sources = [], options = {}) {
   return cleanedLines.join("\n").trim();
 }
 
+function stripTrailingReferenceSection(text = "") {
+  return String(text || "")
+    .replace(/(?:^|\n)\s*(?:แหล่งอ้างอิง|อ้างอิง)\s*[:：]\s*\n[\s\S]*$/u, "")
+    .trim();
+}
+
 function isBroadVinichaiListingQuestion(message) {
   const normalized = normalizeForSearch(String(message || "")).toLowerCase();
   if (!isVinichaiPriorityQuestion(normalized)) {
@@ -545,6 +551,19 @@ function isLiquidatorIdentityQuestion(message) {
   }
 
   return /(?:ใครคือ|ใครเป็น|คือใคร).*(?:ผู้ชำระบัญชี)|ผู้ชำระบัญชี(?:คือ|เป็น)ใคร/.test(text);
+}
+
+function isLiquidatorDutyQuestion(message) {
+  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!text || !/ผู้ชำระบัญชี/.test(text)) {
+    return false;
+  }
+
+  if (isLiquidationAppointmentQuestion(text)) {
+    return false;
+  }
+
+  return /(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ).*(?:ผู้ชำระบัญชี)|ผู้ชำระบัญชี.*(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ)/.test(text);
 }
 
 function isReserveFundQuestion(message) {
@@ -888,6 +907,7 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
   const scope = detectLiquidationScope(message);
   const asksAppointmentAuthority = isLiquidationAppointmentQuestion(message);
   const asksLiquidatorIdentity = isLiquidatorIdentityQuestion(message);
+  const asksLiquidatorDuty = isLiquidatorDutyQuestion(message);
   const allowedSources = scope === "group" ? ["tbl_glaws"] : ["tbl_laws"];
   const references = [];
   const summaryLines = [];
@@ -942,6 +962,11 @@ function buildLiquidationFocusedAnswer(sources, options = {}) {
       detailLines.push("มาตรา 75 กำหนดให้ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชีภายในสามสิบวันนับแต่วันที่สหกรณ์เลิก");
       detailLines.push("การตั้งผู้ชำระบัญชีต้องได้รับความเห็นชอบจากนายทะเบียนสหกรณ์ จึงไม่ใช่อำนาจของคณะกรรมการดำเนินการโดยลำพัง");
       pushUniqueReference(appointmentSource);
+    } else if (asksLiquidatorDuty && dutySource) {
+      summaryLines.push("ผู้ชำระบัญชีมีอำนาจหน้าที่ดำเนินกิจการของสหกรณ์เท่าที่จำเป็นเพื่อให้การชำระบัญชีเสร็จสิ้น");
+      summaryLines.push("หน้าที่สำคัญรวมถึงการเรียกประชุมใหญ่ และการจำหน่ายทรัพย์สินของสหกรณ์ภายใต้กรอบกฎหมาย");
+      detailLines.push("มาตรา 81 เป็นฐานหลักของคำถามเรื่องอำนาจหน้าที่ผู้ชำระบัญชี จึงควรตอบจากบทบัญญัตินี้ก่อน ไม่ใช่จากบทเรื่องการเลิกสหกรณ์หรืออำนาจแต่งตั้งผู้ชำระบัญชี");
+      pushUniqueReference(dutySource);
     } else {
     if (openingSource) {
       summaryLines.push("เมื่อสหกรณ์เลิกตามเหตุที่กฎหมายกำหนด ต้องจัดการชำระบัญชีตามหมวด 4 ว่าด้วยการชำระบัญชี");
@@ -2111,6 +2136,7 @@ function cleanLine(text) {
 	    .replace(/^คำตอบ(?:สรุป)?ดังนี้:?\s*/i, "")
 	    .replace(/^(?:เอกสารที่อัปโหลด|ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม\/แก้ไข|พรบ\.สหกรณ์ พ\.ศ\. 2542|หนังสือวินิจฉัย\/ตีความ|Q&A ที่ผู้ดูแลเตรียมไว้)(?:\s*\([^)]*\))?\s*:\s*/i, "")
 	    .replace(/^ข้อมูลที่พบจากฐานข้อมูลกฎหมาย(?:\s*\([^)]*\))?:?\s*/u, "")
+	    .replace(/^เนื้อหาที่เกี่ยวข้อง\s*:\s*(?=\S)/iu, "")
 	    // Only strip inline "แหล่งอ้างอิง:" when it is followed by content on the same line.
 	    .replace(/^แหล่งอ้างอิง\s*:\s*(?=\S)/iu, "")
 	    .replace(/\s+/g, " ")
@@ -2391,6 +2417,13 @@ function lineLooksLikeSourceMetadata(line, sources = []) {
   const cleanedLine = cleanLine(line);
   if (!cleanedLine) {
     return false;
+  }
+
+  if (
+    /^(?:แหล่งข้อมูลที่|source\s*\d+|source\s*#?\s*\d+)/iu.test(cleanedLine) ||
+    /^(?:ประเภท|หัวข้อ|อ้างอิง)\s*[:：]/iu.test(cleanedLine)
+  ) {
+    return true;
   }
 
   if (looksLikeBareDocumentTitle(cleanedLine, sources)) {
@@ -3404,6 +3437,13 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
     if (section75) {
       selectedEntries = [section75];
     }
+  } else if (isLiquidatorDutyQuestion(message)) {
+    const section81 = answerEntries.find((entry) => entry.lawNumber === "81");
+    const section77 = answerEntries.find((entry) => entry.lawNumber === "77");
+    const dutyEntry = section81 || section77;
+    if (dutyEntry) {
+      selectedEntries = [dutyEntry];
+    }
   }
 
   return selectedEntries;
@@ -3421,7 +3461,7 @@ function buildDbOnlyMainChatAnswerResult(sources = [], options = {}) {
 
   const message = String(options.message || options.originalMessage || "").trim();
   const selectedSources = selectedEntries.map((entry) => entry.source).filter(Boolean);
-  if (isLiquidationAppointmentQuestion(message)) {
+  if (isLiquidationAppointmentQuestion(message) || isLiquidatorDutyQuestion(message)) {
     const focusedAnswer = buildLiquidationFocusedAnswer(selectedSources, {
       ...options,
       message,
@@ -3452,9 +3492,8 @@ function buildDbOnlyMainChatAnswerResult(sources = [], options = {}) {
     };
   }
 
-  const referenceSection = buildDbOnlyReferenceSection(selectedEntries);
   return {
-    answer: [renderedBlocks.join("\n\n"), referenceSection].filter(Boolean).join("\n\n").trim(),
+    answer: renderedBlocks.join("\n\n").trim(),
     selectedSources,
     selectedEntries,
   };

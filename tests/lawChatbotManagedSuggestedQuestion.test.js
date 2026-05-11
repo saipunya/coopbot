@@ -211,7 +211,7 @@ test("replyToChat uses the saved Q&A answer first and appends DB explanation", a
   );
 
   assert.match(result.answer, /^ให้เสนอร่างแก้ไขต่อที่ประชุมและให้มติอนุมัติตามขั้นตอน/);
-  assert.match(result.answer, /เพิ่มเติมจากข้อมูลอื่น/);
+  assert.match(result.answer, /ข้อมูลเพิ่มเติม/);
   assert.match(result.answer, /ต้องจัดทำร่างแก้ไข แจ้งสมาชิก และดำเนินการตามมติที่ประชุม/);
   assert.ok(result.answer.indexOf("เพิ่มเติมจากข้อมูลอื่น") < result.answer.indexOf("แหล่งอ้างอิง:"));
   assert.doesNotMatch(result.answer.split("แหล่งอ้างอิง:")[1] || "", /เพิ่มเติมจากข้อมูลอื่น/);

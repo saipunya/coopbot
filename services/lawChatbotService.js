@@ -193,6 +193,30 @@ function getUniqueSourceTableNames(sources = []) {
   );
 }
 
+function buildClientSourceReferences(sources = []) {
+  const seen = new Set();
+  const references = [];
+
+  for (const source of Array.isArray(sources) ? sources : []) {
+    const label = getSourceDisplayLabel(source?.source || "");
+    const reference = String(source?.reference || source?.title || source?.keyword || "").trim();
+    if (!reference) {
+      continue;
+    }
+
+    const line = [label, reference].filter(Boolean).join(": ");
+    const key = line.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    references.push(line);
+  }
+
+  return references;
+}
+
 function hasExplicitLawReferenceQuery(message = "") {
   const normalized = normalizeForSearch(String(message || "")).toLowerCase();
   if (!normalized) {
@@ -658,6 +682,12 @@ function normalizeContinuationText(text = "") {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
+function stripTrailingAnswerReferenceSection(text = "") {
+  return String(text || "")
+    .replace(/(?:^|\n)\s*(?:แหล่งอ้างอิง|อ้างอิง)\s*[:：]\s*\n[\s\S]*$/u, "")
+    .trim();
+}
+
 function cleanAssistantAnswer(rawAnswer = "", originalMessage = "") {
   let text = String(rawAnswer || "");
   if (!text) return "";
@@ -666,12 +696,19 @@ function cleanAssistantAnswer(rawAnswer = "", originalMessage = "") {
   text = text.replace(/\r\n/g, "\n").replace(/\t/g, " ");
 
   // Remove lines starting with forbidden prefixes
-  const lines = text.split(/\n/).filter((ln) => {
+  const lines = text.split(/\n/).map((ln) => {
     const t = String(ln || "").trim();
+    if (/^เนื้อหาที่เกี่ยวข้อง\s*[:：]\s*/iu.test(t)) {
+      return t.replace(/^เนื้อหาที่เกี่ยวข้อง\s*[:：]\s*/iu, "").trim();
+    }
+    return t;
+  }).filter((t) => {
     if (!t) return false;
     if (/^\s*(คำถาม:)/.test(t)) return false;
     if (/^\s*(KR\b)/.test(t)) return false;
     if (/^\s*(ผู้ช่วย\b)/.test(t)) return false;
+    if (/^\s*(?:แหล่งข้อมูลที่|source\s*\d+|source\s*#?\s*\d+)/iu.test(t)) return false;
+    if (/^\s*(?:ประเภท|หัวข้อ|อ้างอิง)\s*[:：]/iu.test(t)) return false;
     return true;
   });
 
@@ -699,6 +736,7 @@ function cleanAssistantAnswer(rawAnswer = "", originalMessage = "") {
 
   // Remove any leading labels like "คำตอบ:" or "Answer:" after trimming
   text = text.replace(/^\s*(คำตอบ[:\s]*)+/i, "").trim();
+  text = stripTrailingAnswerReferenceSection(text);
 
   return text;
 }
@@ -1234,6 +1272,7 @@ async function tryResolveFaqAnswer(message, target, session, planContext, starte
   const result = {
     hasContext: Boolean(answer),
     answer,
+    sourceReferences: buildClientSourceReferences(selectedSources),
     highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
     usedFollowUpContext: false,
     usedInternetFallback: false,
@@ -1330,6 +1369,11 @@ function composeFaqAndDatabaseAnswer(faqAnswer = "", databaseAnswer = "") {
   ]);
   const answerParts = [];
 
+
+
+  if (preparedFaqAnswer && preparedDatabaseAnswer) {
+    return `${preparedFaqAnswer}\n\nข้อมูลเพิ่มเติม:\n${preparedDatabaseAnswer}`.trim();
+  }
   if (faqMain) {
     answerParts.push(faqMain);
   }
@@ -1614,6 +1658,7 @@ async function replyToDbOnlyMainChat(payload, session) {
   const result = {
     hasContext: Boolean(answer && selectedSources.length > 0),
     answer,
+    sourceReferences: buildClientSourceReferences(selectedSources),
     highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
     usedFollowUpContext: Boolean(resolvedContext.usedContext),
     usedInternetFallback: false,
