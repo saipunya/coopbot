@@ -200,7 +200,7 @@ test("replyToChat uses the saved Q&A answer first and appends DB explanation", a
   );
 
   assert.match(result.answer, /^ให้เสนอร่างแก้ไขต่อที่ประชุมและให้มติอนุมัติตามขั้นตอน/);
-  assert.match(result.answer, /เพิ่มเติมจากข้อมูลอื่น/);
+  assert.match(result.answer, /ข้อมูลเพิ่มเติม/);
   assert.match(result.answer, /ต้องจัดทำร่างแก้ไข แจ้งสมาชิก และดำเนินการตามมติที่ประชุม/);
   assert.equal(result.responseMeta?.answerMode, "db_only_main_chat");
   assert.ok(result.responseMeta?.sourceTables?.includes("chatbot_suggested_questions"));

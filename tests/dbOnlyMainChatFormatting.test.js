@@ -5,6 +5,10 @@ const {
   buildDbOnlyMainChatAnswerResult,
   formatDbOnlyMainChatAnswer,
 } = require("../services/chatAnswerService");
+const {
+  classifyQuestionIntent,
+  selectTieredSources,
+} = require("../services/sourceSelectionService");
 
 test("preserves complete structured legal lists and removes metadata headings", () => {
   const answer = formatDbOnlyMainChatAnswer([
@@ -48,6 +52,29 @@ test("keeps legal substance while stripping section-number metadata prefix", () 
   assert.doesNotMatch(answer, /^มาตรา\s*74\b/m);
   assert.match(answer, /ถ้าสหกรณ์ล้มละลาย/);
   assert.match(answer, /การชำระบัญชีให้เป็นไปตามกฎหมายว่าด้วยล้มละลาย/);
+});
+
+test("removes source metadata labels from answer body", () => {
+  const answer = formatDbOnlyMainChatAnswer([
+    {
+      source: "tbl_laws",
+      reference: "มาตรา 44",
+      content: `
+แหล่งข้อมูลที่ 1
+ประเภท: พรบ.สหกรณ์ พ.ศ. 2542
+หัวข้อ: มาตรา 44
+อ้างอิง: มาตรา 44
+เนื้อหาที่เกี่ยวข้อง: ข้อบังคับจะแก้ไขเพิ่มเติมได้ก็แต่โดยมติที่ประชุมใหญ่
+      `,
+    },
+  ]);
+
+  assert.doesNotMatch(answer, /แหล่งข้อมูลที่/);
+  assert.doesNotMatch(answer, /^ประเภท:/m);
+  assert.doesNotMatch(answer, /^หัวข้อ:/m);
+  assert.doesNotMatch(answer, /^อ้างอิง:/m);
+  assert.doesNotMatch(answer, /^เนื้อหาที่เกี่ยวข้อง:/m);
+  assert.match(answer, /ข้อบังคับจะแก้ไขเพิ่มเติมได้ก็แต่โดยมติที่ประชุมใหญ่/);
 });
 
 test("exact law section answer does not truncate long paragraph text", () => {
@@ -107,7 +134,7 @@ DA
   assert.match(answer, /สหกรณ์ย่อมเลิก/);
 });
 
-test("answers dissolution question with section 70 causes first and keeps reference separate", () => {
+test("answers dissolution question with section 70 causes first and omits reference block from answer", () => {
   const answer = formatDbOnlyMainChatAnswer(
     [
       {
@@ -137,7 +164,7 @@ test("answers dissolution question with section 70 causes first and keeps refere
   assert.match(answer, /\(5\)\s*นายทะเบียนสหกรณ์สั่งให้เลิก/);
 
   assert.doesNotMatch(answer, /ไม่เริ่มดำเนินกิจการภายในหนึ่งปี/);
-  assert.match(answer, /\n\nอ้างอิง:\n- มาตรา 70/);
+  assert.doesNotMatch(answer, /(?:^|\n)อ้างอิง:/);
 });
 
 test("liquidation appointment question keeps only section 75 as the answer source", () => {
@@ -206,6 +233,91 @@ test("liquidation appointment answer stays focused on appointment authority", ()
   assert.match(result.answer, /นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชีแทนได้/);
   assert.doesNotMatch(result.answer, /ล้มละลาย/);
   assert.doesNotMatch(result.answer, /จำหน่ายทรัพย์สินของสหกรณ์/);
+});
+
+test("liquidator duty answer stays focused on section 81 duties", () => {
+  const result = buildDbOnlyMainChatAnswerResult(
+    [
+      {
+        source: "tbl_laws",
+        score: 980,
+        reference: "มาตรา 70",
+        content:
+          "สหกรณ์ย่อมเลิก เมื่อมีเหตุตามที่กฎหมายกำหนด และนายทะเบียนสหกรณ์อาจสั่งให้เลิกได้ในบางกรณี",
+      },
+      {
+        source: "tbl_laws",
+        score: 970,
+        reference: "มาตรา 75",
+        content:
+          "ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชี และถ้าไม่เลือกตั้งให้นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี",
+      },
+      {
+        source: "tbl_laws",
+        score: 940,
+        reference: "มาตรา 81",
+        content:
+          "ผู้ชำระบัญชีมีอำนาจหน้าที่ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น เรียกประชุมใหญ่ และจำหน่ายทรัพย์สินของสหกรณ์",
+      },
+    ],
+    {
+      message: "อำนาจหน้าที่ผู้ชำระบัญชี",
+      maxPrimarySections: 3,
+    },
+  );
+
+  assert.equal(result.selectedSources.length, 1);
+  assert.equal(result.selectedSources[0].reference, "มาตรา 81");
+  assert.match(result.answer, /ผู้ชำระบัญชีมีอำนาจหน้าที่ดำเนินกิจการของสหกรณ์/);
+  assert.match(result.answer, /เรียกประชุมใหญ่/);
+  assert.match(result.answer, /จำหน่ายทรัพย์สินของสหกรณ์/);
+  assert.doesNotMatch(result.answer, /สหกรณ์ย่อมเลิก/);
+  assert.doesNotMatch(result.answer, /นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี/);
+});
+
+test("liquidator duty source selection excludes กพส composition matches", () => {
+  const message = "อำนาจหน้าที่ผู้ชำระบัญชี";
+  const result = selectTieredSources(
+    {
+      structured_laws: [
+        {
+          source: "tbl_laws",
+          score: 990,
+          reference: "มาตรา 31",
+          title: "กพส.",
+          content: "กพส. ประกอบด้วยคณะกรรมการบริหารกองทุนพัฒนาสหกรณ์ และมีอำนาจหน้าที่ตามระเบียบ",
+        },
+        {
+          source: "tbl_laws",
+          score: 720,
+          reference: "มาตรา 81",
+          title: "อำนาจหน้าที่ผู้ชำระบัญชี",
+          content:
+            "ผู้ชำระบัญชีมีอำนาจหน้าที่ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น เรียกประชุมใหญ่ และจำหน่ายทรัพย์สินของสหกรณ์",
+        },
+      ],
+      admin_knowledge: [],
+      knowledge_suggestion: [],
+      vinichai: [],
+      documents: [],
+      pdf_chunks: [],
+      knowledge_base: [],
+      internet: [],
+    },
+    classifyQuestionIntent(message),
+    {
+      databaseOnlyMode: true,
+      message,
+      originalMessage: message,
+      sourceLimit: 2,
+    },
+  );
+
+  assert.equal(result.selectedSources[0]?.reference, "มาตรา 81");
+  assert.doesNotMatch(
+    result.selectedSources.map((source) => `${source.title || ""} ${source.content || ""}`).join(" "),
+    /กพส|กองทุนพัฒนาสหกรณ์/,
+  );
 });
 
 test("formation query does not select dissolution sources when formation evidence exists", () => {

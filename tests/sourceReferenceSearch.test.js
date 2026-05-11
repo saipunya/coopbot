@@ -87,6 +87,25 @@ test("managed suggested question matches time-oriented questions from answer tex
   assert.match(match?.sourceReference || "", /ข้อ 20/);
 });
 
+test("managed suggested question rejects answer-only fuzzy matches", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การประชุมใหญ่สามัญประจำปี",
+    answerText: "สมาชิกมีสิทธิออกเสียงลงคะแนนและเลือกตั้งคณะกรรมการดำเนินการ",
+    sourceReference: "ข้อบังคับสหกรณ์ หมวดการประชุมใหญ่",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(
+    "สิทธิออกเสียงลงคะแนนเลือกตั้งคณะกรรมการ",
+    "coop",
+  );
+
+  assert.equal(match, null);
+});
+
 test("managed suggested question prioritizes the exact draft bylaw clause reference", async () => {
   const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
 

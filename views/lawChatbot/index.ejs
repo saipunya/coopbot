@@ -8188,6 +8188,21 @@ body {
         `;
       }
 
+      function normalizeSourceReferencesForDisplay(sourceReferences) {
+        if (!Array.isArray(sourceReferences)) return '';
+
+        return sourceReferences
+          .map((item) => {
+            if (typeof item === 'string') return item.trim();
+            if (!item || typeof item !== 'object') return '';
+            const label = String(item.sourceLabel || item.source || '').trim();
+            const reference = String(item.reference || item.title || item.keyword || '').trim();
+            return [label, reference].filter(Boolean).join(': ');
+          })
+          .filter(Boolean)
+          .join('\n');
+      }
+
       function buildBotAnswerWrapperHtml(answerHtml, referenceText, terms, continuationHtml = '') {
         const resolvedAnswerHtml = String(answerHtml || '').trim();
         const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
@@ -8377,7 +8392,7 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
   const titleHtml = sectionTitle
     ? `
       <div class="${titleClass}">
-        <i class="bi ${titleIconClass}"></i>${escapeHtml(sectionTitle)}
+        <i class="bi ${titleIconClass}"></i>${normalizedTitle === 'ข้อมูลเพิ่มเติม' ? `<strong>${escapeHtml(sectionTitle)}</strong>` : escapeHtml(sectionTitle)}
       </div>
     `
     : '';
@@ -8498,6 +8513,50 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
         `;
       }
 
+      function extractAdditionalInfoParts(text) {
+        const raw = String(text || '').trim();
+        const markerMatch = raw.match(/(^|\n)\s*(?:เพิ่มเติมจากข้อมูลอื่น|ข้อมูลเพิ่มเติม)\s*:\s*/i);
+        if (!markerMatch || typeof markerMatch.index !== 'number') {
+          return {
+            mainText: raw,
+            additionalText: '',
+          };
+        }
+
+        const leadingBreak = String(markerMatch[1] || '');
+        const markerIndex = markerMatch.index + leadingBreak.length;
+        const markerLength = markerMatch[0].length - leadingBreak.length;
+
+        return {
+          mainText: raw.slice(0, markerIndex).trim(),
+          additionalText: raw.slice(markerIndex + markerLength).trim(),
+        };
+      }
+
+      function buildAdditionalInfoCollapseHtml(additionalText, terms) {
+        const cleaned = String(additionalText || '').trim();
+        if (!cleaned) return '';
+
+        const collapseId = `additionalInfoCollapse_${Math.random().toString(36).slice(2, 10)}`;
+        const contentHtml = buildAnswerSectionHtml('ข้อมูลเพิ่มเติม', 'bi-info-circle', cleaned, terms);
+
+        return `
+          <div class="bot-continuation-actions">
+            <button
+              type="button"
+              class="btn btn-outline-primary btn-sm bot-continuation-btn"
+              data-bs-toggle="collapse"
+              data-bs-target="#${collapseId}"
+              aria-expanded="false"
+              aria-controls="${collapseId}"
+            >ดูข้อมูลเพิ่มเติม</button>
+          </div>
+          <div class="collapse" id="${collapseId}">
+            ${contentHtml}
+          </div>
+        `;
+      }
+
       function hasReferenceMarker(text) {
         return /(?:^|\n)\s*(?:แหล่งอ้างอิง|อ้างอิง):\s*/i.test(String(text || ''));
       }
@@ -8551,6 +8610,9 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
       }
 
       function formatBotMessageHtml(text, terms, options = {}) {
+        const fallbackReferenceText = typeof options.referenceText === 'string'
+          ? options.referenceText.trim()
+          : normalizeSourceReferencesForDisplay(options.sourceReferences);
         const raw = normalizeAnswerLineBreaksForDisplay(
           restorePreparedQaTitle(stripBotUiNoiseText(sanitizeDisplayText(text)), options)
         );
@@ -8558,16 +8620,22 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
 
         const continuationHtml = buildContinuationActionHtml(options);
         if (!hasReferenceMarker(raw)) {
-          const fallbackHtml = buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', raw, terms);
+          const additionalParts = extractAdditionalInfoParts(raw);
+          const fallbackHtml = [
+            buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', additionalParts.mainText, terms),
+            buildAdditionalInfoCollapseHtml(additionalParts.additionalText, terms)
+          ].filter(Boolean).join('');
           return buildToneWrappedResponseHtml(
-            buildBotAnswerWrapperHtml(fallbackHtml, '', terms, continuationHtml),
+            buildBotAnswerWrapperHtml(fallbackHtml, fallbackReferenceText, terms, continuationHtml),
             terms,
             options
           );
         }
 
         const { mainText, referenceText } = extractReferenceParts(raw);
-        const normalizedMain = String(mainText || raw).trim();
+        const resolvedReferenceText = referenceText || fallbackReferenceText;
+        const additionalParts = extractAdditionalInfoParts(String(mainText || raw).trim());
+        const normalizedMain = additionalParts.mainText;
         const summaryMatch = normalizedMain.match(/สรุปสาระสำคัญ:\s*([\s\S]*?)(?:\n\s*\nรายละเอียดเพิ่มเติม:\s*|$)/i);
         const detailMatch = normalizedMain.match(/รายละเอียดเพิ่มเติม:\s*([\s\S]*)$/i);
         const introText = summaryMatch && typeof summaryMatch.index === 'number'
@@ -8579,16 +8647,17 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
           ? [cleanedIntroText, summaryMatch[1]].filter(Boolean).join('\n')
           : normalizedMain;
        const summaryHtml = [
-  presentationHtml,
-  buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', summaryText, terms, options),
-  detailMatch
-    ? buildAnswerSectionHtml('รายละเอียดเพิ่มเติม', 'bi-info-circle', detailMatch[1], terms, options)
-    : ''
-].filter(Boolean).join('');
+	  presentationHtml,
+	  buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', summaryText, terms, options),
+	  detailMatch
+	    ? buildAnswerSectionHtml('รายละเอียดเพิ่มเติม', 'bi-info-circle', detailMatch[1], terms, options)
+	    : '',
+	  buildAdditionalInfoCollapseHtml(additionalParts.additionalText, terms)
+	].filter(Boolean).join('');
         const resolvedSummaryHtml = summaryHtml || decorateBotFallbackHtml(formatBotDisplayLineHtml(normalizedMain, terms));
 
         return buildToneWrappedResponseHtml(
-          buildBotAnswerWrapperHtml(resolvedSummaryHtml, referenceText, terms, continuationHtml),
+          buildBotAnswerWrapperHtml(resolvedSummaryHtml, resolvedReferenceText, terms, continuationHtml),
           terms,
           options
         );
@@ -9389,6 +9458,7 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
               signInPath: data && typeof data.signInPath === 'string' ? data.signInPath : '',
               freeAiPreview: data && data.freeAiPreview ? data.freeAiPreview : null,
               continuation: data && data.continuation ? data.continuation : null,
+              sourceReferences: data && Array.isArray(data.sourceReferences) ? data.sourceReferences : [],
               responseIntro: data && typeof data.responseIntro === 'string' ? data.responseIntro : '',
               responseClosing: data && typeof data.responseClosing === 'string' ? data.responseClosing : '',
               responseMeta: data && data.responseMeta ? data.responseMeta : null,

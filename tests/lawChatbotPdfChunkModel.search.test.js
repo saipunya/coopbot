@@ -164,6 +164,33 @@ test("central query expansion covers dissolution and liquidation aliases", () =>
   });
 });
 
+test("liquidator definition query does not expand into registrar authority", () => {
+  const expanded = expandSearchConcepts("ผู้ชำระบัญชี หมายถึงใคร");
+
+  assert.match(expanded, /ผู้ชำระบัญชี/);
+  assert.doesNotMatch(expanded, /นายทะเบียนสหกรณ์/);
+  assert.doesNotMatch(expanded, /สหกรณ์ย่อมเลิก/);
+});
+
+test("liquidator duty query expands to duty terms without dissolution authority drift", () => {
+  const expanded = expandSearchConcepts("อำนาจหน้าที่ผู้ชำระบัญชี");
+
+  assert.match(expanded, /ผู้ชำระบัญชีมีอำนาจหน้าที่/);
+  assert.match(expanded, /มาตรา 81/);
+  assert.match(expanded, /เรียกประชุมใหญ่/);
+  assert.match(expanded, /จำหน่ายทรัพย์สินของสหกรณ์/);
+  assert.doesNotMatch(expanded, /นายทะเบียนสหกรณ์/);
+  assert.doesNotMatch(expanded, /สหกรณ์ย่อมเลิก/);
+});
+
+test("group formation member-count query expands to section 5 minimum members", () => {
+  const expanded = expandSearchConcepts("ตั้งกลุ่มเกษตรกรต้องมีสมาชิกเท่าไร");
+
+  assert.match(expanded, /มาตรา 5/);
+  assert.match(expanded, /บุคคลผู้ประกอบอาชีพเกษตรกรรม/);
+  assert.match(expanded, /ไม่น้อยกว่าสามสิบคน/);
+});
+
 test("[Case 1] exact keyword returns the matching board row near the top", async () => {
   const results = await search("คณะกรรมการดำเนินการ", 5);
   const topIds = getResultIds(results).slice(0, 2);
@@ -177,6 +204,21 @@ test("[Case 1] exact keyword returns the matching board row near the top", async
     results.find((row) => row.id === 101)?.chunk_text || "",
     /อำนาจหน้าที่บริหารกิจการสหกรณ์/,
     `expected row 101 to be present with matching content:\n${printTopResults(results)}`,
+  );
+  assert.ok(
+    !getResultIds(results).slice(0, 5).includes(102),
+    `คพช row should not be treated as a board-operation match:\n${printTopResults(results)}`,
+  );
+});
+
+test("generic board queries do not drift to the national cooperative development board", async () => {
+  const results = await search("กรรมการมีกี่คน", 5);
+
+  assert.ok(results.length > 0, "should return results for board count query");
+  assert.equal(results[0]?.id, 111, `expected board count row first:\n${printTopResults(results)}`);
+  assert.ok(
+    !getResultIds(results).includes(102),
+    `คพช row should be excluded from generic board queries:\n${printTopResults(results)}`,
   );
 });
 

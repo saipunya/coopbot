@@ -1192,6 +1192,19 @@ function isLiquidationAppointmentAuthorityQuestion(message) {
   return /(ใคร|ผู้มีอำนาจ|อำนาจ).*(แต่งตั้ง|ตั้ง).*ผู้ชำระบัญชี|ผู้ชำระบัญชี.*(แต่งตั้ง|ตั้ง).*โดยใคร/.test(normalized);
 }
 
+function isLiquidatorDutyQuestion(message) {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized || !/ผู้ชำระบัญชี/.test(normalized)) {
+    return false;
+  }
+
+  if (isLiquidationAppointmentAuthorityQuestion(normalized)) {
+    return false;
+  }
+
+  return /(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ).*(?:ผู้ชำระบัญชี)|ผู้ชำระบัญชี.*(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ)/.test(normalized);
+}
+
 function isDissolutionPrioritySearch(message) {
   const normalized = normalizeForSearch(message).toLowerCase();
   if (!normalized) {
@@ -1318,6 +1331,17 @@ function getPreferredLiquidationLawNumberBonuses(message = "") {
       "74": 50,
       "73": 30,
       "81": -180,
+    };
+  }
+
+  if (isLiquidatorDutyQuestion(message)) {
+    return {
+      "81": 260,
+      "77": 80,
+      "73": -90,
+      "74": -90,
+      "75": -120,
+      "87": -60,
     };
   }
 
@@ -2087,7 +2111,16 @@ function scoreLiquidationSourceFocus(item = {}, message = "") {
   }
 
   const asksAppointmentAuthority = isLiquidationAppointmentAuthorityQuestion(message);
+  const asksLiquidatorDuty = isLiquidatorDutyQuestion(message);
   let score = 0;
+
+  if (asksLiquidatorDuty) {
+    const hasLiquidatorSignal = /(ผู้ชำระบัญชี|มาตรา 81|มาตรา81)/.test(sourceText);
+    const hasDutySignal = /(อำนาจหน้าที่|มีหน้าที่|หน้าที่|มีอำนาจ|เรียกประชุมใหญ่|จำหน่ายทรัพย์สินของสหกรณ์|ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น)/.test(sourceText);
+    if (!hasLiquidatorSignal || !hasDutySignal) {
+      return Number.NEGATIVE_INFINITY;
+    }
+  }
 
   if (/(มาตรา 73|มาตรา73)/.test(sourceText)) {
     score += 42;
@@ -2132,6 +2165,19 @@ function scoreLiquidationSourceFocus(item = {}, message = "") {
 
     if (sourceName === "tbl_laws" && /(มาตรา 81|มาตรา81)/.test(sourceText)) {
       score -= 260;
+    }
+  } else if (asksLiquidatorDuty) {
+    if (/(ผู้ชำระบัญชีมีอำนาจหน้าที่|เรียกประชุมใหญ่|จำหน่ายทรัพย์สินของสหกรณ์|ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น)/.test(sourceText)) {
+      score += 190;
+    }
+    if (sourceName === "tbl_laws" && /(มาตรา 81|มาตรา81)/.test(sourceText)) {
+      score += 180;
+    }
+    if (/(มาตรา 70|มาตรา70|สหกรณ์ย่อมเลิก|สั่งให้เลิก)/.test(sourceText)) {
+      score -= 180;
+    }
+    if (/(มาตรา 75|มาตรา75|เลือกตั้งผู้ชำระบัญชี|ตั้งผู้ชำระบัญชี|นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี)/.test(sourceText)) {
+      score -= 160;
     }
   }
 
@@ -2310,6 +2356,7 @@ function rankSourcesForMessageFocus(items, message = "") {
           __messageFocusRank: scoreLiquidationSourceFocus(item, message) + bonus,
         };
       })
+      .filter((item) => Number.isFinite(Number(item.__messageFocusRank)))
       .sort((left, right) => {
         const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
         if (focusDiff !== 0) {

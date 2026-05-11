@@ -203,7 +203,20 @@ function isCoopBylawAmendmentQuery(message = "") {
   );
 }
 
+function isLiquidatorDutyQuery(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized || !/ผู้ชำระบัญชี/.test(normalized)) {
+    return false;
+  }
+
+  return /(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ).*(?:ผู้ชำระบัญชี)|ผู้ชำระบัญชี.*(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ)/.test(normalized);
+}
+
 function getTopicExpansionLawNumbers(message = "", sourceName = "") {
+  if (String(sourceName || "").trim().toLowerCase() === "tbl_laws" && isLiquidatorDutyQuery(message)) {
+    return ["81"];
+  }
+
   if (String(sourceName || "").trim().toLowerCase() === "tbl_laws" && isCoopDissolutionTopicQuery(message)) {
     return ["70"];
   }

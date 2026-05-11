@@ -194,6 +194,21 @@ function buildSuggestedQuestionSearchText(entry = {}) {
   ).toLowerCase();
 }
 
+function buildSuggestedQuestionAnchorText(entry = {}) {
+  return normalizeForSearch(
+    [
+      entry.normalized_question,
+      entry.normalizedQuestion,
+      entry.question_text,
+      entry.questionText,
+      entry.source_reference,
+      entry.sourceReference,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).toLowerCase();
+}
+
 function detectQuantifierQueryRule(normalizedQuestion = "") {
   return QUANTIFIER_QUERY_RULES.find((rule) => rule.queryPattern.test(normalizedQuestion)) || null;
 }
@@ -1358,16 +1373,25 @@ class LawChatbotSuggestedQuestionModel {
       row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
     );
     const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
-    const anchorTokens = new Set(segmentWords([normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ")));
+    const normalizedAnchorText = buildSuggestedQuestionAnchorText(row);
+    const anchorTokens = new Set(segmentWords(normalizedAnchorText));
     const anchorHits = [...questionTokens].filter((token) => anchorTokens.has(token)).length;
     const anchorCoverage = questionTokens.size > 0 ? anchorHits / questionTokens.size : 0;
-    const hasAnswerOnlyHeavyMatch = normalizedAnswer && tokenCoverage >= 0.75 && anchorCoverage < 0.45;
+    const answerTokens = new Set(segmentWords(normalizedAnswer));
+    const answerHits = [...questionTokens].filter((token) => answerTokens.has(token)).length;
+    const hasAnswerHit = answerHits > 0;
+
+    if (hasAnswerHit && anchorHits === 0) {
+      return null;
+    }
 
     let similarity = (jaccardSimilarity * 0.55) + (tokenCoverage * 0.35) + (Math.max(0, focusScore) * 0.01);
     similarity += anchorCoverage * 0.14;
 
-    if (hasAnswerOnlyHeavyMatch) {
-      similarity -= 0.18;
+    if (hasAnswerHit && anchorCoverage < 0.35) {
+      similarity -= 0.12;
+    } else if (hasAnswerHit) {
+      similarity += Math.min(0.04, answerHits * 0.01);
     }
 
     if (normalizedReference && normalizedQuestion.includes(normalizedReference)) {
@@ -1510,7 +1534,7 @@ class LawChatbotSuggestedQuestionModel {
       ? searchTerms
         .map(
           () =>
-            "(normalized_question LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ? OR LOWER(COALESCE(answer_text, '')) LIKE ?)",
+            "(normalized_question LIKE ? OR LOWER(COALESCE(question_text, '')) LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ?)",
         )
         .join(" OR ")
       : "1 = 1";
