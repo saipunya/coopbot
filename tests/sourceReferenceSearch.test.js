@@ -372,6 +372,25 @@ test("managed suggested question matches liquidator definition questions", async
   assert.match(match?.answerText || "", /ชำระสะสางกิจการ/);
 });
 
+test("managed suggested question matches liquidator duty questions from Q&A anchors", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+  const { findManagedSuggestedQuestionMatch } = loadFresh("../services/chatOrchestrationService");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "อำนาจหน้าที่ผู้ชำระบัญชี",
+    answerText: "ผู้ชำระบัญชีมีอำนาจฟ้องคดี ประนีประนอมยอมความ เรียกประชุมใหญ่ และจำหน่ายทรัพย์สินของสหกรณ์",
+    sourceReference: "Q&A การชำระบัญชี มาตรา 81",
+    isActive: true,
+  });
+
+  const match = await findManagedSuggestedQuestionMatch("อำนาจหน้าที่ผู้ชำระบัญชี", "coop");
+
+  assert.ok(match, "expected a prepared Q&A match for liquidator duties");
+  assert.match(match?.questionText || "", /อำนาจหน้าที่ผู้ชำระบัญชี/);
+  assert.match(match?.answerText || "", /ฟ้องคดี|ประนีประนอม|จำหน่ายทรัพย์สิน/);
+});
+
 test("managed suggested question treats สมาชิกสามัญ as สมาชิก without drifting to สมาชิกสมทบ", async () => {
   const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
 
@@ -396,6 +415,33 @@ test("managed suggested question treats สมาชิกสามัญ as ส
   assert.ok(match, "expected ordinary member query to match the member entry");
   assert.match(match?.sourceReference || "", /ข้อ 5/);
   assert.doesNotMatch(match?.sourceReference || "", /สมาชิกสมทบ/);
+});
+
+test("managed suggested question maps member rights and duties to draft bylaw clause 33", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "สิทธิและหน้าที่ของสมาชิก",
+    answerText: "สมาชิกมีสิทธิและหน้าที่ตามที่กำหนดไว้ในข้อบังคับของสหกรณ์",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 33 สิทธิและหน้าที่ของสมาชิก",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "สิทธิและหน้าที่ของสมาชิกสมทบ",
+    answerText: "สมาชิกสมทบมีสิทธิและหน้าที่ตามข้อจำกัดที่ข้อบังคับกำหนด",
+    sourceReference: "ร่างข้อบังคับสหกรณ์ ข้อ 34 สมาชิกสมทบ",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch("สิทธิหน้าที่สมาชิกสหกรณ์", "coop");
+
+  assert.ok(match, "expected member rights and duties Q&A match");
+  assert.match(match?.questionText || "", /สิทธิและหน้าที่ของสมาชิก/);
+  assert.doesNotMatch(match?.questionText || "", /สมทบ/);
+  assert.match(match?.sourceReference || "", /ข้อ\s*33/);
 });
 
 test("approved FAQ-style knowledge suggestions are searchable by source reference", async () => {

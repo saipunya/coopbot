@@ -1205,6 +1205,15 @@ function isLiquidatorDutyQuestion(message) {
   return /(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ).*(?:ผู้ชำระบัญชี)|ผู้ชำระบัญชี.*(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ)/.test(normalized);
 }
 
+function hasLiquidatorDutySourceSignal(sourceText = "") {
+  return (
+    /(อำนาจหน้าที่|มีหน้าที่|หน้าที่|มีอำนาจ|อำนาจของผู้ชำระบัญชี|ผู้ชำระบัญชีมีอำนาจ)/.test(sourceText) ||
+    /(เรียกประชุมใหญ่|จำหน่ายทรัพย์สิน|ขายทรัพย์สิน|จัดการทรัพย์สิน)/.test(sourceText) ||
+    /(ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น|ระวังรักษาประโยชน์ของสหกรณ์)/.test(sourceText) ||
+    /(ฟ้องคดี|ต่อสู้คดี|ประนีประนอมยอมความ|ชำระหนี้|รวบรวมทรัพย์สิน)/.test(sourceText)
+  );
+}
+
 function isDissolutionPrioritySearch(message) {
   const normalized = normalizeForSearch(message).toLowerCase();
   if (!normalized) {
@@ -2119,7 +2128,7 @@ function scoreLiquidationSourceFocus(item = {}, message = "") {
 
   if (asksLiquidatorDuty) {
     const hasLiquidatorSignal = /(ผู้ชำระบัญชี|มาตรา 81|มาตรา81)/.test(sourceText);
-    const hasDutySignal = /(อำนาจหน้าที่|มีหน้าที่|หน้าที่|มีอำนาจ|เรียกประชุมใหญ่|จำหน่ายทรัพย์สินของสหกรณ์|ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น)/.test(sourceText);
+    const hasDutySignal = hasLiquidatorDutySourceSignal(sourceText);
     if (!hasLiquidatorSignal || !hasDutySignal) {
       return Number.NEGATIVE_INFINITY;
     }
@@ -2170,7 +2179,7 @@ function scoreLiquidationSourceFocus(item = {}, message = "") {
       score -= 260;
     }
   } else if (asksLiquidatorDuty) {
-    if (/(ผู้ชำระบัญชีมีอำนาจหน้าที่|เรียกประชุมใหญ่|จำหน่ายทรัพย์สินของสหกรณ์|ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น)/.test(sourceText)) {
+    if (hasLiquidatorDutySourceSignal(sourceText)) {
       score += 190;
     }
     if (sourceName === "tbl_laws" && /(มาตรา 81|มาตรา81)/.test(sourceText)) {

@@ -4,6 +4,7 @@ const {
   expandSearchConcepts,
   extractExplicitTopicHints,
   getQueryFocusProfile,
+  isStandaloneLegalQuery,
   normalizeForSearch,
   segmentWords,
   uniqueTokens,
@@ -484,9 +485,12 @@ async function rewriteSearchQuery(message, context = {}, options = {}) {
 async function buildQueryRewriteCandidates(message, target, session, contextualCandidate = {}, options = {}) {
   const baseMessage = normalizeRewriteQuery(message);
   const strippedMessage = stripFollowUpLeadText(baseMessage) || baseMessage;
-  const { recentTopic, sourceAnchors } = getRecentRewriteAnchors(session, target);
+  const standaloneLegalQuery = isStandaloneLegalQuery(baseMessage);
+  const { recentTopic, sourceAnchors } = standaloneLegalQuery
+    ? { recentTopic: "", sourceAnchors: [] }
+    : getRecentRewriteAnchors(session, target);
   const topicAnchor = String(contextualCandidate?.topicHints?.[0] || recentTopic || "").trim();
-  const ambiguousFollowUp = isAmbiguousFollowUpQuestion(baseMessage, contextualCandidate);
+  const ambiguousFollowUp = standaloneLegalQuery ? false : isAmbiguousFollowUpQuestion(baseMessage, contextualCandidate);
   const asksLawSection = /(มาตรา|ข้อ|วรรค|อนุมาตรา|มาตราไหน|ข้อไหน)/.test(baseMessage);
   const aiMemo = new Map();
   const seen = new Set();

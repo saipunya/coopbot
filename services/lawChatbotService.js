@@ -96,6 +96,7 @@ const { canUseAiPreview } = require("./planService");
 const { buildPaginationMeta, normalizePageNumber, normalizePageSize } = require("./paginationUtils");
 const {
   MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
+  MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS,
   MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
   createContinuationSessionState,
   getSessionContinuationState,
@@ -217,54 +218,84 @@ function buildClientSourceReferences(sources = []) {
   return references;
 }
 
+function extractSourceLawReferences(text = "") {
+  const normalized = normalizeForSearch(String(text || "")).toLowerCase();
+  const refs = [];
+  const matcher = /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]{1,4}(?:\s*\/\s*[0-9]{1,3})?)/g;
+  let match = matcher.exec(normalized);
+  while (match) {
+    if (match[1]) {
+      refs.push(match[1].replace(/\s*\/\s*/g, "/"));
+    }
+    match = matcher.exec(normalized);
+  }
+
+  return Array.from(new Set(refs));
+}
+
+function buildFaqSupportText(source = {}) {
+  return normalizeForSearch(
+    [
+      source?.reference,
+      source?.title,
+      source?.lawNumber,
+      source?.keyword,
+      source?.content,
+      source?.answer,
+      source?.supportText,
+      source?.rawContent,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).toLowerCase();
+}
+
+function filterDatabaseSourcesForFaqSupport(faqSource = null, databaseSources = []) {
+  if (!faqSource) {
+    return Array.isArray(databaseSources) ? databaseSources : [];
+  }
+
+  const sources = Array.isArray(databaseSources) ? databaseSources : [];
+  if (sources.length === 0) {
+    return [];
+  }
+
+  const faqText = buildFaqSupportText(faqSource);
+  const faqLawReferences = extractSourceLawReferences(faqText);
+  if (faqLawReferences.length > 0) {
+    return sources.filter((source) => {
+      const sourceText = buildFaqSupportText(source);
+      const sourceRefs = extractSourceLawReferences(sourceText);
+      return sourceRefs.some((ref) => faqLawReferences.includes(ref));
+    });
+  }
+
+  const faqReference = normalizeForSearch(String(faqSource.reference || faqSource.title || "")).toLowerCase();
+  if (!faqReference || faqReference.length < 4) {
+    return [];
+  }
+
+  return sources.filter((source) => {
+    const sourceReference = normalizeForSearch(String(source?.reference || source?.title || "")).toLowerCase();
+    return sourceReference && (
+      faqReference.includes(sourceReference) ||
+      sourceReference.includes(faqReference) ||
+      faqText.includes(sourceReference)
+    );
+  });
+}
+
 function hasExplicitLawReferenceQuery(message = "") {
   const normalized = normalizeForSearch(String(message || "")).toLowerCase();
   if (!normalized) {
     return false;
   }
 
-  return /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*[0-9๐-๙]{1,4}(?:\/[0-9๐-๙]{1,3})?/.test(normalized);
-}
-
-function isFaqFriendlyLegalTopic(message = "") {
-  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-
-  const asksLiquidatorDefinition =
-    /ผู้ชำระบัญชี/.test(normalized) &&
-    /(คือใคร|คืออะไร|ใครคือ|หมายถึง|ความหมาย|นิยาม)/.test(normalized) &&
-    !/(แต่งตั้ง|ตั้ง|เลือกตั้ง|ผู้มีอำนาจ|อำนาจ|โดยใคร)/.test(normalized);
-  const asksLiquidationTopic =
-    /ชำระบัญชี/.test(normalized) &&
-    !/ผู้ชำระบัญชี/.test(normalized) &&
-    !/(แต่งตั้ง|ตั้ง|เลือกตั้ง|ผู้มีอำนาจ|อำนาจ|โดยใคร)/.test(normalized);
-  const asksRegulationModification =
-    /ข้อบังคับ/.test(normalized) &&
-    /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน|ขั้นตอน)/.test(normalized);
-
-  if (asksLiquidatorDefinition || asksLiquidationTopic || asksRegulationModification) {
-    return true;
-  }
-
-  return (
-    /ข้อบังคับ/.test(normalized) &&
-    /(สหกรณ์|กลุ่มเกษตรกร)/.test(normalized) &&
-    /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน|ขั้นตอน)/.test(normalized)
-  );
+  return /มาตรา/.test(normalized);
 }
 
 function shouldSkipFaqForQuestion(message = "") {
-  if (hasExplicitLawReferenceQuery(message)) {
-    return true;
-  }
-
-  if (isFaqFriendlyLegalTopic(message)) {
-    return false;
-  }
-
-  return classifyQuestionIntent(message) === "law_section";
+  return hasExplicitLawReferenceQuery(message);
 }
 
 function isHighConfidenceFaqMatch(match = null, message = "") {
@@ -1160,6 +1191,23 @@ function buildDbOnlyMainChatContinuation(message = "", nextState = null, options
   };
 }
 
+async function hasRenderableContinuationState(nextState = null, options = {}) {
+  if (!nextState || !Array.isArray(nextState.sources) || nextState.sources.length === 0) {
+    return false;
+  }
+
+  if (Math.max(0, Number(nextState.activeSourceIndex || 0)) >= nextState.sources.length) {
+    return false;
+  }
+
+  const preview = await paginateContinuationState(nextState, {
+    maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
+    maxSourceChunks: Math.max(1, Number(options.maxSourceChunks || MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS)),
+  });
+
+  return Array.isArray(preview.renderSources) && preview.renderSources.length > 0;
+}
+
 function buildDbOnlyMainChatErrorResult(answer) {
   return {
     hasContext: false,
@@ -1225,6 +1273,12 @@ async function tryResolveFaqAnswer(message, target, session, planContext, starte
         source: "managed_suggested_question",
         title: managedSuggestedQuestionMatch.questionText || selectedSources[0].title || "",
         content: answer,
+        supportText: [
+          managedSuggestedQuestionMatch.answerText,
+          selectedSources[0].content,
+          selectedSources[0].answer,
+          selectedSources[0].reference,
+        ].filter(Boolean).join(" "),
         reference: selectedSources[0].reference || "Q&A ที่ผู้ดูแลเตรียมไว้",
         score: Math.max(Number(selectedSources[0].score || 0), 1000),
       }
@@ -1356,30 +1410,118 @@ function mergeAnswerReferenceSections(referenceSections = []) {
   return ["แหล่งอ้างอิง:", ...lines].join("\n");
 }
 
+function normalizeAnswerForDuplicateCheck(text = "") {
+  return normalizeForSearch(String(text || ""))
+    .toLowerCase()
+    .replace(/(?:สรุปสาระสำคัญ|คำตอบแบบเข้าใจง่าย|คำตอบจากฐานข้อมูล|ข้อมูลเพิ่มเติม|เพิ่มเติมจากข้อมูลอื่น|แหล่งอ้างอิง|อ้างอิง)\s*[:：]?/gu, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .trim();
+}
+
+function tokenizeAnswerForDuplicateCheck(text = "") {
+  const normalized = normalizeForSearch(String(text || "")).toLowerCase();
+  return Array.from(normalized.matchAll(/[\p{L}\p{N}]+/gu))
+    .map((match) => match[0])
+    .filter((token) => token.length >= 2);
+}
+
+function answerTextsLookDuplicate(left = "", right = "") {
+  const normalizedLeft = normalizeAnswerForDuplicateCheck(left);
+  const normalizedRight = normalizeAnswerForDuplicateCheck(right);
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  if (normalizedLeft === normalizedRight) {
+    return true;
+  }
+
+  if (
+    normalizedLeft.length >= 24 &&
+    normalizedRight.length >= 24 &&
+    (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft))
+  ) {
+    return true;
+  }
+
+  const leftTokens = tokenizeAnswerForDuplicateCheck(left);
+  const rightTokens = tokenizeAnswerForDuplicateCheck(right);
+  if (leftTokens.length < 5 || rightTokens.length < 5) {
+    return false;
+  }
+
+  const rightSet = new Set(rightTokens);
+  const overlapCount = leftTokens.filter((token) => rightSet.has(token)).length;
+  const overlapRatio = overlapCount / Math.max(Math.min(leftTokens.length, rightTokens.length), 1);
+  return overlapRatio >= 0.86;
+}
+
+function removeDuplicateDatabaseAnswerText(faqMain = "", databaseMain = "") {
+  const cleanedDatabaseMain = String(databaseMain || "").trim();
+  if (!cleanedDatabaseMain || answerTextsLookDuplicate(faqMain, cleanedDatabaseMain)) {
+    return "";
+  }
+
+  const blocks = cleanedDatabaseMain
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  if (blocks.length <= 1) {
+    return cleanedDatabaseMain;
+  }
+
+  return blocks
+    .filter((block) => !answerTextsLookDuplicate(faqMain, block))
+    .join("\n\n")
+    .trim();
+}
+
+function buildSourceAnswerTextForDuplicateCheck(source = {}) {
+  return String(
+    source?.content ||
+      source?.answer ||
+      source?.chunk_text ||
+      source?.comment ||
+      source?.summary ||
+      "",
+  ).trim();
+}
+
+function removeDuplicateAnswerSourcesForContinuation(faqAnswer = "", sources = []) {
+  if (!faqAnswer || !Array.isArray(sources) || sources.length === 0) {
+    return Array.isArray(sources) ? sources : [];
+  }
+
+  const faqMain = splitAnswerReferenceSection(cleanAssistantAnswer(faqAnswer, "")).mainText;
+  if (!faqMain) {
+    return sources;
+  }
+
+  return sources.filter((source) => {
+    const sourceText = buildSourceAnswerTextForDuplicateCheck(source);
+    return !sourceText || !answerTextsLookDuplicate(faqMain, sourceText);
+  });
+}
+
 function composeFaqAndDatabaseAnswer(faqAnswer = "", databaseAnswer = "") {
   const preparedFaqAnswer = cleanAssistantAnswer(faqAnswer, "");
   const preparedDatabaseAnswer = cleanAssistantAnswer(databaseAnswer, "");
   const faqParts = splitAnswerReferenceSection(preparedFaqAnswer);
   const databaseParts = splitAnswerReferenceSection(preparedDatabaseAnswer);
   const faqMain = faqParts.mainText;
-  const databaseMain = databaseParts.mainText;
+  const databaseMain = removeDuplicateDatabaseAnswerText(faqMain, databaseParts.mainText);
   const referenceSection = mergeAnswerReferenceSections([
     faqParts.referenceText,
     databaseParts.referenceText,
   ]);
   const answerParts = [];
 
-
-
-  if (preparedFaqAnswer && preparedDatabaseAnswer) {
-    return `${preparedFaqAnswer}\n\nข้อมูลเพิ่มเติม:\n${preparedDatabaseAnswer}`.trim();
-  }
   if (faqMain) {
     answerParts.push(faqMain);
   }
 
   if (faqMain && databaseMain) {
-    answerParts.push(`เพิ่มเติมจากข้อมูลอื่น:\n${databaseMain}`);
+    answerParts.push(`ข้อมูลเพิ่มเติม:\n${databaseMain}`);
   } else if (databaseMain) {
     answerParts.push(databaseMain);
   }
@@ -1522,6 +1664,7 @@ async function replyToDbOnlyMainChat(payload, session) {
     effectiveMessage = evidence.effectiveMessage || message;
     resolvedContext = evidence.resolvedContext || resolvedContext;
     const databaseSources = evidence.sources || [];
+    const faqSupportSources = filterDatabaseSourcesForFaqSupport(faqSource, databaseSources);
     selectedSources = databaseSources;
     questionIntent = evidence.questionIntent || questionIntent;
     retrievalEvaluation = evaluateRetrievalResult({
@@ -1536,7 +1679,7 @@ async function replyToDbOnlyMainChat(payload, session) {
       usedInternetSearch: false,
       resolvedContext,
     });
-    const combinedSources = faqSource ? [faqSource, ...databaseSources] : databaseSources;
+    const combinedSources = faqSource ? [faqSource, ...faqSupportSources] : databaseSources;
     const faqAnswer = faqSource ? String(faqSource.content || faqSource.answer || "").trim() : "";
 
     if (!retrievalEvaluation.shouldAnswer) {
@@ -1544,11 +1687,12 @@ async function replyToDbOnlyMainChat(payload, session) {
       answer = faqAnswer || retrievalEvaluation.userFacingMessage;
       selectedSources = combinedSources;
     } else {
-      answerSourcePool = selectDbOnlyMainChatAnswerEntries(databaseSources, {
+      answerSourcePool = selectDbOnlyMainChatAnswerEntries(faqSource ? faqSupportSources : databaseSources, {
         message: effectiveMessage,
         originalMessage: message,
         maxPrimarySections: 3,
       }).map((entry) => entry.source).filter(Boolean);
+      answerSourcePool = removeDuplicateAnswerSourcesForContinuation(faqAnswer, answerSourcePool);
       contextCarrySources = answerSourcePool.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT);
       const collapseExactLawSectionPreview = shouldCollapseExactLawSectionPreview(message, questionIntent);
       if (collapseExactLawSectionPreview && answerSourcePool.length > 1) {
@@ -1557,7 +1701,7 @@ async function replyToDbOnlyMainChat(payload, session) {
 
       if (answerSourcePool.length === 0) {
         setSessionContinuationState(session, null);
-        answer = composeFaqAndDatabaseAnswer(faqAnswer, retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้");
+        answer = faqAnswer || composeFaqAndDatabaseAnswer("", retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้");
         selectedSources = combinedSources;
       } else {
         continuationSessionState = createContinuationSessionState({
@@ -1610,10 +1754,15 @@ async function replyToDbOnlyMainChat(payload, session) {
           sources: paginated.nextState.sources,
         }
       : null;
-  const hasContinuation =
+  const hasContinuationCandidate =
     Boolean(nextContinuationState) &&
     paginated?.hasMore === true &&
     nextContinuationState.activeSourceIndex < nextContinuationState.sources.length;
+  const hasContinuation =
+    hasContinuationCandidate &&
+    await hasRenderableContinuationState(nextContinuationState, {
+      maxSourceChunks: resolveDbOnlyMainChatMaxSourceChunks(message, questionIntent),
+    });
 
   setSessionContinuationState(session, hasContinuation ? nextContinuationState : null);
 
@@ -2094,5 +2243,8 @@ module.exports = {
     resolveSummaryAiControl,
     safeTruncateSourceText,
     shouldSkipFaqForQuestion,
+    composeFaqAndDatabaseAnswer,
+    removeDuplicateAnswerSourcesForContinuation,
+    hasRenderableContinuationState,
   },
 };

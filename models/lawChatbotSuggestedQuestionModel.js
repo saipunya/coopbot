@@ -594,6 +594,64 @@ function parseMemberShareholdingQuery(normalizedQuestion = "") {
   };
 }
 
+function parseMemberRightsDutiesQuery(normalizedQuestion = "") {
+  const text = normalizeQuestionText(normalizedQuestion);
+  const mentionsMember = text.includes("สมาชิกสหกรณ์") || text.includes("สมาชิก");
+  const mentionsRights = text.includes("สิทธิ");
+  const mentionsDuties = text.includes("หน้าที่");
+  if (!mentionsMember || !mentionsRights || !mentionsDuties || text.includes("สมาชิกสมทบ")) {
+    return null;
+  }
+
+  return {
+    phraseLike: `%${escapeLike("สิทธิและหน้าที่")}%`,
+    memberLike: `%${escapeLike("สมาชิก")}%`,
+    clause33Like: `%${escapeLike("ข้อ 33")}%`,
+    clause33CompactLike: `%${escapeLike("ข้อ33")}%`,
+    draftBylawLike: `%${escapeLike("ร่างข้อบังคับ")}%`,
+  };
+}
+
+function computeMemberRightsDutiesBoost(normalizedQuestion, row = {}) {
+  const memberRightsDutiesQuery = parseMemberRightsDutiesQuery(normalizedQuestion);
+  if (!memberRightsDutiesQuery) {
+    return 0;
+  }
+
+  const normalizedStoredQuestion = normalizeQuestionText(
+    row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
+  );
+  const normalizedReference = normalizeQuestionText(row.source_reference || row.sourceReference || "");
+  const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
+  const anchorText = [normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ");
+  const fullText = [anchorText, normalizedAnswer].filter(Boolean).join(" ");
+
+  let boost = 0;
+  const hasRightsDutiesMemberAnchor =
+    anchorText.includes("สมาชิก") &&
+    anchorText.includes("สิทธิ") &&
+    anchorText.includes("หน้าที่");
+  const referencesClause33 = /ข้อ\s*33/.test(anchorText);
+  const referencesDraftBylaw = anchorText.includes("ร่างข้อบังคับ");
+  const mentionsAssociateMember = fullText.includes("สมาชิกสมทบ");
+
+  if (hasRightsDutiesMemberAnchor) {
+    boost += 0.28;
+  }
+
+  if (referencesClause33 && referencesDraftBylaw) {
+    boost += 0.22;
+  } else if (referencesClause33) {
+    boost += 0.12;
+  }
+
+  if (mentionsAssociateMember) {
+    boost -= 0.36;
+  }
+
+  return boost;
+}
+
 function normalizeSuggestedQuestionDomain(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return ["legal", "general", "mixed"].includes(normalized) ? normalized : "general";
@@ -1412,6 +1470,7 @@ class LawChatbotSuggestedQuestionModel {
     similarity += computeTopicPhraseAnchorBoost(normalizedQuestion, row);
     similarity += computeRegistrarOrderBoost(normalizedQuestion, row);
     similarity += computeMemberShareholdingBoost(normalizedQuestion, row);
+    similarity += computeMemberRightsDutiesBoost(normalizedQuestion, row);
     similarity += computeProcedureQuestionBoost(normalizedQuestion, row);
 
     return {
@@ -1529,7 +1588,11 @@ class LawChatbotSuggestedQuestionModel {
     const anchoredTopicQuery = parseAnchoredTopicQuery(normalizedQuestion);
     const registrarOrderQuery = parseRegistrarOrderQuery(normalizedQuestion);
     const memberShareholdingQuery = parseMemberShareholdingQuery(normalizedQuestion);
-    const searchTerms = uniqueTokens(segmentWords(normalizedQuestion)).slice(0, 8);
+    const memberRightsDutiesQuery = parseMemberRightsDutiesQuery(normalizedQuestion);
+    const searchTerms = uniqueTokens([
+      ...segmentWords(normalizedQuestion),
+      ...(memberRightsDutiesQuery ? ["สิทธิและหน้าที่", "ข้อ 33", "ข้อ33"] : []),
+    ]).slice(0, 10);
     const whereClause = searchTerms.length
       ? searchTerms
         .map(
@@ -1602,6 +1665,31 @@ class LawChatbotSuggestedQuestionModel {
           memberShareholdingQuery.shareholdingLike,
         ]
       : [];
+    const memberRightsDutiesPrioritySql = memberRightsDutiesQuery
+      ? `CASE
+           WHEN (
+             LOWER(COALESCE(source_reference, '')) LIKE ?
+             OR LOWER(COALESCE(source_reference, '')) LIKE ?
+           ) AND (
+             LOWER(COALESCE(question_text, '')) LIKE ?
+             OR LOWER(COALESCE(normalized_question, '')) LIKE ?
+             OR LOWER(COALESCE(source_reference, '')) LIKE ?
+           ) THEN 0
+           WHEN LOWER(COALESCE(question_text, '')) LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ? THEN 1
+           ELSE 2
+         END, `
+      : "";
+    const memberRightsDutiesPriorityParams = memberRightsDutiesQuery
+      ? [
+          memberRightsDutiesQuery.clause33Like,
+          memberRightsDutiesQuery.clause33CompactLike,
+          memberRightsDutiesQuery.phraseLike,
+          memberRightsDutiesQuery.phraseLike,
+          memberRightsDutiesQuery.phraseLike,
+          memberRightsDutiesQuery.phraseLike,
+          memberRightsDutiesQuery.phraseLike,
+        ]
+      : [];
     const [rows] =
       resolvedTarget === "all"
         ? await pool.query(
@@ -1609,9 +1697,16 @@ class LawChatbotSuggestedQuestionModel {
                FROM chatbot_suggested_questions
               WHERE is_active = 1
                 AND (${whereClause})
-              ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}${memberShareholdingPrioritySql}display_order ASC, id DESC
+              ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}${memberShareholdingPrioritySql}${memberRightsDutiesPrioritySql}display_order ASC, id DESC
               LIMIT 100`,
-            [...whereParams, ...clausePriorityParams, ...topicPriorityParams, ...registrarPriorityParams, ...memberShareholdingPriorityParams],
+            [
+              ...whereParams,
+              ...clausePriorityParams,
+              ...topicPriorityParams,
+              ...registrarPriorityParams,
+              ...memberShareholdingPriorityParams,
+              ...memberRightsDutiesPriorityParams,
+            ],
           )
         : await pool.query(
             `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
@@ -1619,7 +1714,7 @@ class LawChatbotSuggestedQuestionModel {
               WHERE is_active = 1
                 AND target IN (${lookupTargets.map(() => "?").join(", ")})
                 AND (${whereClause})
-              ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}${memberShareholdingPrioritySql}CASE
+              ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}${memberShareholdingPrioritySql}${memberRightsDutiesPrioritySql}CASE
                          WHEN target = ? THEN 0
                          WHEN target = 'general' THEN 1
                          WHEN target = 'all' THEN 2
@@ -1633,6 +1728,7 @@ class LawChatbotSuggestedQuestionModel {
               ...topicPriorityParams,
               ...registrarPriorityParams,
               ...memberShareholdingPriorityParams,
+              ...memberRightsDutiesPriorityParams,
               resolvedTarget,
             ],
           );
