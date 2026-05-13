@@ -331,7 +331,7 @@
       border: 1px solid rgba(255, 255, 255, 0.74);
       color: var(--primary-strong);
       font-size: 0.83rem;
-      line-height: 0.20;
+      line-height: 1.55;
     }
 
     .plan-ribbon-note i {
@@ -1012,7 +1012,7 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-size: 0.48rem;
+      font-size: 0.62rem;
       font-weight: 800;
       line-height: 1;
       letter-spacing: 0.04em;
@@ -1108,7 +1108,7 @@
       display: flex;
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.1rem;
+      gap: 0.55rem;
       white-space: normal;
     }
 
@@ -1128,7 +1128,8 @@
     .bubble-bot .bubble-message {
       width: 100%;
       margin: 0;
-      line-height: 0.48;
+      line-height: 1.7;
+      white-space: normal;
     }
 
     .bubble-assistant-name {
@@ -2243,7 +2244,7 @@
       .page-identity-badge {
         min-height: 1rem;
         padding: 0.06rem 0.32rem;
-        font-size: 0.56rem;
+        font-size: 0.72rem;
       }
       .page-identity-actions {
         gap: 0.18rem;
@@ -2289,7 +2290,7 @@
       }
       .status-chip {
         padding: 0.14rem 0.34rem;
-        font-size: 0.64rem;
+        font-size: 0.75rem;
       }
       .quick-questions { border-radius: 0.9rem; }
       .chat-shell {
@@ -2922,11 +2923,11 @@
     }
 
     .bubble-bot .bubble-message {
-      line-height: 0.3;
+      line-height: 1.7;
     }
 
     .bubble-assistant-name {
-      margin-bottom: 0.64rem;
+      margin-bottom: 0;
       font-size: 0.96rem;
       color: #174b8e;
     }
@@ -3029,7 +3030,7 @@
     }
 
     #sendBtn {
-      min-width: 8rem;
+      min-width: 3rem;
       border-radius: 0.72rem !important;
       border: 0;
       background: linear-gradient(145deg, #457ec3, #336caf);
@@ -3568,7 +3569,8 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      background: #e5e7eb;
+      background: #0e7a4f;
+      color: #fff;
       box-shadow: 0 8px 16px rgba(15, 92, 60, 0.18);
       flex: 0 0 auto;
     }
@@ -3582,7 +3584,7 @@
     .cooplaw-sidebar-brand-copy strong {
       display: block;
       color: #192436;
-      font-size: 2rem;
+      font-size: 1.05rem;
       line-height: 1.05;
     }
 
@@ -4381,6 +4383,12 @@
 .answer-plain br {
   display: initial;
 }
+@media (min-width: 768px) {
+  .bot-answer-summary > .answer-plain .answer-item {
+    padding-top: 0.42rem;
+    padding-bottom: 0.32rem;
+  }
+}
 
 /* --- CoopLaw blue cockpit refresh (UI only) --- */
 :root {
@@ -4936,11 +4944,11 @@ body {
 }
 
 .bubble-bot .bubble-message {
-  line-height: 0.5;
+  line-height: 1.7;
 }
 
 .bubble-assistant-name {
-  margin-bottom: 0.58rem;
+  margin-bottom: 0;
   color: #121a31;
   font-size: 1rem;
 }
@@ -6174,6 +6182,48 @@ body {
     border-radius: 1rem;
   }
 
+  .bubble-content {
+    padding: 0.95rem 1.15rem;
+  }
+
+  .bubble-bot .bubble-content {
+    gap: 0.3rem;
+  }
+
+  .chat-response {
+    gap: 0.18rem;
+  }
+
+  .chat-intro {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    margin: 0 0 0.15rem 0;
+    padding: 0;
+    line-height: 1.5;
+  }
+
+  .bot-answer-main {
+    gap: 0.45rem;
+  }
+
+  .bot-answer-summary {
+    gap: 0.08rem;
+    line-height: 1.62;
+  }
+
+  .bot-answer-section {
+    gap: 0.35rem;
+  }
+
+  .bot-answer-bullets {
+    gap: 0.35rem;
+  }
+
+  .answer-item {
+    padding: 0.62rem 0.78rem;
+  }
+
   .chat-input-wrap .input-group {
     gap: 0.4rem;
     align-items: center;
@@ -6216,7 +6266,7 @@ body {
     border-radius: 1rem;
   }
   .bubble-bot .bubble-message {
-  line-height: 0;
+  line-height: 1.7;
 }
     .chat-intro {
   display: block;
@@ -6423,8 +6473,6 @@ body {
           <a href="#chatMessages" class="cooplaw-sidebar-nav-item"><i class="bi bi-search"></i><span>ค้นหากฎหมาย</span></a>
           <a href="#composerSuggestions" class="cooplaw-sidebar-nav-item"><i class="bi bi-chat-left-text"></i><span>ถามแบบเจาะจง</span></a>
           <a href="/user/search-history" class="cooplaw-sidebar-nav-item"><i class="bi bi-clock-history"></i><span>ประวัติการค้นหา</span></a>
-          <a href="/user/search-history" class="cooplaw-sidebar-nav-item"><i class="bi bi-star"></i><span>บันทึก / รายการโปรด</span></a>
-          <a href="#composerSuggestions" class="cooplaw-sidebar-nav-item"><i class="bi bi-file-earmark-text"></i><span>สรุปสาระสำคัญ</span></a>
           <a href="#" class="cooplaw-sidebar-nav-item" data-bs-toggle="modal" data-bs-target="#developerModal"><i class="bi bi-gear"></i><span>ตั้งค่า</span></a>
         </nav>
 
@@ -8204,16 +8252,10 @@ body {
       }
 
       function buildBotAnswerWrapperHtml(answerHtml, referenceText, terms, continuationHtml = '') {
-        const resolvedAnswerHtml = String(answerHtml || '').trim();
-        const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
+      const resolvedAnswerHtml = String(answerHtml || '').trim();
+      const referenceHtml = buildReferenceToggleHtml(referenceText, terms);
 
-        return `
-          <div class="bot-answer-main">
-            <div class="bot-answer-summary">${resolvedAnswerHtml}</div>
-            ${referenceHtml}
-            ${continuationHtml}
-          </div>
-        `;
+        return `<div class="bot-answer-main"><div class="bot-answer-summary">${resolvedAnswerHtml}</div>${referenceHtml}${continuationHtml}</div>`;
       }
 
 
@@ -8272,12 +8314,7 @@ function buildToneWrappedResponseHtml(answerHtml, terms, options = {}) {
 
   const introHtml = `<div class="chat-intro">${escapeHtml(introText)}</div>`;
 
-  return `
-    <div class="chat-response">
-      ${introHtml}
-      ${resolvedAnswerHtml}
-    </div>
-  `;
+  return `<div class="chat-response">${introHtml}${resolvedAnswerHtml}</div>`;
 }
 
 
