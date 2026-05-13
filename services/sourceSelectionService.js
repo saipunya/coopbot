@@ -405,7 +405,7 @@ function getCoopBylawAmendmentFocusBoost(message = "", item = {}) {
   }
 
   if (
-    /(คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ|คพช|นโยบายและแผนพัฒนาการสหกรณ์)/.test(sourceText) &&
+    /(คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ|คณะกรรมการพัฒนาสหกรณ์แห่งชาติ|คพช|นโยบายและแผนพัฒนาการสหกรณ์)/.test(sourceText) &&
     !/(แก้ไข|เพิ่มเติม|ข้อบังคับ|มาตรา 44|มาตรา44)/.test(sourceText)
   ) {
     boost -= 100;
@@ -488,12 +488,13 @@ function isCoopFormationPrioritySearch(message = "") {
     return true;
   }
 
-  return /จัดตั้งสหกรณ์|จดทะเบียนจัดตั้งสหกรณ์|ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|ประชุมจัดตั้ง/.test(
+  return /ตั้งสหกรณ์|จัดตั้งสหกรณ์|จดทะเบียนจัดตั้งสหกรณ์|ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|ประชุมจัดตั้ง/.test(
     normalizedMessage,
   );
 }
 
-function scoreCoopFormationSourceFocus(item = {}) {
+function scoreCoopFormationSourceFocus(message = "", item = {}) {
+  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
   const sourceText = buildSourceFocusSearchText(item);
   if (!sourceText) {
     return 0;
@@ -535,6 +536,13 @@ function scoreCoopFormationSourceFocus(item = {}) {
   score += Math.min(18, supportingHits * 6);
   score -= Math.min(60, dissolutionHits * (strongHits > 0 ? 8 : 20));
 
+  if (
+    /(ตั้งสหกรณ์)/.test(normalizedMessage) &&
+    /(จัดตั้งสหกรณ์|การจัดตั้งสหกรณ์|จดทะเบียนจัดตั้งสหกรณ์)/.test(sourceText)
+  ) {
+    score += 24;
+  }
+
   return score;
 }
 
@@ -563,7 +571,7 @@ function getSourceAwareFocusScore(message = "", item = {}) {
   }
 
   if (isCoopFormationPrioritySearch(message)) {
-    score += scoreCoopFormationSourceFocus(item);
+    score += scoreCoopFormationSourceFocus(message, item);
   }
 
   return score;
@@ -1220,7 +1228,7 @@ function isDissolutionPrioritySearch(message) {
     return false;
   }
 
-  return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก|การเลิกกลุ่มเกษตรกร|เลิกกลุ่มเกษตรกร|สั่งเลิกกลุ่มเกษตรกร|กลุ่มเกษตรกร(?:ย่อม)?(?:ต้อง)?เลิก|ยุบเลิกกลุ่มเกษตรกร)/.test(
+  return /(?:การเลิกสหกรณ์|เลิกสหกรณ์|สั่งเลิกสหกรณ์|ปิดสหกรณ์|ปิดกิจการสหกรณ์|ยุบสหกรณ์|สหกรณ์(?:ย่อม)?(?:ต้อง)?เลิก|การเลิกกลุ่มเกษตรกร|เลิกกลุ่มเกษตรกร|สั่งเลิกกลุ่มเกษตรกร|กลุ่มเกษตรกร(?:ย่อม)?(?:ต้อง)?เลิก|ยุบเลิกกลุ่มเกษตรกร)/.test(
     normalized,
   );
 }
@@ -1599,77 +1607,26 @@ function getSourceRoutingPlan(intent) {
   }
 }
 
-async function searchDatabaseSources(message, target, options = {}) {
-  const retrievalMessage = String(message || "").trim();
-  const expandedRetrievalMessage = expandSearchConcepts(retrievalMessage) || retrievalMessage;
-  const focusMessage = String(options.originalMessage || retrievalMessage).trim();
-  const effectiveTarget = resolveSearchTarget(focusMessage || retrievalMessage, target);
-  const intent = classifyQuestionIntent(expandedRetrievalMessage || focusMessage);
-  const routingPlan = getSourceRoutingPlan(intent);
-  const generalOverviewQuery = isGeneralOverviewQuery(expandedRetrievalMessage || focusMessage);
-  const legalIntent = hasLegalIntent(expandedRetrievalMessage || focusMessage);
-  const freePlanSearch = isFreePlanSearch(options.planCode);
-  const freeSourcePriorityPlan = freePlanSearch
-    ? getFreeSourcePriorityPlan(expandedRetrievalMessage || focusMessage, effectiveTarget)
-    : null;
-  const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
-  const lawPrioritySearch = isLawPrioritySearch(expandedRetrievalMessage || focusMessage);
-  const prioritizeStructuredLawSearch =
-    lawPrioritySearch ||
-    isLiquidationPrioritySearch(expandedRetrievalMessage || focusMessage) ||
-    isDissolutionPrioritySearch(expandedRetrievalMessage || focusMessage);
+function finalizeDatabaseSearchResults(rawSets, context = {}) {
+  const {
+    rawKnowledgeMatches = [],
+    rawSuggestionMatches = [],
+    rawFallbackKnowledge = [],
+    rawStructuredMatches = [],
+    rawVinichaiMatches = [],
+    rawDocumentMatches = [],
+    rawPdfMatches = [],
+  } = rawSets || {};
 
-  const shouldSkipLawSourcesForOverview =
-    options.forceStructuredLawFallback !== true &&
-    generalOverviewQuery &&
-    !legalIntent &&
-    intent === "general";
-
-  const [
-    rawKnowledgeMatches,
-    rawSuggestionMatches,
-    rawFallbackKnowledge,
-    rawStructuredMatches,
-    rawVinichaiMatches,
-  ] = await Promise.all([
-    withSafeSearch(
-      () => LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5),
-      [],
-      "admin-knowledge",
-    ),
-    withSafeSearch(
-      () => LawChatbotKnowledgeSuggestionModel.searchApproved(expandedRetrievalMessage, effectiveTarget, 5),
-      [],
-      "approved-qa",
-    ),
-    withSafeSearch(
-      () => Promise.resolve(LawChatbotModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget)),
-      [],
-      "fallback-knowledge",
-    ),
-    shouldSkipLawSourcesForOverview
-      ? Promise.resolve([])
-      : withSafeSearch(
-          () => LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6),
-          [],
-          "structured-laws",
-        ),
-    shouldSkipLawSourcesForOverview
-      ? Promise.resolve([])
-      : withSafeSearch(() => LawSearchModel.searchVinichai(expandedRetrievalMessage, 5), [], "vinichai"),
-  ]);
-  const hasHighPriorityStructuredLawMatch =
-    !shouldSkipLawSourcesForOverview &&
-    (intent === "law_section" || lawPrioritySearch) &&
-    Array.isArray(rawStructuredMatches) &&
-    rawStructuredMatches.some((item) => Number(item?.score || 0) >= 90);
-  const shouldSearchPdfLayer = !hasHighPriorityStructuredLawMatch;
-  const [rawDocumentMatches, rawPdfMatches] = shouldSearchPdfLayer
-    ? await Promise.all([
-        LawChatbotPdfChunkModel.searchDocuments(expandedRetrievalMessage, 5),
-        withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(expandedRetrievalMessage, 6), hybridTimeoutMs, [], "hybrid-search"),
-      ])
-    : [[], []];
+  const {
+    routingPlan,
+    freeSourcePriorityPlan,
+    lawPrioritySearch,
+    shouldSkipLawSourcesForOverview,
+    focusMessage,
+    intent,
+    effectiveTarget,
+  } = context;
 
   const knowledgeMatches = prioritizeMatches(rawKnowledgeMatches, {
     retrievalPriority:
@@ -1740,6 +1697,392 @@ async function searchDatabaseSources(message, target, options = {}) {
   return rerankRetrievedMatches(pruneFocusedQueryMatches(combinedMatches, focusMessage), focusMessage, {
     intent,
     target: effectiveTarget,
+  });
+}
+
+function createSearchTraceEntry(name, matches = [], meta = {}) {
+  return {
+    stage: name,
+    matched: Array.isArray(matches) && matches.length > 0,
+    matchCount: Array.isArray(matches) ? matches.length : 0,
+    topScore: Number(matches?.[0]?.score || 0),
+    sourceCount: Array.isArray(matches) ? new Set(matches.map((item) => String(item?.source || "").trim()).filter(Boolean)).size : 0,
+    ...meta,
+  };
+}
+
+function attachSearchTrace(results, searchTrace = null) {
+  if (!Array.isArray(results)) {
+    return results;
+  }
+
+  Object.defineProperty(results, "searchTrace", {
+    value: searchTrace || null,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  });
+
+  return results;
+}
+
+function hasAnyRawSearchMatches(rawSets = {}) {
+  return [
+    rawSets.rawKnowledgeMatches,
+    rawSets.rawSuggestionMatches,
+    rawSets.rawStructuredMatches,
+    rawSets.rawVinichaiMatches,
+    rawSets.rawDocumentMatches,
+    rawSets.rawPdfMatches,
+    rawSets.rawFallbackKnowledge,
+  ].some((items) => Array.isArray(items) && items.length > 0);
+}
+
+function flattenRawSearchMatches(rawSets = {}) {
+  return [
+    ...(rawSets?.rawKnowledgeMatches || []),
+    ...(rawSets?.rawSuggestionMatches || []),
+    ...(rawSets?.rawStructuredMatches || []),
+    ...(rawSets?.rawVinichaiMatches || []),
+    ...(rawSets?.rawDocumentMatches || []),
+    ...(rawSets?.rawPdfMatches || []),
+    ...(rawSets?.rawFallbackKnowledge || []),
+  ];
+}
+
+function getRawTopScore(rawSets = {}) {
+  return flattenRawSearchMatches(rawSets).reduce((topScore, item) => {
+    const score = Number(item?.score || 0);
+    return score > topScore ? score : topScore;
+  }, 0);
+}
+
+function hasExactQueryPhrase(query = "", item = {}) {
+  const normalizedQuery = normalizeForSearch(String(query || "")).toLowerCase();
+  if (normalizedQuery.length < 3) {
+    return false;
+  }
+
+  const normalizedText = normalizeForSearch([
+    item.title,
+    item.reference,
+    item.lawNumber,
+    item.content,
+    item.comment,
+    item.sourceNote,
+    item.sourceReference,
+  ].filter(Boolean).join(" ")).toLowerCase();
+
+  return normalizedText.includes(normalizedQuery);
+}
+
+function shouldPreferLawSearchOverQaSubject(query, qaSubjectResults = {}, lawSearchResults = {}) {
+  if (!hasAnyRawSearchMatches(lawSearchResults)) {
+    return false;
+  }
+
+  if (!hasAnyRawSearchMatches(qaSubjectResults)) {
+    return true;
+  }
+
+  const qaItems = [
+    ...(qaSubjectResults.rawKnowledgeMatches || []),
+    ...(qaSubjectResults.rawSuggestionMatches || []),
+  ];
+  const lawItems = lawSearchResults.rawStructuredMatches || [];
+  const qaHasExactPhrase = qaItems.some((item) => hasExactQueryPhrase(query, item));
+  const lawHasExactPhrase = lawItems.some((item) => hasExactQueryPhrase(query, item));
+
+  if (lawHasExactPhrase && !qaHasExactPhrase) {
+    return true;
+  }
+
+  const qaTopScore = getRawTopScore(qaSubjectResults);
+  const lawTopScore = getRawTopScore(lawSearchResults);
+  return lawTopScore >= qaTopScore + 80;
+}
+
+async function searchDatabaseSources(message, target, options = {}) {
+  const retrievalMessage = String(message || "").trim();
+  const expandedRetrievalMessage = expandSearchConcepts(retrievalMessage) || retrievalMessage;
+  const focusMessage = String(options.originalMessage || retrievalMessage).trim();
+  const effectiveTarget = resolveSearchTarget(focusMessage || retrievalMessage, target);
+  const intent = classifyQuestionIntent(expandedRetrievalMessage || focusMessage);
+  const routingPlan = getSourceRoutingPlan(intent);
+  const generalOverviewQuery = isGeneralOverviewQuery(expandedRetrievalMessage || focusMessage);
+  const legalIntent = hasLegalIntent(expandedRetrievalMessage || focusMessage);
+  const freePlanSearch = isFreePlanSearch(options.planCode);
+  const freeSourcePriorityPlan = freePlanSearch
+    ? getFreeSourcePriorityPlan(expandedRetrievalMessage || focusMessage, effectiveTarget)
+    : null;
+  const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
+  const lawPrioritySearch = isLawPrioritySearch(expandedRetrievalMessage || focusMessage);
+
+  const shouldSkipLawSourcesForOverview =
+    options.forceStructuredLawFallback !== true &&
+    generalOverviewQuery &&
+    !legalIntent &&
+    intent === "general";
+
+  const fetchSubjectStage = async () => {
+    const [rawKnowledgeMatches, rawSuggestionMatches] = await Promise.all([
+      withSafeSearch(
+        () => LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5, { searchMode: "subject" }),
+        [],
+        "admin-knowledge-subject",
+      ),
+      withSafeSearch(
+        () => LawChatbotKnowledgeSuggestionModel.searchApproved(expandedRetrievalMessage, effectiveTarget, 5, { searchMode: "subject" }),
+        [],
+        "approved-qa-subject",
+      ),
+    ]);
+
+    return {
+      rawKnowledgeMatches,
+      rawSuggestionMatches,
+      rawFallbackKnowledge: [],
+      rawStructuredMatches: [],
+      rawVinichaiMatches: [],
+      rawDocumentMatches: [],
+      rawPdfMatches: [],
+    };
+  };
+
+  const fetchLawKeywordStage = async () => {
+    if (shouldSkipLawSourcesForOverview) {
+      return null;
+    }
+
+    const rawStructuredMatches = await withSafeSearch(
+      async () => {
+        const directKeywordMatches = await LawSearchModel.searchStructuredLaws(
+          focusMessage || retrievalMessage,
+          effectiveTarget,
+          6,
+          { searchMode: "keyword" },
+        );
+        if (Array.isArray(directKeywordMatches) && directKeywordMatches.length > 0) {
+          return directKeywordMatches;
+        }
+
+        return LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6, { searchMode: "keyword" });
+      },
+      [],
+      "structured-laws-keyword",
+    );
+
+    return {
+      rawKnowledgeMatches: [],
+      rawSuggestionMatches: [],
+      rawFallbackKnowledge: [],
+      rawStructuredMatches,
+      rawVinichaiMatches: [],
+      rawDocumentMatches: [],
+      rawPdfMatches: [],
+    };
+  };
+
+  const fetchContentStage = async () => {
+    const [rawKnowledgeMatches, rawSuggestionMatches] = await Promise.all([
+      withSafeSearch(
+        () => LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5, { searchMode: "content" }),
+        [],
+        "admin-knowledge-content",
+      ),
+      withSafeSearch(
+        () => LawChatbotKnowledgeSuggestionModel.searchApproved(expandedRetrievalMessage, effectiveTarget, 5, { searchMode: "content" }),
+        [],
+        "approved-qa-content",
+      ),
+    ]);
+
+    return {
+      rawKnowledgeMatches,
+      rawSuggestionMatches,
+      rawFallbackKnowledge: [],
+      rawStructuredMatches: [],
+      rawVinichaiMatches: [],
+      rawDocumentMatches: [],
+      rawPdfMatches: [],
+    };
+  };
+
+  const fetchLawContentStage = async () => {
+    if (shouldSkipLawSourcesForOverview) {
+      return null;
+    }
+
+    const rawStructuredMatches = await withSafeSearch(
+      () => LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6, { searchMode: "content" }),
+      [],
+      "structured-laws-content",
+    );
+
+    return {
+      rawKnowledgeMatches: [],
+      rawSuggestionMatches: [],
+      rawFallbackKnowledge: [],
+      rawStructuredMatches,
+      rawVinichaiMatches: [],
+      rawDocumentMatches: [],
+      rawPdfMatches: [],
+    };
+  };
+
+  const stageTrace = [];
+  const stageSearchers = [
+    { stage: "qa_subject", run: fetchSubjectStage },
+    { stage: "law_search", run: fetchLawKeywordStage },
+    { stage: "qa_content", run: fetchContentStage },
+    { stage: "law_content", run: fetchLawContentStage },
+  ];
+  let pendingQaSubjectResults = null;
+
+  for (const { stage, run } of stageSearchers) {
+    const stageResults = await run();
+    const stageEntry = createSearchTraceEntry(stage, flattenRawSearchMatches(stageResults));
+    stageTrace.push(stageEntry);
+
+    if (stageResults && hasAnyRawSearchMatches(stageResults)) {
+      if (stage === "qa_subject") {
+        pendingQaSubjectResults = stageResults;
+        continue;
+      }
+
+      if (
+        stage === "law_search" &&
+        pendingQaSubjectResults &&
+        !shouldPreferLawSearchOverQaSubject(focusMessage || retrievalMessage, pendingQaSubjectResults, stageResults)
+      ) {
+        return attachSearchTrace(
+          finalizeDatabaseSearchResults(pendingQaSubjectResults, {
+            routingPlan,
+            freeSourcePriorityPlan,
+            lawPrioritySearch,
+            shouldSkipLawSourcesForOverview,
+            focusMessage,
+            intent,
+            effectiveTarget,
+          }),
+          {
+            stages: stageTrace,
+            selectedStage: "qa_subject",
+            comparedStage: "law_search",
+            fallbackUsed: false,
+          },
+        );
+      }
+
+      return attachSearchTrace(
+        finalizeDatabaseSearchResults(stageResults, {
+          routingPlan,
+          freeSourcePriorityPlan,
+          lawPrioritySearch,
+          shouldSkipLawSourcesForOverview,
+          focusMessage,
+          intent,
+          effectiveTarget,
+        }),
+        {
+          stages: stageTrace,
+          selectedStage: stage,
+          fallbackUsed: false,
+        },
+      );
+    }
+
+    if (stage === "law_search" && pendingQaSubjectResults) {
+      return attachSearchTrace(
+        finalizeDatabaseSearchResults(pendingQaSubjectResults, {
+          routingPlan,
+          freeSourcePriorityPlan,
+          lawPrioritySearch,
+          shouldSkipLawSourcesForOverview,
+          focusMessage,
+          intent,
+          effectiveTarget,
+        }),
+        {
+          stages: stageTrace,
+          selectedStage: "qa_subject",
+          comparedStage: "law_search",
+          fallbackUsed: false,
+        },
+      );
+    }
+  }
+
+  const [
+    rawKnowledgeMatches,
+    rawSuggestionMatches,
+    rawFallbackKnowledge,
+    rawStructuredMatches,
+    rawVinichaiMatches,
+  ] = await Promise.all([
+    withSafeSearch(
+      () => LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5),
+      [],
+      "admin-knowledge",
+    ),
+    withSafeSearch(
+      () => LawChatbotKnowledgeSuggestionModel.searchApproved(expandedRetrievalMessage, effectiveTarget, 5),
+      [],
+      "approved-qa",
+    ),
+    withSafeSearch(
+      () => Promise.resolve(LawChatbotModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget)),
+      [],
+      "fallback-knowledge",
+    ),
+    shouldSkipLawSourcesForOverview
+      ? Promise.resolve([])
+      : withSafeSearch(
+          () => LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6),
+          [],
+          "structured-laws",
+        ),
+    shouldSkipLawSourcesForOverview
+      ? Promise.resolve([])
+      : withSafeSearch(() => LawSearchModel.searchVinichai(expandedRetrievalMessage, 5), [], "vinichai"),
+  ]);
+  const hasHighPriorityStructuredLawMatch =
+    !shouldSkipLawSourcesForOverview &&
+    (intent === "law_section" || lawPrioritySearch) &&
+    Array.isArray(rawStructuredMatches) &&
+    rawStructuredMatches.some((item) => Number(item?.score || 0) >= 90);
+  const shouldSearchPdfLayer = !hasHighPriorityStructuredLawMatch;
+  const [rawDocumentMatches, rawPdfMatches] = shouldSearchPdfLayer
+    ? await Promise.all([
+        LawChatbotPdfChunkModel.searchDocuments(expandedRetrievalMessage, 5),
+        withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(expandedRetrievalMessage, 6), hybridTimeoutMs, [], "hybrid-search"),
+      ])
+    : [[], []];
+
+  const finalResults = finalizeDatabaseSearchResults(
+    {
+      rawKnowledgeMatches,
+      rawSuggestionMatches,
+      rawFallbackKnowledge,
+      rawStructuredMatches,
+      rawVinichaiMatches,
+      rawDocumentMatches,
+      rawPdfMatches,
+    },
+    {
+      routingPlan,
+      freeSourcePriorityPlan,
+      lawPrioritySearch,
+      shouldSkipLawSourcesForOverview,
+      focusMessage,
+      intent,
+      effectiveTarget,
+    },
+  );
+  return attachSearchTrace(finalResults, {
+    stages: stageTrace.concat(createSearchTraceEntry("fallback_combined", finalResults)),
+    selectedStage: "fallback_combined",
+    fallbackUsed: true,
   });
 }
 
@@ -2387,7 +2730,7 @@ function rankSourcesForMessageFocus(items, message = "") {
     return ranked
       .map((item) => ({
         ...item,
-        __messageFocusRank: scoreCoopFormationSourceFocus(item),
+        __messageFocusRank: scoreCoopFormationSourceFocus(message, item),
       }))
       .sort((left, right) => {
         const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);

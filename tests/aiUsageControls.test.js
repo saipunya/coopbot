@@ -165,3 +165,138 @@ test("generateChatSummary records usedAI and limits AI prompt context to 3 sourc
   assert.doesNotMatch(capturedContents, /แหล่งข้อมูลที่ 4/);
   assert.doesNotMatch(capturedContents, /\.\.\./);
 });
+
+test("reasoned why-board-meeting questions avoid summarizing unrelated committee structure evidence", async (t) => {
+  const chatAnswerPath = require.resolve("../services/chatAnswerService");
+  const openAiPath = require.resolve("../services/openAiService");
+  const runtimeSettingsPath = require.resolve("../services/runtimeSettingsService");
+  const restoreCallbacks = [];
+  let aiCalled = false;
+
+  t.after(() => {
+    delete require.cache[chatAnswerPath];
+    while (restoreCallbacks.length > 0) {
+      const restore = restoreCallbacks.pop();
+      restore();
+    }
+  });
+
+  delete require.cache[chatAnswerPath];
+  restoreCallbacks.push(
+    setMockedModule(openAiPath, {
+      getOpenAiConfig: () => ({ apiKey: "test" }),
+      getOpenAiClient: () => ({}),
+      generateOpenAiCompletion: async () => {
+        aiCalled = true;
+        return "ข้อ 66 สรุปง่าย ๆ คือ คณะกรรมการดำเนินการมีจำนวนตามที่ที่ประชุมใหญ่เลือกตั้ง";
+      },
+    }),
+  );
+  restoreCallbacks.push(
+    setMockedModule(runtimeSettingsPath, {
+      isAiEnabled: async () => true,
+      isAiEnabledSync: () => true,
+    }),
+  );
+
+  const { generateChatSummary } = require(chatAnswerPath);
+  const answerDiagnostics = {};
+  const answer = await generateChatSummary(
+    "ทำไมต้องมีการประชุมคณะกรรมการดำเนินการ",
+    [
+      {
+        source: "tbl_glaws",
+        id: 66,
+        title: "วรรคแรก",
+        reference: "ข้อ 66",
+        content:
+          "คณะกรรมการดำเนินการ ให้กลุ่มเกษตรกรมีคณะกรรมการจำนวน..............คน ซึ่งที่ประชุมใหญ่เลือกตั้งจากสมาชิก ให้คณะกรรมการดำเนินการเลือกตั้งในระหว่างกันเองขึ้นดำรงตำแหน่งประธานกรรมการ รองประธานกรรมการ เลขานุการ และ/หรือเหรัญญิก",
+        score: 120,
+      },
+    ],
+    {
+      databaseOnlyMode: false,
+      answerDiagnostics,
+      promptProfile: {
+        code: "detailed",
+        aiSourceLimit: 3,
+        aiSourceContextCharLimit: 700,
+        aiMaxOutputTokens: 256,
+      },
+    },
+  );
+
+  assert.equal(aiCalled, false);
+  assert.equal(answerDiagnostics.usedAI, false);
+  assert.equal(answerDiagnostics.answerMode, "reasoned_explanation");
+  assert.match(answer, /ยังไม่พบคำตอบที่อธิบายเหตุผลของการประชุมคณะกรรมการดำเนินการโดยตรง/);
+  assert.match(answer, /พิจารณา ตัดสินใจ และติดตามการดำเนินงาน/);
+  assert.doesNotMatch(answer, /ข้อ 66 สรุปง่าย ๆ/);
+});
+
+test("AI detail section removes lines that repeat the summary section", async (t) => {
+  const chatAnswerPath = require.resolve("../services/chatAnswerService");
+  const openAiPath = require.resolve("../services/openAiService");
+  const runtimeSettingsPath = require.resolve("../services/runtimeSettingsService");
+  const restoreCallbacks = [];
+
+  t.after(() => {
+    delete require.cache[chatAnswerPath];
+    while (restoreCallbacks.length > 0) {
+      const restore = restoreCallbacks.pop();
+      restore();
+    }
+  });
+
+  delete require.cache[chatAnswerPath];
+  restoreCallbacks.push(
+    setMockedModule(openAiPath, {
+      getOpenAiConfig: () => ({ apiKey: "test" }),
+      getOpenAiClient: () => ({}),
+      generateOpenAiCompletion: async () => [
+        "สรุปสาระสำคัญ:",
+        "การประชุมมีไว้เพื่อให้คณะกรรมการร่วมกันพิจารณา ตัดสินใจ และติดตามการดำเนินงาน",
+        "รายละเอียดเพิ่มเติม:",
+        "การประชุมมีไว้เพื่อให้คณะกรรมการร่วมกันพิจารณา ตัดสินใจ และติดตามการดำเนินงาน",
+        "การทำมติไว้เป็นหลักฐานช่วยให้ตรวจสอบย้อนหลังได้",
+      ].join("\n"),
+    }),
+  );
+  restoreCallbacks.push(
+    setMockedModule(runtimeSettingsPath, {
+      isAiEnabled: async () => true,
+      isAiEnabledSync: () => true,
+    }),
+  );
+
+  const { generateChatSummary } = require(chatAnswerPath);
+  const answer = await generateChatSummary(
+    "อธิบายการประชุมคณะกรรมการดำเนินการ",
+    [
+      {
+        source: "admin_knowledge",
+        id: 1,
+        title: "การประชุมคณะกรรมการดำเนินการ",
+        reference: "Q&A",
+        content:
+          "การประชุมคณะกรรมการดำเนินการมีไว้เพื่อให้คณะกรรมการพิจารณา ตัดสินใจ ติดตามการดำเนินงาน และจัดทำมติไว้เป็นหลักฐาน",
+        score: 130,
+      },
+    ],
+    {
+      databaseOnlyMode: false,
+      promptProfile: {
+        code: "detailed",
+        aiSourceLimit: 3,
+        aiSourceContextCharLimit: 700,
+        aiMaxOutputTokens: 256,
+      },
+    },
+  );
+
+  assert.equal(
+    (answer.match(/การประชุมมีไว้เพื่อให้คณะกรรมการร่วมกันพิจารณา ตัดสินใจ และติดตามการดำเนินงาน/g) || []).length,
+    1,
+  );
+  assert.match(answer, /รายละเอียดเพิ่มเติม:\nการทำมติไว้เป็นหลักฐานช่วยให้ตรวจสอบย้อนหลังได้/);
+});

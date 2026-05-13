@@ -150,7 +150,11 @@ test.after(() => {
 
 test("search helper sanity uses normalizer and synonym expansion", () => {
   assert.equal(normalizeThai("  คพช / สหกรณ์!!  "), "คพช สหกรณ์");
-  assert.deepEqual(expandKeywords("คพช"), ["คพช", "คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ"]);
+  assert.deepEqual(expandKeywords("คพช"), [
+    "คพช",
+    "คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ",
+    "คณะกรรมการพัฒนาสหกรณ์แห่งชาติ",
+  ]);
 });
 
 test("central query expansion covers dissolution and liquidation aliases", () => {
@@ -183,12 +187,42 @@ test("liquidator duty query expands to duty terms without dissolution authority 
   assert.doesNotMatch(expanded, /สหกรณ์ย่อมเลิก/);
 });
 
+test("liquidator appointment query expands to appointment authority terms", () => {
+  const expanded = expandSearchConcepts("ใครแต่งตั้งผู้ชำระบัญชี");
+
+  assert.match(expanded, /ผู้ชำระบัญชี/);
+  assert.match(expanded, /แต่งตั้งผู้ชำระบัญชี/);
+  assert.match(expanded, /เลือกตั้งผู้ชำระบัญชี/);
+  assert.match(expanded, /ที่ประชุมใหญ่เลือกตั้งผู้ชำระบัญชี/);
+  assert.match(expanded, /นายทะเบียนสหกรณ์ตั้งผู้ชำระบัญชี/);
+  assert.match(expanded, /มาตรา 75/);
+});
+
 test("group formation member-count query expands to section 5 minimum members", () => {
   const expanded = expandSearchConcepts("ตั้งกลุ่มเกษตรกรต้องมีสมาชิกเท่าไร");
 
   assert.match(expanded, /มาตรา 5/);
   assert.match(expanded, /บุคคลผู้ประกอบอาชีพเกษตรกรรม/);
   assert.match(expanded, /ไม่น้อยกว่าสามสิบคน/);
+});
+
+test("coop formation set query expands to establish terms", () => {
+  const expanded = expandSearchConcepts("ตั้งสหกรณ์");
+
+  assert.match(expanded, /ตั้งสหกรณ์/);
+  assert.match(expanded, /จัดตั้งสหกรณ์/);
+  assert.match(expanded, /จดทะเบียนจัดตั้งสหกรณ์/);
+  assert.match(expanded, /ผู้เริ่มก่อการ/);
+});
+
+test("group dissolution query expands conservatively to close and liquidation terms", () => {
+  const expanded = expandSearchConcepts("ปิดกลุ่มเกษตรกร");
+
+  assert.match(expanded, /ปิดกลุ่มเกษตรกร/);
+  assert.match(expanded, /ยุบกลุ่มเกษตรกร/);
+  assert.match(expanded, /เลิกกลุ่มเกษตรกร/);
+  assert.match(expanded, /ชำระบัญชีกลุ่มเกษตรกร/);
+  assert.match(expanded, /ผู้ชำระบัญชีกลุ่มเกษตรกร/);
 });
 
 test("[Case 1] exact keyword returns the matching board row near the top", async () => {

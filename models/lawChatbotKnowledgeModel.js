@@ -48,11 +48,22 @@ function normalizeEntry(entry) {
   };
 }
 
-function scoreKnowledgeMatch(query, row) {
+function buildKnowledgeSearchText(row = {}, searchMode = "full") {
+  const normalizedMode = String(searchMode || "full").trim().toLowerCase();
+  if (normalizedMode === "subject" || normalizedMode === "title_subject") {
+    return `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.source_note || row.sourceNote || ""}`.trim();
+  }
+
+  if (normalizedMode === "content") {
+    return `${row.content || ""}`.trim();
+  }
+
+  return `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`.trim();
+}
+
+function scoreKnowledgeMatch(query, row, searchMode = "full") {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
-  const rowText = normalizeForSearch(
-    `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`,
-  ).toLowerCase();
+  const rowText = normalizeForSearch(buildKnowledgeSearchText(row, searchMode)).toLowerCase();
   const queryTokens = uniqueTokens(segmentWords(query));
   const rowTokens = uniqueTokens(segmentWords(rowText));
   const rowTokenSet = new Set(rowTokens);
@@ -77,7 +88,7 @@ function scoreKnowledgeMatch(query, row) {
   score += coverage * 18;
   score += scoreQueryFocusAlignment(
     query,
-    `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`,
+    buildKnowledgeSearchText(row, searchMode),
   );
 
   if (String(row.title || row.law_number || row.lawNumber || "").trim()) {
@@ -87,7 +98,7 @@ function scoreKnowledgeMatch(query, row) {
   if (
     hasExclusiveMeaningMismatch(
       query,
-      `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`,
+      buildKnowledgeSearchText(row, searchMode),
     )
   ) {
     score -= 120;
@@ -129,20 +140,18 @@ function getMeaningfulTokens(text) {
   });
 }
 
-function hasKnowledgeRelevance(query, row) {
+function hasKnowledgeRelevance(query, row, searchMode = "full") {
   if (
     hasExclusiveMeaningMismatch(
       query,
-      `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`,
+      buildKnowledgeSearchText(row, searchMode),
     )
   ) {
     return false;
   }
 
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
-  const rowText = normalizeForSearch(
-    `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`,
-  ).toLowerCase();
+  const rowText = normalizeForSearch(buildKnowledgeSearchText(row, searchMode)).toLowerCase();
   const queryTokens = getMeaningfulTokens(query);
   const rowTokenSet = new Set(getMeaningfulTokens(rowText));
   const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
@@ -435,7 +444,8 @@ class LawChatbotKnowledgeModel {
     return rows.map(mapRow);
   }
 
-  static async searchKnowledge(message, target = "all", limit = 5) {
+  static async searchKnowledge(message, target = "all", limit = 5, options = {}) {
+    const searchMode = String(options.searchMode || "full").trim().toLowerCase();
     const terms = uniqueTokens(segmentWords(message)).slice(0, 8);
     if (terms.length === 0) {
       return [];
@@ -448,21 +458,19 @@ class LawChatbotKnowledgeModel {
     if (!pool) {
       return memoryKnowledgeEntries
         .map((row) => {
-          const isRelevant = hasKnowledgeRelevance(message, row);
+          const isRelevant = hasKnowledgeRelevance(message, row, searchMode);
           if (!isRelevant) {
             return null;
           }
 
-          const haystack = normalizeForSearch(
-            `${row.title} ${row.lawNumber} ${row.content} ${row.sourceNote}`,
-          ).toLowerCase();
+          const haystack = normalizeForSearch(buildKnowledgeSearchText(row, searchMode)).toLowerCase();
           const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
           const score = scoreKnowledgeMatch(message, {
             title: row.title,
             law_number: row.lawNumber,
             content: row.content,
             source_note: row.sourceNote,
-          }) + coarseScore;
+          }, searchMode) + coarseScore;
 
           return {
             id: row.id,
@@ -499,15 +507,18 @@ class LawChatbotKnowledgeModel {
         .slice(0, limit);
     }
 
+    const searchColumns =
+      searchMode === "subject" || searchMode === "title_subject"
+        ? ["title", "law_number", "source_note"]
+        : searchMode === "content"
+          ? ["content"]
+          : ["title", "law_number", "content", "source_note"];
     const whereClause = terms
-      .map(
-        () =>
-          `(LOWER(title) LIKE ? OR LOWER(law_number) LIKE ? OR LOWER(content) LIKE ? OR LOWER(source_note) LIKE ?)`
-      )
+      .map(() => searchColumns.map((column) => `LOWER(COALESCE(${column}, '')) LIKE ?`).join(" OR "))
       .join(" OR ");
     const params = terms.flatMap((term) => {
       const like = `%${term}%`;
-      return [like, like, like, like];
+      return searchColumns.map(() => like);
     });
 
     const sql =
@@ -528,14 +539,14 @@ class LawChatbotKnowledgeModel {
 
     return rows
       .map((row) => {
-        const isRelevant = hasKnowledgeRelevance(message, row);
+        const isRelevant = hasKnowledgeRelevance(message, row, searchMode);
         if (!isRelevant) {
           return null;
         }
 
         return {
           ...mapRow(row),
-          score: scoreKnowledgeMatch(message, row),
+          score: scoreKnowledgeMatch(message, row, searchMode),
         };
       })
       .filter(Boolean)

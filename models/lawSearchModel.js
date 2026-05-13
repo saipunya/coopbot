@@ -30,6 +30,32 @@ const GENERIC_QUERY_TOKENS = new Set([
   "วรรค",
   "อนุมาตรา",
 ]);
+const STRUCTURED_LAW_ADMIN_SOURCES = {
+  tbl_laws: {
+    tableName: "tbl_laws",
+    idField: "law_id",
+    numberField: "law_number",
+    partField: "law_part",
+    detailField: "law_detail",
+    commentField: "law_comment",
+    searchField: "law_search",
+    saveByField: "law_saveby",
+    saveDateField: "law_savedate",
+    label: "พระราชบัญญัติสหกรณ์",
+  },
+  tbl_glaws: {
+    tableName: "tbl_glaws",
+    idField: "glaw_id",
+    numberField: "glaw_number",
+    partField: "glaw_part",
+    detailField: "glaw_detail",
+    commentField: "glaw_comment",
+    searchField: "glaw_search",
+    saveByField: "glaw_saveby",
+    saveDateField: "glaw_savedate",
+    label: "กลุ่มเกษตรกร",
+  },
+};
 
 function extractLawNumber(text) {
   const normalized = normalizeThaiNumberSearchText(String(text || ""));
@@ -54,6 +80,41 @@ function extractLawNumber(text) {
 
 function escapeRegExp(text) {
   return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getBangkokDateInput(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return getBangkokDateInput(new Date());
+  }
+
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "0000";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeAdminSearchQuery(query) {
+  const normalizedQuery = normalizeForSearch(String(query || "")).toLowerCase();
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  return uniqueTokens([
+    normalizedQuery,
+    ...segmentWords(normalizedQuery),
+  ]).filter((term) => term && term.length >= 2).slice(0, 10);
+}
+
+function getStructuredLawAdminSourceConfig(sourceName) {
+  return STRUCTURED_LAW_ADMIN_SOURCES[String(sourceName || "").trim().toLowerCase()] || null;
 }
 
 function hasExactLawNumberText(text, lawNumber) {
@@ -212,7 +273,20 @@ function isLiquidatorDutyQuery(message = "") {
   return /(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ).*(?:ผู้ชำระบัญชี)|ผู้ชำระบัญชี.*(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ)/.test(normalized);
 }
 
+function isLiquidatorAppointmentQuery(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized || !/ผู้ชำระบัญชี/.test(normalized)) {
+    return false;
+  }
+
+  return /(ใคร|ผู้มีอำนาจ|อำนาจ).*(แต่งตั้ง|ตั้ง|เลือกตั้ง).*ผู้ชำระบัญชี|ผู้ชำระบัญชี.*(แต่งตั้ง|ตั้ง|เลือกตั้ง).*โดยใคร/.test(normalized);
+}
+
 function getTopicExpansionLawNumbers(message = "", sourceName = "") {
+  if (String(sourceName || "").trim().toLowerCase() === "tbl_laws" && isLiquidatorAppointmentQuery(message)) {
+    return ["75"];
+  }
+
   if (String(sourceName || "").trim().toLowerCase() === "tbl_laws" && isLiquidatorDutyQuery(message)) {
     return ["81"];
   }
@@ -579,6 +653,7 @@ function mapStructuredLawRow(message, row, options = {}) {
     lawNumber: row.law_number || "",
     content: row.law_detail || "",
     comment: row.law_comment || "",
+    keyword: row.law_search || "",
     score: score + (row.__focusedMatch ? 60 : 0) + (row.__keywordMatch ? 100 : 0),
     topicExpansion: row.__topicExpansion === true || row.__liquidatorDutyMatch === true,
   };
@@ -824,6 +899,147 @@ function scoreStructuredLawKeywordMatch(message, keywordText = "") {
 }
 
 class LawSearchModel {
+  static getStructuredLawAdminSourceConfig(sourceName) {
+    return getStructuredLawAdminSourceConfig(sourceName);
+  }
+
+  static async countAdminSearchRows(sourceName, query = "") {
+    const sourceConfig = getStructuredLawAdminSourceConfig(sourceName);
+    if (!sourceConfig) {
+      return 0;
+    }
+
+    const pool = getDbPool();
+    if (!pool) {
+      return 0;
+    }
+
+    const terms = normalizeAdminSearchQuery(query);
+    const whereClause = terms.length
+      ? terms
+          .map(
+            () =>
+              `(LOWER(${sourceConfig.numberField}) LIKE ? OR LOWER(${sourceConfig.partField}) LIKE ? OR LOWER(${sourceConfig.detailField}) LIKE ? OR LOWER(${sourceConfig.commentField}) LIKE ? OR LOWER(COALESCE(${sourceConfig.searchField}, '')) LIKE ? OR LOWER(${sourceConfig.saveByField}) LIKE ? OR LOWER(CAST(${sourceConfig.saveDateField} AS CHAR)) LIKE ?)`,
+          )
+          .join(" OR ")
+      : "1=1";
+    const params = terms.length
+      ? terms.flatMap((term) => {
+          const like = `%${term}%`;
+          return [like, like, like, like, like, like, like];
+        })
+      : [];
+
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM ${sourceConfig.tableName}
+       WHERE ${whereClause}`,
+      params,
+    );
+
+    return Number(rows[0]?.total || 0);
+  }
+
+  static async listAdminSearchRows(sourceName, query = "", limit = 12, offset = 0) {
+    const sourceConfig = getStructuredLawAdminSourceConfig(sourceName);
+    if (!sourceConfig) {
+      return [];
+    }
+
+    const pool = getDbPool();
+    const normalizedLimit = Math.max(1, Number(limit || 12));
+    const normalizedOffset = Math.max(0, Number(offset || 0));
+    const terms = normalizeAdminSearchQuery(query);
+
+    if (!pool) {
+      return [];
+    }
+
+    const whereClause = terms.length
+      ? terms
+          .map(
+            () =>
+              `(LOWER(${sourceConfig.numberField}) LIKE ? OR LOWER(${sourceConfig.partField}) LIKE ? OR LOWER(${sourceConfig.detailField}) LIKE ? OR LOWER(${sourceConfig.commentField}) LIKE ? OR LOWER(COALESCE(${sourceConfig.searchField}, '')) LIKE ? OR LOWER(${sourceConfig.saveByField}) LIKE ? OR LOWER(CAST(${sourceConfig.saveDateField} AS CHAR)) LIKE ?)`,
+          )
+          .join(" OR ")
+      : "1=1";
+    const params = terms.length
+      ? terms.flatMap((term) => {
+          const like = `%${term}%`;
+          return [like, like, like, like, like, like, like];
+        })
+      : [];
+
+    const [rows] = await pool.query(
+      `SELECT ${sourceConfig.idField} AS id,
+              ${sourceConfig.numberField} AS law_number,
+              ${sourceConfig.partField} AS law_part,
+              ${sourceConfig.detailField} AS law_detail,
+              ${sourceConfig.commentField} AS law_comment,
+              ${sourceConfig.searchField} AS law_search,
+              ${sourceConfig.saveByField} AS law_saveby,
+              ${sourceConfig.saveDateField} AS law_savedate
+       FROM ${sourceConfig.tableName}
+       WHERE ${whereClause}
+       ORDER BY ${sourceConfig.saveDateField} DESC, ${sourceConfig.idField} DESC
+       LIMIT ? OFFSET ?`,
+      [...params, normalizedLimit, normalizedOffset],
+    );
+
+    return rows.map((row) => ({
+      id: Number(row.id || row[`${sourceConfig.idField}`] || 0) || null,
+      lawNumber: row.law_number || "",
+      lawPart: row.law_part || "",
+      lawDetail: row.law_detail || "",
+      lawComment: row.law_comment || "",
+      lawSearch: row.law_search ?? "",
+      lawSaveBy: row.law_saveby || "",
+      lawSavedate: row.law_savedate || "",
+    }));
+  }
+
+  static async updateAdminSearchRow(sourceName, id, patch = {}, options = {}) {
+    const sourceConfig = getStructuredLawAdminSourceConfig(sourceName);
+    const normalizedId = Number(id || 0);
+    if (!sourceConfig || !normalizedId) {
+      return false;
+    }
+
+    const pool = getDbPool();
+    if (!pool) {
+      return false;
+    }
+
+    const searchText = String(patch.lawSearch ?? patch.law_search ?? "").trim();
+    const saveBy = String(options.saveBy || patch.lawSaveBy || patch.law_saveby || "admin").trim() || "admin";
+    const saveDate = String(options.saveDate || patch.lawSavedate || patch.law_savedate || getBangkokDateInput()).trim() || getBangkokDateInput();
+    const storedSearchText = sourceConfig.tableName === "tbl_glaws"
+      ? (searchText || null)
+      : searchText;
+
+    const [result] = await pool.query(
+      `UPDATE ${sourceConfig.tableName}
+       SET ${sourceConfig.searchField} = ?,
+           ${sourceConfig.saveByField} = ?,
+           ${sourceConfig.saveDateField} = ?
+       WHERE ${sourceConfig.idField} = ?
+       LIMIT 1`,
+      [storedSearchText, saveBy, saveDate, normalizedId],
+    );
+
+    const updated = Number(result.affectedRows || 0) > 0;
+    if (updated) {
+      try {
+        const { clearAnswerCache } = require("../services/answerStateService");
+        clearAnswerCache();
+      } catch (_error) {
+        // Ignore cache invalidation failures in admin tools.
+      }
+    }
+
+    return updated;
+  }
+
   static async searchVinichai(message, limit = 5) {
     const candidateTerms = buildCandidateTerms(message);
     if (candidateTerms.length === 0) {
@@ -962,12 +1178,15 @@ class LawSearchModel {
     };
   }
 
-  static async searchStructuredLaws(message, target = "all", limit = 5) {
+  static async searchStructuredLaws(message, target = "all", limit = 5, options = {}) {
     const pool = getDbPool();
     if (!pool) {
       return [];
     }
 
+    const searchMode = String(options.searchMode || "all").trim().toLowerCase();
+    const keywordOnlyMode = searchMode === "keyword";
+    const contentOnlyMode = searchMode === "content";
     const queryLawNumber = extractLawNumber(message);
     const terms = buildStructuredSearchTerms(message, queryLawNumber).slice(0, 12);
     if (terms.length === 0) {
@@ -976,6 +1195,12 @@ class LawSearchModel {
     const inferredScope = target === "all" ? detectLawScope(message) : target;
     const lawSearchField = await resolveStructuredLawSearchField(pool, "tbl_laws");
     const glawSearchField = await resolveStructuredLawSearchField(pool, "tbl_glaws");
+    const contentTableConfigs = contentOnlyMode
+      ? [
+          ["tbl_laws", "law_id", "law_number", "law_part", "law_detail", "law_comment", "tbl_laws", null],
+          ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws", null],
+        ]
+      : null;
     const tableConfigs =
       inferredScope === "group"
         ? [
@@ -1014,13 +1239,38 @@ class LawSearchModel {
       }
     }
 
+    if (keywordOnlyMode) {
+      const keywordRowGroups = await Promise.all(
+        tableConfigs.map((tableConfig) => findKeywordLawRows(pool, tableConfig, message)),
+      );
+      const keywordRows = keywordRowGroups.flat();
+      const keywordResults = keywordRows
+        .filter((row) => !isSmokeFixtureLawRow(row))
+        .map((row) => mapStructuredLawRow(message, row, { inferredScope, queryLawNumber }))
+        .filter((row) => row.score > 0)
+        .filter((row, index, list) => {
+          const key = `${row.source || ""}::${row.id || ""}`;
+          return list.findIndex((item) => `${item.source || ""}::${item.id || ""}` === key) === index;
+        })
+        .sort((a, b) => b.score - a.score);
+
+      if (keywordResults.length > 0 && !isLiquidatorAppointmentQuery(message)) {
+        return keywordResults.slice(0, limit);
+      }
+
+      return [];
+    }
+
+    const activeTableConfigs = contentOnlyMode ? contentTableConfigs : tableConfigs;
     const focusedRowGroups = await Promise.all(
-      tableConfigs.map((tableConfig) => findFocusedLawRows(pool, tableConfig, message)),
+      activeTableConfigs.map((tableConfig) => findFocusedLawRows(pool, tableConfig, message)),
     );
     const focusedRows = focusedRowGroups.flat();
-    const keywordRowGroups = await Promise.all(
-      tableConfigs.map((tableConfig) => findKeywordLawRows(pool, tableConfig, message)),
-    );
+    const keywordRowGroups = contentOnlyMode
+      ? []
+      : await Promise.all(
+          tableConfigs.map((tableConfig) => findKeywordLawRows(pool, tableConfig, message)),
+        );
     const keywordRows = keywordRowGroups.flat();
     const keywordResults = keywordRows
       .filter((row) => !isSmokeFixtureLawRow(row))
@@ -1032,7 +1282,7 @@ class LawSearchModel {
       })
       .sort((a, b) => b.score - a.score);
 
-    if (keywordResults.length > 0) {
+    if (keywordResults.length > 0 && !isLiquidatorAppointmentQuery(message)) {
       return keywordResults.slice(0, limit);
     }
 

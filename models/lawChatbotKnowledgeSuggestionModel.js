@@ -88,12 +88,23 @@ function getMeaningfulTokens(text) {
   });
 }
 
-function scoreSuggestionMatch(query, row) {
+function buildSuggestionSearchText(row = {}, searchMode = "full") {
+  const normalizedMode = String(searchMode || "full").trim().toLowerCase();
+  if (normalizedMode === "subject" || normalizedMode === "title_subject") {
+    return `${row.title || ""} ${row.source_reference || row.sourceReference || ""}`.trim();
+  }
+
+  if (normalizedMode === "content") {
+    return `${row.content || ""}`.trim();
+  }
+
+  return `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`.trim();
+}
+
+function scoreSuggestionMatch(query, row, searchMode = "full") {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const focusProfile = getQueryFocusProfile(query);
-  const rowText = normalizeForSearch(
-    `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`,
-  ).toLowerCase();
+  const rowText = normalizeForSearch(buildSuggestionSearchText(row, searchMode)).toLowerCase();
   const queryTokens = uniqueTokens(segmentWords(query));
   const rowTokens = uniqueTokens(segmentWords(rowText));
   const rowTokenSet = new Set(rowTokens);
@@ -118,7 +129,7 @@ function scoreSuggestionMatch(query, row) {
   score += coverage * 18;
   score += scoreQueryFocusAlignment(
     query,
-    `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`,
+    buildSuggestionSearchText(row, searchMode),
   );
 
   if (String(row.title || "").trim()) {
@@ -136,7 +147,7 @@ function scoreSuggestionMatch(query, row) {
   if (
     hasExclusiveMeaningMismatch(
       query,
-      `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`,
+      buildSuggestionSearchText(row, searchMode),
     )
   ) {
     score -= 120;
@@ -145,11 +156,11 @@ function scoreSuggestionMatch(query, row) {
   return score;
 }
 
-function hasSuggestionRelevance(query, row) {
+function hasSuggestionRelevance(query, row, searchMode = "full") {
   if (
     hasExclusiveMeaningMismatch(
       query,
-      `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`,
+      buildSuggestionSearchText(row, searchMode),
     )
   ) {
     return false;
@@ -157,9 +168,7 @@ function hasSuggestionRelevance(query, row) {
 
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   const focusProfile = getQueryFocusProfile(query);
-  const rowText = normalizeForSearch(
-    `${row.title || ""} ${row.content || ""} ${row.source_reference || row.sourceReference || ""} ${row.review_note || row.reviewNote || ""}`,
-  ).toLowerCase();
+  const rowText = normalizeForSearch(buildSuggestionSearchText(row, searchMode)).toLowerCase();
   const queryTokens = getMeaningfulTokens(query);
   const rowTokenSet = new Set(getMeaningfulTokens(rowText));
   const tokenHits = queryTokens.filter((token) => rowTokenSet.has(token)).length;
@@ -606,7 +615,8 @@ class LawChatbotKnowledgeSuggestionModel {
     return result.affectedRows > 0;
   }
 
-  static async searchApproved(message, target = "all", limit = 5) {
+  static async searchApproved(message, target = "all", limit = 5, options = {}) {
+    const searchMode = String(options.searchMode || "full").trim().toLowerCase();
     const terms = uniqueTokens(segmentWords(message)).slice(0, 8);
     if (terms.length === 0) {
       return [];
@@ -617,14 +627,12 @@ class LawChatbotKnowledgeSuggestionModel {
       return memorySuggestions
         .filter((item) => item.status === "approved")
         .map((row) => {
-          const isRelevant = hasSuggestionRelevance(message, row);
+          const isRelevant = hasSuggestionRelevance(message, row, searchMode);
           if (!isRelevant) {
             return null;
           }
 
-          const haystack = normalizeForSearch(
-            `${row.title || ""} ${row.content || ""} ${row.sourceReference || ""} ${row.reviewNote || ""}`,
-          ).toLowerCase();
+          const haystack = normalizeForSearch(buildSuggestionSearchText(row, searchMode)).toLowerCase();
           const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
           const score =
             scoreSuggestionMatch(message, {
@@ -632,7 +640,7 @@ class LawChatbotKnowledgeSuggestionModel {
               content: row.content,
               sourceReference: row.sourceReference,
               reviewNote: row.reviewNote,
-            }) + coarseScore;
+            }, searchMode) + coarseScore;
 
           return {
             id: row.id,
@@ -654,12 +662,23 @@ class LawChatbotKnowledgeSuggestionModel {
     }
 
     await ensureTable();
+    const mode = searchMode === "subject" || searchMode === "title_subject"
+      ? "subject"
+      : searchMode === "content"
+        ? "content"
+        : "full";
+    const searchColumns =
+      mode === "subject"
+        ? ["title", "source_reference"]
+        : mode === "content"
+          ? ["content"]
+          : ["title", "content", "source_reference", "review_note"];
     const whereClause = terms
-      .map(() => "(LOWER(title) LIKE ? OR LOWER(content) LIKE ? OR LOWER(COALESCE(source_reference, '')) LIKE ? OR LOWER(review_note) LIKE ?)")
+      .map(() => searchColumns.map((column) => `LOWER(COALESCE(${column}, '')) LIKE ?`).join(" OR "))
       .join(" OR ");
     const params = terms.flatMap((term) => {
       const like = `%${term}%`;
-      return [like, like, like, like];
+      return searchColumns.map(() => like);
     });
 
     const sql =
@@ -682,7 +701,7 @@ class LawChatbotKnowledgeSuggestionModel {
 
     return rows
       .map((row) => {
-        if (!hasSuggestionRelevance(message, row)) {
+        if (!hasSuggestionRelevance(message, row, searchMode)) {
           return null;
         }
 
@@ -694,7 +713,7 @@ class LawChatbotKnowledgeSuggestionModel {
           source: "knowledge_suggestion",
           reference: row.source_reference || row.title || "ข้อเสนอจากผู้ใช้งานที่ได้รับอนุมัติ",
           comment: row.review_note || "",
-          score: scoreSuggestionMatch(message, row),
+          score: scoreSuggestionMatch(message, row, searchMode),
           createdAt: row.created_at || "",
           updatedAt: row.updated_at || "",
         };

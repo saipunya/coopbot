@@ -128,6 +128,164 @@ function hasToneClosing(answer = "") {
   );
 }
 
+const FRIENDLY_INTROS = [
+  'เรื่อง "{topic}" เดี๋ยวผมสรุปให้เข้าใจง่ายนะครับ 👇',
+  'สำหรับเรื่อง "{topic}" ผมขอสรุปแบบอ่านแล้วจับใจความได้ไว ๆ นะครับ',
+  'ประเด็น "{topic}" ผมสรุปให้แบบเป็นข้อ ๆ จะได้ดูง่ายขึ้นครับ',
+  'หัวข้อ "{topic}" เดี๋ยวผมเรียบเรียงให้เข้าใจง่าย ไม่ต้องไล่อ่านยาว ๆ ครับ',
+  'เรื่อง "{topic}" ผมสรุปสาระสำคัญให้ก่อนนะครับ',
+  'สำหรับ "{topic}" ขอสรุปให้แบบภาษาคนใช้งานจริงนะครับ',
+  'ประเด็นนี้เกี่ยวกับ "{topic}" ผมขออธิบายแบบกระชับและเข้าใจง่ายครับ',
+  'มาดูเรื่อง "{topic}" กันครับ ผมสรุปเฉพาะส่วนสำคัญให้ก่อน',
+  'เรื่อง "{topic}" ผมจะสรุปให้เป็นภาพรวมก่อน แล้วค่อยไล่ประเด็นสำคัญครับ',
+  'สำหรับหัวข้อ "{topic}" ผมขอจัดคำตอบให้อ่านง่ายขึ้นนะครับ',
+  'ประเด็น "{topic}" เดี๋ยวผมช่วยแยกใจความสำคัญให้ครับ',
+  'เรื่อง "{topic}" ผมสรุปให้แบบไม่เป็นทางการเกินไป แต่อิงข้อมูลในระบบนะครับ',
+  'หัวข้อ "{topic}" ผมขอเล่าแบบเข้าใจง่ายก่อนนะครับ',
+  'สำหรับ "{topic}" ผมสรุปประเด็นหลักให้ดังนี้ครับ',
+  'เรื่องนี้คือ "{topic}" เดี๋ยวผมช่วยย่อยข้อมูลให้อ่านง่ายครับ',
+  'ถ้าพูดถึง "{topic}" สรุปใจความสำคัญได้ประมาณนี้ครับ',
+  'ประเด็น "{topic}" ผมขอเรียบเรียงให้เป็นลำดับนะครับ',
+  'หัวข้อ "{topic}" เดี๋ยวผมสรุปให้แบบใช้งานได้จริงครับ',
+  'สำหรับเรื่อง "{topic}" ผมขอหยิบเฉพาะสาระสำคัญมาให้ก่อนครับ',
+  'เรื่อง "{topic}" ผมช่วยสรุปให้แบบสั้น กระชับ และไม่หลุดประเด็นครับ',
+  'เรื่อง "{topic}" ผมขออธิบายแบบค่อย ๆ ไล่ประเด็นนะครับ',
+  'สำหรับ "{topic}" ผมสรุปให้เห็นภาพรวมแบบเข้าใจง่ายก่อนครับ',
+  'ประเด็นเกี่ยวกับ "{topic}" ผมขอสรุปข้อมูลให้อ่านง่ายขึ้นครับ',
+  'หัวข้อ "{topic}" ผมขอสรุปจากข้อมูลที่พบให้อย่างเป็นลำดับครับ',
+  'เรื่อง "{topic}" เดี๋ยวผมแยกประเด็นสำคัญให้เห็นชัด ๆ ครับ',
+  'สำหรับเรื่อง "{topic}" ผมขออธิบายแบบไม่ซับซ้อนนะครับ',
+  'ประเด็น "{topic}" ผมจะสรุปให้แบบตรงประเด็นที่สุดครับ',
+  'หัวข้อ "{topic}" ผมช่วยเรียบเรียงให้เข้าใจง่ายขึ้นนะครับ',
+  'เรื่อง "{topic}" ผมขอสรุปเนื้อหาหลักให้ก่อนครับ',
+  'สำหรับ "{topic}" ผมจะช่วยย่อข้อมูลให้เหลือเฉพาะใจความสำคัญครับ',
+  'เรื่อง "{topic}" ผมขอเล่าแบบสั้น ๆ แต่ครบประเด็นนะครับ',
+  'ประเด็น "{topic}" เดี๋ยวผมช่วยจัดคำตอบให้อ่านง่ายครับ',
+  'หัวข้อ "{topic}" ผมขอเริ่มจากสาระสำคัญก่อนนะครับ',
+  'สำหรับเรื่อง "{topic}" ผมขอสรุปแบบจับใจความเร็ว ๆ ครับ',
+  'เรื่อง "{topic}" ผมจะเรียงข้อมูลให้เป็นขั้นเป็นตอนนะครับ',
+  'ประเด็นนี้คือ "{topic}" ผมขออธิบายให้เข้าใจง่ายขึ้นครับ',
+  'สำหรับ "{topic}" ผมขอสรุปโดยยึดข้อมูลที่ระบบค้นพบเป็นหลักครับ',
+  'หัวข้อ "{topic}" ผมจะช่วยแปลงข้อมูลให้เป็นภาษาที่อ่านง่ายขึ้นครับ',
+  'เรื่อง "{topic}" เดี๋ยวผมสรุปให้แบบไม่เยิ่นเย้อนะครับ',
+  'สำหรับเรื่อง "{topic}" ผมขอแยกประเด็นให้เห็นชัดเจนครับ',
+  'ประเด็น "{topic}" ผมขออธิบายแบบใช้งานจริงได้เลยครับ',
+  'เรื่อง "{topic}" ผมสรุปให้แบบอ่านแล้วพอเห็นทางนะครับ',
+  'หัวข้อ "{topic}" ผมขอจัดข้อมูลให้อยู่ในรูปที่เข้าใจง่ายครับ',
+  'สำหรับ "{topic}" ผมจะสรุปจากประเด็นที่เกี่ยวข้องให้ครับ',
+  'เรื่อง "{topic}" เดี๋ยวผมช่วยไล่สาระสำคัญให้ทีละส่วนครับ',
+  'ประเด็น "{topic}" ผมขอสรุปให้แบบกระชับแต่ยังคงสาระสำคัญครับ',
+  'สำหรับเรื่อง "{topic}" ผมขออธิบายจากข้อมูลที่เกี่ยวข้องโดยตรงครับ',
+  'หัวข้อ "{topic}" ผมจะช่วยสรุปให้ไม่ต้องอ่านข้อมูลยาว ๆ เองครับ',
+  'เรื่อง "{topic}" ผมขอเรียบเรียงคำตอบให้เข้าใจง่ายและเป็นลำดับครับ',
+  'สำหรับ "{topic}" ผมขอสรุปเฉพาะจุดที่ควรรู้ก่อนนะครับ',
+  'ประเด็นเกี่ยวกับ "{topic}" ผมช่วยสรุปให้แบบเห็นภาพครับ',
+  'เรื่อง "{topic}" เดี๋ยวผมอธิบายให้แบบอ่านแล้วตามทันครับ',
+  'หัวข้อ "{topic}" ผมขอสรุปแบบเน้นใจความสำคัญนะครับ',
+  'สำหรับเรื่อง "{topic}" ผมขอเรียงคำตอบให้เป็นระบบมากขึ้นครับ',
+  'เรื่อง "{topic}" ผมช่วยย่อยข้อมูลให้ไม่แน่นเกินไปครับ',
+  'ประเด็น "{topic}" ผมจะสรุปให้เข้าใจง่าย โดยไม่ตัดสาระสำคัญครับ',
+  'หัวข้อ "{topic}" เดี๋ยวผมช่วยจับประเด็นหลักให้ครับ',
+  'สำหรับ "{topic}" ผมขออธิบายแบบตรงไปตรงมานะครับ',
+  'เรื่อง "{topic}" ผมจะสรุปให้แบบอ่านแล้วนำไปใช้ต่อได้ครับ',
+  'ประเด็นนี้เกี่ยวกับ "{topic}" ผมขอจัดคำตอบให้อ่านสบายขึ้นครับ',
+  'สำหรับเรื่อง "{topic}" ผมจะช่วยสรุปจากข้อมูลที่เกี่ยวข้องให้ครับ',
+  'หัวข้อ "{topic}" ผมขอเริ่มด้วยภาพรวมสั้น ๆ ก่อนนะครับ',
+  'เรื่อง "{topic}" เดี๋ยวผมสรุปให้แบบไม่วกวนครับ',
+  'ประเด็น "{topic}" ผมขออธิบายให้เห็นแก่นของเรื่องครับ',
+  'สำหรับ "{topic}" ผมจะช่วยย่อยสาระสำคัญออกมาให้ครับ',
+  'เรื่อง "{topic}" ผมขอสรุปแบบเป็นกันเอง แต่อิงข้อมูลที่พบครับ',
+  'หัวข้อ "{topic}" ผมจะเรียบเรียงให้เข้าใจง่ายขึ้นครับ',
+  'ประเด็นนี้คือ "{topic}" ผมขอสรุปให้แบบไม่ซับซ้อนครับ',
+  'สำหรับเรื่อง "{topic}" ผมช่วยสรุปให้เป็นแนวทางเข้าใจง่าย ๆ ครับ',
+  'เรื่อง "{topic}" เดี๋ยวผมช่วยแปลงข้อมูลให้เป็นคำตอบที่อ่านง่ายครับ',
+  'หัวข้อ "{topic}" ผมขออธิบายโดยเน้นส่วนที่เกี่ยวข้องกับคำถามครับ',
+  'ประเด็น "{topic}" ผมจะช่วยเรียงข้อมูลจากสำคัญมากไปน้อยครับ',
+  'สำหรับ "{topic}" ผมขอสรุปให้แบบครบเท่าที่ข้อมูลในระบบรองรับครับ',
+  'เรื่อง "{topic}" ผมจะช่วยจับประเด็นสำคัญจากข้อมูลที่พบครับ',
+  'หัวข้อ "{topic}" เดี๋ยวผมอธิบายแบบค่อย ๆ ดูไปด้วยกันครับ',
+  'ประเด็นนี้เกี่ยวกับ "{topic}" ผมขอสรุปให้เข้าใจง่ายก่อนครับ',
+  'สำหรับเรื่อง "{topic}" ผมจะสรุปให้แบบอ่านแล้วไม่งงครับ',
+  'เรื่อง "{topic}" ผมขอจัดข้อมูลให้เป็นคำตอบที่กระชับขึ้นครับ',
+  'หัวข้อ "{topic}" ผมช่วยย่อให้เหลือส่วนที่จำเป็นต้องรู้ครับ',
+  'ประเด็น "{topic}" ผมขอสรุปให้แบบรักษาความหมายเดิมครบถ้วนครับ',
+  'สำหรับ "{topic}" ผมขออธิบายแบบภาษาง่าย ๆ แต่ยังยึดข้อมูลในระบบครับ',
+  'เรื่อง "{topic}" เดี๋ยวผมช่วยสรุปให้เห็นประเด็นหลักก่อนครับ',
+  'หัวข้อ "{topic}" ผมจะช่วยเรียบเรียงให้เหมาะกับการอ่านบนหน้าจอครับ',
+  'ประเด็นนี้คือ "{topic}" ผมขออธิบายแบบจับใจความสำคัญครับ',
+  'สำหรับเรื่อง "{topic}" ผมขอแยกสาระสำคัญให้เข้าใจง่ายครับ',
+  'เรื่อง "{topic}" ผมจะสรุปแบบเน้นคำตอบที่เกี่ยวข้องโดยตรงครับ',
+  'หัวข้อ "{topic}" เดี๋ยวผมสรุปให้แบบอ่านเร็ว เข้าใจไวครับ',
+  'ประเด็น "{topic}" ผมขอช่วยย่อยข้อมูลให้เป็นลำดับครับ',
+  'สำหรับ "{topic}" ผมจะเรียบเรียงคำตอบให้ดูง่ายและไม่แน่นเกินไปครับ',
+  'เรื่อง "{topic}" ผมขอสรุปแบบสบาย ๆ แต่ยังคงความถูกต้องครับ',
+  'หัวข้อ "{topic}" ผมขอหยิบประเด็นที่เกี่ยวข้องมาสรุปให้นะครับ',
+  'ประเด็นนี้เกี่ยวกับ "{topic}" ผมจะอธิบายแบบเข้าใจง่ายที่สุดครับ',
+  'สำหรับเรื่อง "{topic}" ผมช่วยจัดคำตอบให้เป็นภาพรวมและประเด็นสำคัญครับ',
+  'เรื่อง "{topic}" เดี๋ยวผมสรุปจากข้อมูลที่ค้นพบให้นะครับ',
+  'หัวข้อ "{topic}" ผมขออธิบายแบบไม่เป็นภาษากฎหมายเกินไปครับ',
+  'ประเด็น "{topic}" ผมจะช่วยสรุปให้เห็นสาระสำคัญโดยเร็วครับ',
+  'สำหรับ "{topic}" ผมขอเรียบเรียงให้เป็นคำตอบที่อ่านง่ายครับ',
+  'เรื่อง "{topic}" ผมช่วยสรุปให้แบบครบประเด็นที่ควรรู้ครับ',
+  'หัวข้อ "{topic}" เดี๋ยวผมช่วยแยกส่วนที่สำคัญออกมาให้ครับ',
+  'ประเด็น "{topic}" ผมขอสรุปให้เข้าใจง่ายและตรงกับคำถามครับ',
+  'สำหรับเรื่อง "{topic}" ผมจะช่วยอธิบายจากข้อมูลที่มีในระบบนะครับ',
+  'เรื่อง "{topic}" ผมขอสรุปให้แบบเห็นภาพรวมก่อน แล้วค่อยดูรายละเอียดครับ',
+  'หัวข้อ "{topic}" ผมช่วยปรับให้อ่านง่ายขึ้นจากข้อมูลที่พบครับ',
+  'ประเด็นนี้เกี่ยวกับ "{topic}" ผมขอเล่าแบบกระชับก่อนนะครับ',
+  'สำหรับ "{topic}" ผมจะสรุปให้แบบไม่ต้องแปลภาษากฎหมายเองครับ',
+  'เรื่อง "{topic}" เดี๋ยวผมช่วยจัดข้อมูลให้เป็นคำตอบสั้น ๆ ก่อนครับ',
+  'หัวข้อ "{topic}" ผมขออธิบายแบบอ่านแล้วเข้าใจประเด็นทันทีครับ',
+  'ประเด็น "{topic}" ผมช่วยสรุปให้แบบเป็นธรรมชาติและไม่หลุดข้อมูลครับ',
+  'สำหรับเรื่อง "{topic}" ผมขอสรุปแบบพอดี ๆ ไม่สั้นจนขาด ไม่ยาวจนล้า ครับ',
+  'เรื่อง "{topic}" ผมจะช่วยสรุปให้เข้าใจง่าย โดยอ้างอิงจากข้อมูลที่ระบบพบครับ'
+];
+
+const FRIENDLY_INTRO_RECENT_LIMIT = 8;
+let recentFriendlyIntroIndexes = [];
+
+function pickFriendlyIntro(topic) {
+  const question = truncateDisplayQuestion(topic || "เรื่องนี้", 36) || "เรื่องนี้";
+  if (FRIENDLY_INTROS.length === 0) {
+    return `เรื่อง "${question}" เดี๋ยวผมสรุปให้เข้าใจง่ายนะครับ 👇`;
+  }
+
+  const recentSet = new Set(recentFriendlyIntroIndexes.slice(-FRIENDLY_INTRO_RECENT_LIMIT));
+  const availableIndexes = FRIENDLY_INTROS
+    .map((_, index) => index)
+    .filter((index) => !recentSet.has(index));
+  const candidateIndexes = availableIndexes.length > 0 ? availableIndexes : FRIENDLY_INTROS.map((_, index) => index);
+
+  let nextIndex = candidateIndexes[Math.floor(Math.random() * candidateIndexes.length)];
+  if (
+    candidateIndexes.length > 1 &&
+    nextIndex === recentFriendlyIntroIndexes[recentFriendlyIntroIndexes.length - 1]
+  ) {
+    const alternateIndex = candidateIndexes.find((index) => index !== nextIndex);
+    if (alternateIndex !== undefined) {
+      nextIndex = alternateIndex;
+    }
+  }
+
+  recentFriendlyIntroIndexes = [...recentFriendlyIntroIndexes, nextIndex].slice(-FRIENDLY_INTRO_RECENT_LIMIT);
+  return FRIENDLY_INTROS[nextIndex].replace("{topic}", question);
+}
+
+function resetFriendlyIntroState() {
+  recentFriendlyIntroIndexes = [];
+}
+
+function hasToneIntro(answer = "") {
+  const text = String(answer || "").trim();
+  if (!text) {
+    return false;
+  }
+
+  return /^(?:ตามประเด็น|สำหรับ|ประเด็น|หัวข้อ|มาดูเรื่อง|ถ้าพูดถึง|เรื่องนี้คือ|เรื่องนี้เกี่ยวกับ|ประเด็นนี้เกี่ยวกับ|สำหรับหัวข้อ|สำหรับเรื่อง|เรื่อง)\s*["“][\s\S]{0,80}["”]\s*(?:ขอสรุป|เดี๋ยวผมสรุป|ผมขอสรุป|ผมจะสรุป|ผมช่วยสรุป|ผมอธิบาย|ผมเรียบเรียง|ผมเล่า)/u.test(
+    text,
+  );
+}
+
 function buildTonePresentation(answer, tone, originalQuestion = "", options = {}) {
   const originalAnswer = String(answer || "");
   const text = originalAnswer.trim();
@@ -146,7 +304,7 @@ function buildTonePresentation(answer, tone, originalQuestion = "", options = {}
   const intros = {
     formal: `ตามประเด็น "${question}" ขอสรุปข้อมูล ดังนี้`,
     semi_formal: `สำหรับ "${question}" ผมสรุปให้เข้าใจง่ายแบบทางการนะครับ`,
-    friendly: `เรื่อง "${question}" เดี๋ยวผมสรุปให้เข้าใจง่ายนะครับ 👇`,
+    friendly: pickFriendlyIntro(question),
   };
   const closings = {
     formal: "หากมีข้อสงสัยเพิ่มเติม สามารถสอบถามได้",
@@ -197,6 +355,27 @@ function isVinichaiPriorityQuestion(message) {
       /(โบนัส|เงินโบนัส|เบี้ยประชุม|ค่าใช้จ่ายประชุม|ค่าใช้จ่ายในการประชุม|ประชุมสัมมนา|ค่าใช้จ่ายสัมมนา|ค่าตอบแทน)/.test(normalized) &&
       /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ|กรรมการ|ประชุมใหญ่|ประชุมคณะกรรมการ|ประชุมกรรมการ|งบประมาณ|แผนงาน)/.test(normalized)
     )
+  );
+}
+
+function isReasonedExplanationQuestion(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /ทำไม|เหตุผล|เพราะอะไร|เพื่ออะไร|จำเป็น(?:ต้อง)?|มีไว้เพื่อ|ประโยชน์ของ|ความจำเป็น/.test(normalized);
+}
+
+function isBoardCommitteeMeetingReasonQuestion(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!isReasonedExplanationQuestion(normalized)) {
+    return false;
+  }
+
+  return (
+    /(ประชุมคณะกรรมการ|ประชุมกรรมการ|ประชุมคณะกรรมการดำเนินการ|การประชุมคณะกรรมการ|การประชุมกรรมการ)/.test(normalized) ||
+    (/ประชุม/.test(normalized) && /คณะกรรมการดำเนินการ|กรรมการดำเนินการ|คณะกรรมการ/.test(normalized))
   );
 }
 
@@ -423,6 +602,49 @@ function buildTaxCautiousAnswer(sources, options = {}) {
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function hasDirectBoardCommitteeMeetingEvidence(sources = []) {
+  return dedupeSources(Array.isArray(sources) ? sources : [], 10).some((source) => {
+    const sourceText = buildSourceSearchText(source);
+    if (!sourceText) {
+      return false;
+    }
+
+    const hasBoardMeetingSignal =
+      /(ประชุมคณะกรรมการ|ประชุมกรรมการ|การประชุมคณะกรรมการ|การประชุมกรรมการ|ประชุมคณะกรรมการดำเนินการ)/.test(sourceText) ||
+      /(คณะกรรมการดำเนินการต้องประชุม|คณะกรรมการดำเนินการจัดประชุม|คณะกรรมการดำเนินการเรียกประชุม)/.test(sourceText);
+    const hasReasonSignal =
+      /(มติ|วาระ|พิจารณา|อนุมัติ|ติดตาม|รายงาน|ควบคุม|กำกับ|มอบหมาย|ตรวจสอบ|ดำเนินงาน|ประชุมอย่างน้อย|ประชุมประจำ)/.test(sourceText);
+
+    return hasBoardMeetingSignal && hasReasonSignal;
+  });
+}
+
+function buildReasonedExplanationAnswer(sources, options = {}) {
+  const message = String(options.originalMessage || options.message || "").trim();
+  if (!isBoardCommitteeMeetingReasonQuestion(message)) {
+    return "";
+  }
+
+  if (hasDirectBoardCommitteeMeetingEvidence(sources)) {
+    return "";
+  }
+
+  const summaryLines = [
+    "จากข้อมูลที่พบ ยังไม่พบคำตอบที่อธิบายเหตุผลของการประชุมคณะกรรมการดำเนินการโดยตรง",
+    "อธิบายตามหลักการบริหารสหกรณ์ได้ว่า การประชุมมีไว้เพื่อให้คณะกรรมการร่วมกันพิจารณา ตัดสินใจ และติดตามการดำเนินงาน",
+    "การประชุมช่วยให้การอนุมัติเรื่องสำคัญ การมอบหมายงาน การติดตามผล และการแก้ปัญหา มีมติหรือบันทึกเป็นหลักฐาน",
+    "พูดง่าย ๆ คือ การประชุมไม่ใช่เรื่องการแต่งตั้งตำแหน่งกรรมการ แต่เป็นกลไกให้คณะกรรมการบริหารงานร่วมกันอย่างเป็นระบบและตรวจสอบได้",
+  ];
+  const detailLines = [
+    "หากต้องตอบให้ตรงตามข้อบังคับ ควรเพิ่มข้อมูลเฉพาะเรื่องการประชุมคณะกรรมการดำเนินการ เช่น วาระประชุม อำนาจพิจารณา มติ และการติดตามงาน ลงใน Q&A หรือ law_search/glaw_search",
+  ];
+
+  return buildParagraphSummary(summaryLines, detailLines, options.explainMode === true, {
+    summaryLimit: 4,
+    detailLimit: 1,
+  });
 }
 
 function cleanupAnswerText(answerText, sources = [], options = {}) {
@@ -2800,6 +3022,33 @@ function buildOrderedLines(lines = []) {
     .filter(Boolean);
 }
 
+function filterDetailLinesAgainstSummary(detailLines = [], summaryLines = []) {
+  const summaryItems = Array.isArray(summaryLines) ? summaryLines.filter(Boolean) : [];
+  if (summaryItems.length === 0) {
+    return Array.isArray(detailLines) ? detailLines.filter(Boolean) : [];
+  }
+
+  const filtered = [];
+  for (const detailLine of Array.isArray(detailLines) ? detailLines : []) {
+    const cleaned = cleanLine(detailLine);
+    if (!cleaned) {
+      continue;
+    }
+
+    if (summaryItems.some((summaryLine) => linesLookSemanticallyDuplicate(summaryLine, cleaned))) {
+      continue;
+    }
+
+    if (filtered.some((existingLine) => linesLookSemanticallyDuplicate(existingLine, cleaned))) {
+      continue;
+    }
+
+    filtered.push(cleaned);
+  }
+
+  return filtered;
+}
+
 function shouldDisplayContentHeading(heading, options = {}) {
   const text = cleanLine(heading);
   if (!text) {
@@ -2922,7 +3171,7 @@ function buildParagraphSummary(summaryLines, detailLines, explainMode, options =
   const summaryLimit = Math.max(1, Number(options.summaryLimit || 6));
   const detailLimit = Math.max(1, Number(options.detailLimit || (explainMode ? 6 : 4)));
   const summaryItems = buildSectionLines(summaryLines, summaryLimit);
-  const detailItems = buildSectionLines(detailLines, detailLimit);
+  const detailItems = buildSectionLines(filterDetailLinesAgainstSummary(detailLines, summaryItems), detailLimit);
   const blocks = [];
   const orderedSummary = options.orderedSummary === true;
   const summaryHeading = String(
@@ -3003,7 +3252,9 @@ function finalizeGeneratedAnswer(answerText, explainMode, options = {}) {
   }
 
   const normalizedSummaryLines = uniqueCleanLines(summaryLines, shape.summaryContentLimit);
-  const normalizedDetailLines = explainMode ? uniqueCleanLines(detailLines, shape.detailLimit) : [];
+  const normalizedDetailLines = explainMode
+    ? uniqueCleanLines(filterDetailLinesAgainstSummary(detailLines, normalizedSummaryLines), shape.detailLimit)
+    : [];
   const rebuilt = buildParagraphSummary(normalizedSummaryLines, normalizedDetailLines, explainMode, {
     summaryHeading,
     orderedSummary,
@@ -5256,6 +5507,21 @@ async function generateChatSummary(message, sources, options = {}) {
         })
       : effectiveSources;
 
+  const reasonedExplanationAnswer = buildReasonedExplanationAnswer(focusedAnswerSources, {
+    ...options,
+    originalMessage: focusMessage,
+    message,
+    explainMode,
+  });
+  if (reasonedExplanationAnswer) {
+    if (options.answerDiagnostics && typeof options.answerDiagnostics === "object") {
+      options.answerDiagnostics.answerMode = "reasoned_explanation";
+      options.answerDiagnostics.usedAI = false;
+      options.answerDiagnostics.aiSourceCount = 0;
+    }
+    return finalizeSummary(reasonedExplanationAnswer);
+  }
+
   const taxGuardAnswer = buildTaxCautiousAnswer(focusedAnswerSources, {
     ...options,
     originalMessage: focusMessage,
@@ -5488,8 +5754,10 @@ async function generateChatSummary(message, sources, options = {}) {
     isOverviewGroundingQuery(focusMessage) && !hasExplicitLegalGroundingIntent(focusMessage)
       ? "คำถามนี้เป็นคำถามภาพรวม/นิยาม/ประโยชน์ ให้ตอบเฉพาะความหมาย ภาพรวม หรือประโยชน์ที่ตรงคำถามเท่านั้น หากแหล่งอ้างอิงบางส่วนเป็นบทกฎหมาย รายมาตรา หรืออำนาจหน้าที่ของนายทะเบียน แต่ผู้ใช้ไม่ได้ถามเชิงกฎหมาย ห้ามนำประเด็นนั้นมาปนในคำตอบ "
       : "";
+  const detailNonDuplicateInstruction =
+    "ส่วน 'รายละเอียดเพิ่มเติม:' ต้องใส่เฉพาะข้อมูลที่ขยายจากสรุปจริง ๆ เช่น เงื่อนไข ข้อยกเว้น ขั้นตอน หรือหลักฐานสนับสนุน ห้ามเขียนประโยคที่มีความหมายซ้ำกับ 'สรุปสาระสำคัญ:' ถ้าไม่มีรายละเอียดใหม่ให้ไม่ต้องเปิดหัวข้อนี้ ";
   const instruction = explainMode
-    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${deepAnalysisInstruction}${continuationInstruction}ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${overviewGroundingInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดไม่เกิน ${explainLineBudget.summaryContentLimit} บรรทัด และย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดไม่เกิน ${explainLineBudget.detailLimit} บรรทัด ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
+    ? `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วอธิบายจากข้อมูลที่มีอยู่ให้มากที่สุดก่อน โดยไม่ตัดสาระสำคัญทิ้ง ${planToneInstruction}${depthInstruction}${compareInstruction}${deepAnalysisInstruction}${continuationInstruction}ใช้ภาษาไทยสุภาพแบบราชการ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${overviewGroundingInstruction}${detailNonDuplicateInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดไม่เกิน ${explainLineBudget.summaryContentLimit} บรรทัด และหากมีรายละเอียดใหม่จริง ย่อหน้าถัดไปขึ้นต้นด้วย 'รายละเอียดเพิ่มเติม:' แล้วตามด้วยข้อความสั้น ๆ แยกคนละบรรทัดไม่เกิน ${explainLineBudget.detailLimit} บรรทัด ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`
     : `อ่านและพิจารณาข้อมูลจากทุกแหล่งที่ให้มาครบถ้วน แล้วสรุปรวมกันเป็นคำตอบภาษาไทยที่ตรงประเด็น ${planToneInstruction}${depthInstruction}${compareInstruction}${deepAnalysisInstruction}พร้อมใช้ภาษาราชการที่สุภาพ ห้ามเดาข้อมูลนอกแหล่งอ้างอิง ${amountInstruction} ${decisionInstruction} ${lawSectionInstruction}${overviewGroundingInstruction}${metadataExclusionInstruction}ให้ตอบเป็น plain text เท่านั้น โดยขึ้นต้นด้วย 'สรุปสาระสำคัญ:' แล้วตามด้วยข้อความสั้น ๆ ไม่เกิน ${conciseLineBudget} บรรทัด โดยต้องเก็บใจความสำคัญทั้งหมดที่จำเป็นต่อการตัดสินใจ ห้ามเปิดหัวข้อ 'รายละเอียดเพิ่มเติม:' เองในรอบแรก ห้ามใช้ markdown heading หากเป็นคำถามต่อเนื่อง ให้ตอบเสมือนเป็นบทสนทนาในเรื่องเดิมต่อเนื่องกัน โดยยังคงถ้อยคำทางราชการ และหลีกเลี่ยงคำลงท้ายแบบภาษาพูด`;
 
   try {
@@ -5692,4 +5960,5 @@ module.exports = {
   applyTone,
   wantsExplanation,
   SOURCE_LABELS,
+  __resetFriendlyIntroState: resetFriendlyIntroState,
 };

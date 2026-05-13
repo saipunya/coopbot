@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet" />
+    <style>
+      body { margin: 0; font-family: 'Sarabun', Arial, sans-serif; background: linear-gradient(160deg, #e6eef6, #f5f9fc); color: #1f2a37; }
+      .shell { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; }
+      .card { background: rgba(255,255,255,0.9); border: 1px solid #d8e2ea; border-radius: 20px; box-shadow: 0 18px 45px rgba(18,52,77,0.16); padding: 1.25rem; margin-bottom: 1rem; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; position:relative; overflow:hidden; }
+      .topbar::before { content:""; position:absolute; inset:0; background: radial-gradient(circle at top left, rgba(255,255,255,0.36), transparent 30%), linear-gradient(135deg, rgba(255,255,255,0.16), transparent 44%); pointer-events:none; }
+      .topbar > * { position:relative; z-index:1; }
+      .topbar a { color:#0f4667; text-decoration:none; font-weight:700; }
+      .alert { padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; }
+      .alert.success { background:#e8f7ee; color:#1f6a3a; border:1px solid #b8e3c8; }
+      .alert.error { background:#fce9e7; color:#9b2c22; border:1px solid #f1b8b1; }
+      .tab-row { display:flex; gap:0.75rem; flex-wrap:wrap; }
+      .tab-row a { text-decoration:none; font-weight:700; color:#0f4667; padding:0.72rem 1rem; border-radius:14px; border:1px solid #d8e2ea; background:#eef4f8; }
+      .tab-row a.active { background:#0f5f8f; border-color:#0f5f8f; color:#fff; }
+      .field label { display:block; font-weight:700; margin-bottom:0.35rem; }
+      .field input, .field textarea { width:100%; box-sizing:border-box; border:1px solid #c9d8e4; border-radius:14px; padding:0.8rem 0.9rem; font:inherit; background:#fff; color:#1f2a37; }
+      .field textarea { min-height:120px; resize:vertical; }
+      .section-note { color:#5d6a79; line-height:1.7; }
+      .primary-btn, .secondary-btn { border:none; border-radius:12px; padding:0.72rem 0.95rem; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+      .primary-btn { background:#0f5f8f; }
+      .secondary-btn { background:#607180; }
+      .result-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; }
+      .result-card { border:1px solid #d8e2ea; border-radius:16px; background:rgba(255,255,255,0.88); padding:1rem; }
+      .result-title { margin:0 0 0.35rem; color:#0f4667; font-weight:700; }
+      .result-body { margin:0; white-space:pre-wrap; line-height:1.7; overflow-wrap:anywhere; word-break:break-word; }
+      .pill { display:inline-flex; align-items:center; padding:0.35rem 0.7rem; border-radius:999px; background:#d2e8f7; color:#0f4667; font-weight:700; font-size:0.86rem; }
+      .list { margin:0; padding-left:1.2rem; line-height:1.7; }
+      @media (max-width: 820px) {
+        .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
+        .card, .topbar { padding: 1rem; }
+        .topbar { flex-direction:column; align-items:stretch; }
+        .field input, .field textarea, .primary-btn, .secondary-btn { font-size:16px; width:100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
+      <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
+
+      <section class="card topbar">
+        <div>
+          <h1 style="margin:0; color:#0f4667;">Query Debug</h1>
+          <p style="margin:0.35rem 0 0; color:#5d6a79;">ดูผลการ expand คำค้น, topic family, และ intent สำหรับตรวจอักษรย่อหรือคำถามกำกวม</p>
+        </div>
+        <a href="/admin">กลับหน้าแดชบอร์ด</a>
+      </section>
+
+      <section class="card">
+        <%- include("partials/knowledgeAdminTabs", { activeTab: "query-debug" }) %>
+      </section>
+
+      <section class="card">
+        <form action="/admin/query-debug" method="post">
+          <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+          <div class="field">
+            <label for="query">คำค้น</label>
+            <textarea id="query" name="query" placeholder="เช่น คพช, ใครแต่งตั้งผู้ชำระบัญชี, ปิดสหกรณ์ทำยังไง"><%= data.query || '' %></textarea>
+          </div>
+          <div style="margin-top:0.9rem; display:flex; gap:0.65rem; flex-wrap:wrap;">
+            <button class="primary-btn" type="submit">ดูผล debug</button>
+            <% if (data.query) { %>
+              <a class="secondary-btn" style="display:inline-flex; align-items:center; text-decoration:none;" href="/admin/query-debug">ล้าง</a>
+            <% } %>
+          </div>
+        </form>
+      </section>
+
+      <% if (data.query) { %>
+        <section class="result-grid">
+          <article class="result-card">
+            <div class="pill">Raw</div>
+            <h2 class="result-title">คำค้นต้นฉบับ</h2>
+            <p class="result-body"><%= data.query %></p>
+          </article>
+          <article class="result-card">
+            <div class="pill">Expanded</div>
+            <h2 class="result-title">คำค้นหลัง expandSearchConcepts()</h2>
+            <p class="result-body"><%= data.expandedQuery || '-' %></p>
+          </article>
+          <article class="result-card">
+            <div class="pill">Intent</div>
+            <h2 class="result-title">Focus profile</h2>
+            <p class="result-body">intent: <%= data.focusProfile?.intent || 'general' %>
+normalizedQuery: <%= data.focusProfile?.normalizedQuery || '-' %></p>
+          </article>
+          <article class="result-card">
+            <div class="pill">Topic</div>
+            <h2 class="result-title">topic family</h2>
+            <p class="result-body"><%= data.topicFamily ? data.topicFamily.id : '-' %></p>
+          </article>
+        </section>
+
+        <section class="card">
+          <h2 style="margin-top:0; color:#0f4667;">Topics ที่จับได้</h2>
+          <% if (!data.focusProfile?.topics?.length) { %>
+            <p class="section-note">ไม่พบ topic ที่ตรงกับคำค้นนี้</p>
+          <% } else { %>
+            <ul class="list">
+              <% data.focusProfile.topics.forEach((topic) => { %>
+                <li>
+                  <strong><%= topic.primary %></strong>
+                  <% if (topic.aliases && topic.aliases.length) { %>
+                    <div class="section-note">aliases: <%= topic.aliases.join(", ") %></div>
+                  <% } %>
+                  <% if (topic.contextSignals && topic.contextSignals.length) { %>
+                    <div class="section-note">context: <%= topic.contextSignals.slice(0, 6).join(", ") %></div>
+                  <% } %>
+                </li>
+              <% }) %>
+            </ul>
+          <% } %>
+        </section>
+
+        <section class="card">
+          <h2 style="margin-top:0; color:#0f4667;">Search Stage Trace</h2>
+          <% if (!data.searchTrace || !data.searchTrace.stages || !data.searchTrace.stages.length) { %>
+            <p class="section-note">ยังไม่มี trace ของ stage สำหรับคำค้นนี้</p>
+          <% } else { %>
+            <p class="section-note" style="margin-top:0;">
+              selectedStage: <strong><%= data.searchTrace.selectedStage || '-' %></strong>
+              <% if (data.searchTrace.fallbackUsed) { %>
+                , fallbackUsed: <strong>true</strong>
+              <% } %>
+            </p>
+            <ul class="list">
+              <% data.searchTrace.stages.forEach((stage) => { %>
+                <li>
+                  <strong><%= stage.stage %></strong>
+                  - matched: <%= stage.matched ? 'yes' : 'no' %>
+                  - matchCount: <%= stage.matchCount %>
+                  - topScore: <%= stage.topScore %>
+                  - sourceCount: <%= stage.sourceCount %>
+                </li>
+              <% }) %>
+            </ul>
+          <% } %>
+        </section>
+
+        <section class="card">
+          <h2 style="margin-top:0; color:#0f4667;">Top Search Results</h2>
+          <% if (!data.searchResults || !data.searchResults.length) { %>
+            <p class="section-note">ไม่พบผลลัพธ์จากการค้น stage นี้</p>
+          <% } else { %>
+            <ul class="list">
+              <% data.searchResults.forEach((item) => { %>
+                <li>
+                  <strong><%= item.source %></strong>
+                  - <%= item.reference %>
+                  <div class="section-note"><%= item.title %> (score: <%= item.score %>)</div>
+                </li>
+              <% }) %>
+            </ul>
+          <% } %>
+        </section>
+
+        <section class="card">
+          <h2 style="margin-top:0; color:#0f4667;">หมายเหตุ</h2>
+          <p class="section-note" style="margin-bottom:0;">ใช้หน้านี้ทดสอบคำอย่าง <code>คพช</code> แล้วดูว่าระบบขยายเป็นชื่อเต็มที่ต้องการหรือไม่ ก่อนนำไปยิงค้นจริง</p>
+        </section>
+      <% } %>
+    </div>
+  </body>
+</html>

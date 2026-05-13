@@ -1,5 +1,6 @@
 const lawChatbotService = require("../services/lawChatbotService");
 const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
+const LawSearchModel = require("../models/lawSearchModel");
 const { loginAdmin } = require("../services/adminAuthService");
 const {
   createGoogleAuthUrl,
@@ -10,6 +11,17 @@ const { hasAcceptedLawChatbotNotice } = require("../middlewares/authMiddleware")
 const runtimeSettingsService = require("../services/runtimeSettingsService");
 const { getAiRewriteUsageSummary } = require("../services/aiUsageStatsService");
 const vinichaiAdminService = require("../services/vinichaiAdminService");
+const {
+  buildPaginationMeta,
+  normalizePageNumber,
+  normalizePageSize,
+} = require("../services/paginationUtils");
+const {
+  expandSearchConcepts,
+  detectTopicFamily,
+  getQueryFocusProfile,
+} = require("../services/thaiTextUtils");
+const { searchDatabaseSources } = require("../services/sourceSelectionService");
 const {
   generateKeywordFromChunk,
   normalizeChunkText,
@@ -98,6 +110,32 @@ function sanitizeKnowledgeAdminReturnPath(value, fallbackPath = "/admin") {
   }
 
   if (!/^\/admin(?:\/(?:suggested-questions|knowledge|knowledge-suggestions))?(?:[?#].*)?$/.test(path)) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
+function sanitizeLawSearchAdminReturnPath(value, fallbackPath = "/admin/law-search-fields") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!/^\/admin\/law-search-fields(?:[?#].*)?$/.test(path)) {
+    return fallbackPath;
+  }
+
+  return path;
+}
+
+function sanitizeQueryDebugReturnPath(value, fallbackPath = "/admin/query-debug") {
+  const path = String(value || "").trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallbackPath;
+  }
+
+  if (!/^\/admin\/query-debug(?:[?#].*)?$/.test(path)) {
     return fallbackPath;
   }
 
@@ -357,6 +395,100 @@ async function renderKnowledgeSuggestions(req, res) {
   });
 }
 
+async function renderLawSearchFields(req, res) {
+  const source = String(req.query.source || "tbl_laws").trim().toLowerCase();
+  const sourceConfig =
+    LawSearchModel.getStructuredLawAdminSourceConfig(source) ||
+    LawSearchModel.getStructuredLawAdminSourceConfig("tbl_laws");
+  const query = String(req.query.q || "").trim();
+  const page = normalizePageNumber(req.query.page || 1);
+  const pageSize = normalizePageSize(req.query.perPage || 12, 8, 50);
+  const totalItems = await LawSearchModel.countAdminSearchRows(sourceConfig.tableName, query);
+  const pagination = buildPaginationMeta({
+    page,
+    pageSize,
+    totalItems,
+  });
+  const rows = await LawSearchModel.listAdminSearchRows(
+    sourceConfig.tableName,
+    query,
+    pagination.pageSize,
+    pagination.offset,
+  );
+
+  res.render("admin/lawSearchFields", {
+    title: "Law Search Field Management",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data: {
+      source: sourceConfig.tableName,
+      sourceLabel: sourceConfig.label,
+      query,
+      rows,
+      pagination,
+      sourceOptions: [
+        {
+          value: "tbl_laws",
+          label: "tbl_laws / law_search",
+        },
+        {
+          value: "tbl_glaws",
+          label: "tbl_glaws / glaw_search",
+        },
+      ],
+    },
+    returnPath: req.originalUrl || "/admin/law-search-fields",
+  });
+}
+
+async function renderQueryDebug(req, res) {
+  const query = String(req.query.q || req.query.query || "").trim();
+  const expandedQuery = query ? expandSearchConcepts(query) : "";
+  const focusProfile = query ? getQueryFocusProfile(query) : { normalizedQuery: "", intent: "general", topics: [] };
+  const topicFamily = query ? detectTopicFamily(query) : null;
+  const searchResults = query
+    ? await searchDatabaseSources(query, "all", {
+        originalMessage: query,
+        planCode: "free",
+      })
+    : [];
+  const searchTrace = Array.isArray(searchResults) ? searchResults.searchTrace || null : null;
+
+  res.render("admin/queryDebug", {
+    title: "Query Debug",
+    user: req.session.adminUser,
+    errorMessage: req.query.error || "",
+    successMessage: req.query.success || "",
+    data: {
+      query,
+      expandedQuery,
+      focusProfile,
+      topicFamily,
+      searchTrace,
+      searchResults: Array.isArray(searchResults)
+        ? searchResults.slice(0, 8).map((item) => ({
+            source: item.source || "",
+            title: item.title || "",
+            reference: item.reference || "",
+            score: Number(item.score || 0),
+          }))
+        : [],
+      sourceOptions: [
+        {
+          value: "tbl_laws",
+          label: "tbl_laws",
+        },
+        {
+          value: "tbl_glaws",
+          label: "tbl_glaws",
+        },
+      ],
+    },
+    returnPath: req.originalUrl || "/admin/query-debug",
+  });
+}
+
 async function renderManualPdfChunks(req, res) {
   const chunkCount = await LawChatbotPdfChunkModel.countChunks();
 
@@ -373,6 +505,56 @@ async function renderManualPdfChunks(req, res) {
         "โครงสร้างของสหกรณ์ ตั้งอยู่บนรากฐานของประชาธิปไตย สมาชิกทุกคนเป็นเจ้าของสหกรณ์ แต่ทุกคนไม่สามารถร่วมบริหารกิจการของสหกรณ์ได้ จึงต้องมีการเลือกตั้งคณะกรรมการดำเนินการเป็นผู้บริหารงานแทน ตามพระราชบัญญัติสหกรณ์ พ.ศ. 2542 กำหนดให้มีคณะกรรมการดำเนินการไม่เกิน 15 คน มีอำนาจหน้าที่เป็นผู้ดำเนินกิจการและเป็นผู้แทนสหกรณ์ในกิจการทั้งปวงเพื่อให้กิจการสหกรณ์ดำเนินการอย่างกว้างขวาง และให้บริการแก่สมาชิกอย่างทั่วถึง คณะกรรมการดำเนินการควรจัดจ้างผู้จัดการที่มีความรู้ความสามารถมาดำเนินธุรกิจแทน และผู้จัดการอาจจัดจ้างเจ้าหน้าที่โดยความเห็นชอบของคณะกรรมการดำเนินการ เพื่อช่วยเหลือกิจการสหกรณ์ด้านต่างๆ ตามความเหมาะสมโดยคำนึงถึงปริมาณธุรกิจและการประหยัดเป็นสำคัญ",
     },
   });
+}
+
+async function updateLawSearchFields(req, res) {
+  const returnTo = sanitizeLawSearchAdminReturnPath(req.body.returnTo, "/admin/law-search-fields");
+  const source = String(req.body.source || "tbl_laws").trim().toLowerCase();
+  const sourceConfig =
+    LawSearchModel.getStructuredLawAdminSourceConfig(source) ||
+    LawSearchModel.getStructuredLawAdminSourceConfig("tbl_laws");
+  const id = Number(req.body.id || 0);
+  const lawSearch = String(req.body.lawSearch || req.body.law_search || "").trim();
+
+  if (!id) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่พบรายการกฎหมายที่ต้องการแก้ไข"),
+    );
+  }
+
+  const updated = await LawSearchModel.updateAdminSearchRow(
+    sourceConfig.tableName,
+    id,
+    {
+      lawSearch,
+    },
+    {
+      saveBy:
+        (req.session.adminUser && (req.session.adminUser.email || req.session.adminUser.username || req.session.adminUser.name)) ||
+        "admin",
+    },
+  );
+
+  if (!updated) {
+    return res.redirect(
+      appendQueryParam(returnTo, "error", "ไม่สามารถบันทึกการแก้ไขคำค้นของกฎหมายรายการนี้ได้"),
+    );
+  }
+
+  return res.redirect(
+    appendQueryParam(returnTo, "success", "บันทึกคำค้นสำหรับการค้นหากฎหมายเรียบร้อยแล้ว"),
+  );
+}
+
+function debugQueryExpansion(req, res) {
+  const returnTo = sanitizeQueryDebugReturnPath(req.body.returnTo, "/admin/query-debug");
+  const query = String(req.body.query || req.body.q || "").trim();
+  if (!query) {
+    return res.redirect(appendQueryParam(returnTo, "error", "กรุณากรอกคำค้นก่อนดูผล debug"));
+  }
+
+  const targetPath = appendQueryParam(returnTo, "q", query);
+  return res.redirect(targetPath);
 }
 
 async function submitManualPdfChunks(req, res) {
@@ -1114,6 +1296,8 @@ module.exports = {
   renderSuggestedQuestions,
   renderKnowledge,
   renderKnowledgeSuggestions,
+  renderLawSearchFields,
+  renderQueryDebug,
   renderManualPdfChunks,
   renderVinichai,
   renderGuestUsage,
@@ -1128,6 +1312,8 @@ module.exports = {
   submitKnowledge,
   submitManualPdfChunks,
   submitSuggestedQuestion,
+  updateLawSearchFields,
+  debugQueryExpansion,
   submitVinichai,
   updateKnowledge,
   updateSuggestedQuestion,

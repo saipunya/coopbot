@@ -10,6 +10,20 @@ const {
   selectTieredSources,
 } = require("../services/sourceSelectionService");
 
+test("classifies colloquial legal workflow queries as law section without affecting overview questions", () => {
+  const cases = [
+    ["ปิดสหกรณ์ทำยังไง", "law_section"],
+    ["เลิกสหกรณ์มีเหตุอะไรบ้าง", "law_section"],
+    ["ใครแต่งตั้งผู้ชำระบัญชี", "law_section"],
+    ["แก้ไขข้อบังคับต้องทำยังไง", "law_section"],
+    ["สหกรณ์คืออะไร", "short_answer"],
+  ];
+
+  cases.forEach(([message, expectedIntent]) => {
+    assert.equal(classifyQuestionIntent(message), expectedIntent, message);
+  });
+});
+
 test("preserves complete structured legal lists and removes metadata headings", () => {
   const answer = formatDbOnlyMainChatAnswer([
     {

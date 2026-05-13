@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet" />
+    <style>
+      body { margin: 0; font-family: 'Sarabun', Arial, sans-serif; background: linear-gradient(160deg, #e6eef6, #f5f9fc); color: #1f2a37; }
+      .shell { width: min(1240px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; }
+      .card { background: rgba(255,255,255,0.9); border: 1px solid #d8e2ea; border-radius: 20px; box-shadow: 0 18px 45px rgba(18,52,77,0.16); padding: 1.25rem; margin-bottom: 1rem; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; position:relative; overflow:hidden; }
+      .topbar::before { content:""; position:absolute; inset:0; background: radial-gradient(circle at top left, rgba(255,255,255,0.36), transparent 30%), linear-gradient(135deg, rgba(255,255,255,0.16), transparent 44%); pointer-events:none; }
+      .topbar > * { position:relative; z-index:1; }
+      .topbar a { color:#0f4667; text-decoration:none; font-weight:700; }
+      .alert { padding: 0.9rem 1rem; border-radius: 14px; margin-bottom: 1rem; }
+      .alert.success { background:#e8f7ee; color:#1f6a3a; border:1px solid #b8e3c8; }
+      .alert.error { background:#fce9e7; color:#9b2c22; border:1px solid #f1b8b1; }
+      .tab-row { display:flex; gap:0.75rem; flex-wrap:wrap; }
+      .tab-row a { text-decoration:none; font-weight:700; color:#0f4667; padding:0.72rem 1rem; border-radius:14px; border:1px solid #d8e2ea; background:#eef4f8; }
+      .tab-row a.active { background:#0f5f8f; border-color:#0f5f8f; color:#fff; }
+      .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; }
+      .metric-card { position:relative; overflow:hidden; }
+      .metric-card::before { content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, #0f5f8f, transparent 85%); }
+      .metric { font-size: 1.8rem; font-weight: 700; color: #0f4667; margin: 0.3rem 0 0; }
+      .section-note { color:#5d6a79; line-height:1.7; }
+      .soft-list { list-style:none; padding:0; margin:0; display:grid; gap:0.9rem; }
+      .soft-list li { padding:1rem; border:1px solid #d8e2ea; border-radius:16px; background: rgba(255,255,255,0.82); min-width:0; }
+      .row-head { display:flex; justify-content:space-between; gap:0.75rem; align-items:flex-start; flex-wrap:wrap; }
+      .list-item-title, .list-item-body, .knowledge-meta, .section-note, .editor-summary { overflow-wrap:anywhere; word-break:break-word; }
+      .list-item-title { display:block; color:#0f4667; line-height:1.5; font-weight:700; }
+      .knowledge-meta { margin-top:0.45rem; color:#5d6a79; font-size:0.92rem; line-height:1.6; }
+      .list-item-body { margin-top:0.55rem; color:#1f2a37; white-space:pre-line; line-height:1.7; }
+      .field label { display:block; font-weight:700; margin-bottom:0.35rem; }
+      .field input, .field select, .field textarea { width:100%; box-sizing:border-box; border:1px solid #c9d8e4; border-radius:14px; padding:0.8rem 0.9rem; font:inherit; background:#fff; color:#1f2a37; }
+      .field textarea { min-height:120px; resize:vertical; }
+      .primary-btn, .secondary-btn, .danger-btn { border:none; border-radius:12px; padding:0.72rem 0.95rem; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+      .primary-btn { background:#0f5f8f; }
+      .secondary-btn { background:#607180; }
+      .search-bar { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:end; justify-content:space-between; margin-bottom:1rem; }
+      .search-form { display:flex; gap:0.65rem; flex-wrap:wrap; align-items:end; flex:1 1 420px; }
+      .search-form .field { flex:1 1 260px; }
+      .search-form input[type="search"] { min-width:min(360px, 100%); }
+      .utility-form { display:flex; gap:0.65rem; flex-wrap:wrap; align-items:end; }
+      .utility-form .field { min-width:180px; }
+      .search-form input[type="search"], .utility-form select { border:1px solid #c9d8e4; border-radius:12px; padding:0.62rem 0.82rem; font:inherit; background:#fff; color:#1f2a37; }
+      .clear-link { display:inline-flex; align-items:center; padding:0.66rem 0.9rem; border-radius:12px; border:1px solid #d8e2ea; background:#fff; color:#0f4667; text-decoration:none; font-weight:700; }
+      .clear-link.active { background:#0f5f8f; border-color:#0f5f8f; color:#fff; }
+      .editor-box { margin-top:0.9rem; padding:0.95rem; border:1px solid #d8e2ea; border-radius:16px; background:rgba(241,246,251,0.82); }
+      .editor-actions { display:flex; justify-content:flex-end; gap:0.65rem; flex-wrap:wrap; margin-top:0.9rem; }
+      .pagination-bar { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; margin-top:1rem; }
+      .pagination-summary { color:#5d6a79; font-size:0.92rem; }
+      .pagination-links { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; }
+      .pagination-link, .pagination-current, .pagination-ellipsis { min-width:2.4rem; padding:0.58rem 0.82rem; border-radius:12px; text-align:center; font-weight:700; }
+      .pagination-link { background:#eef4f8; color:#0f4667; text-decoration:none; border:1px solid #d8e2ea; }
+      .pagination-current { background:#0f5f8f; color:#fff; border:1px solid #0f5f8f; }
+      .pagination-ellipsis { color:#5d6a79; }
+      @media (max-width: 820px) {
+        .shell { width: min(100%, calc(100% - 1rem)); padding: 0.75rem 0 1.4rem; }
+        .card, .topbar { padding: 1rem; }
+        .topbar { flex-direction:column; align-items:stretch; }
+        .search-bar, .search-form, .utility-form, .editor-actions { flex-direction:column; align-items:stretch; }
+        .search-form input[type="search"], .utility-form select, .primary-btn, .secondary-btn, .clear-link { width:100%; }
+        .pagination-links { justify-content:center; }
+        .field input, .field select, .field textarea, .primary-btn, .secondary-btn, .clear-link { font-size:16px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <% if (successMessage) { %><div class="alert success"><%= successMessage %></div><% } %>
+      <% if (errorMessage) { %><div class="alert error"><%= errorMessage %></div><% } %>
+
+      <section class="card topbar">
+        <div>
+          <h1 style="margin:0; color:#0f4667;">จัดการคำค้นสำหรับกฎหมาย</h1>
+          <p style="margin:0.35rem 0 0; color:#5d6a79;">แก้เฉพาะ <code><%= data.source === 'tbl_glaws' ? 'glaw_search' : 'law_search' %></code> เพื่อให้ระบบนำไปใช้ค้นหากฎหมายในรอบถัดไป</p>
+        </div>
+        <a href="/admin">กลับหน้าแดชบอร์ด</a>
+      </section>
+
+      <section class="card">
+        <%- include("partials/knowledgeAdminTabs", { activeTab: "law-search-fields" }) %>
+      </section>
+
+      <section class="grid">
+        <article class="card metric-card">
+          <div>รายการที่พบ</div>
+          <div class="metric"><%= data.pagination?.totalItems || 0 %></div>
+          <p class="section-note" style="margin-bottom:0;">กำลังดู <strong><%= data.sourceLabel %></strong></p>
+        </article>
+      </section>
+
+      <section class="card">
+        <div class="search-bar">
+          <form class="search-form" action="/admin/law-search-fields" method="get">
+            <input type="hidden" name="source" value="<%= data.source %>" />
+            <input type="hidden" name="page" value="1" />
+            <div class="field">
+              <label for="lawSearchQuery">ค้นหา</label>
+              <input id="lawSearchQuery" name="q" type="search" value="<%= data.query || '' %>" placeholder="ค้นหาจากเลขมาตรา / เนื้อหา / ความคิดเห็น / คำค้น" />
+            </div>
+            <button class="primary-btn" type="submit">ค้นหา</button>
+            <% if (data.query) { %>
+              <a class="clear-link" href="/admin/law-search-fields?source=<%= data.source %>&perPage=<%= data.pagination?.pageSize || 12 %>">ล้างคำค้น</a>
+            <% } %>
+          </form>
+
+          <form class="utility-form" action="/admin/law-search-fields" method="get">
+            <input type="hidden" name="page" value="1" />
+            <% if (data.query) { %>
+              <input type="hidden" name="q" value="<%= data.query %>" />
+            <% } %>
+            <div class="field">
+              <label for="lawSearchSource">ตาราง</label>
+              <select id="lawSearchSource" name="source" aria-label="เลือกตารางกฎหมาย">
+                <% (data.sourceOptions || []).forEach((option) => { %>
+                  <option value="<%= option.value %>" <%= data.source === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="field">
+              <label for="lawSearchPerPage">รายการ/หน้า</label>
+              <select id="lawSearchPerPage" name="perPage" aria-label="จำนวนรายการต่อหน้า">
+                <% [8, 12, 24, 36, 50].forEach((size) => { %>
+                  <option value="<%= size %>" <%= Number(data.pagination?.pageSize || 12) === size ? 'selected' : '' %>><%= size %></option>
+                <% }) %>
+              </select>
+            </div>
+            <button class="secondary-btn" type="submit">แสดงผล</button>
+          </form>
+        </div>
+
+        <% if (data.query) { %>
+          <p class="section-note">ผลการค้นหา “<%= data.query %>” พบ <strong><%= data.pagination?.totalItems || 0 %></strong> รายการ</p>
+        <% } %>
+
+        <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem;">
+          <% (data.sourceOptions || []).forEach((option) => { %>
+            <a class="clear-link <%= data.source === option.value ? 'active' : '' %>" href="/admin/law-search-fields?source=<%= option.value %>&perPage=<%= data.pagination?.pageSize || 12 %><% if (data.query) { %>&q=<%= encodeURIComponent(data.query) %><% } %>"><%= option.label %></a>
+          <% }) %>
+        </div>
+
+        <ul class="soft-list">
+          <% if (!data.rows || data.rows.length === 0) { %>
+            <li><%= data.query ? 'ไม่พบรายการที่ตรงกับคำค้นนี้' : 'ยังไม่มีรายการให้แสดง' %></li>
+          <% } %>
+
+          <% (data.rows || []).forEach((item) => { %>
+            <li>
+              <div class="row-head">
+                <div>
+                  <strong class="list-item-title"><%= item.lawNumber %></strong>
+                  <% if (item.lawPart) { %>
+                    <div class="knowledge-meta"><%= item.lawPart %></div>
+                  <% } %>
+                </div>
+                <div class="knowledge-meta" style="text-align:right;">
+                  <% if (item.lawSaveBy) { %>แก้ไขโดย: <%= item.lawSaveBy %><br /><% } %>
+                  <% if (item.lawSavedate) { %>วันที่บันทึก: <%= item.lawSavedate %><% } %>
+                </div>
+              </div>
+
+              <% if (item.lawDetail) { %>
+                <div class="list-item-body"><%= item.lawDetail %></div>
+              <% } %>
+              <% if (item.lawComment) { %>
+                <div class="knowledge-meta">หมายเหตุ: <%= item.lawComment %></div>
+              <% } %>
+
+              <div class="editor-box">
+                <form action="/admin/law-search-fields/update" method="post">
+                  <input type="hidden" name="id" value="<%= item.id %>" />
+                  <input type="hidden" name="source" value="<%= data.source %>" />
+                  <input type="hidden" name="returnTo" value="<%= returnPath %>" />
+                  <div class="field">
+                    <label for="law-search-<%= item.id %>"><%= data.source === 'tbl_glaws' ? 'glaw_search' : 'law_search' %></label>
+                    <textarea id="law-search-<%= item.id %>" name="lawSearch" placeholder="พิมพ์คำค้นที่ระบบจะใช้ค้นหากฎหมายรายการนี้"><%= item.lawSearch || '' %></textarea>
+                  </div>
+                  <div class="editor-actions">
+                    <button class="secondary-btn" type="submit">บันทึกคำค้น</button>
+                  </div>
+                </form>
+              </div>
+            </li>
+          <% }) %>
+        </ul>
+
+        <%- include("partials/pagination", {
+          pagination: data.pagination,
+          basePath: "/admin/law-search-fields",
+          query: {
+            source: data.source,
+            q: data.query || "",
+            perPage: data.pagination?.pageSize || 12,
+          },
+          pageKey: "page",
+          itemLabel: "รายการกฎหมาย",
+        }) %>
+      </section>
+    </div>
+  </body>
+</html>

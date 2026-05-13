@@ -8313,6 +8313,11 @@ function buildToneWrappedResponseHtml(answerHtml, terms, options = {}) {
   }
 
   const introHtml = `<div class="chat-intro">${escapeHtml(introText)}</div>`;
+  const assistantTitlePattern = /(<div class="bot-answer-section-title[^"]*bot-answer-section-title-assistant[^"]*">[\s\S]*?<\/div>)/;
+
+  if (assistantTitlePattern.test(resolvedAnswerHtml)) {
+    return resolvedAnswerHtml.replace(assistantTitlePattern, `$1${introHtml}`);
+  }
 
   return `<div class="chat-response">${introHtml}${resolvedAnswerHtml}</div>`;
 }
@@ -8417,13 +8422,8 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
     ? (assistantAvatarConfig.iconClass || icon)
     : icon;
 
-  const hasToneIntro =
-    options &&
-    typeof options.responseIntro === 'string' &&
-    options.responseIntro.trim().length > 0;
-
   const sectionTitle = normalizedTitle === 'สรุปสาระสำคัญ'
-    ? (hasToneIntro ? '' : `${assistantLabel} ขอสรุปข้อมูล ดังนี้`)
+    ? `${assistantLabel} ขอสรุปข้อมูล ดังนี้`
     : normalizedTitle;
 
   const titleHtml = sectionTitle
@@ -8570,6 +8570,48 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
         };
       }
 
+      function normalizeAdditionalCompareText(text) {
+        return String(text || '')
+          .replace(/(?:^|\n)\s*(?:สรุป(?:สาระสำคัญ|ใจความสำคัญ)|รายละเอียดเพิ่มเติม|ข้อมูลเพิ่มเติม|เพิ่มเติมจากข้อมูลอื่น)\s*:\s*/gi, '\n')
+          .replace(/(?:^|\n)\s*(?:แหล่งอ้างอิง|อ้างอิง)\s*:\s*[\s\S]*$/i, '')
+          .replace(/[^\p{L}\p{N}]+/gu, '')
+          .toLowerCase()
+          .trim();
+      }
+
+      function getAdditionalContentLines(text) {
+        return String(text || '')
+          .replace(/(?:^|\n)\s*(?:แหล่งอ้างอิง|อ้างอิง)\s*:\s*[\s\S]*$/i, '')
+          .split(/\n+/)
+          .map((line) => line.replace(/^\s*[-•]\s*/, '').trim())
+          .filter((line) => line && !/^(?:สรุป(?:สาระสำคัญ|ใจความสำคัญ)|รายละเอียดเพิ่มเติม|ข้อมูลเพิ่มเติม|เพิ่มเติมจากข้อมูลอื่น)\s*:?$/i.test(line));
+      }
+
+      function shouldShowAdditionalInfoText(mainText, additionalText) {
+        const cleanedAdditional = String(additionalText || '').trim();
+        if (!cleanedAdditional) return false;
+
+        const normalizedMain = normalizeAdditionalCompareText(mainText);
+        const normalizedAdditional = normalizeAdditionalCompareText(cleanedAdditional);
+        if (!normalizedAdditional) return false;
+        if (normalizedMain && (
+          normalizedMain === normalizedAdditional ||
+          normalizedMain.includes(normalizedAdditional) ||
+          normalizedAdditional.includes(normalizedMain)
+        )) {
+          return false;
+        }
+
+        const mainLineKeys = new Set(getAdditionalContentLines(mainText).map(normalizeAdditionalCompareText).filter(Boolean));
+        const additionalLines = getAdditionalContentLines(cleanedAdditional);
+        const uniqueAdditionalLines = additionalLines.filter((line) => {
+          const key = normalizeAdditionalCompareText(line);
+          return key && !mainLineKeys.has(key);
+        });
+
+        return uniqueAdditionalLines.length > 0;
+      }
+
       function buildAdditionalInfoCollapseHtml(additionalText, terms) {
         const cleaned = String(additionalText || '').trim();
         if (!cleaned) return '';
@@ -8660,7 +8702,9 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
           const additionalParts = extractAdditionalInfoParts(raw);
           const fallbackHtml = [
             buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', additionalParts.mainText, terms),
-            buildAdditionalInfoCollapseHtml(additionalParts.additionalText, terms)
+            shouldShowAdditionalInfoText(additionalParts.mainText, additionalParts.additionalText)
+              ? buildAdditionalInfoCollapseHtml(additionalParts.additionalText, terms)
+              : ''
           ].filter(Boolean).join('');
           return buildToneWrappedResponseHtml(
             buildBotAnswerWrapperHtml(fallbackHtml, fallbackReferenceText, terms, continuationHtml),
@@ -8684,13 +8728,15 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
           ? [cleanedIntroText, summaryMatch[1]].filter(Boolean).join('\n')
           : normalizedMain;
        const summaryHtml = [
-	  presentationHtml,
-	  buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', summaryText, terms, options),
-	  detailMatch
-	    ? buildAnswerSectionHtml('รายละเอียดเพิ่มเติม', 'bi-info-circle', detailMatch[1], terms, options)
-	    : '',
-	  buildAdditionalInfoCollapseHtml(additionalParts.additionalText, terms)
-	].filter(Boolean).join('');
+		  presentationHtml,
+		  buildAnswerSectionHtml('สรุปสาระสำคัญ', 'bi-file-earmark-text', summaryText, terms, options),
+		  detailMatch
+		    ? buildAnswerSectionHtml('รายละเอียดเพิ่มเติม', 'bi-info-circle', detailMatch[1], terms, options)
+		    : '',
+		  shouldShowAdditionalInfoText(normalizedMain, additionalParts.additionalText)
+		    ? buildAdditionalInfoCollapseHtml(additionalParts.additionalText, terms)
+		    : ''
+		].filter(Boolean).join('');
         const resolvedSummaryHtml = summaryHtml || decorateBotFallbackHtml(formatBotDisplayLineHtml(normalizedMain, terms));
 
         return buildToneWrappedResponseHtml(
@@ -9465,12 +9511,15 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
 
           loadingController.dispose();
           removeLoadingBubble();
-          const simplifiedAnswer = data && typeof data.simplifiedAnswer === 'string' ? data.simplifiedAnswer.trim() : '';
-          const rawAnswer = data && typeof data.rawAnswer === 'string' ? data.rawAnswer.trim() : '';
-          const answerText = data && typeof data.answer === 'string' ? data.answer.trim() : '';
-          const displayAnswerText = simplifiedAnswer && rawAnswer
-            ? `สรุปใจความสำคัญ:\n${simplifiedAnswer}\n\nข้อมูลเพิ่มเติม:\n${rawAnswer}`
-            : answerText;
+	          const simplifiedAnswer = data && typeof data.simplifiedAnswer === 'string' ? data.simplifiedAnswer.trim() : '';
+	          const rawAnswer = data && typeof data.rawAnswer === 'string' ? data.rawAnswer.trim() : '';
+	          const answerText = data && typeof data.answer === 'string' ? data.answer.trim() : '';
+	          const hasUsefulRawAdditionalInfo = simplifiedAnswer && rawAnswer
+	            ? shouldShowAdditionalInfoText(simplifiedAnswer, rawAnswer)
+	            : false;
+	          const displayAnswerText = simplifiedAnswer && rawAnswer && hasUsefulRawAdditionalInfo
+	            ? `สรุปใจความสำคัญ:\n${simplifiedAnswer}\n\nข้อมูลเพิ่มเติม:\n${rawAnswer}`
+	            : (simplifiedAnswer || answerText);
           const dbHighlightTerms = data && Array.isArray(data.highlightTerms) && data.highlightTerms.length
             ? data.highlightTerms
             : buildHighlightTerms(trimmed);

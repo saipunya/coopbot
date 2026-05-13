@@ -353,7 +353,7 @@ function isRelevantFaqMatchForQuestion(match = null, message = "") {
     /ข้อบังคับ/.test(normalizedMatchText) &&
     /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน|ขั้นตอน)/.test(normalizedMatchText);
   const hasCommitteeAuthoritySignal =
-    /(คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ|คพช)/.test(normalizedMatchText);
+    /(คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ|คณะกรรมการพัฒนาสหกรณ์แห่งชาติ|คพช)/.test(normalizedMatchText);
 
   return hasBylawAmendmentSignal && !hasCommitteeAuthoritySignal;
 }
@@ -430,12 +430,14 @@ function buildResponseMeta(answerMode = "", sources = [], retrievalEvaluation = 
   };
 }
 
-async function recordSearchQueryLog(query, effectiveQuery, retrievalEvaluation, usedAI) {
+async function recordSearchQueryLog(query, effectiveQuery, retrievalEvaluation, usedAI, searchTrace = null) {
   await logSearchQuery({
     query,
     expandedQuery: expandSearchConcepts(effectiveQuery || query),
     confidence: retrievalEvaluation?.confidence ?? null,
     usedAI,
+    searchStage: String(searchTrace?.selectedStage || "").trim(),
+    searchTrace,
   });
 }
 
@@ -1150,6 +1152,7 @@ async function collectAnswerSources(message, target, session, options = {}) {
 
   return {
     ...searchPlan,
+    searchTrace: searchPlan?.matches?.searchTrace || null,
     questionIntent,
     effectiveMessage: resolvedEffectiveMessage,
     databaseMatches,
@@ -1601,6 +1604,7 @@ async function replyToDbOnlyMainChat(payload, session) {
   let selectedSources = [];
   let questionIntent = classifyQuestionIntent(message);
   let retrievalEvaluation = null;
+  let searchTrace = null;
   let paginated = null;
   let continuationSessionState = continuationState;
   let answer = "";
@@ -1660,6 +1664,7 @@ async function replyToDbOnlyMainChat(payload, session) {
       planCode: planContext.code,
       forceStructuredLawFallback,
     });
+    searchTrace = evidence.searchTrace || searchPlan?.matches?.searchTrace || null;
 
     effectiveMessage = evidence.effectiveMessage || message;
     resolvedContext = evidence.resolvedContext || resolvedContext;
@@ -1780,7 +1785,7 @@ async function replyToDbOnlyMainChat(payload, session) {
   answer = applyAnswerConfidenceNotice(cleanedAnswer, retrievalEvaluation);
 
   if (!continueFromPrevious) {
-    await recordSearchQueryLog(message, effectiveMessage, retrievalEvaluation, false);
+    await recordSearchQueryLog(message, effectiveMessage, retrievalEvaluation, false, searchTrace);
   }
 
   LawChatbotModel.create({
@@ -1943,7 +1948,13 @@ async function summarizeChat(payload, session) {
   });
 
   if (!retrievalEvaluation.shouldAnswer) {
-    await recordSearchQueryLog(message, evidence.effectiveMessage || message, retrievalEvaluation, false);
+    await recordSearchQueryLog(
+      message,
+      evidence.effectiveMessage || message,
+      retrievalEvaluation,
+      false,
+      evidence?.searchTrace || null,
+    );
 
     return {
       summary: retrievalEvaluation.userFacingMessage,
@@ -1981,7 +1992,13 @@ async function summarizeChat(payload, session) {
     logAiUsageGuardViolation(aiControl, retrievalEvaluation, { query: message });
   }
   const responseMeta = buildResponseMeta(usedAI ? "ai" : "db_only", sources, retrievalEvaluation, { usedAI });
-  await recordSearchQueryLog(message, evidence.effectiveMessage || message, retrievalEvaluation, usedAI);
+  await recordSearchQueryLog(
+    message,
+    evidence.effectiveMessage || message,
+    retrievalEvaluation,
+    usedAI,
+    evidence?.searchTrace || null,
+  );
   const result = {
     summary: applyAnswerConfidenceNotice(summary, retrievalEvaluation),
     usedAI,

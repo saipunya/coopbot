@@ -24,6 +24,8 @@ router.get("/", requireAdminAuth, adminController.renderDashboard);
 router.get("/suggested-questions", requireAdminAuth, adminController.renderSuggestedQuestions);
 router.get("/knowledge", requireAdminAuth, adminController.renderKnowledge);
 router.get("/knowledge-suggestions", requireAdminAuth, adminController.renderKnowledgeSuggestions);
+router.get("/law-search-fields", requireAdminAuth, adminController.renderLawSearchFields);
+router.get("/query-debug", requireAdminAuth, adminController.renderQueryDebug);
 router.get("/pdf-chunks/manual", requireAdminAuth, adminController.renderManualPdfChunks);
 router.get("/vinichai", requireAdminAuth, adminController.renderVinichai);
 router.get("/guest-usage", requireAdminAuth, adminController.renderGuestUsage);
@@ -39,6 +41,8 @@ router.post("/payment-requests/approve", requireAdminAuth, adminController.appro
 router.post("/payment-requests/reject", requireAdminAuth, adminController.rejectPaymentRequest);
 router.post("/settings/ai", requireAdminAuth, adminController.updateAiSetting);
 router.post("/knowledge", requireAdminAuth, adminController.submitKnowledge);
+router.post("/law-search-fields/update", requireAdminAuth, adminController.updateLawSearchFields);
+router.post("/query-debug", requireAdminAuth, adminController.debugQueryExpansion);
 router.post("/pdf-chunks/manual", requireAdminAuth, adminController.submitManualPdfChunks);
 router.post("/suggested-questions", requireAdminAuth, adminController.submitSuggestedQuestion);
 router.post("/suggested-questions/update", requireAdminAuth, adminController.updateSuggestedQuestion);

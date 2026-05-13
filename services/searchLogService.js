@@ -25,6 +25,20 @@ async function logSearchQuery(entry = {}) {
     expandedQuery: String(entry.expandedQuery || ""),
     confidence: entry.confidence ?? null,
     usedAI: entry.usedAI === true,
+    searchStage: String(entry.searchStage || "").trim() || null,
+    searchTrace: entry.searchTrace && Array.isArray(entry.searchTrace.stages)
+      ? {
+          selectedStage: String(entry.searchTrace.selectedStage || "").trim() || null,
+          fallbackUsed: entry.searchTrace.fallbackUsed === true,
+          stages: entry.searchTrace.stages.map((stage) => ({
+            stage: String(stage.stage || "").trim(),
+            matched: stage.matched === true,
+            matchCount: Number(stage.matchCount || 0),
+            topScore: Number(stage.topScore || 0),
+            sourceCount: Number(stage.sourceCount || 0),
+          })),
+        }
+      : null,
   };
 
   await fs.mkdir(path.dirname(SEARCH_LOG_PATH), { recursive: true });
