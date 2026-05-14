@@ -6,6 +6,7 @@
   "scripts": {
     "start": "kill-port 3000 && node app.js",
     "dev": "kill-port 3000 && nodemon app.js",
+    "agent:repo": "node scripts/repo-agent.js",
     "backfill:clean-text": "node scripts/backfill-clean-text.js",
     "backfill:clean-text:dry": "node scripts/backfill-clean-text.js --dry-run",
     "db:add-fulltext-pdf-chunks": "node scripts/add-fulltext-pdf-chunks.js",

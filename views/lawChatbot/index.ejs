@@ -6867,6 +6867,7 @@ body {
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="/js/markdown-renderer.js"></script>
+  <script src="/js/lawChatbotFormatter.js"></script>
   <script>
     (() => {
       const ENABLE_CHAT_CACHE = false;
@@ -6878,6 +6879,7 @@ body {
       const POST_LOGIN_PENDING_CHAT_MAX_AGE_MS = 30 * 60 * 1000;
       const LEGACY_CHAT_CACHE_KEYS = ['lawbot-chat-cache-v1', 'lawbot-chat-cache-v2', 'lawbot-chat-cache-v3'];
       const markdownRenderer = window.CoopbotMarkdownRenderer || null;
+      const lawChatbotFormatterFactory = window.CoopbotLawChatbotFormatter || null;
       const isAdminUser = <%- JSON.stringify(Boolean(currentUser)) %>;
       const isGoogleSignedIn = <%- JSON.stringify(Boolean(isGoogleUser)) %>;
       const isSignedInUser = isAdminUser || isGoogleSignedIn;
@@ -8043,6 +8045,15 @@ body {
         return renderAnswerInlineMarkdownHtml(text);
       }
 
+      const lawChatbotFormatter = lawChatbotFormatterFactory && typeof lawChatbotFormatterFactory.createLawChatbotFormatter === 'function'
+        ? lawChatbotFormatterFactory.createLawChatbotFormatter({
+            escapeHtml,
+            renderAnswerInlineMarkdownHtml,
+            formatFollowUpPromptHtml,
+            applyHighlightHtml,
+          })
+        : null;
+
       function renderAnswerInlineMarkdownHtml(text) {
         if (markdownRenderer && typeof markdownRenderer.renderInlineMarkdownHtml === 'function') {
           return markdownRenderer.renderInlineMarkdownHtml(text);
@@ -8105,19 +8116,8 @@ body {
 
 
 
-      function isDisplayListLine(line) {
-        return /^(?:\([0-9๐-๙]{1,3}\)|[0-9๐-๙]{1,3}[.)]|ข้อ\s*[0-9๐-๙]{1,3}[.)]?|[-•])\s+/u.test(String(line || '').trim());
-      }
-
       function formatAnswerLabelLineHtml(line) {
-        const text = String(line || '').trim();
-
-        // Input here is already HTML from the markdown renderer; do not render it again.
-        if (!/^(?:คำตอบแบบเข้าใจง่าย|คำตอบจากฐานข้อมูล|สรุปใจความสำคัญ|ข้อมูลเพิ่มเติม|เพิ่มเติมจากข้อมูลอื่น)\s*:/u.test(text)) {
-          return text;
-        }
-
-        return text.replace(/^([^:]+:)/u, '<strong>$1</strong>');
+        return lawChatbotFormatter.formatAnswerLabelLineHtml(line);
       }
 
       // function formatBotDisplayLineHtml(text, terms) {
@@ -8151,25 +8151,7 @@ body {
 
 
       function formatBotDisplayLineHtml(text, terms, options = {}) {
-        const html =
-          formatFollowUpPromptHtml(text, terms) ||
-          applyHighlightHtml(text, terms);
-
-        const normalizedHtml = String(html || '').replace(/\n/g, '<br>');
-
-        const lines = normalizedHtml
-          .split(/<br\s*\/?>/gi)
-          .map((line) => line.trim())
-          .filter(Boolean);
-
-        return lines
-          .map((line) => {
-            const formattedLine = formatAnswerLabelLineHtml(line);
-            const aiClass = options.useAi ? 'ai-answer-item' : '';
-            const highlightClass = line.includes('มาตรา') ? ' answer-item-highlight' : '';
-            return `<div class="answer-item${aiClass}${highlightClass}">${formattedLine}</div>`;
-          })
-          .join('');
+        return lawChatbotFormatter.formatBotDisplayLineHtml(text, terms, options);
       }
 
       function decorateBotFallbackHtml(html) {

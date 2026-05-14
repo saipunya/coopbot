@@ -239,6 +239,49 @@ Preparation:
 2. Open browser DevTools device toolbar or use a real phone/tablet.
 3. Repeat the checks below on at least `320 x 568` and `390 x 844`.
 
+## 10. Law Chatbot Formatter Browser Check
+
+Goal: verify the new reusable law chatbot formatter keeps the existing answer HTML stable before removing any fallback code.
+
+Preconditions:
+
+- The app is running locally.
+- The browser has a signed-in session that can open `/law-chatbot`.
+- `public/js/markdown-renderer.js` loads before `public/js/lawChatbotFormatter.js`.
+
+Check these 5 cases in the browser:
+
+1. FAQ-style answer that includes `**bold**` markdown.
+2. Answer that includes list items like `(1)`, `(2)`, `(3)`.
+3. Answer that includes `มาตรา 70` or `ข้อ 26`.
+4. Answer that includes markdown links such as `[ดูเอกสาร](/path)`.
+5. A long answer that includes references or source text.
+
+Expected:
+
+- Browser console shows no error or pageerror.
+- Rendered HTML still contains the existing classes:
+  - `answer-item`
+  - `answer-item-highlight`
+  - `bot-answer-section`
+- Markdown links are still rendered as clickable links.
+- Long answers still keep the reference/collapse structure.
+
+Suggested quick browser sampling:
+
+```text
+นี่คือ **ข้อความสำคัญ**
+1. ข้อแรก
+2. ข้อสอง
+3. ข้อสาม
+อ้างถึงมาตรา 70
+อ้างถึงข้อ 26
+ดู [เอกสาร](/path)
+คำตอบจากฐานข้อมูล: ...
+ข้อมูลเพิ่มเติม: ...
+แหล่งอ้างอิง: ...
+```
+
 Pages to verify:
 
 1. `/law-chatbot`
