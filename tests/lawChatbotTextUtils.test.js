@@ -9,6 +9,7 @@ const {
   sanitizeDisplayText,
   splitPresentationAndBodyText,
   splitSummaryIntoBullets,
+  restorePreparedQaTitle,
   shouldShowAdditionalInfoText,
 } = require("../public/js/lawChatbotTextUtils");
 
@@ -70,4 +71,16 @@ test("splitPresentationAndBodyText separates intro-like text from body text", ()
 test("shouldShowAdditionalInfoText filters duplicate info but keeps meaningful detail", () => {
   assert.equal(shouldShowAdditionalInfoText("สรุปผล", "สรุปผล"), false);
   assert.equal(shouldShowAdditionalInfoText("สรุปผล", "รายละเอียดที่ต่างออกไป"), true);
+});
+
+test("restorePreparedQaTitle restores the prepared title for numbered answers", () => {
+  const output = restorePreparedQaTitle("1. เนื้อหาคำตอบ", {
+    question: "คำถามตัวอย่าง",
+    responseMeta: {
+      usesPreparedQa: true,
+      preparedQaTitle: "คำถามตัวอย่าง",
+    },
+  });
+
+  assert.equal(output, "คำถามตัวอย่าง\n1. เนื้อหาคำตอบ");
 });

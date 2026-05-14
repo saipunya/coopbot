@@ -8086,52 +8086,6 @@ function buildToneWrappedResponseHtml(answerHtml, terms, options = {}) {
 
   return `<div class="chat-response">${introHtml}${resolvedAnswerHtml}</div>`;
 }
-
-
-      function resolvePreparedQaTitle(options = {}) {
-        const responseMeta = options && options.responseMeta ? options.responseMeta : null;
-        const usesPreparedQa = Boolean(
-          responseMeta && (
-            responseMeta.usesPreparedQa === true ||
-            responseMeta.kind === 'prepared_qa' ||
-            (Array.isArray(responseMeta.sourceTables) && responseMeta.sourceTables.includes('chatbot_suggested_questions'))
-          )
-        );
-
-        if (!usesPreparedQa) {
-          return '';
-        }
-
-        return String(
-          (responseMeta && responseMeta.preparedQaTitle)
-          || (options && options.question)
-          || ''
-        ).replace(/\s+/g, ' ').trim();
-      }
-
-      function restorePreparedQaTitle(text, options = {}) {
-        const raw = String(text || '').trim();
-        const title = resolvePreparedQaTitle(options);
-
-        if (!raw || !title) {
-          return raw;
-        }
-
-        const firstLine = raw.split('\n').map((line) => line.trim()).filter(Boolean)[0] || '';
-        const compactFirstLine = firstLine.replace(/\s+/g, ' ').trim();
-        const compactTitle = title.replace(/\s+/g, ' ').trim();
-
-        if (!compactFirstLine || compactFirstLine.includes(compactTitle) || compactTitle.includes(compactFirstLine)) {
-          return raw;
-        }
-
-        if (/^(?:\(?[0-9๐-๙]{1,3}\)|[0-9๐-๙]{1,3}\.)\s*/u.test(compactFirstLine)) {
-          return `${title}\n${raw}`;
-        }
-
-        return raw;
-      }
-
       function buildBulletCardItemHtml(line, terms, variant = 'bot') {
         const cardClass = variant === 'ai'
           ? 'answer-bullet-card ai-bullet-card'
@@ -8217,15 +8171,6 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
         return '';
       }
 
-      function looksLikeMonthlyLimitMessage(text) {
-        const normalized = String(text || '').trim();
-        if (!normalized) {
-          return false;
-        }
-
-        return /ใช้สิทธิ์ถามคำถามครบ|ครบ\s*\d+\s*ครั้ง|กรุณาอัปเกรดแพลน|รอรอบเดือนถัดไป/i.test(normalized);
-      }
-
       function buildInlineActionHtml(options = {}) {
         void options;
         return '';
@@ -8289,7 +8234,10 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
           ? options.referenceText.trim()
           : lawChatbotTextUtils.normalizeSourceReferencesForDisplay(options.sourceReferences);
         const raw = lawChatbotTextUtils.normalizeAnswerLineBreaksForDisplay(
-          restorePreparedQaTitle(lawChatbotTextUtils.stripBotUiNoiseText(lawChatbotTextUtils.sanitizeDisplayText(text)), options)
+          lawChatbotTextUtils.restorePreparedQaTitle(
+            lawChatbotTextUtils.stripBotUiNoiseText(lawChatbotTextUtils.sanitizeDisplayText(text)),
+            options
+          )
         );
         const continuationHtml = buildContinuationActionHtml(options);
         if (!lawChatbotTextUtils.hasReferenceMarker(raw)) {

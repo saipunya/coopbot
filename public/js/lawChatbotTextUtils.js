@@ -282,6 +282,50 @@
     return [normalized];
   }
 
+  function resolvePreparedQaTitle(options = {}) {
+    const responseMeta = options && options.responseMeta ? options.responseMeta : null;
+    const usesPreparedQa = Boolean(
+      responseMeta && (
+        responseMeta.usesPreparedQa === true ||
+        responseMeta.kind === 'prepared_qa' ||
+        (Array.isArray(responseMeta.sourceTables) && responseMeta.sourceTables.includes('chatbot_suggested_questions'))
+      )
+    );
+
+    if (!usesPreparedQa) {
+      return '';
+    }
+
+    return String(
+      (responseMeta && responseMeta.preparedQaTitle)
+      || (options && options.question)
+      || ''
+    ).replace(/\s+/g, ' ').trim();
+  }
+
+  function restorePreparedQaTitle(text, options = {}) {
+    const raw = String(text || '').trim();
+    const title = resolvePreparedQaTitle(options);
+
+    if (!raw || !title) {
+      return raw;
+    }
+
+    const firstLine = raw.split('\n').map((line) => line.trim()).filter(Boolean)[0] || '';
+    const compactFirstLine = firstLine.replace(/\s+/g, ' ').trim();
+    const compactTitle = title.replace(/\s+/g, ' ').trim();
+
+    if (!compactFirstLine || compactFirstLine.includes(compactTitle) || compactTitle.includes(compactFirstLine)) {
+      return raw;
+    }
+
+    if (/^(?:\(?[0-9๐-๙]{1,3}\)|[0-9๐-๙]{1,3}\.)\s*/u.test(compactFirstLine)) {
+      return `${title}\n${raw}`;
+    }
+
+    return raw;
+  }
+
   function extractAdditionalInfoParts(text) {
     const raw = String(text || "").trim();
     const markerMatch = raw.match(/(^|\n)\s*(?:เพิ่มเติมจากข้อมูลอื่น|ข้อมูลเพิ่มเติม)\s*:\s*/i);
@@ -414,6 +458,8 @@
     normalizeSourceReferencesForDisplay,
     replaceUserVisibleAiTerms,
     sanitizeDisplayText,
+    resolvePreparedQaTitle,
+    restorePreparedQaTitle,
     shouldBreakBeforeClauseMarker,
     shouldBreakBeforeDisplayListMarker,
     shouldMergeBulletContinuationLine,
