@@ -1,6 +1,7 @@
 const { getDbPool } = require("../config/db");
 const {
   extractExplicitTopicHints,
+  getDutyRoleAlignment,
   getQueryFocusProfile,
   hasExclusiveMeaningMismatch,
   makeBigrams,
@@ -618,8 +619,14 @@ function mapStructuredLawRow(message, row, options = {}) {
   const queryLawNumber = options.queryLawNumber || null;
 
   let score = scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`);
+  const dutyRoleAlignment = getDutyRoleAlignment(message, combinedText);
+  const dutyRoleRejected = Boolean(dutyRoleAlignment.role) && !dutyRoleAlignment.aligned;
   score += scoreStructuredLawKeywordMatch(message, row.law_search);
   score += scoreDissolutionTopicPriority(message, combinedText);
+
+  if (dutyRoleRejected) {
+    score -= 260;
+  }
 
   if (queryLawNumber && extractLawNumber(row.law_number) === queryLawNumber) {
     score += 90;
@@ -655,8 +662,19 @@ function mapStructuredLawRow(message, row, options = {}) {
     comment: row.law_comment || "",
     keyword: row.law_search || "",
     score: score + (row.__focusedMatch ? 60 : 0) + (row.__keywordMatch ? 100 : 0),
+    dutyRoleRejected,
     topicExpansion: row.__topicExpansion === true || row.__liquidatorDutyMatch === true,
   };
+}
+
+function isRelevantStructuredLawResult(row = {}) {
+  return Number(row.score || 0) > 0 && row.dutyRoleRejected !== true;
+}
+
+function stripStructuredLawInternalFlags(row = {}) {
+  const normalized = { ...row };
+  delete normalized.dutyRoleRejected;
+  return normalized;
 }
 
 function scoreResult(query, text, primaryLabel) {
@@ -1247,7 +1265,8 @@ class LawSearchModel {
       const keywordResults = keywordRows
         .filter((row) => !isSmokeFixtureLawRow(row))
         .map((row) => mapStructuredLawRow(message, row, { inferredScope, queryLawNumber }))
-        .filter((row) => row.score > 0)
+        .filter(isRelevantStructuredLawResult)
+        .map(stripStructuredLawInternalFlags)
         .filter((row, index, list) => {
           const key = `${row.source || ""}::${row.id || ""}`;
           return list.findIndex((item) => `${item.source || ""}::${item.id || ""}` === key) === index;
@@ -1275,7 +1294,8 @@ class LawSearchModel {
     const keywordResults = keywordRows
       .filter((row) => !isSmokeFixtureLawRow(row))
       .map((row) => mapStructuredLawRow(message, row, { inferredScope, queryLawNumber }))
-      .filter((row) => row.score > 0)
+      .filter(isRelevantStructuredLawResult)
+      .map(stripStructuredLawInternalFlags)
       .filter((row, index, list) => {
         const key = `${row.source || ""}::${row.id || ""}`;
         return list.findIndex((item) => `${item.source || ""}::${item.id || ""}` === key) === index;
@@ -1299,6 +1319,15 @@ class LawSearchModel {
           row.law_comment,
           row.law_search,
         ].join(" ");
+        const dutyRoleAlignment = getDutyRoleAlignment(message, combinedText);
+        const dutyRoleRejected = Boolean(dutyRoleAlignment.role) && !dutyRoleAlignment.aligned;
+        const score =
+          scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`) +
+          scoreQueryFocusAlignment(message, combinedText) +
+          scoreStructuredLawKeywordMatch(message, row.law_search) +
+          scoreDissolutionTopicPriority(message, combinedText) +
+          80 -
+          (dutyRoleRejected ? 260 : 0);
 
         return {
           id: row.id,
@@ -1308,14 +1337,12 @@ class LawSearchModel {
           lawNumber: row.law_number || "",
           content: row.law_detail || "",
           comment: row.law_comment || "",
-          score:
-            scoreResult(message, combinedText, `${row.law_number} ${row.law_part}`) +
-            scoreQueryFocusAlignment(message, combinedText) +
-            scoreStructuredLawKeywordMatch(message, row.law_search) +
-            scoreDissolutionTopicPriority(message, combinedText) +
-            80,
+          score,
+          dutyRoleRejected,
         };
       })
+      .filter(isRelevantStructuredLawResult)
+      .map(stripStructuredLawInternalFlags)
       .sort((a, b) => b.score - a.score);
 
     if (
@@ -1361,7 +1388,8 @@ class LawSearchModel {
     const rankedResults = [...topicExpansionRows, ...liquidatorDutyRows, ...keywordRows, ...focusedRows, ...rowGroups.flat()]
       .filter((row) => !isSmokeFixtureLawRow(row))
       .map((row) => mapStructuredLawRow(message, row, { inferredScope, queryLawNumber }))
-      .filter((row) => row.score > 0)
+      .filter(isRelevantStructuredLawResult)
+      .map(stripStructuredLawInternalFlags)
       .filter((row, index, list) => {
         const key = `${row.source || ""}::${row.id || ""}`;
         return list.findIndex((item) => `${item.source || ""}::${item.id || ""}` === key) === index;

@@ -86,6 +86,63 @@ const EXCLUSIVE_MEANING_RULES = [
     conflicts: ["คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ", "คณะกรรมการพัฒนาสหกรณ์แห่งชาติ", "คพช"],
   },
 ];
+
+const DUTY_ROLE_RULES = [
+  {
+    id: "committee",
+    querySignals: [
+      /คณะกรรมการดำเนินการ/,
+      /กรรมการดำเนินการ/,
+      /คณะกรรมการกลุ่มเกษตรกร/,
+      /คณะกรรมการ(?!พัฒนาการสหกรณ์แห่งชาติ|พัฒนาสหกรณ์แห่งชาติ)/,
+    ],
+    dutySignals: [
+      /อำนาจหน้าที่(?:ของ)?(?:คณะกรรมการดำเนินการ|กรรมการดำเนินการ|คณะกรรมการกลุ่มเกษตรกร)/,
+      /(?:คณะกรรมการดำเนินการ|กรรมการดำเนินการ|คณะกรรมการกลุ่มเกษตรกร).{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|มีอำนาจ|ดำเนินกิจการ|บริหารกิจการ|เป็นผู้แทน)/,
+    ],
+    conflictDutySignals: [
+      /อำนาจหน้าที่(?:ของ)?ผู้ตรวจสอบกิจการ/,
+      /ผู้ตรวจสอบกิจการ.{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|ตรวจสอบ|รายงาน)/,
+      /อำนาจหน้าที่(?:ของ)?ผู้ตรวจการสหกรณ์/,
+      /ผู้ตรวจการสหกรณ์.{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|ตรวจการ|ออกคำสั่ง)/,
+      /อำนาจหน้าที่(?:ของ)?ผู้สอบบัญชี/,
+      /ผู้สอบบัญชี.{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|สอบบัญชี|ตรวจสอบงบ)/,
+      /อำนาจหน้าที่(?:ของ)?ผู้ชำระบัญชี/,
+      /ผู้ชำระบัญชี.{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|มีอำนาจ|ชำระบัญชี)/,
+      /นายทะเบียน(?:สหกรณ์|กลุ่มเกษตรกรประจำจังหวัด)?.{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|มีอำนาจ|สั่ง|ยับยั้ง|เพิกถอน)/,
+    ],
+  },
+  {
+    id: "inspector",
+    querySignals: [/ผู้ตรวจสอบกิจการ/],
+    dutySignals: [
+      /อำนาจหน้าที่(?:ของ)?ผู้ตรวจสอบกิจการ/,
+      /ผู้ตรวจสอบกิจการ.{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|ตรวจสอบ|รายงาน)/,
+    ],
+    conflictDutySignals: [
+      /อำนาจหน้าที่(?:ของ)?(?:คณะกรรมการดำเนินการ|กรรมการดำเนินการ|คณะกรรมการกลุ่มเกษตรกร)/,
+      /(?:คณะกรรมการดำเนินการ|กรรมการดำเนินการ|คณะกรรมการกลุ่มเกษตรกร).{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|มีอำนาจ|ดำเนินกิจการ|บริหารกิจการ|เป็นผู้แทน)/,
+      /อำนาจหน้าที่(?:ของ)?ผู้ตรวจการสหกรณ์/,
+      /ผู้ตรวจการสหกรณ์.{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|ตรวจการ|ออกคำสั่ง)/,
+      /อำนาจหน้าที่(?:ของ)?ผู้สอบบัญชี/,
+      /ผู้สอบบัญชี.{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|สอบบัญชี|ตรวจสอบงบ)/,
+    ],
+  },
+  {
+    id: "liquidator",
+    querySignals: [/ผู้ชำระบัญชี/],
+    dutySignals: [
+      /อำนาจหน้าที่(?:ของ)?ผู้ชำระบัญชี/,
+      /ผู้ชำระบัญชี.{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|มีอำนาจ|ชำระบัญชี|รวบรวมทรัพย์สิน|จำหน่ายทรัพย์สิน|ฟ้องคดี)/,
+    ],
+    conflictDutySignals: [
+      /อำนาจหน้าที่(?:ของ)?(?:คณะกรรมการดำเนินการ|กรรมการดำเนินการ|คณะกรรมการกลุ่มเกษตรกร)/,
+      /(?:คณะกรรมการดำเนินการ|กรรมการดำเนินการ|คณะกรรมการกลุ่มเกษตรกร).{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|มีอำนาจ|ดำเนินกิจการ|บริหารกิจการ|เป็นผู้แทน)/,
+      /อำนาจหน้าที่(?:ของ)?ผู้ตรวจสอบกิจการ/,
+      /ผู้ตรวจสอบกิจการ.{0,70}(?:มีอำนาจหน้าที่|มีหน้าที่|ตรวจสอบ|รายงาน)/,
+    ],
+  },
+];
 const QUERY_TOPIC_RULES = [
   {
     primary: "แก้ไขเพิ่มเติมข้อบังคับสหกรณ์",
@@ -910,6 +967,65 @@ function extractExplicitTopicHints(query) {
   return getQueryFocusProfile(query).topics.map((item) => item.primary);
 }
 
+function hasDutyIntentSignal(normalizedText = "") {
+  return /(อำนาจหน้าที่|หน้าที่|บทบาท|มีอำนาจ|มีหน้าที่)/.test(normalizedText);
+}
+
+function matchesAnyPattern(text = "", patterns = []) {
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function getDutyRoleRule(query = "") {
+  const normalizedQuery = normalizeForSearch(query).toLowerCase();
+  if (!normalizedQuery || !hasDutyIntentSignal(normalizedQuery)) {
+    return null;
+  }
+
+  return DUTY_ROLE_RULES.find((rule) => matchesAnyPattern(normalizedQuery, rule.querySignals)) || null;
+}
+
+function getDutyRoleAlignment(query = "", text = "") {
+  const rule = getDutyRoleRule(query);
+  const normalizedText = normalizeForSearch(text).toLowerCase();
+  if (!rule || !normalizedText) {
+    return {
+      role: "",
+      aligned: false,
+      mismatch: false,
+    };
+  }
+
+  const aligned = matchesAnyPattern(normalizedText, rule.dutySignals || []);
+  const hasConflictingDuty = matchesAnyPattern(normalizedText, rule.conflictDutySignals || []);
+
+  return {
+    role: rule.id,
+    aligned,
+    mismatch: !aligned && hasConflictingDuty,
+  };
+}
+
+function hasDutyRoleMismatch(query = "", text = "") {
+  return getDutyRoleAlignment(query, text).mismatch;
+}
+
+function scoreDutyRoleAlignment(query = "", text = "") {
+  const alignment = getDutyRoleAlignment(query, text);
+  if (!alignment.role) {
+    return 0;
+  }
+
+  if (alignment.aligned) {
+    return 52;
+  }
+
+  if (alignment.mismatch) {
+    return -130;
+  }
+
+  return 0;
+}
+
 function scoreQueryFocusAlignment(query, text) {
   const profile = getQueryFocusProfile(query);
   const normalizedText = normalizeForSearch(text).toLowerCase();
@@ -935,6 +1051,8 @@ function scoreQueryFocusAlignment(query, text) {
       score -= 8;
     }
   }
+
+  score += scoreDutyRoleAlignment(profile.normalizedQuery, normalizedText);
 
   if (!profile.topics.length) {
     if (normalizedText.includes(profile.normalizedQuery)) {
@@ -1136,10 +1254,13 @@ module.exports = {
   isTimeFollowUpQuestion,
   isStandaloneLegalQuery,
   extractExplicitTopicHints,
+  getDutyRoleAlignment,
   getQueryFocusProfile,
+  hasDutyRoleMismatch,
   hasExclusiveMeaningMismatch,
   makeBigrams,
   normalizeForSearch,
+  scoreDutyRoleAlignment,
   scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,

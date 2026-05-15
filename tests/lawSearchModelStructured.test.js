@@ -155,3 +155,126 @@ test("searchStructuredLaws expands liquidator appointment query to section 75 be
   assert.equal(results[0]?.lawNumber, "มาตรา 75");
   assert.equal(results[0]?.id, 75);
 });
+
+test("searchStructuredLaws does not return auditor duty when asking committee duty", async (t) => {
+  const dbPath = require.resolve("../config/db");
+  const modelPath = require.resolve("../models/lawSearchModel");
+
+  const restoreDb = setMockedModule(dbPath, {
+    getDbPool: () => ({
+      query: async (sql) => {
+        if (/SHOW COLUMNS FROM tbl_laws LIKE/i.test(sql)) {
+          return [[{ Field: "law_search" }]];
+        }
+
+        if (/SHOW COLUMNS FROM tbl_glaws LIKE/i.test(sql)) {
+          return [[{ Field: "glaw_search" }]];
+        }
+
+        if (/LOWER\(glaw_search\) LIKE/i.test(sql)) {
+          return [
+            [
+              {
+                id: 81,
+                law_number: "ข้อ 81",
+                law_part: "อำนาจหน้าที่ของผู้ตรวจสอบกิจการ",
+                law_detail: "ผู้ตรวจสอบกิจการมีอำนาจหน้าที่ตรวจสอบการดำเนินงานทั้งปวงของกลุ่มเกษตรกร",
+                law_comment: "",
+                law_search: "อำนาจหน้าที่ ผู้ตรวจสอบกิจการ กลุ่มเกษตรกร",
+              },
+              {
+                id: 65,
+                law_number: "ข้อ 65",
+                law_part: "อำนาจหน้าที่ของคณะกรรมการดำเนินการ",
+                law_detail: "คณะกรรมการดำเนินการมีอำนาจหน้าที่ดำเนินกิจการและเป็นผู้แทนกลุ่มเกษตรกร",
+                law_comment: "",
+                law_search: "อำนาจหน้าที่ คณะกรรมการดำเนินการ กลุ่มเกษตรกร",
+              },
+              {
+                id: 4,
+                law_number: "มาตรา 4",
+                law_part: "วรรคแรก",
+                law_detail: "กลุ่มเกษตรกร หมายความว่า กลุ่มเกษตรกรที่จดทะเบียนจัดตั้งตามพระราชกฤษฎีกานี้",
+                law_comment: "",
+                law_search: "จัดตั้งกลุ่มเกษตรกร กลุ่มเกษตรกร",
+              },
+            ],
+          ];
+        }
+
+        return [[]];
+      },
+    }),
+  });
+
+  t.after(() => {
+    delete require.cache[modelPath];
+    restoreDb();
+  });
+
+  delete require.cache[modelPath];
+  const LawSearchModel = require(modelPath);
+  const results = await LawSearchModel.searchStructuredLaws(
+    "อำนาจหน้าที่คณะกรรมการกลุ่มเกษตรกร",
+    "all",
+    5,
+    { searchMode: "keyword" },
+  );
+
+  assert.equal(results[0]?.source, "tbl_glaws");
+  assert.equal(results[0]?.id, 65);
+  assert.ok(!results.some((item) => item.id === 81));
+  assert.ok(!results.some((item) => item.id === 4));
+});
+
+test("searchStructuredLaws returns no keyword result when only the wrong duty role matches", async (t) => {
+  const dbPath = require.resolve("../config/db");
+  const modelPath = require.resolve("../models/lawSearchModel");
+
+  const restoreDb = setMockedModule(dbPath, {
+    getDbPool: () => ({
+      query: async (sql) => {
+        if (/SHOW COLUMNS FROM tbl_laws LIKE/i.test(sql)) {
+          return [[{ Field: "law_search" }]];
+        }
+
+        if (/SHOW COLUMNS FROM tbl_glaws LIKE/i.test(sql)) {
+          return [[{ Field: "glaw_search" }]];
+        }
+
+        if (/LOWER\(glaw_search\) LIKE/i.test(sql)) {
+          return [
+            [
+              {
+                id: 81,
+                law_number: "ข้อ 81",
+                law_part: "อำนาจหน้าที่ของผู้ตรวจสอบกิจการ",
+                law_detail: "ผู้ตรวจสอบกิจการมีอำนาจหน้าที่ตรวจสอบการดำเนินงานทั้งปวงของกลุ่มเกษตรกร",
+                law_comment: "",
+                law_search: "อำนาจหน้าที่ ผู้ตรวจสอบกิจการ กลุ่มเกษตรกร",
+              },
+            ],
+          ];
+        }
+
+        return [[]];
+      },
+    }),
+  });
+
+  t.after(() => {
+    delete require.cache[modelPath];
+    restoreDb();
+  });
+
+  delete require.cache[modelPath];
+  const LawSearchModel = require(modelPath);
+  const results = await LawSearchModel.searchStructuredLaws(
+    "อำนาจหน้าที่คณะกรรมการกลุ่มเกษตรกร",
+    "all",
+    5,
+    { searchMode: "keyword" },
+  );
+
+  assert.deepEqual(results, []);
+});
