@@ -29,6 +29,15 @@ test("sanitizeDisplayText removes database boilerplate and keeps compact numbere
   assert.match(output, /\(2\) เหตุที่สอง/);
 });
 
+test("sanitizeDisplayText keeps law section number with its label across line breaks", () => {
+  const input = "1. กรณีสหกรณ์เลิกตามกฎหมาย (มาตรา\n70)";
+
+  const output = sanitizeDisplayText(input);
+
+  assert.equal(output, "1. กรณีสหกรณ์เลิกตามกฎหมาย (มาตรา 70)");
+  assert.doesNotMatch(output, /มาตรา\s*\n\s*70/);
+});
+
 test("splitSummaryIntoBullets preserves real bullet lists", () => {
   const output = splitSummaryIntoBullets("1. ข้อแรก\n2. ข้อสอง\n3. ข้อสาม");
 
