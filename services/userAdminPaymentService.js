@@ -211,6 +211,17 @@ function buildSearchHistoryMeta(planContext = {}) {
   };
 }
 
+function buildSidebarSearchHistoryItems(entries = []) {
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry) => ({
+      id: entry?.id || null,
+      questionText: String(entry?.question_text || entry?.questionText || "").trim(),
+      createdAt: entry?.created_at || entry?.createdAt || null,
+    }))
+    .filter((entry) => Boolean(entry.questionText))
+    .slice(0, 5);
+}
+
 async function getDashboardData(user = null) {
   const [uploadedChunkCount, suggestedQuestions] = await Promise.all([
     LawChatbotPdfChunkModel.countChunks(),
@@ -218,6 +229,8 @@ async function getDashboardData(user = null) {
   ]);
 
   let signedInSummary = null;
+  let searchHistory = buildSearchHistoryMeta({ code: "free" });
+  let sidebarSearchHistoryItems = [];
   const signedInUser = user || {};
   const userId = Number(signedInUser.userId || signedInUser.id || 0);
 
@@ -231,10 +244,18 @@ async function getDashboardData(user = null) {
     const planContext = resolveUserPlanContext(profile);
     const rewardSummary = await getContributionRewardSummary(profile);
     const usageSummary = buildUserUsageSummary(profile, planContext, usage, rewardSummary);
+    searchHistory = buildSearchHistoryMeta(planContext);
+
+    if (searchHistory.enabled) {
+      await UserSearchHistoryModel.deleteExpired();
+      const entries = await UserSearchHistoryModel.listActiveByUserId(userId, 5);
+      sidebarSearchHistoryItems = buildSidebarSearchHistoryItems(entries);
+    }
 
     signedInSummary = {
       user: profile,
       planContext,
+      searchHistory,
       usage: {
         ...usageSummary,
         usageMonth,
@@ -252,6 +273,8 @@ async function getDashboardData(user = null) {
     uploadedChunkCount,
     recentConversations: LawChatbotModel.listRecent(6),
     suggestedQuestions,
+    searchHistory,
+    sidebarSearchHistoryItems,
     signedInSummary,
   };
 }

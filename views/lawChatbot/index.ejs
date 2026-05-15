@@ -1233,16 +1233,6 @@
       width: fit-content;
     }
 
-    .bot-answer-section-title-assistant-male {
-      color: #224f78;
-      background: rgba(44, 120, 181, 0.12);
-    }
-
-    .bot-answer-section-title-assistant-female {
-      color: #8a4e6b;
-      background: rgba(192, 93, 141, 0.12);
-    }
-
     .bot-answer-bullets {
       list-style: none;
       margin: 0;
@@ -1467,75 +1457,6 @@
       border-left-width: 4px;
       border-radius: 1rem;
       box-shadow: 0 10px 30px rgba(0,0,0.0.03);
-    }
-
-    .bubble-ai {
-      background: linear-gradient(180deg, #f6fbff 0%, #eef6ff 100%);
-      border-color: #9dc7ea;
-      border-left-color: #2f7fb8;
-      box-shadow: 0 10px 22px rgba(27, 83, 125, 0.08);
-    }
-
-    .bubble-ai .bubble-content {
-      color: #163247;
-    }
-
-    .ai-summary-header {
-      font-weight: 700;
-      color: #1a5276;
-      font-size: 0.9rem;
-      margin-bottom: 0.16rem;
-      display: flex;
-      align-items: center;
-      gap: 0.35rem;
-    }
-
-    .ai-section {
-      margin-bottom: 0.16rem;
-      white-space: normal;
-    }
-
-    .ai-section:last-child {
-      margin-bottom: 0;
-    }
-
-    .ai-section-title {
-      font-weight: 700;
-      color: #1a5276;
-      font-size: 0.82rem;
-      padding: 0.18rem 0.55rem;
-      background: rgba(47, 127, 184, 0.12);
-      border-left: 3px solid #2f7fb8;
-      border-radius: 0 0.3rem 0.3rem 0;
-      margin-bottom: 0.75rem;
-      display: block;
-    }
-
-    .ai-bullets {
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-      white-space: normal;
-    }
-
-    .ai-bullets li {
-      margin: 0;
-      padding: 0;
-    }
-
-    .ai-bullet-card {
-      background: rgba(251, 253, 255, 0.97);
-      border-color: rgba(47, 127, 184, 0.1);
-      box-shadow: 0 1px 4px rgba(18, 52, 77, 0.035);
-    }
-
-    .ai-bullet-card .answer-bullet-card-content {
-      font-size: inherit;
-      line-height: 1.62;
-      color: #163247;
     }
 
     .bubble-loading {
@@ -2362,15 +2283,36 @@
         word-break: break-word;
       }
 
-      .bot-inline-note {
-        align-items: flex-start;
-        justify-content: flex-start;
-      }
+    .bot-inline-note {
+      align-items: flex-start;
+      justify-content: flex-start;
+    }
 
-      .bubble-loading .bubble-content {
-        min-width: 0;
-        width: 100%;
-      }
+    /* Phase 1: keep the chat page free of package/upsell UI */
+    .plan-ribbon,
+    .plan-ribbon-head,
+    .plan-ribbon-body,
+    .plan-highlights,
+    .plan-ribbon-chip,
+    .plan-ribbon-usage-bar,
+    .plan-ribbon-upgrade,
+    .quota-sticky-cta,
+    .bot-ai-preview-cta,
+    .bot-upgrade-cta,
+    .bot-upgrade-cta-prominent,
+    .bot-limit-cta-panel,
+    .answer-origin-chip {
+      display: none !important;
+    }
+
+    .cooplaw-plan-pill {
+      display: none !important;
+    }
+
+    .bubble-loading .bubble-content {
+      min-width: 0;
+      width: 100%;
+    }
 
       .answer-bullet-card {
         padding: 0.44rem 0.58rem 0.46rem 0.64rem;
@@ -3745,6 +3687,16 @@
       overflow-wrap: anywhere;
     }
 
+    .cooplaw-sidebar-empty {
+      border: 1px dashed #d7dfe6;
+      border-radius: 0.72rem;
+      background: #f8fafb;
+      color: #5f6b79;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      padding: 0.78rem 0.82rem;
+    }
+
     .cooplaw-sidebar-legal {
       margin-top:0;
       flex-shrink: 0;
@@ -4954,14 +4906,7 @@ body {
 }
 
 .bubble-assistant-name::after {
-  content: "AI Assistant";
-  margin-left: 0.32rem;
-  padding: 0.16rem 0.48rem;
-  border-radius: 999px;
-  background: #dff0ff;
-  color: #2780ff;
-  font-size: 0.72rem;
-  font-weight: 800;
+  content: none;
 }
 
 .bot-answer-section-title {
@@ -6415,6 +6360,11 @@ body {
           ? "bi-person-badge-fill"
           : "bi-person-circle";
       const botPackageVariant = currentUser ? "admin" : "free";
+      const sidebarSearchHistoryItems = Array.isArray(data && data.sidebarSearchHistoryItems)
+        ? data.sidebarSearchHistoryItems
+        : [];
+      const sidebarSearchHistory = data && data.searchHistory ? data.searchHistory : { enabled: false, retentionLabel: "" };
+      const canShowSidebarHistory = Boolean(sidebarSearchHistory.enabled);
       const sidebarFaqItems = (
         Array.isArray(data && data.suggestedQuestions) && data.suggestedQuestions.length
           ? data.suggestedQuestions
@@ -6454,7 +6404,7 @@ body {
 
     <div class="cooplaw-layout">
       <button type="button" class="cooplaw-sidebar-backdrop" data-mobile-menu-control="1" aria-label="ปิดเมนู"></button>
-      <aside class="cooplaw-sidebar" aria-label="เมนูระบบ">
+      <aside class="cooplaw-sidebar" aria-label="คำถามแนะนำและประวัติการถาม">
         <div class="cooplaw-sidebar-brand">
           <div class="cooplaw-sidebar-brand-icon" aria-hidden="true">
             <img src="/icon/newRobot.png" alt="" />
@@ -6468,14 +6418,6 @@ body {
           </button>
         </div>
       <div class="cooplaw-sidebar-body">
-        <nav class="cooplaw-sidebar-nav" aria-label="รายการเมนู">
-          <a href="/law-chatbot" class="cooplaw-sidebar-nav-item is-active"><i class="bi bi-house-door"></i><span>หน้าหลัก</span></a>
-          <a href="#chatMessages" class="cooplaw-sidebar-nav-item"><i class="bi bi-search"></i><span>ค้นหากฎหมาย</span></a>
-          <a href="#composerSuggestions" class="cooplaw-sidebar-nav-item"><i class="bi bi-chat-left-text"></i><span>ถามแบบเจาะจง</span></a>
-          <a href="/user/search-history" class="cooplaw-sidebar-nav-item"><i class="bi bi-clock-history"></i><span>ประวัติการค้นหา</span></a>
-          <a href="#" class="cooplaw-sidebar-nav-item" data-bs-toggle="modal" data-bs-target="#developerModal"><i class="bi bi-gear"></i><span>ตั้งค่า</span></a>
-        </nav>
-
         <section class="cooplaw-sidebar-recent" aria-label="คำถามที่ถามบ่อย">
           <div class="cooplaw-sidebar-recent-head">
             <strong>คำถามที่ถามบ่อย</strong>
@@ -6490,6 +6432,34 @@ body {
             <% }) %>
           </div>
         </section>
+
+        <% if (canShowSidebarHistory) { %>
+          <section class="cooplaw-sidebar-recent" aria-label="ประวัติการถาม">
+            <div class="cooplaw-sidebar-recent-head">
+              <strong>ประวัติการถาม</strong>
+              <a href="/user/search-history">ดูทั้งหมด</a>
+            </div>
+            <% if (sidebarSearchHistoryItems.length > 0) { %>
+              <div class="cooplaw-sidebar-recent-list">
+                <% sidebarSearchHistoryItems.forEach((item) => { %>
+                  <button
+                    type="button"
+                    class="quick-btn cooplaw-sidebar-recent-item"
+                    data-question="<%= item.questionText %>"
+                    title="<%= item.createdAt ? `ถามเมื่อ ${new Date(item.createdAt).toLocaleString('th-TH')}` : '' %>"
+                  >
+                    <i class="bi bi-clock-history"></i>
+                    <span><%= item.questionText %></span>
+                  </button>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div class="cooplaw-sidebar-empty">
+                ยังไม่มีประวัติการถามในช่วงที่แพ็กเกจนี้เก็บไว้
+              </div>
+            <% } %>
+          </section>
+        <% } %>
 
         <div class="cooplaw-sidebar-legal">
           <div class="cooplaw-sidebar-legal-icon" aria-hidden="true">
@@ -6522,7 +6492,7 @@ body {
             <h6><strong>ผู้ช่วยค้นหาข้อมูลกฎหมายสหกรณ์</strong></h6>
             <span id="onlineBadge" class="status-chip"><i class="bi bi-wifi"></i>ออนไลน์</span>
           </div>
-          <p>AI ให้ข้อมูลตามกฎหมายที่บังคับใช้ล่าสุด</p>
+          <p>ระบบให้ข้อมูลตามกฎหมายที่บังคับใช้ล่าสุด</p>
         </div>
       </div>
       <div class="header-assistant" aria-label="ข้อมูลผู้ช่วยค้นหากฎหมาย">
@@ -8078,20 +8048,10 @@ function buildToneWrappedResponseHtml(answerHtml, terms, options = {}) {
   }
 
   const introHtml = `<div class="chat-intro">${escapeHtml(introText)}</div>`;
-  const assistantTitlePattern = /(<div class="bot-answer-section-title[^"]*bot-answer-section-title-assistant[^"]*">[\s\S]*?<\/div>)/;
-
-  if (assistantTitlePattern.test(resolvedAnswerHtml)) {
-    return resolvedAnswerHtml.replace(assistantTitlePattern, `$1${introHtml}`);
-  }
-
   return `<div class="chat-response">${introHtml}${resolvedAnswerHtml}</div>`;
 }
-      function buildBulletCardItemHtml(line, terms, variant = 'bot') {
-        const cardClass = variant === 'ai'
-          ? 'answer-bullet-card ai-bullet-card'
-          : 'answer-bullet-card bot-answer-bullet-card';
-
-        return `<li><div class="${cardClass}"><div class="answer-bullet-card-content">${formatBotDisplayLineHtml(line, terms)}</div></div></li>`;
+      function buildBulletCardItemHtml(line, terms) {
+        return `<li><div class="answer-bullet-card bot-answer-bullet-card"><div class="answer-bullet-card-content">${formatBotDisplayLineHtml(line, terms)}</div></div></li>`;
       }
 
 function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
@@ -8099,21 +8059,9 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
   if (!cleaned) return '';
 
   const normalizedTitle = String(title || '').trim();
-  const normalizedProfile = normalizeAssistantProfile(currentAssistantProfile);
-  const assistantLabel = 'Coopbot';
-  const assistantAvatarConfig = getAssistantAvatarConfig(normalizedProfile);
-
-  const titleClass = normalizedTitle === 'สรุปสาระสำคัญ'
-    ? 'bot-answer-section-title bot-answer-section-title-assistant'
-    : 'bot-answer-section-title';
-
-  const titleIconClass = normalizedTitle === 'สรุปสาระสำคัญ'
-    ? (assistantAvatarConfig.iconClass || icon)
-    : icon;
-
-  const sectionTitle = normalizedTitle === 'สรุปสาระสำคัญ'
-    ? `${assistantLabel} ขอสรุปข้อมูล ดังนี้`
-    : normalizedTitle;
+  const titleClass = 'bot-answer-section-title';
+  const titleIconClass = icon;
+  const sectionTitle = normalizedTitle;
 
   const titleHtml = sectionTitle
     ? `
@@ -8154,7 +8102,7 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
           return false;
         }
 
-        return !String(renderedHtml || '').includes('bot-answer-section-title-assistant');
+        return true;
       }
 
       async function resetConversationContext() {
@@ -8164,16 +8112,6 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
             headers: { 'Content-Type': 'application/json' }
           });
         } catch (_) {}
-      }
-
-      function buildFreeAiPreviewActionHtml(options = {}) {
-        void options;
-        return '';
-      }
-
-      function buildInlineActionHtml(options = {}) {
-        void options;
-        return '';
       }
 
       function buildContinuationActionHtml(options = {}) {
@@ -8300,69 +8238,6 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
         if (labelNode) {
           labelNode.innerHTML = `<i class="bi bi-journal-text"></i>${escapeHtml(referenceLabel)}`;
         }
-      }
-
-      function buildAnswerOriginChipHtml(options = {}) {
-        void options;
-        return '';
-      }
-
-      const AI_SECTION_ICONS = {
-        'ข้อมูลจากฐานข้อมูลรอง': '📄',
-        'ข้อมูลเพิ่มเติมจากฐานข้อมูลอื่นๆ': '🔍',
-        'สรุปสาระสำคัญ': '✅',
-        'สรุปใจความสำคัญ': '✅',
-        'คำอธิบายเพิ่มเติม': '📘',
-        'แหล่งอ้างอิง': '📚'
-      };
-
-      function formatAiSummaryHtml(text, terms) {
-        const raw = String(text || '');
-        const allLines = raw.split('\n').map((l) => l.trimEnd());
-
-        let headerLine = '';
-        let bodyLines = allLines;
-        if (allLines.length && /^[🤖🧠]/.test(allLines[0])) {
-          headerLine = allLines[0];
-          bodyLines = allLines.slice(1);
-        }
-
-        const sections = [];
-        let current = null;
-        bodyLines.forEach((line) => {
-          const sub = line.match(/^ {2,}-\s+(.+)$/) || line.match(/^\t-\s+(.+)$/);
-          const top = !sub && line.match(/^-\s+(.+)$/);
-          if (top) {
-            current = { title: top[1].trim(), items: [] };
-            sections.push(current);
-          } else if (sub && current) {
-            current.items.push(sub[1].trim());
-          } else if (line.trim() && current) {
-            current.items.push(line.trim());
-          }
-        });
-
-        let html = '';
-        if (headerLine) {
-          html += `<div class="ai-summary-header">${renderAnswerInlineMarkdownHtml(headerLine)}</div>`;
-        }
-
-        if (sections.length) {
-          sections.forEach((section) => {
-            const icon = AI_SECTION_ICONS[section.title] || '📌';
-            const titleHtml = applyHighlightHtml(section.title, terms);
-            const itemsHtml = section.items
-              .map((item) => buildBulletCardItemHtml(item, terms, 'ai'))
-              .join('');
-            html += `<div class="ai-section"><span class="ai-section-title">${icon} ${titleHtml}</span>`;
-            if (itemsHtml) html += `<ul class="ai-bullets">${itemsHtml}</ul>`;
-            html += `</div>`;
-          });
-        } else {
-          html += applyHighlightHtml(bodyLines.join('\n'), terms);
-        }
-
-        return html;
       }
 
       async function submitFeedback({ question, answerShown, isHelpful, target, source, sourceLabel }) {
@@ -8671,16 +8546,49 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
       function createLoadingBubbleController(row, message) {
         const timers = [];
         const normalizedMessage = String(message || '').trim();
+        const pickLoadingStage = (stages = []) => stages[Math.floor(Math.random() * stages.length)] || {};
         const stages = looksLikeCurrentInfoQuestion(normalizedMessage)
           ? [
               { delay: 0, text: 'กำลังค้นฐานข้อมูล...', hint: 'เริ่มจากข้อมูลภายในระบบก่อน' },
               { delay: 1400, text: 'กำลังสรุปคำตอบ...', hint: 'กำลังจัดเรียงสาระสำคัญให้อ่านง่าย' },
-              { delay: 3200, text: 'กำลังตรวจสอบข้อมูลเพิ่มเติม...', hint: 'คำถามนี้อาจต้องเช็กข้อมูลล่าสุดเพิ่ม' }
+              { delay: 3200, text: 'กำลังตรวจสอบข้อมูลเพิ่มเติม...', hint: 'คำถามนี้อาจต้องเช็กข้อมูลล่าสุดเพิ่ม' },
+              {
+                delay: 5600,
+                ...pickLoadingStage([
+                  { text: 'กำลังตรวจสอบแหล่งอ้างอิง...', hint: 'กำลังเทียบข้อมูลจากเอกสารและฐานข้อมูลที่เกี่ยวข้อง' },
+                  { text: 'ระบบยังคงประมวลผล...', hint: 'กำลังเทียบข้อมูลหลายแหล่งเพื่อความถูกต้อง' },
+                  { text: 'กำลังรวบรวมรายละเอียดเพิ่มเติม...', hint: 'กำลังหาข้อมูลประกอบให้ครบถ้วนก่อนตอบ' },
+                ]),
+              },
+              {
+                delay: 8200,
+                ...pickLoadingStage([
+                  { text: 'ยังคงค้นรายละเอียดต่อเนื่อง...', hint: 'กรุณารอสักครู่ ระบบกำลังจัดคำตอบให้ครบถ้วน' },
+                  { text: 'ระบบยังทำงานอยู่...', hint: 'คำถามนี้อาจต้องใช้เวลามากกว่าปกติเล็กน้อย' },
+                  { text: 'กำลังจัดคำตอบขั้นสุดท้าย...', hint: 'ระบบกำลังเรียบเรียงผลลัพธ์ให้พร้อมแสดง' },
+                ]),
+              }
             ]
           : [
               { delay: 0, text: 'กำลังค้นฐานข้อมูล...', hint: 'กำลังค้นหาข้อมูลที่เกี่ยวข้องในระบบ' },
               { delay: 1400, text: 'กำลังสรุปคำตอบ...', hint: 'กำลังจัดรูปคำตอบให้อ่านง่ายและตรงประเด็น' },
-              { delay: 3200, text: 'กำลังรวบรวมสาระสำคัญเพิ่มเติม...', hint: 'หากคำถามซับซ้อน ระบบอาจใช้เวลาสักครู่' }
+              { delay: 3200, text: 'กำลังรวบรวมสาระสำคัญเพิ่มเติม...', hint: 'หากคำถามซับซ้อน ระบบอาจใช้เวลาสักครู่' },
+              {
+                delay: 5600,
+                ...pickLoadingStage([
+                  { text: 'ระบบยังคงดำเนินการ...', hint: 'กำลังตรวจสอบรายละเอียดและจัดลำดับคำตอบ' },
+                  { text: 'กำลังประมวลผลข้อมูลต่อ...', hint: 'ระบบยังคัดกรองคำตอบที่ตรงกับคำถามนี้อยู่' },
+                  { text: 'กำลังค้นข้อมูลเชิงลึกเพิ่มเติม...', hint: 'คำถามนี้อาจต้องใช้หลายขั้นตอนก่อนสรุป' },
+                ]),
+              },
+              {
+                delay: 8200,
+                ...pickLoadingStage([
+                  { text: 'ยังประมวลผลต่อเนื่องอยู่...', hint: 'ถ้าคำตอบใช้เวลานานกว่าปกติ ระบบยังไม่หยุดทำงาน' },
+                  { text: 'ระบบยังค้นต่อ...', hint: 'กำลังไล่เช็กข้อมูลประกอบให้ครบก่อนแสดงผล' },
+                  { text: 'กำลังจัดคำตอบขั้นสุดท้าย...', hint: 'ระบบกำลังรวมผลลัพธ์ให้พร้อมแสดง' },
+                ]),
+              }
             ];
 
         stages.forEach((stage) => {
@@ -8724,9 +8632,8 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
           `;
         }
 
-        const bubbleVariantClass = feedbackContext && feedbackContext.variant === 'ai' ? ' bubble-ai' : '';
         const div = document.createElement('div');
-        div.className = `bubble ${role === 'user' ? 'bubble-user' : 'bubble-bot'}${bubbleVariantClass}${isLoading ? ' bubble-loading' : ''}`;
+        div.className = `bubble ${role === 'user' ? 'bubble-user' : 'bubble-bot'}${isLoading ? ' bubble-loading' : ''}`;
         if (resolvedAssistantProfile) {
           div.dataset.assistantProfile = JSON.stringify(resolvedAssistantProfile);
         }
@@ -9076,7 +8983,6 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
             const botRow = addBubble(displayAnswerText, 'bot', false, dbHighlightTerms, {
               question: trimmed,
               target: options.target || selectedTarget,
-              variant: simplifiedAnswer ? 'ai' : 'db',
               debug: data && data.debug ? data.debug : null,
               usedFollowUpContext: Boolean(data && data.usedFollowUpContext),
               guestLimitReached: Boolean(data && data.guestLimitReached),
@@ -9106,7 +9012,6 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
           const botRow = addBubble(fallbackMessage, 'bot', false, [], {
             question: trimmed,
             target: options.target || selectedTarget,
-            variant: 'db',
             suppressKnowledgeActions: true,
             assistantProfile: currentAssistantProfile
           });

@@ -92,6 +92,7 @@ const {
 const { evaluateRetrievalResult } = require("./retrievalEvaluationService");
 const { searchInternetSources } = require("./internetSearchService");
 const { logSearchQuery } = require("./searchLogService");
+const { appendTrainingExample } = require("./lawChatbotTrainingDataService");
 const { canUseAiPreview } = require("./planService");
 const { buildPaginationMeta, normalizePageNumber, normalizePageSize } = require("./paginationUtils");
 const {
@@ -438,6 +439,21 @@ async function recordSearchQueryLog(query, effectiveQuery, retrievalEvaluation, 
     usedAI,
     searchStage: String(searchTrace?.selectedStage || "").trim(),
     searchTrace,
+  });
+
+  await appendTrainingExample({
+    type: "search",
+    question: query,
+    answer: "",
+    usedAI,
+    confidence: retrievalEvaluation?.confidence ?? null,
+    searchStage: String(searchTrace?.selectedStage || "").trim(),
+    searchTrace,
+    metadata: {
+      expandedQuery: expandSearchConcepts(effectiveQuery || query),
+      retrievalConfidence: retrievalEvaluation?.confidence ?? null,
+      shouldReturnNoAnswer: retrievalEvaluation?.shouldReturnNoAnswer === true,
+    },
   });
 }
 
@@ -2130,6 +2146,23 @@ async function saveChatFeedback(payload, meta = {}) {
   const isHelpful = Boolean(payload.isHelpful);
   const question = String(payload.message || "").trim();
   const expectedAnswer = String(payload.expectedAnswer || "").trim();
+
+  await appendTrainingExample({
+    type: "feedback",
+    question,
+    answer: String(payload.answerShown || "").trim(),
+    target: payload.target || "all",
+    planCode: meta.planCode || null,
+    source: payload.source || payload.sourceName || "",
+    sourceLabel: payload.sourceLabel || "",
+    helpful: isHelpful,
+    confidence: meta.retrievalEvaluation?.confidence ?? null,
+    answerMode: meta.answerMode || null,
+    metadata: {
+      expectedAnswer: expectedAnswer || null,
+      suggestedLawNumber: String(payload.suggestedLawNumber || "").trim() || null,
+    },
+  });
 
   if (isHelpful || !question || expectedAnswer.length < 10) {
     return {

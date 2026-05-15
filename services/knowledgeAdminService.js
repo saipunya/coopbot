@@ -124,7 +124,14 @@ async function getKnowledgeAdminData(options = {}) {
 }
 
 async function getKnowledgeAdminSummaryData() {
-  const [knowledgeCount, pendingSuggestionCount, pendingSuggestionSourceTypeCounts, createdTodaySuggestionSourceTypeCounts, suggestedQuestionCount, activeSuggestedQuestionCount] = await Promise.all([
+  const [
+    knowledgeCountResult,
+    pendingSuggestionCountResult,
+    pendingSuggestionSourceTypeCountsResult,
+    createdTodaySuggestionSourceTypeCountsResult,
+    suggestedQuestionCountResult,
+    activeSuggestedQuestionCountResult,
+  ] = await Promise.allSettled([
     LawChatbotKnowledgeModel.count(),
     LawChatbotKnowledgeSuggestionModel.countPending(),
     LawChatbotKnowledgeSuggestionModel.countPendingBySourceType(),
@@ -133,13 +140,15 @@ async function getKnowledgeAdminSummaryData() {
     LawChatbotSuggestedQuestionModel.countActive(),
   ]);
 
+  const unwrap = (result, fallback) => (result.status === "fulfilled" ? result.value : fallback);
+
   return {
-    knowledgeCount,
-    pendingSuggestionCount,
-    pendingSuggestionSourceTypeCounts,
-    createdTodaySuggestionSourceTypeCounts,
-    suggestedQuestionCount,
-    activeSuggestedQuestionCount,
+    knowledgeCount: unwrap(knowledgeCountResult, 0),
+    pendingSuggestionCount: unwrap(pendingSuggestionCountResult, 0),
+    pendingSuggestionSourceTypeCounts: unwrap(pendingSuggestionSourceTypeCountsResult, {}),
+    createdTodaySuggestionSourceTypeCounts: unwrap(createdTodaySuggestionSourceTypeCountsResult, {}),
+    suggestedQuestionCount: unwrap(suggestedQuestionCountResult, 0),
+    activeSuggestedQuestionCount: unwrap(activeSuggestedQuestionCountResult, 0),
   };
 }
 

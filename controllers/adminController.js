@@ -321,7 +321,14 @@ async function handleGoogleCallback(req, res) {
 }
 
 async function renderDashboard(req, res) {
-  const [uploadData, feedbackData, knowledgeData, paymentRequestData, aiSettings, aiUsageStats] = await Promise.all([
+  const [
+    uploadResult,
+    feedbackResult,
+    knowledgeResult,
+    paymentRequestResult,
+    aiSettingsResult,
+    aiUsageStatsResult,
+  ] = await Promise.allSettled([
     lawChatbotService.getUploadPageData(),
     lawChatbotService.getFeedbackPageData(),
     lawChatbotService.getKnowledgeAdminSummaryData(),
@@ -329,6 +336,95 @@ async function renderDashboard(req, res) {
     runtimeSettingsService.getAiAdminState(),
     getAiRewriteUsageSummary(),
   ]);
+
+  const uploadData = uploadResult.status === "fulfilled"
+    ? uploadResult.value
+    : {
+        uploadedPdfCount: 0,
+        uploadedChunkCount: 0,
+        uploadedFiles: [],
+        pagination: { page: 1, pageSize: 10, offset: 0, totalItems: 0, totalPages: 0 },
+      };
+  const feedbackData = feedbackResult.status === "fulfilled"
+    ? feedbackResult.value
+    : {
+        feedbackCount: 0,
+        helpfulCount: 0,
+        needsImprovementCount: 0,
+        pagination: { page: 1, pageSize: 10, offset: 0, totalItems: 0, totalPages: 0 },
+        recentFeedback: [],
+      };
+  const knowledgeData = knowledgeResult.status === "fulfilled"
+    ? knowledgeResult.value
+    : {
+        knowledgeCount: 0,
+        recentKnowledge: [],
+        pendingSuggestionCount: 0,
+        pendingSuggestionSourceTypeCounts: {},
+        createdTodaySuggestionSourceTypeCounts: {},
+        pendingSuggestionSourceTypeFilter: "all",
+        pendingSuggestions: [],
+        suggestedQuestionCount: 0,
+        activeSuggestedQuestionCount: 0,
+        suggestedQuestions: [],
+        suggestedQuestionSearch: "",
+        suggestedQuestionsPagination: { page: 1, pageSize: 8, offset: 0, totalItems: 0, totalPages: 0 },
+        knowledgePagination: { page: 1, pageSize: 8, offset: 0, totalItems: 0, totalPages: 0 },
+        pendingSuggestionsPagination: { page: 1, pageSize: 8, offset: 0, totalItems: 0, totalPages: 0 },
+        targets: [
+          { value: "general", label: "ทั่วไป" },
+          { value: "all", label: "ทุกกลุ่ม" },
+          { value: "coop", label: "สหกรณ์" },
+          { value: "group", label: "กลุ่มเกษตรกร" },
+        ],
+        suggestedQuestionTargets: [
+          { value: "all", label: "ทุกประเภท" },
+          { value: "general", label: "ทั่วไป" },
+          { value: "coop", label: "สหกรณ์" },
+          { value: "group", label: "กลุ่มเกษตรกร" },
+        ],
+        pendingSuggestionSourceTypeOptions: [
+          { value: "all", label: "ทุกช่องทาง" },
+          { value: "text", label: "ข้อความ" },
+          { value: "voice", label: "เสียง" },
+          { value: "auto_feedback", label: "feedback อัตโนมัติ" },
+          { value: "auto_no_answer", label: "คำถามที่ระบบตอบไม่ได้" },
+        ],
+      };
+  const paymentRequestData = paymentRequestResult.status === "fulfilled"
+    ? paymentRequestResult.value
+    : { pendingCount: 0 };
+  const aiSettings = aiSettingsResult.status === "fulfilled"
+    ? aiSettingsResult.value
+    : {
+        configuredEnabled: false,
+        effectiveEnabled: false,
+        envMockAi: false,
+        updatedBy: "",
+        updatedAt: null,
+      };
+  const aiUsageStats = aiUsageStatsResult.status === "fulfilled"
+    ? aiUsageStatsResult.value
+    : {
+        todayCalls: 0,
+        totalCalls: 0,
+        successCalls: 0,
+        failureCalls: 0,
+        estimatedTotalCost: {
+          estimatedThb: 0,
+          estimatedUsd: 0,
+          model: "gpt-5.4-mini",
+          assumptions: {},
+          usdToThbRate: 32.69,
+        },
+        estimatedTodayCost: {
+          estimatedThb: 0,
+          estimatedUsd: 0,
+          model: "gpt-5.4-mini",
+          assumptions: {},
+          usdToThbRate: 32.69,
+        },
+      };
 
   res.render("admin/dashboard", {
     title: "Admin Dashboard",

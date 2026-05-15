@@ -1102,16 +1102,6 @@ class LawChatbotSuggestedQuestionModel {
         })
         .slice()
         .sort((left, right) => {
-          const activeDiff = Number(Boolean(right.isActive)) - Number(Boolean(left.isActive));
-          if (activeDiff !== 0) {
-            return activeDiff;
-          }
-
-          const orderDiff = Number(left.displayOrder || 0) - Number(right.displayOrder || 0);
-          if (orderDiff !== 0) {
-            return orderDiff;
-          }
-
           return Number(right.id || 0) - Number(left.id || 0);
         })
         .slice(normalizedOffset, normalizedOffset + normalizedLimit)
@@ -1140,7 +1130,7 @@ class LawChatbotSuggestedQuestionModel {
       `SELECT ${SUGGESTED_QUESTION_SELECT_COLUMNS}
          FROM chatbot_suggested_questions
         ${whereClause}
-        ORDER BY is_active DESC, display_order ASC, id DESC
+        ORDER BY id DESC
         LIMIT ? OFFSET ?`,
       [...params, normalizedLimit, normalizedOffset],
     );
