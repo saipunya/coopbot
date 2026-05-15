@@ -49,6 +49,33 @@ const QUANTIFIER_QUERY_STOP_TOKENS = new Set([
 ]);
 const QUANTIFIER_WORD_NUMBER_PATTERN =
   /(หนึ่ง|เอ็ด|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|สิบสอง|สิบสาม|สิบสี่|สิบห้า|สิบหก|สิบเจ็ด|สิบแปด|สิบเก้า|ยี่สิบ|สามสิบ|สี่สิบ|ห้าสิบ|หกสิบ|เจ็ดสิบ|แปดสิบ|เก้าสิบ|ร้อย)/;
+const FUZZY_SEARCH_STOP_TOKENS = new Set([
+  "การ",
+  "ใน",
+  "ของ",
+  "ที่",
+  "ให้",
+  "ได้",
+  "ถ้า",
+  "หาก",
+  "กรณี",
+  "เรื่อง",
+  "คือ",
+  "อะไร",
+  "อย่างไร",
+  "ยังไง",
+  "ดู",
+  "จาก",
+  "ต้อง",
+  "มี",
+  "หรือ",
+  "หรือไม่",
+  "ไหม",
+  "บ้าง",
+  "ใด",
+  "ขอ",
+  "กว่า",
+]);
 const QUANTIFIER_QUERY_RULES = [
   {
     id: "time",
@@ -142,6 +169,18 @@ function adminSearchMatchesEntry(entry = {}, termGroups = []) {
       );
     }),
   );
+}
+
+function buildSuggestedQuestionFuzzySearchTerms(normalizedQuestion = "") {
+  const meaningfulTerms = uniqueTokens(segmentWords(normalizedQuestion))
+    .map((term) => normalizeQuestionText(term))
+    .filter((term) => term && term.length >= 2 && !FUZZY_SEARCH_STOP_TOKENS.has(term));
+
+  if (meaningfulTerms.length > 0) {
+    return meaningfulTerms.slice(0, 12);
+  }
+
+  return uniqueTokens(segmentWords(normalizedQuestion)).slice(0, 10);
 }
 
 function inferSuggestedQuestionTarget(question = "", requestedTarget = "all") {
@@ -504,6 +543,92 @@ function computeProcedureQuestionBoost(normalizedQuestion, row = {}) {
 
   if (anchorLooksRegistryRecord && !queryMentionsRegistryRecord) {
     boost -= 0.28;
+  }
+
+  return boost;
+}
+
+function parseGroupLoanLimitQuery(normalizedQuestion = "") {
+  const text = normalizeQuestionText(normalizedQuestion);
+  const mentionsGroupLoanLimit =
+    /วงเงิน/.test(text) &&
+    /(กู้|กู้ยืม|เงินกู้)/.test(text) &&
+    /กลุ่มเกษตรกร/.test(text);
+  if (!mentionsGroupLoanLimit) {
+    return null;
+  }
+
+  return {
+    asksOverLimit: /(เกินกว่า|เกินกว่าหลักเกณฑ์|เกินหลักเกณฑ์|เกินเกณฑ์|เกิน.*ทั่วไป)/.test(text),
+    asksBasis: /(ดูจากอะไร|พิจารณาจากอะไร|พิจารณา.*จากอะไร|ใช้.*อะไร|อ้างอิง.*อะไร)/.test(text),
+    asksAmount: /(เท่าไร|เท่าไหร่|เท่าใด|กี่เท่า|ไม่เกิน|กำหนด(?:ได้)?)/.test(text),
+    asksGeneral: /(ทั่วไป|หลักเกณฑ์ทั่วไป)/.test(text),
+  };
+}
+
+function computeGroupLoanLimitBoost(normalizedQuestion, row = {}) {
+  const loanLimitQuery = parseGroupLoanLimitQuery(normalizedQuestion);
+  if (!loanLimitQuery) {
+    return 0;
+  }
+
+  const normalizedStoredQuestion = normalizeQuestionText(
+    row.normalized_question || row.normalizedQuestion || row.question_text || row.questionText || "",
+  );
+  const normalizedReference = normalizeQuestionText(row.source_reference || row.sourceReference || "");
+  const normalizedAnswer = normalizeQuestionText(row.answer_text || row.answerText || "");
+  const anchorText = [normalizedStoredQuestion, normalizedReference].filter(Boolean).join(" ");
+  const fullText = [anchorText, normalizedAnswer].filter(Boolean).join(" ");
+
+  const rowIsOverLimit =
+    /(เกินกว่า|เกินกว่าหลักเกณฑ์|เกินหลักเกณฑ์|เกินเกณฑ์)/.test(anchorText) ||
+    /(ร้อยละ\s*80|ประสงค์เข้าร่วมโครงการ|เข้าร่วมโครงการ)/.test(fullText);
+  const rowIsGeneralAmount =
+    /หลักเกณฑ์ทั่วไป/.test(anchorText) &&
+    (
+      /(ไม่เกินกี่เท่า|กี่เท่า|กำหนดได้ไม่เกิน|กำหนด.*เท่า)/.test(anchorText) ||
+      /(หนึ่งเท่าครึ่ง|1\.5\s*เท่า|หนึ่งเท่า.*ครึ่ง)/.test(normalizedAnswer)
+    );
+  const rowIsGeneralBasis =
+    /หลักเกณฑ์ทั่วไป/.test(anchorText) &&
+    (
+      /(ดูจากอะไร|พิจารณา.*จากอะไร|พิจารณาวงเงิน)/.test(anchorText) ||
+      /(ทุนเรือนหุ้น|ทุนสำรอง|ผลขาดทุนสะสม)/.test(normalizedAnswer)
+    ) &&
+    !rowIsGeneralAmount;
+
+  let boost = 0;
+
+  if (loanLimitQuery.asksOverLimit) {
+    if (rowIsOverLimit) {
+      boost += 0.24;
+    } else if (rowIsGeneralAmount || rowIsGeneralBasis) {
+      boost -= 0.1;
+    }
+
+    return boost;
+  }
+
+  if (loanLimitQuery.asksBasis && !loanLimitQuery.asksAmount) {
+    if (rowIsGeneralBasis) {
+      boost += 0.24;
+    }
+
+    if (rowIsOverLimit) {
+      boost -= 0.18;
+    }
+
+    return boost;
+  }
+
+  if (loanLimitQuery.asksAmount || loanLimitQuery.asksGeneral) {
+    if (rowIsGeneralAmount) {
+      boost += 0.3;
+    }
+
+    if (rowIsOverLimit) {
+      boost -= 0.26;
+    }
   }
 
   return boost;
@@ -1383,7 +1508,45 @@ class LawChatbotSuggestedQuestionModel {
         return exactMatch;
       }
 
-      return this.findFuzzyMatchInMemory(normalizedQuestion, normalizedTarget);
+      if (normalizedTarget !== "all") {
+        const exactAnyTargetMatch = sortMatches(
+          memorySuggestedQuestions
+            .filter((item) => {
+              if (!item.isActive) {
+                return false;
+              }
+
+              return String(item.normalizedQuestion || "").trim() === normalizedQuestion;
+            })
+            .map(mapRow),
+        )[0];
+
+        if (exactAnyTargetMatch) {
+          return exactAnyTargetMatch;
+        }
+      }
+
+      const fuzzyMatch = await this.findFuzzyMatchInMemory(normalizedQuestion, normalizedTarget);
+      if (fuzzyMatch) {
+        return fuzzyMatch;
+      }
+
+      if (normalizedTarget === "all") {
+        const scopedFuzzyMatches = ["group", "coop", "general"]
+          .map((targetName) => this.findFuzzyMatchInMemory(normalizedQuestion, targetName))
+          .filter(Boolean)
+          .sort((left, right) => {
+            if (right.similarity !== left.similarity) {
+              return right.similarity - left.similarity;
+            }
+
+            return Number(right.id || 0) - Number(left.id || 0);
+          });
+
+        return scopedFuzzyMatches[0] || null;
+      }
+
+      return null;
     }
 
     // Try exact match first
@@ -1392,8 +1555,40 @@ class LawChatbotSuggestedQuestionModel {
       return exactMatch;
     }
 
+    if (normalizedTarget !== "all") {
+      const exactAnyTargetMatch = await this.findExactMatch(normalizedQuestion, "all");
+      if (exactAnyTargetMatch) {
+        return exactAnyTargetMatch;
+      }
+    }
+
     // Try fuzzy matching if no exact match
-    return await this.findFuzzyMatch(normalizedQuestion, normalizedTarget);
+    const fuzzyMatch = await this.findFuzzyMatch(normalizedQuestion, normalizedTarget);
+    if (fuzzyMatch) {
+      return fuzzyMatch;
+    }
+
+    if (normalizedTarget === "all") {
+      const scopedFuzzyMatches = (
+        await Promise.all(
+          ["group", "coop", "general"].map((targetName) =>
+            this.findFuzzyMatch(normalizedQuestion, targetName),
+          ),
+        )
+      )
+        .filter(Boolean)
+        .sort((left, right) => {
+          if (right.similarity !== left.similarity) {
+            return right.similarity - left.similarity;
+          }
+
+          return Number(right.id || 0) - Number(left.id || 0);
+        });
+
+      return scopedFuzzyMatches[0] || null;
+    }
+
+    return null;
   }
 
   static scoreFuzzyCandidate(normalizedQuestion, row = {}) {
@@ -1462,6 +1657,7 @@ class LawChatbotSuggestedQuestionModel {
     similarity += computeMemberShareholdingBoost(normalizedQuestion, row);
     similarity += computeMemberRightsDutiesBoost(normalizedQuestion, row);
     similarity += computeProcedureQuestionBoost(normalizedQuestion, row);
+    similarity += computeGroupLoanLimitBoost(normalizedQuestion, row);
 
     return {
       similarity,
@@ -1580,7 +1776,7 @@ class LawChatbotSuggestedQuestionModel {
     const memberShareholdingQuery = parseMemberShareholdingQuery(normalizedQuestion);
     const memberRightsDutiesQuery = parseMemberRightsDutiesQuery(normalizedQuestion);
     const searchTerms = uniqueTokens([
-      ...segmentWords(normalizedQuestion),
+      ...buildSuggestedQuestionFuzzySearchTerms(normalizedQuestion),
       ...(memberRightsDutiesQuery ? ["สิทธิและหน้าที่", "ข้อ 33", "ข้อ33"] : []),
     ]).slice(0, 10);
     const whereClause = searchTerms.length
@@ -1688,7 +1884,7 @@ class LawChatbotSuggestedQuestionModel {
               WHERE is_active = 1
                 AND (${whereClause})
               ORDER BY ${clausePrioritySql}${topicPrioritySql}${registrarPrioritySql}${memberShareholdingPrioritySql}${memberRightsDutiesPrioritySql}display_order ASC, id DESC
-              LIMIT 100`,
+              LIMIT 500`,
             [
               ...whereParams,
               ...clausePriorityParams,
@@ -1710,7 +1906,7 @@ class LawChatbotSuggestedQuestionModel {
                          WHEN target = 'all' THEN 2
                          ELSE 3
                        END, display_order ASC, id DESC
-               LIMIT 100`,
+               LIMIT 500`,
             [
               ...lookupTargets,
               ...whereParams,

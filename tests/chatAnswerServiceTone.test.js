@@ -35,3 +35,28 @@ test("friendly tone presentation keeps fallback empty for short answers", () => 
   assert.equal(presentation.intro, "");
   assert.equal(presentation.closing, "");
 });
+
+test("tone presentation shows short question topics in full", () => {
+  const question = "วงเงินกู้ของกลุ่มเกษตรกรทั่วไป กำหนดเท่าไร";
+  const presentation = buildTonePresentation("ก".repeat(160), "semi_formal", question);
+
+  assert.match(presentation.intro, new RegExp(question));
+  assert.doesNotMatch(presentation.intro, /"\.\.\."/);
+});
+
+test("tone presentation truncates long question topics with ellipsis", () => {
+  const question = "หลักเกณฑ์ทั่วไปในการพิจารณาวงเงินกู้ยืมกลุ่มเกษตรกรตามประกาศล่าสุดพร้อมกรณีที่มีผลขาดทุนสะสมและต้องเสนอแผนฟื้นฟู";
+  const presentation = buildTonePresentation("ก".repeat(160), "formal", question);
+  const topic = presentation.intro.match(/"([^"]+)"/)?.[1] || "";
+
+  assert.ok(topic.endsWith("..."));
+  assert.ok(Array.from(topic).length <= 80);
+  assert.match(topic, /หลักเกณฑ์ทั่วไป/);
+});
+
+test("tone presentation replaces blank ellipsis topic with fallback text", () => {
+  const presentation = buildTonePresentation("ก".repeat(160), "semi_formal", "...");
+
+  assert.match(presentation.intro, /"คำถามนี้"/);
+  assert.doesNotMatch(presentation.intro, /"\.\.\."/);
+});

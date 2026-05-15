@@ -107,13 +107,23 @@ function normalizeResponseTone(value) {
   return ["formal", "semi_formal", "friendly"].includes(tone) ? tone : "semi_formal";
 }
 
-function truncateDisplayQuestion(question = "", maxLength = 50) {
-  const chars = Array.from(String(question || "").replace(/\s+/g, " ").trim());
-  if (chars.length <= maxLength) {
-    return chars.join("");
+function truncateDisplayQuestion(question = "", maxLength = 80, fallback = "คำถามนี้") {
+  const normalizedFallback = String(fallback || "คำถามนี้").replace(/\s+/g, " ").trim() || "คำถามนี้";
+  const normalizedQuestion = String(question || "").replace(/\s+/g, " ").trim();
+  if (!normalizedQuestion || /^[.\s]+$/.test(normalizedQuestion)) {
+    return normalizedFallback;
   }
 
-  return chars.slice(0, maxLength).join("");
+  const safeMaxLength = Math.max(10, Number(maxLength || 80));
+  const chars = Array.from(normalizedQuestion);
+  if (chars.length <= safeMaxLength) {
+    return normalizedQuestion;
+  }
+
+  const ellipsis = "...";
+  const visibleLength = Math.max(1, safeMaxLength - ellipsis.length);
+  const clipped = chars.slice(0, visibleLength).join("").trim();
+  return clipped ? `${clipped}${ellipsis}` : normalizedFallback;
 }
 
 function hasToneIntro(answer = "") {
@@ -245,7 +255,7 @@ const FRIENDLY_INTRO_RECENT_LIMIT = 8;
 let recentFriendlyIntroIndexes = [];
 
 function pickFriendlyIntro(topic) {
-  const question = truncateDisplayQuestion(topic || "เรื่องนี้", 36) || "เรื่องนี้";
+  const question = truncateDisplayQuestion(topic, 80, "คำถามนี้");
   if (FRIENDLY_INTROS.length === 0) {
     return `เรื่อง "${question}" เดี๋ยวผมสรุปให้เข้าใจง่ายนะครับ 👇`;
   }
@@ -300,7 +310,7 @@ function buildTonePresentation(answer, tone, originalQuestion = "", options = {}
   }
 
   const normalizedTone = normalizeResponseTone(tone);
-  const question = truncateDisplayQuestion(originalQuestion || "คำถามนี้");
+  const question = truncateDisplayQuestion(originalQuestion, 80, "คำถามนี้");
   const intros = {
     formal: `ตามประเด็น "${question}" ขอสรุปข้อมูล ดังนี้`,
     semi_formal: `สำหรับ "${question}" ผมสรุปให้เข้าใจง่ายแบบทางการนะครับ`,

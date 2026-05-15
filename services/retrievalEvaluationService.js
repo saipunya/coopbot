@@ -10,6 +10,8 @@ const {
   normalizeForSearch,
   detectTopicFamily,
   scoreQueryFocusAlignment,
+  segmentWords,
+  uniqueTokens,
 } = require("./thaiTextUtils");
 
 const AUTHORITATIVE_SOURCES = new Set([
@@ -24,6 +26,51 @@ const DOCUMENT_SOURCES = new Set(["documents", "pdf_chunks"]);
 const MEDIUM_ANSWER_CONFIDENCE_THRESHOLD = Number(process.env.RETRIEVAL_MEDIUM_ANSWER_CONFIDENCE_THRESHOLD || 50);
 const HIGH_ANSWER_CONFIDENCE_THRESHOLD = Number(process.env.RETRIEVAL_HIGH_ANSWER_CONFIDENCE_THRESHOLD || 75);
 const MEDIUM_CONFIDENCE_ANSWER_NOTE = "อ้างอิงจากข้อมูลที่พบ";
+const SEMANTIC_GUARD_MIN_QUERY_TERMS = Number(process.env.RETRIEVAL_SEMANTIC_GUARD_MIN_QUERY_TERMS || 4);
+const SEMANTIC_GUARD_MIN_COVERAGE = Number(process.env.RETRIEVAL_SEMANTIC_GUARD_MIN_COVERAGE || 0.45);
+const SEMANTIC_GUARD_MIN_NON_ENTITY_COVERAGE = Number(
+  process.env.RETRIEVAL_SEMANTIC_GUARD_MIN_NON_ENTITY_COVERAGE || 0.34,
+);
+const SEMANTIC_GUARD_STOP_TOKENS = new Set([
+  "การ",
+  "ความ",
+  "ใน",
+  "ของ",
+  "ที่",
+  "ให้",
+  "ได้",
+  "เป็น",
+  "คือ",
+  "มี",
+  "และ",
+  "หรือ",
+  "หรือไม่",
+  "ไหม",
+  "อะไร",
+  "อย่างไร",
+  "ยังไง",
+  "กรณี",
+  "ถ้า",
+  "หาก",
+  "ต้อง",
+  "ขอ",
+  "ดู",
+  "จาก",
+  "กว่า",
+  "บ้าง",
+  "ใด",
+  "ทั่วไป",
+  "เรื่อง",
+  "มาตรา",
+  "ข้อ",
+  "วรรค",
+  "อนุมาตรา",
+]);
+const SEMANTIC_GUARD_ENTITY_TOKENS = new Set([
+  "สหกรณ์",
+  "กลุ่ม",
+  "เกษตรกร",
+]);
 const THRESHOLD_PROFILES = {
   general: {
     minAnswerability: 52,
@@ -122,12 +169,121 @@ function buildSourceFocusText(item = {}) {
       item?.title,
       item?.keyword,
       item?.content,
+      item?.answer,
+      item?.supportText,
+      item?.rawContent,
       item?.comment,
       item?.chunk_text,
     ]
       .filter(Boolean)
       .join(" "),
   );
+}
+
+function normalizeSemanticGuardToken(value = "") {
+  return normalizeForSearch(String(value || "")).toLowerCase().trim();
+}
+
+function extractSemanticGuardTerms(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized) {
+    return [];
+  }
+
+  return uniqueTokens(segmentWords(normalized)
+    .map((token) => normalizeSemanticGuardToken(token))
+    .filter((token) => {
+      if (!token || token.length < 2) {
+        return false;
+      }
+
+      if (/^\d+$/.test(token)) {
+        return false;
+      }
+
+      return !SEMANTIC_GUARD_STOP_TOKENS.has(token);
+    }))
+    .slice(0, 14);
+}
+
+function semanticTextIncludesTerm(normalizedText = "", term = "") {
+  const normalizedTerm = normalizeSemanticGuardToken(term);
+  if (!normalizedText || !normalizedTerm) {
+    return false;
+  }
+
+  if (normalizedText.includes(normalizedTerm)) {
+    return true;
+  }
+
+  const compactText = normalizedText.replace(/\s+/g, "");
+  const compactTerm = normalizedTerm.replace(/\s+/g, "");
+  return compactTerm.length >= 4 && compactText.includes(compactTerm);
+}
+
+function evaluateSemanticSourceAlignment(payload = {}) {
+  const selectedSources = Array.isArray(payload.selectedSources || payload.sources)
+    ? (payload.selectedSources || payload.sources).filter(Boolean)
+    : [];
+  const message = payload.effectiveMessage || payload.message || "";
+  const queryTerms = extractSemanticGuardTerms(message);
+  const emptyResult = {
+    semanticAligned: true,
+    semanticGuardApplied: false,
+    semanticCoverage: 1,
+    semanticMatchedTermCount: 0,
+    semanticRequiredTermCount: queryTerms.length,
+    semanticMatchedTerms: [],
+    semanticMissingTerms: queryTerms,
+    semanticNonEntityMatchedTermCount: 0,
+    semanticNonEntityTermCount: queryTerms.filter((term) => !SEMANTIC_GUARD_ENTITY_TOKENS.has(term)).length,
+  };
+
+  if (selectedSources.length === 0 || queryTerms.length < SEMANTIC_GUARD_MIN_QUERY_TERMS) {
+    return emptyResult;
+  }
+
+  const normalizedSourceText = normalizeForSearch(
+    selectedSources.map((source) => buildSourceFocusText(source)).filter(Boolean).join(" "),
+  ).toLowerCase();
+  if (!normalizedSourceText) {
+    return {
+      ...emptyResult,
+      semanticAligned: false,
+      semanticGuardApplied: true,
+      semanticCoverage: 0,
+    };
+  }
+
+  const matchedTerms = queryTerms.filter((term) => semanticTextIncludesTerm(normalizedSourceText, term));
+  const missingTerms = queryTerms.filter((term) => !matchedTerms.includes(term));
+  const nonEntityTerms = queryTerms.filter((term) => !SEMANTIC_GUARD_ENTITY_TOKENS.has(term));
+  const nonEntityMatchedTerms = matchedTerms.filter((term) => !SEMANTIC_GUARD_ENTITY_TOKENS.has(term));
+  const coverage = queryTerms.length > 0 ? matchedTerms.length / queryTerms.length : 1;
+  const nonEntityCoverage =
+    nonEntityTerms.length > 0 ? nonEntityMatchedTerms.length / nonEntityTerms.length : 1;
+  const severeTopicMismatch =
+    nonEntityTerms.length >= 3 && nonEntityMatchedTerms.length === 0;
+  const weakTopicCoverage =
+    nonEntityTerms.length >= 4 &&
+    nonEntityCoverage < SEMANTIC_GUARD_MIN_NON_ENTITY_COVERAGE &&
+    coverage < SEMANTIC_GUARD_MIN_COVERAGE;
+  const weakOverallCoverage =
+    queryTerms.length >= 6 &&
+    coverage < Math.max(0.35, SEMANTIC_GUARD_MIN_COVERAGE - 0.1) &&
+    nonEntityMatchedTerms.length < 2;
+
+  return {
+    semanticAligned: !(severeTopicMismatch || weakTopicCoverage || weakOverallCoverage),
+    semanticGuardApplied: true,
+    semanticCoverage: Number(coverage.toFixed(3)),
+    semanticMatchedTermCount: matchedTerms.length,
+    semanticRequiredTermCount: queryTerms.length,
+    semanticMatchedTerms: matchedTerms,
+    semanticMissingTerms: missingTerms,
+    semanticNonEntityMatchedTermCount: nonEntityMatchedTerms.length,
+    semanticNonEntityTermCount: nonEntityTerms.length,
+  };
 }
 
 function clamp(value, min, max) {
@@ -341,6 +497,10 @@ function collectRetrievalMetrics(payload = {}, profile = resolveRetrievalThresho
   const databaseMatches = sortByScore(payload.databaseMatches || []);
   const messageProfile = getMessageProfile(payload.effectiveMessage || payload.message || "");
   const rankedForConfidence = selectedSources.length > 0 ? selectedSources : databaseMatches;
+  const semanticAlignment = evaluateSemanticSourceAlignment({
+    ...payload,
+    selectedSources,
+  });
 
   const topScore = toNumber(selectedSources[0]?.score);
   const aggregateScore = scoreMatchSet(selectedSources);
@@ -430,6 +590,7 @@ function collectRetrievalMetrics(payload = {}, profile = resolveRetrievalThresho
     strongSingleSource,
     usedInternetFallback: Boolean(payload.usedInternetFallback),
     usedInternetSearch: Boolean(payload.usedInternetSearch),
+    ...semanticAlignment,
   };
 }
 
@@ -464,6 +625,10 @@ function computeAnswerability(payload = {}, profile = resolveRetrievalThresholdP
     weakFocus:
       metrics.topFocusScore > 0 && metrics.topFocusScore < profile.minTopFocusScore
         ? -6
+        : 0,
+    semanticMismatch:
+      metrics.semanticGuardApplied && metrics.semanticAligned === false
+        ? -26
         : 0,
     missingPrimaryLaw:
       profile.requirePrimaryLawSource && metrics.primaryLawCount === 0 && metrics.matchedReferenceCount === 0
@@ -580,6 +745,10 @@ function buildNegativeReasonParts(metrics = {}, payload = {}, profile = {}) {
     reasons.push("focus score ยังต่ำ");
   }
 
+  if (metrics.semanticGuardApplied && metrics.semanticAligned === false) {
+    reasons.push("source ไม่ตรงกับคำสำคัญหลักของคำถาม");
+  }
+
   if (metrics.internetOnly) {
     reasons.push("อาศัยแหล่งสาธารณะเป็นหลัก");
   }
@@ -627,6 +796,11 @@ function buildReasonCodes(metrics = {}, profile = {}, policy = "no_answer") {
     reasonCodes.push("focus_aligned");
   } else if (metrics.topFocusScore > 0) {
     reasonCodes.push("weak_focus_alignment");
+  }
+  if (metrics.semanticGuardApplied && metrics.semanticAligned === false) {
+    reasonCodes.push("semantic_mismatch");
+  } else if (metrics.semanticGuardApplied) {
+    reasonCodes.push("semantic_aligned");
   }
   if (metrics.freshCount > 0) {
     reasonCodes.push("fresh_support");
@@ -712,6 +886,7 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
   const strongGroupFormationEvidence = hasStrongGroupFormationEvidence(payload);
   const strongLiquidationEvidence = hasStrongLiquidationEvidence(payload);
   const confidenceLevel = resolveAnswerConfidenceLevel(answerability.confidence);
+  const semanticMismatch = metrics.semanticGuardApplied && metrics.semanticAligned === false;
 
   const meetsTopScore = metrics.topScore >= profile.minTopScore;
   const meetsAggregateScore =
@@ -745,7 +920,8 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
     meetsFocus &&
     meetsPrimaryLawRequirement &&
     meetsDocumentPreference &&
-    !lowTrustShortQuery;
+    !lowTrustShortQuery &&
+    !semanticMismatch;
 
   let policy = "no_answer";
 
@@ -785,6 +961,10 @@ function decideNoAnswerPolicy(payload = {}, answerability = computeAnswerability
   }
 
   if (confidenceLevel === "low") {
+    policy = "no_answer";
+  }
+
+  if (semanticMismatch) {
     policy = "no_answer";
   }
 
@@ -870,6 +1050,15 @@ function buildRetrievalDecisionTrace(payload = {}, answerability = computeAnswer
       strongSingleSource: metrics.strongSingleSource,
       usedInternetFallback: metrics.usedInternetFallback,
       usedInternetSearch: metrics.usedInternetSearch,
+      semanticGuardApplied: metrics.semanticGuardApplied,
+      semanticAligned: metrics.semanticAligned,
+      semanticCoverage: metrics.semanticCoverage,
+      semanticMatchedTermCount: metrics.semanticMatchedTermCount,
+      semanticRequiredTermCount: metrics.semanticRequiredTermCount,
+      semanticMatchedTerms: metrics.semanticMatchedTerms,
+      semanticMissingTerms: metrics.semanticMissingTerms,
+      semanticNonEntityMatchedTermCount: metrics.semanticNonEntityMatchedTermCount,
+      semanticNonEntityTermCount: metrics.semanticNonEntityTermCount,
     },
     components: answerability.components,
     penalties: answerability.penalties,

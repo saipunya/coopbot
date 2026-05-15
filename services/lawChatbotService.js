@@ -1706,7 +1706,9 @@ async function replyToDbOnlyMainChat(payload, session) {
     if (!retrievalEvaluation.shouldAnswer) {
       setSessionContinuationState(session, null);
       answer = faqAnswer || retrievalEvaluation.userFacingMessage;
-      selectedSources = combinedSources;
+      const hasSemanticMismatch = Array.isArray(retrievalEvaluation.reasonCodes) &&
+        retrievalEvaluation.reasonCodes.includes("semantic_mismatch");
+      selectedSources = hasSemanticMismatch && !faqSource ? [] : combinedSources;
     } else {
       answerSourcePool = selectDbOnlyMainChatAnswerEntries(faqSource ? faqSupportSources : databaseSources, {
         message: effectiveMessage,
@@ -1972,10 +1974,14 @@ async function summarizeChat(payload, session) {
       evidence?.searchTrace || null,
     );
 
+    const hasSemanticMismatch = Array.isArray(retrievalEvaluation.reasonCodes) &&
+      retrievalEvaluation.reasonCodes.includes("semantic_mismatch");
+    const responseSources = hasSemanticMismatch ? [] : sources;
+
     return {
       summary: retrievalEvaluation.userFacingMessage,
       usedAI: false,
-      responseMeta: buildResponseMeta("db_only", sources, retrievalEvaluation, { usedAI: false }),
+      responseMeta: buildResponseMeta("db_only", responseSources, retrievalEvaluation, { usedAI: false }),
     };
   }
 

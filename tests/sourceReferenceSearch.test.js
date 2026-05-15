@@ -301,6 +301,107 @@ test("managed suggested question prioritizes group entries when the query mentio
   assert.match(match?.sourceReference || "", /ร่างข้อบังคับกลุ่มเกษตรกร/);
 });
 
+test("managed suggested question exact match survives a mismatched target", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "coop",
+    questionText: "การพิจารณาวงเงินกู้ยืมกลุ่มเกษตรกรแบ่งกลุ่มกรณีใดบ้าง",
+    answerText: "แบ่งเป็นกลุ่มตามหลักเกณฑ์ของประกาศวงเงินกู้ยืมของกลุ่มเกษตรกร",
+    sourceReference: "ประกาศวงเงินกู้ยืมของกลุ่มเกษตรกร",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(
+    "การพิจารณาวงเงินกู้ยืมกลุ่มเกษตรกรแบ่งกลุ่มกรณีใดบ้าง",
+    "group",
+  );
+
+  assert.ok(match, "expected exact Q&A match even when target was imported incorrectly");
+  assert.equal(match?.target, "coop");
+  assert.match(match?.questionText || "", /วงเงินกู้ยืมกลุ่มเกษตรกร/);
+});
+
+test("managed suggested question matches group loan criteria when the query omits the group target word", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "group",
+    questionText: "หลักเกณฑ์ทั่วไปในการพิจารณาวงเงินกู้ยืมกลุ่มเกษตรกรดูจากอะไร",
+    answerText: "พิจารณาจากทุนเรือนหุ้นรวมกับทุนสำรองของกลุ่มเกษตรกร",
+    sourceReference: "ประกาศวงเงินกู้ยืมของกลุ่มเกษตรกร",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(
+    "หลักเกณฑ์ทั่วไปในการพิจารณาวงเงินกู้ยืมดูจากอะไร",
+    "all",
+  );
+
+  assert.ok(match, "expected group loan criteria Q&A match");
+  assert.equal(match?.target, "group");
+  assert.match(match?.questionText || "", /หลักเกณฑ์ทั่วไป/);
+});
+
+test("managed suggested question prefers the over-limit group loan condition entry", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "group",
+    questionText: "การพิจารณาวงเงินกู้ยืมกลุ่มเกษตรกรแบ่งกลุ่มกรณีใดบ้าง",
+    answerText: "แบ่งเป็นกลุ่มตามหลักเกณฑ์ของประกาศวงเงินกู้ยืมของกลุ่มเกษตรกร",
+    sourceReference: "ประกาศวงเงินกู้ยืมของกลุ่มเกษตรกร",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "group",
+    questionText: "กรณีขอวงเงินกู้ยืมเกินกว่าหลักเกณฑ์ทั่วไปของกลุ่มเกษตรกร ต้องมีเงื่อนไขอะไร",
+    answerText: "ต้องมีเหตุผลความจำเป็นและเอกสารประกอบตามประกาศวงเงินกู้ยืมของกลุ่มเกษตรกร",
+    sourceReference: "ประกาศวงเงินกู้ยืมของกลุ่มเกษตรกร",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(
+    "ถ้าขออนุมัติวงเงินกู้ยืมกลุ่มเกษตรกร เกินกว่าเกณฑ์ทั่วไป",
+    "all",
+  );
+
+  assert.ok(match, "expected over-limit group loan Q&A match");
+  assert.match(match?.questionText || "", /เกินกว่าหลักเกณฑ์ทั่วไป/);
+  assert.ok(Number(match?.similarity || 0) >= 0.85);
+});
+
+test("managed suggested question prefers general group loan amount over over-limit conditions", async () => {
+  const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "group",
+    questionText: "วงเงินกู้ยืมกลุ่มเกษตรกรตามหลักเกณฑ์ทั่วไปกำหนดได้ไม่เกินกี่เท่า",
+    answerText: "วงเงินกู้ยืมตามหลักเกณฑ์ทั่วไปให้ถือใช้วงเงินไม่เกินหนึ่งเท่าครึ่งของทุนเรือนหุ้นรวมกับทุนสำรองของกลุ่มเกษตรกร",
+    sourceReference: "ประกาศวงเงินกู้ยืมของกลุ่มเกษตรกร",
+    isActive: true,
+  });
+
+  await LawChatbotSuggestedQuestionModel.create({
+    target: "group",
+    questionText: "กรณีขอวงเงินกู้ยืมเกินกว่าหลักเกณฑ์ทั่วไปของกลุ่มเกษตรกร ต้องมีเงื่อนไขอะไร",
+    answerText: "ต้องมีสมาชิกที่ประสงค์เข้าร่วมโครงการรวมแล้วไม่น้อยกว่าร้อยละ 80 ของจำนวนสมาชิกทั้งหมด",
+    sourceReference: "ประกาศวงเงินกู้ยืมของกลุ่มเกษตรกร",
+    isActive: true,
+  });
+
+  const match = await LawChatbotSuggestedQuestionModel.findAnswerMatch(
+    "วงเงินกู้ของกลุ่มเกษตรกรทั่วไป กำหนดเท่าไร",
+    "all",
+  );
+
+  assert.ok(match, "expected general loan amount Q&A match");
+  assert.match(match?.questionText || "", /กำหนดได้ไม่เกินกี่เท่า/);
+  assert.match(match?.answerText || "", /หนึ่งเท่าครึ่ง/);
+  assert.doesNotMatch(match?.answerText || "", /ร้อยละ 80/);
+});
+
 test("managed suggested question recognizes member shareholding queries for กลุ่มเกษตรกร", async () => {
   const LawChatbotSuggestedQuestionModel = loadFresh("../models/lawChatbotSuggestedQuestionModel");
 
