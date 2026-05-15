@@ -38,6 +38,37 @@ test("sanitizeDisplayText keeps law section number with its label across line br
   assert.doesNotMatch(output, /มาตรา\s*\n\s*70/);
 });
 
+test("sanitizeDisplayText does not re-break legal section numbers as display list markers", () => {
+  const input = "เลิกเมื่อเกิดเหตุตามที่กฎหมายกำหนด (มาตรา\n70) ได้แก่...";
+
+  const output = sanitizeDisplayText(input);
+
+  assert.equal(output, "เลิกเมื่อเกิดเหตุตามที่กฎหมายกำหนด (มาตรา 70) ได้แก่...");
+  assert.doesNotMatch(output, /มาตรา\s*\n\s*70/);
+});
+
+test("sanitizeDisplayText turns comma-separated legal examples into bullet lines", () => {
+  const input = "เลิกเมื่อนายทะเบียนสหกรณ์สั่งให้เลิก (มาตรา 71 และ 89/3): เช่น ไม่เริ่มดำเนินกิจการภายใน 1 ปีนับแต่วันจดทะเบียน, หยุดดำเนินกิจการติดต่อกัน 2 ปี, ไม่ส่งงบการเงินติดต่อกัน 3 ปี, ไม่อาจดำเนินกิจการให้เป็นผลดี หรือการดำเนินกิจการก่อให้เกิดความเสียหายร้ายแรง";
+
+  const output = sanitizeDisplayText(input);
+
+  assert.equal(output, [
+    "เลิกเมื่อนายทะเบียนสหกรณ์สั่งให้เลิก (มาตรา 71 และ 89/3): เช่น",
+    "- ไม่เริ่มดำเนินกิจการภายใน 1 ปีนับแต่วันจดทะเบียน",
+    "- หยุดดำเนินกิจการติดต่อกัน 2 ปี",
+    "- ไม่ส่งงบการเงินติดต่อกัน 3 ปี",
+    "- ไม่อาจดำเนินกิจการให้เป็นผลดี หรือการดำเนินกิจการก่อให้เกิดความเสียหายร้ายแรง",
+  ].join("\n"));
+});
+
+test("sanitizeDisplayText does not split ordinary comma text without list signal", () => {
+  const input = "อ้างอิงเอกสารเลขที่ ก, ข, ค";
+
+  const output = sanitizeDisplayText(input);
+
+  assert.equal(output, input);
+});
+
 test("splitSummaryIntoBullets preserves real bullet lists", () => {
   const output = splitSummaryIntoBullets("1. ข้อแรก\n2. ข้อสอง\n3. ข้อสาม");
 

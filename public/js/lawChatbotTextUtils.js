@@ -125,7 +125,7 @@
       /([^\n])\s+((?:[0-9๐-๙]{1,3}[.)])|(?:ข้อ\s*[0-9๐-๙]{1,3}[.)]?))(?=\s*[^\s])/gu,
       (match, prefix, marker, offset, fullText) => {
         const context = String(fullText || "").slice(Math.max(0, Number(offset || 0) - 80), Number(offset || 0));
-        if (!shouldBreakBeforeDisplayListMarker(context, marker)) {
+        if (!shouldBreakBeforeDisplayListMarker(`${context}${prefix}`, marker)) {
           return match;
         }
 
@@ -134,9 +134,53 @@
     );
   }
 
+  function shouldNormalizeCommaSeparatedListLine(line) {
+    const text = String(line || "").replace(/\s+/g, " ").trim();
+    if (!text || !text.includes(",")) {
+      return false;
+    }
+
+    const commaCount = (text.match(/,/g) || []).length;
+    if (commaCount < 1) {
+      return false;
+    }
+
+    return /(?:[:：]\s*(?:เช่น|ได้แก่|ประกอบด้วย)?\s+|(?:เช่น|ได้แก่|ประกอบด้วย)\s+)/u.test(text);
+  }
+
+  function normalizeCommaSeparatedListLine(line) {
+    const raw = String(line || "").trim();
+    if (!shouldNormalizeCommaSeparatedListLine(raw)) {
+      return raw;
+    }
+
+    const markerMatch = raw.match(/^([\s\S]*?(?:[:：]\s*(?:เช่น|ได้แก่|ประกอบด้วย)?|(?:เช่น|ได้แก่|ประกอบด้วย))\s+)([\s\S]+)$/u);
+    const prefix = markerMatch ? String(markerMatch[1] || "").trim() : "";
+    const listText = markerMatch ? String(markerMatch[2] || "").trim() : raw;
+    const items = listText
+      .split(/\s*,\s*/g)
+      .map((item) => item.replace(/^(?:และ|หรือ)\s*/u, "").trim())
+      .filter((item) => item.length >= 2);
+
+    if (items.length < 2) {
+      return raw;
+    }
+
+    return [prefix, ...items.map((item) => `- ${item}`)].filter(Boolean).join("\n");
+  }
+
+  function normalizeCommaSeparatedListLineBreaks(text) {
+    return String(text || "")
+      .split("\n")
+      .map((line) => normalizeCommaSeparatedListLine(line))
+      .join("\n");
+  }
+
   function sanitizeDisplayText(text) {
     return normalizeDisplayListMarkerLineBreaks(
-      normalizeClauseMarkerLineBreaks(replaceUserVisibleAiTerms(normalizeProtectedDisplayLineBreaks(text)))
+      normalizeCommaSeparatedListLineBreaks(
+        normalizeClauseMarkerLineBreaks(replaceUserVisibleAiTerms(normalizeProtectedDisplayLineBreaks(text)))
+      )
     )
       .replace(/(^|\n)\s*ข้อมูลที่พบจากฐานข้อมูลกฎหมาย(?:\s*\([^)]*\))?:?\s*(?=\n|$)/gu, "$1")
       .replace(/(^|\n)\s*\/\/\s*/g, "$1")
@@ -457,6 +501,7 @@
     normalizeAdditionalCompareText,
     normalizeAnswerLineBreaksForDisplay,
     normalizeClauseMarkerLineBreaks,
+    normalizeCommaSeparatedListLineBreaks,
     normalizeDisplayListMarkerLineBreaks,
     normalizeProtectedDisplayLineBreaks,
     normalizeSourceReferencesForDisplay,
