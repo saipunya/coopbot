@@ -582,6 +582,46 @@
       z-index: 1;
     }
 
+    .page-toolbar-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.34rem;
+      min-height: 1.95rem;
+      padding: 0.34rem 0.68rem;
+      border-radius: 999px;
+      border: 1px solid rgba(21, 84, 122, 0.14);
+      background: rgba(255, 255, 255, 0.8);
+      color: var(--primary-strong);
+      text-decoration: none;
+      font-size: 0.72rem;
+      font-weight: 700;
+      white-space: nowrap;
+      box-shadow: none;
+    }
+
+    .page-toolbar-link:hover,
+    .page-toolbar-link:focus-visible {
+      color: var(--primary-strong);
+      background: rgba(255, 255, 255, 0.96);
+      border-color: rgba(21, 84, 122, 0.22);
+      transform: translateY(-1px);
+    }
+
+    .page-toolbar-link-admin {
+      background: linear-gradient(145deg, var(--primary), var(--primary-strong));
+      border-color: transparent;
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(15, 70, 103, 0.18);
+    }
+
+    .page-toolbar-link-admin:hover,
+    .page-toolbar-link-admin:focus-visible {
+      color: #fff;
+      background: linear-gradient(145deg, var(--primary-strong), var(--primary));
+      border-color: transparent;
+    }
+
     .page-toolbar-divider {
       width: 1px;
       align-self: center;
@@ -3173,6 +3213,10 @@
         display: none;
       }
 
+      .page-toolbar-link {
+        display: none;
+      }
+
       .page-identity .page-identity-actions {
         position: fixed;
         top: calc(env(safe-area-inset-top) + 3.35rem);
@@ -3402,6 +3446,17 @@
 
     .mobile-topbar-account {
       color: #1f4734;
+    }
+
+    .mobile-topbar-admin {
+      color: #8c5410;
+    }
+
+    .mobile-topbar-admin:hover,
+    .mobile-topbar-admin:focus-visible {
+      color: #6f4210;
+      border-color: #f0d7a6;
+      background: #fffaf0;
     }
 
     .mobile-topbar-clear {
@@ -4561,6 +4616,27 @@ body {
 
 .cooplaw-plan-pill i {
   color: #f59e0b;
+}
+
+.cooplaw-logout-form {
+  width: 100%;
+  margin-top: 0.78rem;
+}
+
+.cooplaw-logout-btn {
+  width: 100%;
+  justify-content: center;
+  margin-top: 0;
+  border-color: #f0c8c1;
+  color: #9f2c1f;
+  background: linear-gradient(180deg, #fff9f8, #fff);
+}
+
+.cooplaw-logout-btn:hover,
+.cooplaw-logout-btn:focus-visible {
+  color: #7f2015;
+  border-color: #e9afa4;
+  background: linear-gradient(180deg, #fff7f5, #fff);
 }
 
 .cooplaw-sidebar-version {
@@ -6337,17 +6413,17 @@ body {
     <%
       const headerUserVariant = currentUser ? "admin" : (isGoogleUser ? "google" : "guest");
       const headerUserName = currentUser
-        ? "ผู้ดูแลระบบ"
+        ? (currentUser.name || currentUser.username || "ผู้ดูแลระบบ")
         : (signedInUser && (signedInUser.name || signedInUser.email))
           ? (signedInUser.name || signedInUser.email)
           : "ผู้เยี่ยมชม";
       const headerUserRole = currentUser
-        ? "ผู้ดูแลระบบ"
+        ? (currentUser.position || currentUser.group || "ผู้ดูแลระบบ")
         : isGoogleUser
           ? "ผู้ใช้ Google"
           : "ผู้เยี่ยมชม";
       const headerUserMeta = currentUser
-        ? "ผู้ดูแลระบบ"
+        ? (currentUser.username || currentUser.name || currentUser.position || "ข้อมูลผู้ดูแล")
         : isGoogleUser
           ? ((signedInUser && signedInUser.email) || "เข้าสู่ระบบด้วย Google")
           : "ยังไม่ได้เข้าสู่ระบบ";
@@ -6359,6 +6435,24 @@ body {
         : isGoogleUser
           ? "bi-person-badge-fill"
           : "bi-person-circle";
+      const sidebarIdentityName = currentUser
+        ? (currentUser.name || currentUser.username || "ผู้ดูแลระบบ")
+        : (signedInUser && (signedInUser.name || signedInUser.email))
+          ? (signedInUser.name || signedInUser.email)
+          : "ผู้เยี่ยมชม";
+      const sidebarIdentityRole = currentUser
+        ? (currentUser.position || currentUser.group || "ผู้ดูแลระบบ")
+        : isGoogleUser
+          ? "ผู้ใช้ Google"
+          : "ผู้เยี่ยมชม";
+      const sidebarPlanCode = currentUser ? "admin" : String((signedInUser && signedInUser.plan) || "free").trim().toLowerCase();
+      const sidebarPlanLabelMap = {
+        free: "Free",
+        pro: "Professional",
+        premium: "Premium",
+        admin: "ผู้ดูแลระบบ",
+      };
+      const sidebarPlanLabel = sidebarPlanLabelMap[sidebarPlanCode] || (currentUser ? "ผู้ดูแลระบบ" : "Free");
       const botPackageVariant = currentUser ? "admin" : "free";
       const sidebarSearchHistoryItems = Array.isArray(data && data.sidebarSearchHistoryItems)
         ? data.sidebarSearchHistoryItems
@@ -6399,6 +6493,11 @@ body {
         <a href="/user/search-history" class="mobile-topbar-btn" aria-label="ประวัติการสนทนา">
           <i class="bi bi-clock-history"></i>
         </a>
+        <% if (!currentUser) { %>
+          <a href="/admin/login" class="mobile-topbar-btn mobile-topbar-admin" aria-label="เข้าสู่ระบบผู้ดูแล">
+            <i class="bi bi-shield-lock"></i>
+          </a>
+        <% } %>
       </div>
     </div>
 
@@ -6410,8 +6509,8 @@ body {
             <img src="/icon/newRobot.png" alt="" />
           </div>
           <div class="cooplaw-sidebar-brand-copy">
-            <strong>CoopLaw AI</strong>
-            <span>ผู้ช่วยค้นหากฎหมายสหกรณ์</span>
+            <strong><%= headerUserName %></strong>
+            <span><%= headerUserRole %></span>
           </div>
           <button type="button" class="cooplaw-sidebar-close" data-mobile-menu-control="1" aria-label="ปิดเมนู">
             <i class="bi bi-x-lg"></i>
@@ -6461,19 +6560,37 @@ body {
           </section>
         <% } %>
 
-        <div class="cooplaw-sidebar-legal">
-          <div class="cooplaw-sidebar-legal-icon" aria-hidden="true">
-            <img src="/icon/newRobot.png" alt="" />
+        <% if (currentUser) { %>
+          <div class="cooplaw-sidebar-legal">
+            <div class="cooplaw-sidebar-legal-icon" aria-hidden="true">
+              <i class="bi bi-shield-lock"></i>
+            </div>
+            <div class="cooplaw-sidebar-legal-copy">
+              <strong>ออกจากระบบ</strong>
+              <span><%= sidebarIdentityName %></span>
+              <form class="cooplaw-logout-form" action="/admin/logout" method="post">
+                <button type="submit" class="cooplaw-plan-pill cooplaw-logout-btn">
+                  <i class="bi bi-box-arrow-right"></i>
+                  <span>ออกจากระบบผู้ดูแล</span>
+                </button>
+              </form>
+            </div>
           </div>
-          <div class="cooplaw-sidebar-legal-copy">
-            <strong>Coop Officer</strong>
-            <span>เจ้าหน้าที่สหกรณ์</span>
-            <button type="button" class="cooplaw-plan-pill" data-bs-toggle="modal" data-bs-target="#developerModal">
-              <i class="bi bi-award"></i>
-              <span>Pro Plan</span>
-            </button>
+        <% } else { %>
+          <div class="cooplaw-sidebar-legal">
+            <div class="cooplaw-sidebar-legal-icon" aria-hidden="true">
+              <img src="/icon/newRobot.png" alt="" />
+            </div>
+            <div class="cooplaw-sidebar-legal-copy">
+              <strong><%= sidebarIdentityName %></strong>
+              <span><%= sidebarIdentityRole %></span>
+              <button type="button" class="cooplaw-plan-pill" data-bs-toggle="modal" data-bs-target="#developerModal">
+                <i class="bi bi-award"></i>
+                <span><%= sidebarPlanLabel %></span>
+              </button>
+            </div>
           </div>
-        </div>
+        <% } %>
       </div>
         <div class="cooplaw-sidebar-version">
           <strong>CoopLaw AI</strong>
@@ -6518,6 +6635,12 @@ body {
         </div>
       </div>
       <div class="page-toolbar">
+        <% if (!currentUser) { %>
+          <a href="/admin/login" class="page-toolbar-link page-toolbar-link-admin" title="เข้าสู่ระบบผู้ดูแล">
+            <i class="bi bi-shield-lock"></i>
+            <span>เข้าสู่ระบบผู้ดูแล</span>
+          </a>
+        <% } %>
         <div id="pageIdentityMenu" class="page-identity page-identity-<%= headerUserVariant %>" tabindex="0" role="button" aria-label="เมนูผู้ใช้" aria-expanded="false">
           <div class="page-identity-avatar" aria-hidden="true">
             <% if (headerUserImage) { %>
