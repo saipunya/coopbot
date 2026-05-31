@@ -1,13 +1,13 @@
-const LawChatbotModel = require("../models/lawChatbotModel");
-const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
-const LawChatbotKnowledgeModel = require("../models/lawChatbotKnowledgeModel");
-const LawChatbotKnowledgeSuggestionModel = require("../models/lawChatbotKnowledgeSuggestionModel");
-const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
-const LawSearchModel = require("../models/lawSearchModel");
-const { wantsExplanation } = require("./chatAnswerService");
-const { isStandaloneLawLookup } = require("./contextService");
-const { parseThaiDateToIso } = require("./documentMetadataService");
-const { normalizePlanCode } = require("./planService");
+const LawChatbotModel = require('../models/lawChatbotModel');
+const LawChatbotFeedbackModel = require('../models/lawChatbotFeedbackModel');
+const LawChatbotKnowledgeModel = require('../models/lawChatbotKnowledgeModel');
+const LawChatbotKnowledgeSuggestionModel = require('../models/lawChatbotKnowledgeSuggestionModel');
+const LawChatbotPdfChunkModel = require('../models/lawChatbotPdfChunkModel');
+const LawSearchModel = require('../models/lawSearchModel');
+const { wantsExplanation } = require('./chatAnswerService');
+const { isStandaloneLawLookup } = require('./contextService');
+const { parseThaiDateToIso } = require('./documentMetadataService');
+const { normalizePlanCode } = require('./planService');
 const {
   expandSearchConcepts,
   getQueryFocusProfile,
@@ -16,18 +16,15 @@ const {
   scoreQueryFocusAlignment,
   uniqueTokens,
   detectTopicFamily,
-} = require("./thaiTextUtils");
-const {
-  normalizeThaiNumberSearchText,
-  thaiDigitsToArabic,
-} = require("./thaiNumberNormalizer");
+} = require('./thaiTextUtils');
+const { normalizeThaiNumberSearchText, thaiDigitsToArabic } = require('./thaiNumberNormalizer');
 
 const HYBRID_SEARCH_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_HYBRID_SEARCH_TIMEOUT_MS || 4000);
 
-async function withTimeout(task, timeoutMs, fallbackValue, label = "task") {
+async function withTimeout(task, timeoutMs, fallbackValue, label = 'task') {
   const normalizedTimeoutMs = Number(timeoutMs || 0);
   if (!Number.isFinite(normalizedTimeoutMs) || normalizedTimeoutMs <= 0) {
-    return typeof task === "function" ? task() : task;
+    return typeof task === 'function' ? task() : task;
   }
 
   let timeoutId = null;
@@ -35,7 +32,7 @@ async function withTimeout(task, timeoutMs, fallbackValue, label = "task") {
 
   try {
     return await Promise.race([
-      Promise.resolve().then(() => (typeof task === "function" ? task() : task)),
+      Promise.resolve().then(() => (typeof task === 'function' ? task() : task)),
       new Promise((resolve) => {
         timeoutId = setTimeout(() => {
           timedOut = true;
@@ -48,19 +45,23 @@ async function withTimeout(task, timeoutMs, fallbackValue, label = "task") {
       clearTimeout(timeoutId);
     }
 
-    if (timedOut && process.env.CHATBOT_DEBUG === "1") {
+    if (timedOut && process.env.CHATBOT_DEBUG === '1') {
       console.warn(`[law-chatbot] ${label} reached timeout budget ${normalizedTimeoutMs}ms`);
     }
   }
 }
 
-async function withSafeSearch(task, fallbackValue = [], label = "source-search") {
+async function withSafeSearch(task, fallbackValue = [], label = 'source-search') {
   try {
-    return await (typeof task === "function" ? task() : task);
+    return await (typeof task === 'function' ? task() : task);
   } catch (error) {
-    const code = String(error?.code || "").trim();
-    if (code === "ETIMEDOUT" || code === "ER_QUERY_TIMEOUT" || code === "PROTOCOL_SEQUENCE_TIMEOUT") {
-      if (process.env.CHATBOT_DEBUG === "1") {
+    const code = String(error?.code || '').trim();
+    if (
+      code === 'ETIMEDOUT' ||
+      code === 'ER_QUERY_TIMEOUT' ||
+      code === 'PROTOCOL_SEQUENCE_TIMEOUT'
+    ) {
+      if (process.env.CHATBOT_DEBUG === '1') {
         console.warn(`[law-chatbot] ${label} timed out: ${error.message || error}`);
       }
       return fallbackValue;
@@ -73,7 +74,7 @@ async function withSafeSearch(task, fallbackValue = [], label = "source-search")
 function prioritizeMatches(matches, options = {}) {
   const retrievalPriority = Number(options.retrievalPriority || 0);
   const scoreBoost = Number(options.scoreBoost || 0);
-  const sourceOverride = options.sourceOverride || "";
+  const sourceOverride = options.sourceOverride || '';
   const toSafeNumber = (value) => {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : 0;
@@ -163,8 +164,8 @@ function resolveSourceTimestamp(item = {}) {
   return null;
 }
 
-function extractRequestedLawReferences(message = "") {
-  const normalizedMessage = normalizeLawFocusDigits(String(message || "")).toLowerCase();
+function extractRequestedLawReferences(message = '') {
+  const normalizedMessage = normalizeLawFocusDigits(String(message || '')).toLowerCase();
   if (!normalizedMessage) {
     return [];
   }
@@ -174,7 +175,7 @@ function extractRequestedLawReferences(message = "") {
   let match = matcher.exec(normalizedMessage);
   while (match) {
     if (match[1]) {
-      references.push(match[1].replace(/\s*\/\s*/g, "/"));
+      references.push(match[1].replace(/\s*\/\s*/g, '/'));
     }
     match = matcher.exec(normalizedMessage);
   }
@@ -182,31 +183,31 @@ function extractRequestedLawReferences(message = "") {
   return uniqueTokens(references.filter(Boolean));
 }
 
-function normalizeLawReference(value = "") {
-  const normalized = normalizeLawFocusDigits(String(value || "")).trim();
+function normalizeLawReference(value = '') {
+  const normalized = normalizeLawFocusDigits(String(value || '')).trim();
   if (!normalized) {
-    return "";
+    return '';
   }
 
   const match = normalized.match(/^([0-9]{1,4})(?:\s*\/\s*([0-9]{1,3}))?$/);
   if (!match) {
-    return "";
+    return '';
   }
 
   const primary = String(Number(match[1] || 0));
-  const secondary = match[2] ? String(Number(match[2])) : "";
-  if (!primary || primary === "0") {
-    return "";
+  const secondary = match[2] ? String(Number(match[2])) : '';
+  if (!primary || primary === '0') {
+    return '';
   }
 
   return secondary ? `${primary}/${secondary}` : primary;
 }
 
-function escapeRegExp(text = "") {
-  return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function escapeRegExp(text = '') {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function buildRequestedLawReferencePattern(reference = "") {
+function buildRequestedLawReferencePattern(reference = '') {
   const normalizedReference = normalizeLawReference(reference);
   if (!normalizedReference) {
     return null;
@@ -214,11 +215,11 @@ function buildRequestedLawReferencePattern(reference = "") {
 
   return new RegExp(
     `(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\\s*${escapeRegExp(normalizedReference)}(?![0-9/])`,
-    "i",
+    'i',
   );
 }
 
-function sourceContainsRequestedLawReference(item = {}, reference = "") {
+function sourceContainsRequestedLawReference(item = {}, reference = '') {
   const pattern = buildRequestedLawReferencePattern(reference);
   if (!pattern) {
     return false;
@@ -227,10 +228,12 @@ function sourceContainsRequestedLawReference(item = {}, reference = "") {
   return pattern.test(normalizeLawFocusDigits(buildSourceFocusSearchText(item)));
 }
 
-function getSourceAuthorityTrace(item = {}, intent = "general", message = "") {
-  const sourceName = String(item.source || "").trim().toLowerCase();
+function getSourceAuthorityTrace(item = {}, intent = 'general', message = '') {
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
   let score = 0;
-  let reason = "";
+  let reason = '';
 
   const baseWeights = {
     admin_knowledge: 12,
@@ -245,50 +248,54 @@ function getSourceAuthorityTrace(item = {}, intent = "general", message = "") {
 
   score += Number(baseWeights[sourceName] || 0);
 
-  if (intent === "law_section") {
-    if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+  if (intent === 'law_section') {
+    if (sourceName === 'tbl_laws' || sourceName === 'tbl_glaws') {
       score += 8;
-      reason = "structured law source";
-    } else if (sourceName === "tbl_vinichai") {
+      reason = 'structured law source';
+    } else if (sourceName === 'tbl_vinichai') {
       score += 2;
-    } else if (sourceName === "documents" || sourceName === "pdf_chunks") {
+    } else if (sourceName === 'documents' || sourceName === 'pdf_chunks') {
       score -= 1;
     }
-  } else if (intent === "qa") {
-    if (sourceName === "admin_knowledge") {
+  } else if (intent === 'qa') {
+    if (sourceName === 'admin_knowledge') {
       score += 9;
-      reason = "prepared knowledge source";
-    } else if (sourceName === "knowledge_suggestion") {
+      reason = 'prepared knowledge source';
+    } else if (sourceName === 'knowledge_suggestion') {
       score += 7;
-      reason = "approved suggested knowledge source";
-    } else if (sourceName === "tbl_vinichai") {
+      reason = 'approved suggested knowledge source';
+    } else if (sourceName === 'tbl_vinichai') {
       score += 4;
-      reason = "vinichai support source";
+      reason = 'vinichai support source';
     }
-  } else if (intent === "document") {
-    if (sourceName === "documents" || sourceName === "pdf_chunks") {
+  } else if (intent === 'document') {
+    if (sourceName === 'documents' || sourceName === 'pdf_chunks') {
       score += 7;
-      reason = "document source";
-    } else if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+      reason = 'document source';
+    } else if (sourceName === 'tbl_laws' || sourceName === 'tbl_glaws') {
       score += 1;
     }
-  } else if (intent === "explain") {
-    if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+  } else if (intent === 'explain') {
+    if (sourceName === 'tbl_laws' || sourceName === 'tbl_glaws') {
       score += 5;
-      reason = "authoritative source";
-    } else if (sourceName === "admin_knowledge") {
+      reason = 'authoritative source';
+    } else if (sourceName === 'admin_knowledge') {
       score += 4;
-    } else if (sourceName === "documents" || sourceName === "pdf_chunks") {
+    } else if (sourceName === 'documents' || sourceName === 'pdf_chunks') {
       score += 3;
     }
   }
 
-  if (!reason && (sourceName === "tbl_laws" || sourceName === "tbl_glaws")) {
-    reason = "authoritative source";
+  if (!reason && (sourceName === 'tbl_laws' || sourceName === 'tbl_glaws')) {
+    reason = 'authoritative source';
   }
 
-  if (!reason && isClearlyCurrentOrExternalQuestion(message) && (sourceName === "documents" || sourceName === "pdf_chunks")) {
-    reason = "supports current reference";
+  if (
+    !reason &&
+    isClearlyCurrentOrExternalQuestion(message) &&
+    (sourceName === 'documents' || sourceName === 'pdf_chunks')
+  ) {
+    reason = 'supports current reference';
   }
 
   return {
@@ -297,31 +304,34 @@ function getSourceAuthorityTrace(item = {}, intent = "general", message = "") {
   };
 }
 
-function getSectionMatchTrace(item = {}, message = "", intent = "general") {
-  const requestedReferences = extractRequestedLawReferences(message).map((reference) => normalizeLawReference(reference));
+function getSectionMatchTrace(item = {}, message = '', intent = 'general') {
+  const requestedReferences = extractRequestedLawReferences(message).map((reference) =>
+    normalizeLawReference(reference),
+  );
   const sourceLawNumber = normalizeLawReference(extractPrimaryLawFocusNumber(item));
   let score = 0;
-  let matchedReference = "";
+  let matchedReference = '';
 
   if (requestedReferences.length > 0) {
     const exactNumberMatch =
-      sourceLawNumber &&
-      requestedReferences.some((reference) => reference === sourceLawNumber);
+      sourceLawNumber && requestedReferences.some((reference) => reference === sourceLawNumber);
 
     if (exactNumberMatch) {
       score += 42;
       matchedReference = sourceLawNumber;
     } else {
-      const textMatch = requestedReferences.find((reference) => sourceContainsRequestedLawReference(item, reference));
+      const textMatch = requestedReferences.find((reference) =>
+        sourceContainsRequestedLawReference(item, reference),
+      );
 
       if (textMatch) {
         score += 28;
         matchedReference = textMatch;
-      } else if (intent === "law_section" && sourceLawNumber) {
+      } else if (intent === 'law_section' && sourceLawNumber) {
         score -= 20;
       }
     }
-  } else if (intent === "law_section" && sourceLawNumber) {
+  } else if (intent === 'law_section' && sourceLawNumber) {
     score += 4;
   }
 
@@ -332,14 +342,20 @@ function getSectionMatchTrace(item = {}, message = "", intent = "general") {
   };
 }
 
-function getGroupBylawStructuredLawFocusBoost(message = "", item = {}) {
-  const sourceName = String(item.source || "").trim().toLowerCase();
-  if (sourceName !== "tbl_glaws") {
+function getGroupBylawStructuredLawFocusBoost(message = '', item = {}) {
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
+  if (sourceName !== 'tbl_glaws') {
     return 0;
   }
 
-  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
-  if (!normalizedMessage || !/ข้อบังคับ/.test(normalizedMessage) || !/กลุ่มเกษตรกร/.test(normalizedMessage)) {
+  const normalizedMessage = normalizeForSearch(String(message || '')).toLowerCase();
+  if (
+    !normalizedMessage ||
+    !/ข้อบังคับ/.test(normalizedMessage) ||
+    !/กลุ่มเกษตรกร/.test(normalizedMessage)
+  ) {
     return 0;
   }
 
@@ -365,8 +381,8 @@ function getGroupBylawStructuredLawFocusBoost(message = "", item = {}) {
   return boost;
 }
 
-function isCoopBylawAmendmentQuestion(message = "") {
-  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+function isCoopBylawAmendmentQuestion(message = '') {
+  const normalizedMessage = normalizeForSearch(String(message || '')).toLowerCase();
   return (
     Boolean(normalizedMessage) &&
     /ข้อบังคับ/.test(normalizedMessage) &&
@@ -376,9 +392,15 @@ function isCoopBylawAmendmentQuestion(message = "") {
   );
 }
 
-function getCoopBylawAmendmentFocusBoost(message = "", item = {}) {
-  const sourceName = String(item.source || "").trim().toLowerCase();
-  if (sourceName !== "tbl_laws" && sourceName !== "admin_knowledge" && sourceName !== "knowledge_suggestion") {
+function getCoopBylawAmendmentFocusBoost(message = '', item = {}) {
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
+  if (
+    sourceName !== 'tbl_laws' &&
+    sourceName !== 'admin_knowledge' &&
+    sourceName !== 'knowledge_suggestion'
+  ) {
     return 0;
   }
 
@@ -400,42 +422,59 @@ function getCoopBylawAmendmentFocusBoost(message = "", item = {}) {
     boost += 44;
   }
 
-  if (/(ที่ประชุมใหญ่|มติ|สองในสาม|2\/3|นายทะเบียนสหกรณ์|จดทะเบียน|สามสิบวัน|30\s*วัน)/.test(sourceText)) {
+  if (
+    /(ที่ประชุมใหญ่|มติ|สองในสาม|2\/3|นายทะเบียนสหกรณ์|จดทะเบียน|สามสิบวัน|30\s*วัน)/.test(
+      sourceText,
+    )
+  ) {
     boost += 28;
   }
 
   if (
-    /(คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ|คณะกรรมการพัฒนาสหกรณ์แห่งชาติ|คพช|นโยบายและแผนพัฒนาการสหกรณ์)/.test(sourceText) &&
+    /(คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ|คณะกรรมการพัฒนาสหกรณ์แห่งชาติ|คพช|นโยบายและแผนพัฒนาการสหกรณ์)/.test(
+      sourceText,
+    ) &&
     !/(แก้ไข|เพิ่มเติม|ข้อบังคับ|มาตรา 44|มาตรา44)/.test(sourceText)
   ) {
     boost -= 100;
   }
 
-  if (sourceName === "tbl_laws") {
+  if (sourceName === 'tbl_laws') {
     boost += 12;
   }
 
   return boost;
 }
 
-function getGroupFormationStructuredLawFocusBoost(message = "", item = {}) {
-  const sourceName = String(item.source || "").trim().toLowerCase();
-  if (sourceName !== "tbl_glaws") {
+function getGroupFormationStructuredLawFocusBoost(message = '', item = {}) {
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
+  if (sourceName !== 'tbl_glaws') {
     return 0;
   }
 
-  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  const normalizedMessage = normalizeForSearch(String(message || '')).toLowerCase();
   if (!normalizedMessage || !/กลุ่มเกษตรกร/.test(normalizedMessage)) {
     return 0;
   }
 
   const family = detectTopicFamily(normalizedMessage);
-  if (!family || String(family.id || "").trim().toLowerCase() !== "group_formation") {
+  if (
+    !family ||
+    String(family.id || '')
+      .trim()
+      .toLowerCase() !== 'group_formation'
+  ) {
     return 0;
   }
 
   // Avoid mixing with dissolution questions.
-  if (/(เลิกกลุ่มเกษตรกร|สั่งเลิกกลุ่มเกษตรกร|ชำระบัญชี|ผู้ชำระบัญชี|ถอนชื่อออกจากทะเบียน)/.test(normalizedMessage)) {
+  if (
+    /(เลิกกลุ่มเกษตรกร|สั่งเลิกกลุ่มเกษตรกร|ชำระบัญชี|ผู้ชำระบัญชี|ถอนชื่อออกจากทะเบียน)/.test(
+      normalizedMessage,
+    )
+  ) {
     return 0;
   }
 
@@ -468,8 +507,12 @@ function getGroupFormationStructuredLawFocusBoost(message = "", item = {}) {
 
   // Penalize broad/general administrative content that is not about formation criteria.
   if (
-    /(ตรวจสอบ|ไต่สวน|ระงับ|อำนาจหน้าที่|สั่งเลิก|เลิกกลุ่มเกษตรกร|ชำระบัญชี|ถอนชื่อออกจากทะเบียน)/.test(sourceText) &&
-    !/(มาตรา 5|มาตรา5|ไม่น้อยกว่าสามสิบคน|บุคคลผู้ประกอบอาชีพเกษตรกรรม|ช่วยเหลือซึ่งกันและกัน)/.test(sourceText)
+    /(ตรวจสอบ|ไต่สวน|ระงับ|อำนาจหน้าที่|สั่งเลิก|เลิกกลุ่มเกษตรกร|ชำระบัญชี|ถอนชื่อออกจากทะเบียน)/.test(
+      sourceText,
+    ) &&
+    !/(มาตรา 5|มาตรา5|ไม่น้อยกว่าสามสิบคน|บุคคลผู้ประกอบอาชีพเกษตรกรรม|ช่วยเหลือซึ่งกันและกัน)/.test(
+      sourceText,
+    )
   ) {
     boost -= 26;
   }
@@ -477,14 +520,19 @@ function getGroupFormationStructuredLawFocusBoost(message = "", item = {}) {
   return boost;
 }
 
-function isCoopFormationPrioritySearch(message = "") {
-  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+function isCoopFormationPrioritySearch(message = '') {
+  const normalizedMessage = normalizeForSearch(String(message || '')).toLowerCase();
   if (!normalizedMessage) {
     return false;
   }
 
   const family = detectTopicFamily(normalizedMessage);
-  if (family && String(family.id || "").trim().toLowerCase() === "coop_formation") {
+  if (
+    family &&
+    String(family.id || '')
+      .trim()
+      .toLowerCase() === 'coop_formation'
+  ) {
     return true;
   }
 
@@ -493,8 +541,8 @@ function isCoopFormationPrioritySearch(message = "") {
   );
 }
 
-function scoreCoopFormationSourceFocus(message = "", item = {}) {
-  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+function scoreCoopFormationSourceFocus(message = '', item = {}) {
+  const normalizedMessage = normalizeForSearch(String(message || '')).toLowerCase();
   const sourceText = buildSourceFocusSearchText(item);
   if (!sourceText) {
     return 0;
@@ -546,8 +594,10 @@ function scoreCoopFormationSourceFocus(message = "", item = {}) {
   return score;
 }
 
-function getSourceAwareFocusScore(message = "", item = {}) {
-  const baseFocusScore = Number(scoreQueryFocusAlignment(message, buildSourceFocusSearchText(item)) || 0);
+function getSourceAwareFocusScore(message = '', item = {}) {
+  const baseFocusScore = Number(
+    scoreQueryFocusAlignment(message, buildSourceFocusSearchText(item)) || 0,
+  );
   let score =
     baseFocusScore +
     getGroupBylawStructuredLawFocusBoost(message, item) +
@@ -556,15 +606,15 @@ function getSourceAwareFocusScore(message = "", item = {}) {
 
   // Family guard: prevent unrelated timeline topics (e.g., meeting 150 days) from leaking into dissolution answers.
   const family = detectTopicFamily(message);
-  const familyId = String(family?.id || "").trim().toLowerCase();
-  if (familyId === "coop_dissolution") {
+  const familyId = String(family?.id || '')
+    .trim()
+    .toLowerCase();
+  if (familyId === 'coop_dissolution') {
     const sourceText = buildSourceFocusSearchText(item);
-    const looksLikeMeetingTimeline = /(150 วัน|วันสิ้นปีทางบัญชี|ประชุมใหญ่|มาตรา 54|มาตรา 56|มาตรา 57|มาตรา 58)/.test(
-      sourceText,
-    );
-    const hasDissolutionSignal = /(เลิกสหกรณ์|สั่งเลิกสหกรณ์|มาตรา 70|มาตรา 71|ชำระบัญชี|ผู้ชำระบัญชี)/.test(
-      sourceText,
-    );
+    const looksLikeMeetingTimeline =
+      /(150 วัน|วันสิ้นปีทางบัญชี|ประชุมใหญ่|มาตรา 54|มาตรา 56|มาตรา 57|มาตรา 58)/.test(sourceText);
+    const hasDissolutionSignal =
+      /(เลิกสหกรณ์|สั่งเลิกสหกรณ์|มาตรา 70|มาตรา 71|ชำระบัญชี|ผู้ชำระบัญชี)/.test(sourceText);
     if (looksLikeMeetingTimeline && !hasDissolutionSignal) {
       score -= 80;
     }
@@ -577,7 +627,7 @@ function getSourceAwareFocusScore(message = "", item = {}) {
   return score;
 }
 
-function getFocusAlignmentTrace(item = {}, message = "") {
+function getFocusAlignmentTrace(item = {}, message = '') {
   const rawFocusScore = Number(getSourceAwareFocusScore(message, item) || 0);
   return {
     rawFocusScore,
@@ -585,43 +635,43 @@ function getFocusAlignmentTrace(item = {}, message = "") {
   };
 }
 
-function getFreshnessNormalizationProfile(sourceName = "", currentBias = false) {
+function getFreshnessNormalizationProfile(sourceName = '', currentBias = false) {
   switch (sourceName) {
-    case "documents":
-    case "pdf_chunks":
+    case 'documents':
+    case 'pdf_chunks':
       return {
-        label: currentBias ? "document_recency_high" : "document_recency_medium",
+        label: currentBias ? 'document_recency_high' : 'document_recency_medium',
         positiveScores: currentBias ? [10, 8, 6, 3] : [5, 4, 3, 1],
         stalePenalty: currentBias ? -4 : -1,
         missingDatePenalty: currentBias ? -1 : 0,
       };
-    case "internet_search":
+    case 'internet_search':
       return {
-        label: currentBias ? "public_recency_medium" : "public_recency_light",
+        label: currentBias ? 'public_recency_medium' : 'public_recency_light',
         positiveScores: currentBias ? [8, 6, 4, 2] : [4, 3, 2, 1],
         stalePenalty: currentBias ? -3 : -1,
         missingDatePenalty: currentBias ? -1 : 0,
       };
-    case "admin_knowledge":
-    case "knowledge_suggestion":
+    case 'admin_knowledge':
+    case 'knowledge_suggestion':
       return {
-        label: currentBias ? "managed_content_medium" : "managed_content_light",
+        label: currentBias ? 'managed_content_medium' : 'managed_content_light',
         positiveScores: currentBias ? [6, 5, 3, 1] : [3, 2, 1, 0],
         stalePenalty: currentBias ? -1 : 0,
         missingDatePenalty: 0,
       };
-    case "tbl_laws":
-    case "tbl_glaws":
-    case "tbl_vinichai":
+    case 'tbl_laws':
+    case 'tbl_glaws':
+    case 'tbl_vinichai':
       return {
-        label: "authoritative_static",
+        label: 'authoritative_static',
         positiveScores: [0, 0, 0, 0],
         stalePenalty: 0,
         missingDatePenalty: 0,
       };
     default:
       return {
-        label: "generic_light",
+        label: 'generic_light',
         positiveScores: currentBias ? [4, 3, 2, 1] : [2, 1, 1, 0],
         stalePenalty: currentBias ? -1 : 0,
         missingDatePenalty: 0,
@@ -629,19 +679,21 @@ function getFreshnessNormalizationProfile(sourceName = "", currentBias = false) 
   }
 }
 
-function getFreshnessTrace(item = {}, message = "", intent = "general") {
-  const sourceName = String(item.source || "").trim().toLowerCase();
+function getFreshnessTrace(item = {}, message = '', intent = 'general') {
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
   const timestamp = resolveSourceTimestamp(item);
   const currentBias =
-    intent === "document" ||
-    intent === "short_answer" ||
+    intent === 'document' ||
+    intent === 'short_answer' ||
     isClearlyCurrentOrExternalQuestion(message);
   const profile = getFreshnessNormalizationProfile(sourceName, currentBias);
 
   if (!Number.isFinite(timestamp)) {
     return {
       score: Number(profile.missingDatePenalty || 0),
-      sourceDate: "",
+      sourceDate: '',
       ageDays: null,
       normalization: profile.label,
     };
@@ -680,9 +732,9 @@ function buildRerankReasons({
   const reasons = [];
 
   if (Number(retrievalWeight || 0) >= 8) {
-    reasons.push("high-priority retrieval bucket");
+    reasons.push('high-priority retrieval bucket');
   } else if (Number(retrievalWeight || 0) >= 4) {
-    reasons.push("preferred source bucket");
+    reasons.push('preferred source bucket');
   }
 
   if (authorityTrace?.reason) {
@@ -694,9 +746,9 @@ function buildRerankReasons({
   }
 
   if (Number(focusTrace?.rawFocusScore || 0) >= 44) {
-    reasons.push("strong topic alignment");
+    reasons.push('strong topic alignment');
   } else if (Number(focusTrace?.rawFocusScore || 0) >= 24) {
-    reasons.push("good topic alignment");
+    reasons.push('good topic alignment');
   }
 
   if (Number(freshnessTrace?.score || 0) > 0 && freshnessTrace?.sourceDate) {
@@ -704,67 +756,69 @@ function buildRerankReasons({
   }
 
   if (Number(helpfulBoost || 0) > 0) {
-    reasons.push("boosted by prior helpful feedback");
+    reasons.push('boosted by prior helpful feedback');
   }
 
   if (item?.contextCarry) {
-    reasons.push("conversation context carry-over");
+    reasons.push('conversation context carry-over');
   }
 
   return reasons.slice(0, 5);
 }
 
-function getReadableQuestionContext(message = "", intent = "general") {
+function getReadableQuestionContext(message = '', intent = 'general') {
   const focusProfile = getQueryFocusProfile(message);
-  const primaryTopic = focusProfile.topics[0]?.primary || "";
+  const primaryTopic = focusProfile.topics[0]?.primary || '';
   if (primaryTopic) {
     return `คำถามเกี่ยวกับ${primaryTopic}`;
   }
 
   switch (intent) {
-    case "law_section":
-      return "คำถามหามาตรากฎหมาย";
-    case "qa":
-      return "คำถามเชิงแนววินิจฉัย";
-    case "document":
-      return "คำถามเชิงเอกสาร";
-    case "explain":
-      return "คำถามเชิงอธิบาย";
+    case 'law_section':
+      return 'คำถามหามาตรากฎหมาย';
+    case 'qa':
+      return 'คำถามเชิงแนววินิจฉัย';
+    case 'document':
+      return 'คำถามเชิงเอกสาร';
+    case 'explain':
+      return 'คำถามเชิงอธิบาย';
     default:
-      return "คำถามเกี่ยวกับสหกรณ์";
+      return 'คำถามเกี่ยวกับสหกรณ์';
   }
 }
 
-function getReadableAuthorityPhrase(item = {}, intent = "general") {
-  const sourceName = String(item.source || "").trim().toLowerCase();
+function getReadableAuthorityPhrase(item = {}, intent = 'general') {
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
   switch (sourceName) {
-    case "tbl_laws":
-    case "tbl_glaws":
-      return intent === "law_section" ? "แหล่งกฎหมายหลัก" : "แหล่งกฎหมายที่น่าเชื่อถือ";
-    case "tbl_vinichai":
-      return "แหล่งแนววินิจฉัยที่ตรงประเด็น";
-    case "admin_knowledge":
-      return "ฐานความรู้ที่ผู้ดูแลคัดไว้";
-    case "knowledge_suggestion":
-      return "คำตอบที่ผ่านการอนุมัติแล้ว";
-    case "documents":
-    case "pdf_chunks":
-      return "เอกสารอ้างอิงที่เกี่ยวข้อง";
-    case "internet_search":
-      return "แหล่งข้อมูลสาธารณะที่ช่วยเสริม";
+    case 'tbl_laws':
+    case 'tbl_glaws':
+      return intent === 'law_section' ? 'แหล่งกฎหมายหลัก' : 'แหล่งกฎหมายที่น่าเชื่อถือ';
+    case 'tbl_vinichai':
+      return 'แหล่งแนววินิจฉัยที่ตรงประเด็น';
+    case 'admin_knowledge':
+      return 'ฐานความรู้ที่ผู้ดูแลคัดไว้';
+    case 'knowledge_suggestion':
+      return 'คำตอบที่ผ่านการอนุมัติแล้ว';
+    case 'documents':
+    case 'pdf_chunks':
+      return 'เอกสารอ้างอิงที่เกี่ยวข้อง';
+    case 'internet_search':
+      return 'แหล่งข้อมูลสาธารณะที่ช่วยเสริม';
     default:
-      return "คะแนนรวมเหมาะกับคำถาม";
+      return 'คะแนนรวมเหมาะกับคำถาม';
   }
 }
 
 function buildSourceCandidateKey(item = {}) {
   return [
-    normalizeSourceIdentityText(item.source || ""),
-    normalizeSourceIdentityText(item.id || ""),
-    normalizeSourceIdentityText(item.reference || ""),
-    normalizeSourceIdentityText(item.title || ""),
-    normalizeSourceIdentityText(item.url || ""),
-  ].join("::");
+    normalizeSourceIdentityText(item.source || ''),
+    normalizeSourceIdentityText(item.id || ''),
+    normalizeSourceIdentityText(item.reference || ''),
+    normalizeSourceIdentityText(item.title || ''),
+    normalizeSourceIdentityText(item.url || ''),
+  ].join('::');
 }
 
 function isSameCandidate(left, right) {
@@ -781,12 +835,12 @@ function isSameCandidate(left, right) {
   return areNearDuplicateSources(left, right);
 }
 
-function buildSelectedBecauseText(item = {}, message = "", intent = "general") {
+function buildSelectedBecauseText(item = {}, message = '', intent = 'general') {
   const rankingTrace = item.rankingTrace || {};
   const reasons = [];
 
   if (rankingTrace.matchedReference) {
-    reasons.push("ตรงมาตรา");
+    reasons.push('ตรงมาตรา');
   }
 
   if (Number(rankingTrace.authorityScore || 0) > 0) {
@@ -798,41 +852,61 @@ function buildSelectedBecauseText(item = {}, message = "", intent = "general") {
   }
 
   if (Number(rankingTrace.freshnessScore || 0) >= 6) {
-    reasons.push("ข้อมูลค่อนข้างใหม่");
+    reasons.push('ข้อมูลค่อนข้างใหม่');
   }
 
   if (item.contextCarry) {
-    reasons.push("ต่อเนื่องจากคำถามก่อนหน้า");
+    reasons.push('ต่อเนื่องจากคำถามก่อนหน้า');
   }
 
   if (reasons.length === 0) {
-    reasons.push("คะแนนรวมชนะ source อื่น");
+    reasons.push('คะแนนรวมชนะ source อื่น');
   }
 
-  return `selected because: "${reasons.slice(0, 3).join(" + ")}"`;
+  return `selected because: "${reasons.slice(0, 3).join(' + ')}"`;
 }
 
-function buildRejectedBecauseText(item = {}, selectedSources = [], message = "", intent = "general") {
+function buildRejectedBecauseText(
+  item = {},
+  selectedSources = [],
+  message = '',
+  intent = 'general',
+) {
   const rankingTrace = item.rankingTrace || {};
   const reasons = [];
   const strongerDuplicate = selectedSources.find((selected) => isSameCandidate(selected, item));
   const strongerSameSource = selectedSources
-    .filter((selected) => String(selected?.source || "").trim().toLowerCase() === String(item.source || "").trim().toLowerCase())
+    .filter(
+      (selected) =>
+        String(selected?.source || '')
+          .trim()
+          .toLowerCase() ===
+        String(item.source || '')
+          .trim()
+          .toLowerCase(),
+    )
     .sort((left, right) => Number(right?.score || 0) - Number(left?.score || 0))[0];
   const hasMoreAuthoritativeWinner = selectedSources.some((selected) =>
-    ["tbl_laws", "tbl_glaws", "tbl_vinichai", "admin_knowledge"].includes(String(selected?.source || "").trim().toLowerCase()),
+    ['tbl_laws', 'tbl_glaws', 'tbl_vinichai', 'admin_knowledge'].includes(
+      String(selected?.source || '')
+        .trim()
+        .toLowerCase(),
+    ),
   );
 
   if (strongerDuplicate) {
-    reasons.push("ซ้ำกับ source ที่ดีกว่า");
+    reasons.push('ซ้ำกับ source ที่ดีกว่า');
   }
 
-  if (Number(rankingTrace.focusAlignmentRaw || 0) > 0 && Number(rankingTrace.focusAlignmentRaw || 0) < 18) {
-    reasons.push("focus score ต่ำ");
+  if (
+    Number(rankingTrace.focusAlignmentRaw || 0) > 0 &&
+    Number(rankingTrace.focusAlignmentRaw || 0) < 18
+  ) {
+    reasons.push('focus score ต่ำ');
   }
 
   if (Number(rankingTrace.freshnessScore || 0) < 0) {
-    reasons.push("document เก่าเมื่อเทียบกับคำถาม");
+    reasons.push('document เก่าเมื่อเทียบกับคำถาม');
   }
 
   if (
@@ -840,26 +914,30 @@ function buildRejectedBecauseText(item = {}, selectedSources = [], message = "",
     Number(strongerSameSource.score || 0) >= Number(item.score || 0) + 8 &&
     !isSameCandidate(strongerSameSource, item)
   ) {
-    reasons.push("คะแนนรวมสู้ source ที่ชนะในกลุ่มเดียวกันไม่ได้");
+    reasons.push('คะแนนรวมสู้ source ที่ชนะในกลุ่มเดียวกันไม่ได้');
   }
 
   if (
     reasons.length === 0 &&
     hasMoreAuthoritativeWinner &&
-    ["documents", "pdf_chunks", "knowledge_base", "knowledge_suggestion"].includes(String(item.source || "").trim().toLowerCase())
+    ['documents', 'pdf_chunks', 'knowledge_base', 'knowledge_suggestion'].includes(
+      String(item.source || '')
+        .trim()
+        .toLowerCase(),
+    )
   ) {
-    reasons.push("มี source ที่น่าเชื่อถือกว่าชนะอยู่แล้ว");
+    reasons.push('มี source ที่น่าเชื่อถือกว่าชนะอยู่แล้ว');
   }
 
   if (reasons.length === 0) {
-    reasons.push("คะแนนรวมต่ำกว่า source ที่ถูกเลือก");
+    reasons.push('คะแนนรวมต่ำกว่า source ที่ถูกเลือก');
   }
 
-  return `rejected because: "${reasons.slice(0, 3).join(" / ")}"`;
+  return `rejected because: "${reasons.slice(0, 3).join(' / ')}"`;
 }
 
-function buildSelectionDiagnostics(groups, selectedSources, intent = "general", options = {}) {
-  const focusMessage = String(options.originalMessage || options.message || "").trim();
+function buildSelectionDiagnostics(groups, selectedSources, intent = 'general', options = {}) {
+  const focusMessage = String(options.originalMessage || options.message || '').trim();
   const allCandidates = sortByScore(
     dedupeSourcesConservatively([
       ...(groups.structured_laws || []),
@@ -873,18 +951,22 @@ function buildSelectionDiagnostics(groups, selectedSources, intent = "general", 
     ]),
   );
   const selected = (Array.isArray(selectedSources) ? selectedSources : []).map((item) => ({
-    source: item.source || "",
-    reference: item.reference || item.title || "",
+    source: item.source || '',
+    reference: item.reference || item.title || '',
     score: Number(item.score || 0),
+    focusAlignmentRaw: Number(item.rankingTrace?.focusAlignmentRaw || 0),
+    matchedReference: item.rankingTrace?.matchedReference || '',
     selectedBecause: buildSelectedBecauseText(item, focusMessage, intent),
   }));
   const rejected = allCandidates
     .filter((item) => !selectedSources.some((selectedItem) => isSameCandidate(selectedItem, item)))
     .slice(0, 8)
     .map((item) => ({
-      source: item.source || "",
-      reference: item.reference || item.title || "",
+      source: item.source || '',
+      reference: item.reference || item.title || '',
       score: Number(item.score || 0),
+      focusAlignmentRaw: Number(item.rankingTrace?.focusAlignmentRaw || 0),
+      matchedReference: item.rankingTrace?.matchedReference || '',
       rejectedBecause: buildRejectedBecauseText(item, selectedSources, focusMessage, intent),
     }));
 
@@ -895,11 +977,12 @@ function buildSelectionDiagnostics(groups, selectedSources, intent = "general", 
 }
 
 function rerankRetrievedMatches(matches, message, options = {}) {
-  const intent = options.intent || "general";
-  const feedbackTarget = options.target || "all";
+  const intent = options.intent || 'general';
+  const feedbackTarget = options.target || 'all';
   const overviewQuery = isGeneralOverviewQuery(message);
   const legalQuery = hasLegalIntent(message);
-  const overviewStrict = overviewQuery && !legalQuery && (intent === "general" || intent === "short_answer");
+  const overviewStrict =
+    overviewQuery && !legalQuery && (intent === 'general' || intent === 'short_answer');
 
   return (Array.isArray(matches) ? matches : [])
     .filter(Boolean)
@@ -908,27 +991,34 @@ function rerankRetrievedMatches(matches, message, options = {}) {
       const retrievalWeight = Math.round(Number(item.retrievalPriority || 0) * 1.2);
       const authorityTrace = getSourceAuthorityTrace(item, intent, message);
       const sectionTrace = getSectionMatchTrace(item, message, intent);
-      
+
       const focusTrace = getFocusAlignmentTrace(item, message);
       const freshnessTrace = getFreshnessTrace(item, message, intent);
       const contextWeight = item.contextCarry ? 6 : 0;
       const helpfulFeedbackProfile = LawChatbotFeedbackModel.getHelpfulBoostProfile(
         message,
         feedbackTarget,
-        item.source || "",
+        item.source || '',
       );
       const helpfulBoost = Number(helpfulFeedbackProfile?.boost || 0);
       const offTopicPenalty =
-  ["documents", "pdf_chunks", "knowledge_base"].includes(String(item.source || "").trim().toLowerCase()) &&
-  Number(focusTrace.rawFocusScore || 0) < 18
-    ? -18
-    : 0;
+        ['documents', 'pdf_chunks', 'knowledge_base'].includes(
+          String(item.source || '')
+            .trim()
+            .toLowerCase(),
+        ) && Number(focusTrace.rawFocusScore || 0) < 18
+          ? -18
+          : 0;
 
       // Penalize statute-by-section context for broad overview/definition/benefit queries.
       // This reduces "มาตรา 16"/"นายทะเบียน" chunks contaminating general answers.
-      const sourceName = String(item.source || "").trim().toLowerCase();
+      const sourceName = String(item.source || '')
+        .trim()
+        .toLowerCase();
       const focusText = normalizeForSearch(buildSourceFocusSearchText(item)).toLowerCase();
-      const normalizedTitle = normalizeForSearch(String(item.title || item.reference || "")).toLowerCase();
+      const normalizedTitle = normalizeForSearch(
+        String(item.title || item.reference || ''),
+      ).toLowerCase();
       const isLegalishChunk =
         /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(
           focusText,
@@ -938,43 +1028,47 @@ function rerankRetrievedMatches(matches, message, options = {}) {
           focusText,
         );
       const mixedOverviewDocument =
-        ["documents", "pdf_chunks"].includes(sourceName) && isOverviewFriendlyChunk;
+        ['documents', 'pdf_chunks'].includes(sourceName) && isOverviewFriendlyChunk;
       const legalContaminationPenalty =
-        overviewStrict && (sourceName === "tbl_laws" || sourceName === "tbl_glaws" || sourceName === "tbl_vinichai")
+        overviewStrict &&
+        (sourceName === 'tbl_laws' || sourceName === 'tbl_glaws' || sourceName === 'tbl_vinichai')
           ? -120
           : overviewStrict && isLegalishChunk && !mixedOverviewDocument
             ? -70
             : 0;
       const overviewBoost = overviewStrict && isOverviewFriendlyChunk ? 18 : 0;
       const overviewTitleBoost =
-        overviewStrict && /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|เกี่ยวกับสหกรณ์|ภาพรวม|เบื้องต้น)/.test(normalizedTitle)
+        overviewStrict &&
+        /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|เกี่ยวกับสหกรณ์|ภาพรวม|เบื้องต้น)/.test(normalizedTitle)
           ? 14
           : 0;
       const overviewTopicMismatchPenalty =
-        overviewStrict && /(เลิกสหกรณ์|ชำระบัญชี|เลิกกลุ่มเกษตรกร|ชำระบัญชีกลุ่มเกษตรกร)/.test(normalizedTitle)
+        overviewStrict &&
+        /(เลิกสหกรณ์|ชำระบัญชี|เลิกกลุ่มเกษตรกร|ชำระบัญชีกลุ่มเกษตรกร)/.test(normalizedTitle)
           ? -36
           : 0;
       const titleBoost =
-        overviewStrict && /ความรู้ทั่วไป/.test(normalizeForSearch(String(message || "")).toLowerCase()) &&
+        overviewStrict &&
+        /ความรู้ทั่วไป/.test(normalizeForSearch(String(message || '')).toLowerCase()) &&
         /ความรู้ทั่วไป/.test(normalizedTitle)
           ? 12
           : 0;
       const finalScore = Math.round(
-  baseScore +
-  retrievalWeight +
-  Number(authorityTrace.score || 0) +
-  Number(sectionTrace.score || 0) +
-  Number(focusTrace.score || 0) +
-  Number(freshnessTrace.score || 0) +
-  helpfulBoost +
-  contextWeight +
-  offTopicPenalty +
-  legalContaminationPenalty +
-  overviewBoost +
-  overviewTitleBoost +
-  overviewTopicMismatchPenalty +
-  titleBoost,
-);
+        baseScore +
+          retrievalWeight +
+          Number(authorityTrace.score || 0) +
+          Number(sectionTrace.score || 0) +
+          Number(focusTrace.score || 0) +
+          Number(freshnessTrace.score || 0) +
+          helpfulBoost +
+          contextWeight +
+          offTopicPenalty +
+          legalContaminationPenalty +
+          overviewBoost +
+          overviewTitleBoost +
+          overviewTopicMismatchPenalty +
+          titleBoost,
+      );
 
       return {
         ...item,
@@ -1000,10 +1094,10 @@ function rerankRetrievedMatches(matches, message, options = {}) {
           helpfulFeedbackHelpfulMatches: Number(helpfulFeedbackProfile?.helpfulMatches || 0),
           helpfulFeedbackHarmfulMatches: Number(helpfulFeedbackProfile?.harmfulMatches || 0),
           contextWeight,
-          matchedReference: sectionTrace.matchedReference || "",
-          sourceDate: freshnessTrace.sourceDate || "",
+          matchedReference: sectionTrace.matchedReference || '',
+          sourceDate: freshnessTrace.sourceDate || '',
           ageDays: freshnessTrace.ageDays,
-          freshnessNormalization: freshnessTrace.normalization || "",
+          freshnessNormalization: freshnessTrace.normalization || '',
           reasons: buildRerankReasons({
             retrievalWeight,
             authorityTrace,
@@ -1027,7 +1121,7 @@ function rerankRetrievedMatches(matches, message, options = {}) {
 }
 
 function isCompensationGovernanceQuestion(message) {
-  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  const normalized = normalizeForSearch(String(message || '')).toLowerCase();
   if (!normalized) {
     return false;
   }
@@ -1037,14 +1131,16 @@ function isCompensationGovernanceQuestion(message) {
     /ค่าตอบแทน/.test(normalized) &&
     /(กรรมการ|เจ้าหน้าที่|งบประมาณ|แผนงาน|มติที่ประชุมใหญ่|ส่วนได้ส่วนเสีย)/.test(normalized);
   const asksMeetingAllowance =
-    /(เบี้ยประชุม|ค่าใช้จ่ายประชุม|ค่าใช้จ่ายในการประชุม|ประชุมสัมมนา|ค่าใช้จ่ายสัมมนา|ค่าตอบแทน)/.test(normalized) &&
+    /(เบี้ยประชุม|ค่าใช้จ่ายประชุม|ค่าใช้จ่ายในการประชุม|ประชุมสัมมนา|ค่าใช้จ่ายสัมมนา|ค่าตอบแทน)/.test(
+      normalized,
+    ) &&
     /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ|ประชุมใหญ่|ประชุมคณะกรรมการ|ประชุมกรรมการ)/.test(normalized);
 
   return asksBonus || asksCompensation || asksMeetingAllowance;
 }
 
 function getCompensationGovernanceProfile(message) {
-  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  const normalized = normalizeForSearch(String(message || '')).toLowerCase();
   return {
     asksBonus: /โบนัส|เงินโบนัส/.test(normalized) && /(กรรมการ|เจ้าหน้าที่)/.test(normalized),
     asksCompensation:
@@ -1053,12 +1149,15 @@ function getCompensationGovernanceProfile(message) {
     asksMeetingAllowance:
       /(เบี้ยประชุม|ค่าใช้จ่ายประชุม|ค่าใช้จ่ายในการประชุม|ประชุมสัมมนา|ค่าใช้จ่ายสัมมนา|ค่าตอบแทน)/.test(
         normalized,
-      ) && /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ|ประชุมใหญ่|ประชุมคณะกรรมการ|ประชุมกรรมการ)/.test(normalized),
+      ) &&
+      /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ|ประชุมใหญ่|ประชุมคณะกรรมการ|ประชุมกรรมการ)/.test(
+        normalized,
+      ),
   };
 }
 
 function classifyQuestionIntent(message) {
-  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  const text = normalizeForSearch(String(message || '')).toLowerCase();
   const asksExplanation = wantsExplanation(text);
 
   // Rule-based intent hints (Thai-first). Keep lightweight + deterministic because AI may be disabled.
@@ -1073,57 +1172,54 @@ function classifyQuestionIntent(message) {
       text,
     );
 
-  const asksLawSection =
-    /มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+/.test(text);
+  const asksLawSection = /มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|ข้อ\s*\d+/.test(text);
   const asksDocumentStyle =
     /กฎกระทรวง|ประกาศ|หนังสือเวียน|ข้อหารือ|หนังสือสั่งการ|หนังสือกรม|เอกสาร|ฉบับ/.test(text);
   const asksFeeOrAmountStyle =
     /ค่าบำรุง|สันนิบาต|อัตรา|ร้อยละ|เปอร์เซ็นต์|%|จำนวนเงิน|ต้องจ่าย|ชำระ|จ่าย/.test(text);
-  const asksQaStyle =
-    /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ|ถามตอบ|คำถามคำตอบ/.test(text);
+  const asksQaStyle = /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ|ถามตอบ|คำถามคำตอบ/.test(text);
   const asksShortAnswer =
     text.length <= 60 &&
     /คืออะไร|หมายถึง|เท่าไร|เท่าไหร่|กี่บาท|กี่เปอร์เซ็นต์|กี่ร้อยละ|เมื่อไร|เมื่อไหร่|ต้อง|ควร|ได้ไหม|ได้หรือไม่/.test(
       text,
     );
   const asksAbbreviationDefinition =
-    text.length <= 40 &&
-    /[ก-๙]{2,8}\.?\s*(คืออะไร|หมายถึง|คือ|หมายความว่าอะไร)/.test(text);
+    text.length <= 40 && /[ก-๙]{2,8}\.?\s*(คืออะไร|หมายถึง|คือ|หมายความว่าอะไร)/.test(text);
 
   if (asksLawSection) {
-    return "law_section";
+    return 'law_section';
   }
 
   // Legal queries that often don't mention an explicit section number.
   if (hasLegalCuesWithoutExplicitSection && !isOverviewStyleQuery) {
-    return "law_section";
+    return 'law_section';
   }
 
   if (asksExplanation) {
-    return "explain";
+    return 'explain';
   }
 
   if (isDissolutionPrioritySearch(text) || isLiquidationPrioritySearch(text)) {
-    return "law_section";
+    return 'law_section';
   }
 
   if (isCompensationGovernanceQuestion(text) || asksQaStyle) {
-    return "qa";
+    return 'qa';
   }
 
   if (asksDocumentStyle || asksFeeOrAmountStyle) {
-    return "document";
+    return 'document';
   }
 
   if (asksAbbreviationDefinition || asksShortAnswer) {
-    return "short_answer";
+    return 'short_answer';
   }
 
-  return "general";
+  return 'general';
 }
 
-function isGeneralOverviewQuery(message = "") {
-  const text = normalizeForSearch(String(message || "")).toLowerCase();
+function isGeneralOverviewQuery(message = '') {
+  const text = normalizeForSearch(String(message || '')).toLowerCase();
   if (!text) {
     return false;
   }
@@ -1134,8 +1230,8 @@ function isGeneralOverviewQuery(message = "") {
   );
 }
 
-function hasLegalIntent(message = "") {
-  const text = normalizeForSearch(String(message || "")).toLowerCase();
+function hasLegalIntent(message = '') {
+  const text = normalizeForSearch(String(message || '')).toLowerCase();
   if (!text) {
     return false;
   }
@@ -1145,15 +1241,15 @@ function hasLegalIntent(message = "") {
   );
 }
 
-function isStrongLegalMarkerText(text = "") {
+function isStrongLegalMarkerText(text = '') {
   return /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(
-    normalizeForSearch(String(text || "")).toLowerCase(),
+    normalizeForSearch(String(text || '')).toLowerCase(),
   );
 }
 
-function isOverviewFriendlyText(text = "") {
+function isOverviewFriendlyText(text = '') {
   return /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|ภาพรวม|เบื้องต้น|นิยาม|ความหมาย|หมายถึง|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ|สรุป)/.test(
-    normalizeForSearch(String(text || "")).toLowerCase(),
+    normalizeForSearch(String(text || '')).toLowerCase(),
   );
 }
 
@@ -1162,11 +1258,13 @@ function isOverviewSafeCandidate(item = {}) {
   if (!text) {
     return false;
   }
-  const sourceName = String(item.source || "").trim().toLowerCase();
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
   const overviewFriendly = isOverviewFriendlyText(text);
   const strongLegalMarker = isStrongLegalMarkerText(text);
 
-  if (sourceName === "documents" || sourceName === "pdf_chunks") {
+  if (sourceName === 'documents' || sourceName === 'pdf_chunks') {
     // Mixed Thai source docs often mention the law in a definition paragraph.
     // Keep overview-friendly document chunks; hard legal sections are already penalized in ranking.
     return overviewFriendly || !strongLegalMarker;
@@ -1176,7 +1274,11 @@ function isOverviewSafeCandidate(item = {}) {
     return false;
   }
 
-  if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion" || sourceName === "knowledge_base") {
+  if (
+    sourceName === 'admin_knowledge' ||
+    sourceName === 'knowledge_suggestion' ||
+    sourceName === 'knowledge_base'
+  ) {
     return overviewFriendly;
   }
 
@@ -1192,16 +1294,18 @@ function isLiquidationPrioritySearch(message) {
 }
 
 function isLiquidationAppointmentAuthorityQuestion(message) {
-  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  const normalized = normalizeForSearch(String(message || '')).toLowerCase();
   if (!normalized || !/ชำระบัญชี|ผู้ชำระบัญชี/.test(normalized)) {
     return false;
   }
 
-  return /(ใคร|ผู้มีอำนาจ|อำนาจ).*(แต่งตั้ง|ตั้ง).*ผู้ชำระบัญชี|ผู้ชำระบัญชี.*(แต่งตั้ง|ตั้ง).*โดยใคร/.test(normalized);
+  return /(ใคร|ผู้มีอำนาจ|อำนาจ).*(แต่งตั้ง|ตั้ง).*ผู้ชำระบัญชี|ผู้ชำระบัญชี.*(แต่งตั้ง|ตั้ง).*โดยใคร/.test(
+    normalized,
+  );
 }
 
 function isLiquidatorDutyQuestion(message) {
-  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  const normalized = normalizeForSearch(String(message || '')).toLowerCase();
   if (!normalized || !/ผู้ชำระบัญชี/.test(normalized)) {
     return false;
   }
@@ -1210,12 +1314,16 @@ function isLiquidatorDutyQuestion(message) {
     return false;
   }
 
-  return /(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ).*(?:ผู้ชำระบัญชี)|ผู้ชำระบัญชี.*(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ)/.test(normalized);
+  return /(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ).*(?:ผู้ชำระบัญชี)|ผู้ชำระบัญชี.*(?:อำนาจหน้าที่|หน้าที่|มีหน้าที่|อำนาจของ|มีอำนาจ)/.test(
+    normalized,
+  );
 }
 
-function hasLiquidatorDutySourceSignal(sourceText = "") {
+function hasLiquidatorDutySourceSignal(sourceText = '') {
   return (
-    /(อำนาจหน้าที่|มีหน้าที่|หน้าที่|มีอำนาจ|อำนาจของผู้ชำระบัญชี|ผู้ชำระบัญชีมีอำนาจ)/.test(sourceText) ||
+    /(อำนาจหน้าที่|มีหน้าที่|หน้าที่|มีอำนาจ|อำนาจของผู้ชำระบัญชี|ผู้ชำระบัญชีมีอำนาจ)/.test(
+      sourceText,
+    ) ||
     /(เรียกประชุมใหญ่|จำหน่ายทรัพย์สิน|ขายทรัพย์สิน|จัดการทรัพย์สิน)/.test(sourceText) ||
     /(ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น|ระวังรักษาประโยชน์ของสหกรณ์)/.test(sourceText) ||
     /(ฟ้องคดี|ต่อสู้คดี|ประนีประนอมยอมความ|ชำระหนี้|รวบรวมทรัพย์สิน)/.test(sourceText)
@@ -1253,52 +1361,59 @@ function isCoopStructuredLawSearch(message) {
   return /สหกรณ์|พรบ\.?\s*สหกรณ์|พระราชบัญญัติสหกรณ์|กฎหมายสหกรณ์/.test(normalized);
 }
 
-function resolveSearchTarget(message = "", target = "all") {
-  const normalizedTarget = String(target || "all").trim().toLowerCase();
+function resolveSearchTarget(message = '', target = 'all') {
+  const normalizedTarget = String(target || 'all')
+    .trim()
+    .toLowerCase();
   const mentionsGroupLaw = isGroupStructuredLawSearch(message);
   const mentionsCoopLaw = isCoopStructuredLawSearch(message);
 
   // Respect explicit target by default, but allow the message itself
   // to override when it clearly points to the opposite law family.
-  if (normalizedTarget === "coop") {
+  if (normalizedTarget === 'coop') {
     if (mentionsGroupLaw && !mentionsCoopLaw) {
-      return "group";
+      return 'group';
     }
-    return "coop";
+    return 'coop';
   }
 
-  if (normalizedTarget === "group") {
+  if (normalizedTarget === 'group') {
     if (mentionsCoopLaw && !mentionsGroupLaw) {
-      return "coop";
+      return 'coop';
     }
-    return "group";
+    return 'group';
   }
 
   if (mentionsGroupLaw && !mentionsCoopLaw) {
-    return "group";
+    return 'group';
   }
 
   if (mentionsCoopLaw && !mentionsGroupLaw) {
-    return "coop";
+    return 'coop';
   }
 
   // Default ambiguous cooperative-law topics to สหกรณ์. The group law path
   // should be selected only when the user or explicit target says กลุ่มเกษตรกร.
-  return "coop";
+  return 'coop';
 }
 
-function buildStructuredLawQuota(primaryLawSource, secondaryLawSource, primaryCount, secondaryCount = 0) {
+function buildStructuredLawQuota(
+  primaryLawSource,
+  secondaryLawSource,
+  primaryCount,
+  secondaryCount = 0,
+) {
   return {
     tbl_laws:
-      primaryLawSource === "tbl_laws"
+      primaryLawSource === 'tbl_laws'
         ? primaryCount
-        : secondaryLawSource === "tbl_laws"
+        : secondaryLawSource === 'tbl_laws'
           ? secondaryCount
           : 0,
     tbl_glaws:
-      primaryLawSource === "tbl_glaws"
+      primaryLawSource === 'tbl_glaws'
         ? primaryCount
-        : secondaryLawSource === "tbl_glaws"
+        : secondaryLawSource === 'tbl_glaws'
           ? secondaryCount
           : 0,
   };
@@ -1310,72 +1425,72 @@ function buildStructuredLawSourceOrder(primaryLawSource, secondaryLawSource) {
   );
 }
 
-function getPreferredDissolutionLawNumberBonuses(message = "") {
+function getPreferredDissolutionLawNumberBonuses(message = '') {
   const mentionsGroupLaw = isGroupStructuredLawSearch(message);
   const mentionsCoopLaw = isCoopStructuredLawSearch(message);
 
   if (mentionsGroupLaw && !mentionsCoopLaw) {
     return {
-      "32": 150,
-      "33": 142,
-      "34": 126,
+      32: 150,
+      33: 142,
+      34: 126,
     };
   }
 
   if (mentionsCoopLaw && !mentionsGroupLaw) {
     return {
-      "70": 140,
-      "71": 132,
-      "89/3": 116,
+      70: 140,
+      71: 132,
+      '89/3': 116,
     };
   }
 
   return {
-    "70": 140,
-    "71": 132,
-    "89/3": 116,
-    "32": 138,
-    "33": 130,
-    "34": 114,
+    70: 140,
+    71: 132,
+    '89/3': 116,
+    32: 138,
+    33: 130,
+    34: 114,
   };
 }
 
-function getPreferredLiquidationLawNumberBonuses(message = "") {
+function getPreferredLiquidationLawNumberBonuses(message = '') {
   const asksAppointmentAuthority = isLiquidationAppointmentAuthorityQuestion(message);
   if (asksAppointmentAuthority) {
     return {
-      "75": 220,
-      "74": 50,
-      "73": 30,
-      "81": -180,
+      75: 220,
+      74: 50,
+      73: 30,
+      81: -180,
     };
   }
 
   if (isLiquidatorDutyQuestion(message)) {
     return {
-      "81": 260,
-      "77": 80,
-      "73": -90,
-      "74": -90,
-      "75": -120,
-      "87": -60,
+      81: 260,
+      77: 80,
+      73: -90,
+      74: -90,
+      75: -120,
+      87: -60,
     };
   }
 
   return {
-    "73": 90,
-    "74": 94,
-    "75": 126,
-    "76": 80,
-    "77": 82,
-    "81": 78,
-    "87": 76,
+    73: 90,
+    74: 94,
+    75: 126,
+    76: 80,
+    77: 82,
+    81: 78,
+    87: 76,
   };
 }
 
-function hasExclusiveStructuredLawDomain(message = "", target = "all") {
+function hasExclusiveStructuredLawDomain(message = '', target = 'all') {
   const normalizedTarget = resolveSearchTarget(message, target);
-  if (normalizedTarget === "group" || normalizedTarget === "coop") {
+  if (normalizedTarget === 'group' || normalizedTarget === 'coop') {
     return true;
   }
 
@@ -1390,31 +1505,37 @@ function isVinichaiPrioritySearch(message) {
     return false;
   }
 
-  return /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ|ถามตอบ|คำถามคำตอบ/.test(normalized) || isCompensationGovernanceQuestion(normalized);
+  return (
+    /แนววินิจฉัย|วินิจฉัย|ตีความ|ข้อหารือ|ถามตอบ|คำถามคำตอบ/.test(normalized) ||
+    isCompensationGovernanceQuestion(normalized)
+  );
 }
 
-function isFreePlanSearch(planCode = "") {
-  return normalizePlanCode(planCode || "free") === "free";
+function isFreePlanSearch(planCode = '') {
+  return normalizePlanCode(planCode || 'free') === 'free';
 }
 
-function resolvePreferredStructuredLawSources(message, target = "all") {
+function resolvePreferredStructuredLawSources(message, target = 'all') {
   const normalizedTarget = resolveSearchTarget(message, target);
 
-  if (normalizedTarget === "group") {
+  if (normalizedTarget === 'group') {
     return {
-      primaryLawSource: "tbl_glaws",
-      secondaryLawSource: "tbl_laws",
+      primaryLawSource: 'tbl_glaws',
+      secondaryLawSource: 'tbl_laws',
     };
   }
 
   return {
-    primaryLawSource: "tbl_laws",
-    secondaryLawSource: "tbl_glaws",
+    primaryLawSource: 'tbl_laws',
+    secondaryLawSource: 'tbl_glaws',
   };
 }
 
-function getFreeSourcePriorityPlan(message, target = "all") {
-  const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(message, target);
+function getFreeSourcePriorityPlan(message, target = 'all') {
+  const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(
+    message,
+    target,
+  );
   if (isVinichaiPrioritySearch(message)) {
     return {
       admin_knowledge: 12,
@@ -1478,7 +1599,7 @@ function getFreeSourcePriorityPlan(message, target = "all") {
 
 function getSourceRoutingPlan(intent) {
   switch (intent) {
-    case "explain":
+    case 'explain':
       return {
         priorities: {
           structured_laws: 10,
@@ -1499,7 +1620,7 @@ function getSourceRoutingPlan(intent) {
           knowledge_base: 1,
         },
       };
-    case "law_section":
+    case 'law_section':
       return {
         priorities: {
           structured_laws: 12,
@@ -1520,7 +1641,7 @@ function getSourceRoutingPlan(intent) {
           knowledge_base: 1,
         },
       };
-    case "document":
+    case 'document':
       return {
         priorities: {
           structured_laws: 10,
@@ -1541,7 +1662,7 @@ function getSourceRoutingPlan(intent) {
           knowledge_base: 1,
         },
       };
-    case "qa":
+    case 'qa':
       return {
         priorities: {
           structured_laws: 10,
@@ -1562,7 +1683,7 @@ function getSourceRoutingPlan(intent) {
           knowledge_base: 1,
         },
       };
-    case "short_answer":
+    case 'short_answer':
       return {
         priorities: {
           structured_laws: 10,
@@ -1631,12 +1752,14 @@ function finalizeDatabaseSearchResults(rawSets, context = {}) {
   const knowledgeMatches = prioritizeMatches(rawKnowledgeMatches, {
     retrievalPriority:
       freeSourcePriorityPlan?.admin_knowledge || routingPlan.priorities.admin_knowledge || 4,
-    sourceOverride: "admin_knowledge",
+    sourceOverride: 'admin_knowledge',
   });
   const suggestionMatches = prioritizeMatches(rawSuggestionMatches, {
     retrievalPriority:
-      freeSourcePriorityPlan?.knowledge_suggestion || routingPlan.priorities.knowledge_suggestion || 0,
-    sourceOverride: "knowledge_suggestion",
+      freeSourcePriorityPlan?.knowledge_suggestion ||
+      routingPlan.priorities.knowledge_suggestion ||
+      0,
+    sourceOverride: 'knowledge_suggestion',
   });
   const documentMatches = prioritizeMatches(rawDocumentMatches, {
     retrievalPriority: freeSourcePriorityPlan?.documents || routingPlan.priorities.documents || 3,
@@ -1646,7 +1769,7 @@ function finalizeDatabaseSearchResults(rawSets, context = {}) {
   });
   const fallbackKnowledge = prioritizeMatches(rawFallbackKnowledge, {
     retrievalPriority: routingPlan.priorities.knowledge_base || 2,
-    sourceOverride: "knowledge_base",
+    sourceOverride: 'knowledge_base',
   });
   const vinichaiMatches = prioritizeMatches(rawVinichaiMatches, {
     retrievalPriority: freeSourcePriorityPlan?.vinichai || routingPlan.priorities.vinichai || 4,
@@ -1655,20 +1778,21 @@ function finalizeDatabaseSearchResults(rawSets, context = {}) {
   const tblLawsPriority =
     freeSourcePriorityPlan?.tbl_laws || structuredLawBasePriority + (lawPrioritySearch ? 2 : 0);
   const tblGlawsPriority =
-    freeSourcePriorityPlan?.tbl_glaws || Math.max(0, structuredLawBasePriority + (lawPrioritySearch ? 1 : -1));
+    freeSourcePriorityPlan?.tbl_glaws ||
+    Math.max(0, structuredLawBasePriority + (lawPrioritySearch ? 1 : -1));
   const structuredMatches = [
     ...prioritizeMatches(
-      rawStructuredMatches.filter((item) => item && item.source === "tbl_laws"),
+      rawStructuredMatches.filter((item) => item && item.source === 'tbl_laws'),
       {
         retrievalPriority: tblLawsPriority,
-        sourceOverride: "tbl_laws",
+        sourceOverride: 'tbl_laws',
       },
     ),
     ...prioritizeMatches(
-      rawStructuredMatches.filter((item) => item && item.source === "tbl_glaws"),
+      rawStructuredMatches.filter((item) => item && item.source === 'tbl_glaws'),
       {
         retrievalPriority: tblGlawsPriority,
-        sourceOverride: "tbl_glaws",
+        sourceOverride: 'tbl_glaws',
       },
     ),
   ];
@@ -1676,8 +1800,8 @@ function finalizeDatabaseSearchResults(rawSets, context = {}) {
   const combinedMatches = [
     ...knowledgeMatches,
     ...suggestionMatches,
-    ...structuredMatches.filter((item) => item && item.source === "tbl_laws"),
-    ...structuredMatches.filter((item) => item && item.source === "tbl_glaws"),
+    ...structuredMatches.filter((item) => item && item.source === 'tbl_laws'),
+    ...structuredMatches.filter((item) => item && item.source === 'tbl_glaws'),
     ...pdfMatches,
     ...documentMatches,
     ...vinichaiMatches,
@@ -1694,10 +1818,14 @@ function finalizeDatabaseSearchResults(rawSets, context = {}) {
     })
     .slice(0, 120);
 
-  return rerankRetrievedMatches(pruneFocusedQueryMatches(combinedMatches, focusMessage), focusMessage, {
-    intent,
-    target: effectiveTarget,
-  });
+  return rerankRetrievedMatches(
+    pruneFocusedQueryMatches(combinedMatches, focusMessage),
+    focusMessage,
+    {
+      intent,
+      target: effectiveTarget,
+    },
+  );
 }
 
 function createSearchTraceEntry(name, matches = [], meta = {}) {
@@ -1706,7 +1834,9 @@ function createSearchTraceEntry(name, matches = [], meta = {}) {
     matched: Array.isArray(matches) && matches.length > 0,
     matchCount: Array.isArray(matches) ? matches.length : 0,
     topScore: Number(matches?.[0]?.score || 0),
-    sourceCount: Array.isArray(matches) ? new Set(matches.map((item) => String(item?.source || "").trim()).filter(Boolean)).size : 0,
+    sourceCount: Array.isArray(matches)
+      ? new Set(matches.map((item) => String(item?.source || '').trim()).filter(Boolean)).size
+      : 0,
     ...meta,
   };
 }
@@ -1716,7 +1846,7 @@ function attachSearchTrace(results, searchTrace = null) {
     return results;
   }
 
-  Object.defineProperty(results, "searchTrace", {
+  Object.defineProperty(results, 'searchTrace', {
     value: searchTrace || null,
     enumerable: false,
     configurable: true,
@@ -1757,21 +1887,61 @@ function getRawTopScore(rawSets = {}) {
   }, 0);
 }
 
-function hasExactQueryPhrase(query = "", item = {}) {
-  const normalizedQuery = normalizeForSearch(String(query || "")).toLowerCase();
+function getRawTopFocusScore(rawSets = {}, message = '') {
+  return flattenRawSearchMatches(rawSets).reduce((topScore, item) => {
+    const score = Number(getSourceAwareFocusScore(message, item) || 0);
+    return score > topScore ? score : topScore;
+  }, 0);
+}
+
+function shouldAcceptSearchStage(stage, rawSets = {}, message = '', intent = 'general') {
+  if (!hasAnyRawSearchMatches(rawSets)) {
+    return false;
+  }
+
+  const focusProfile = getQueryFocusProfile(message);
+  if (!focusProfile.topics.length) {
+    return true;
+  }
+
+  const topScore = getRawTopScore(rawSets);
+  const topFocusScore = getRawTopFocusScore(rawSets, message);
+  const requiredFocus = intent === 'general' || intent === 'short_answer' ? 14 : 20;
+
+  if (topFocusScore >= requiredFocus) {
+    return true;
+  }
+
+  if (stage === 'law_search' && topScore >= 120 && topFocusScore > 0) {
+    return true;
+  }
+
+  if ((stage === 'qa_subject' || stage === 'qa_content') && topScore >= 140 && topFocusScore > 0) {
+    return true;
+  }
+
+  return false;
+}
+
+function hasExactQueryPhrase(query = '', item = {}) {
+  const normalizedQuery = normalizeForSearch(String(query || '')).toLowerCase();
   if (normalizedQuery.length < 3) {
     return false;
   }
 
-  const normalizedText = normalizeForSearch([
-    item.title,
-    item.reference,
-    item.lawNumber,
-    item.content,
-    item.comment,
-    item.sourceNote,
-    item.sourceReference,
-  ].filter(Boolean).join(" ")).toLowerCase();
+  const normalizedText = normalizeForSearch(
+    [
+      item.title,
+      item.reference,
+      item.lawNumber,
+      item.content,
+      item.comment,
+      item.sourceNote,
+      item.sourceReference,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  ).toLowerCase();
 
   return normalizedText.includes(normalizedQuery);
 }
@@ -1799,11 +1969,18 @@ function shouldPreferLawSearchOverQaSubject(query, qaSubjectResults = {}, lawSea
 
   const qaTopScore = getRawTopScore(qaSubjectResults);
   const lawTopScore = getRawTopScore(lawSearchResults);
+  const qaTopFocusScore = getRawTopFocusScore(qaSubjectResults, query);
+  const lawTopFocusScore = getRawTopFocusScore(lawSearchResults, query);
+
+  if (lawTopFocusScore >= qaTopFocusScore + 18 && lawTopScore >= qaTopScore - 20) {
+    return true;
+  }
+
   return lawTopScore >= qaTopScore + 80;
 }
 
 async function searchDatabaseSources(message, target, options = {}) {
-  const retrievalMessage = String(message || "").trim();
+  const retrievalMessage = String(message || '').trim();
   const expandedRetrievalMessage = expandSearchConcepts(retrievalMessage) || retrievalMessage;
   const focusMessage = String(options.originalMessage || retrievalMessage).trim();
   const effectiveTarget = resolveSearchTarget(focusMessage || retrievalMessage, target);
@@ -1815,26 +1992,38 @@ async function searchDatabaseSources(message, target, options = {}) {
   const freeSourcePriorityPlan = freePlanSearch
     ? getFreeSourcePriorityPlan(expandedRetrievalMessage || focusMessage, effectiveTarget)
     : null;
-  const hybridTimeoutMs = Math.max(1000, Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS));
+  const hybridTimeoutMs = Math.max(
+    1000,
+    Number(options.hybridTimeoutMs || HYBRID_SEARCH_TIMEOUT_MS),
+  );
   const lawPrioritySearch = isLawPrioritySearch(expandedRetrievalMessage || focusMessage);
 
   const shouldSkipLawSourcesForOverview =
     options.forceStructuredLawFallback !== true &&
     generalOverviewQuery &&
     !legalIntent &&
-    intent === "general";
+    intent === 'general';
 
   const fetchSubjectStage = async () => {
     const [rawKnowledgeMatches, rawSuggestionMatches] = await Promise.all([
       withSafeSearch(
-        () => LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5, { searchMode: "subject" }),
+        () =>
+          LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5, {
+            searchMode: 'subject',
+          }),
         [],
-        "admin-knowledge-subject",
+        'admin-knowledge-subject',
       ),
       withSafeSearch(
-        () => LawChatbotKnowledgeSuggestionModel.searchApproved(expandedRetrievalMessage, effectiveTarget, 5, { searchMode: "subject" }),
+        () =>
+          LawChatbotKnowledgeSuggestionModel.searchApproved(
+            expandedRetrievalMessage,
+            effectiveTarget,
+            5,
+            { searchMode: 'subject' },
+          ),
         [],
-        "approved-qa-subject",
+        'approved-qa-subject',
       ),
     ]);
 
@@ -1860,16 +2049,18 @@ async function searchDatabaseSources(message, target, options = {}) {
           focusMessage || retrievalMessage,
           effectiveTarget,
           6,
-          { searchMode: "keyword" },
+          { searchMode: 'keyword' },
         );
         if (Array.isArray(directKeywordMatches) && directKeywordMatches.length > 0) {
           return directKeywordMatches;
         }
 
-        return LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6, { searchMode: "keyword" });
+        return LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6, {
+          searchMode: 'keyword',
+        });
       },
       [],
-      "structured-laws-keyword",
+      'structured-laws-keyword',
     );
 
     return {
@@ -1886,14 +2077,23 @@ async function searchDatabaseSources(message, target, options = {}) {
   const fetchContentStage = async () => {
     const [rawKnowledgeMatches, rawSuggestionMatches] = await Promise.all([
       withSafeSearch(
-        () => LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5, { searchMode: "content" }),
+        () =>
+          LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5, {
+            searchMode: 'content',
+          }),
         [],
-        "admin-knowledge-content",
+        'admin-knowledge-content',
       ),
       withSafeSearch(
-        () => LawChatbotKnowledgeSuggestionModel.searchApproved(expandedRetrievalMessage, effectiveTarget, 5, { searchMode: "content" }),
+        () =>
+          LawChatbotKnowledgeSuggestionModel.searchApproved(
+            expandedRetrievalMessage,
+            effectiveTarget,
+            5,
+            { searchMode: 'content' },
+          ),
         [],
-        "approved-qa-content",
+        'approved-qa-content',
       ),
     ]);
 
@@ -1914,9 +2114,12 @@ async function searchDatabaseSources(message, target, options = {}) {
     }
 
     const rawStructuredMatches = await withSafeSearch(
-      () => LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6, { searchMode: "content" }),
+      () =>
+        LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6, {
+          searchMode: 'content',
+        }),
       [],
-      "structured-laws-content",
+      'structured-laws-content',
     );
 
     return {
@@ -1932,28 +2135,52 @@ async function searchDatabaseSources(message, target, options = {}) {
 
   const stageTrace = [];
   const stageSearchers = [
-    { stage: "qa_subject", run: fetchSubjectStage },
-    { stage: "law_search", run: fetchLawKeywordStage },
-    { stage: "qa_content", run: fetchContentStage },
-    { stage: "law_content", run: fetchLawContentStage },
+    { stage: 'qa_subject', run: fetchSubjectStage },
+    { stage: 'law_search', run: fetchLawKeywordStage },
+    { stage: 'qa_content', run: fetchContentStage },
+    { stage: 'law_content', run: fetchLawContentStage },
   ];
   let pendingQaSubjectResults = null;
 
   for (const { stage, run } of stageSearchers) {
     const stageResults = await run();
-    const stageEntry = createSearchTraceEntry(stage, flattenRawSearchMatches(stageResults));
+    const stageEntry = createSearchTraceEntry(stage, flattenRawSearchMatches(stageResults), {
+      topFocusScore: getRawTopFocusScore(stageResults, focusMessage || retrievalMessage),
+    });
     stageTrace.push(stageEntry);
 
     if (stageResults && hasAnyRawSearchMatches(stageResults)) {
-      if (stage === "qa_subject") {
-        pendingQaSubjectResults = stageResults;
+      if (stage === 'qa_subject') {
+        if (
+          shouldAcceptSearchStage(
+            stage,
+            stageResults,
+            focusMessage || retrievalMessage,
+            intent,
+          )
+        ) {
+          pendingQaSubjectResults = stageResults;
+        } else {
+          stageEntry.rejectedStageReason = 'weak_focus_alignment';
+        }
         continue;
       }
 
       if (
-        stage === "law_search" &&
+        !shouldAcceptSearchStage(stage, stageResults, focusMessage || retrievalMessage, intent)
+      ) {
+        stageEntry.rejectedStageReason = 'weak_focus_alignment';
+        continue;
+      }
+
+      if (
+        stage === 'law_search' &&
         pendingQaSubjectResults &&
-        !shouldPreferLawSearchOverQaSubject(focusMessage || retrievalMessage, pendingQaSubjectResults, stageResults)
+        !shouldPreferLawSearchOverQaSubject(
+          focusMessage || retrievalMessage,
+          pendingQaSubjectResults,
+          stageResults,
+        )
       ) {
         return attachSearchTrace(
           finalizeDatabaseSearchResults(pendingQaSubjectResults, {
@@ -1967,8 +2194,8 @@ async function searchDatabaseSources(message, target, options = {}) {
           }),
           {
             stages: stageTrace,
-            selectedStage: "qa_subject",
-            comparedStage: "law_search",
+            selectedStage: 'qa_subject',
+            comparedStage: 'law_search',
             fallbackUsed: false,
           },
         );
@@ -1992,7 +2219,7 @@ async function searchDatabaseSources(message, target, options = {}) {
       );
     }
 
-    if (stage === "law_search" && pendingQaSubjectResults) {
+    if (stage === 'law_search' && pendingQaSubjectResults) {
       return attachSearchTrace(
         finalizeDatabaseSearchResults(pendingQaSubjectResults, {
           routingPlan,
@@ -2005,8 +2232,8 @@ async function searchDatabaseSources(message, target, options = {}) {
         }),
         {
           stages: stageTrace,
-          selectedStage: "qa_subject",
-          comparedStage: "law_search",
+          selectedStage: 'qa_subject',
+          comparedStage: 'law_search',
           fallbackUsed: false,
         },
       );
@@ -2023,39 +2250,54 @@ async function searchDatabaseSources(message, target, options = {}) {
     withSafeSearch(
       () => LawChatbotKnowledgeModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget, 5),
       [],
-      "admin-knowledge",
+      'admin-knowledge',
     ),
     withSafeSearch(
-      () => LawChatbotKnowledgeSuggestionModel.searchApproved(expandedRetrievalMessage, effectiveTarget, 5),
+      () =>
+        LawChatbotKnowledgeSuggestionModel.searchApproved(
+          expandedRetrievalMessage,
+          effectiveTarget,
+          5,
+        ),
       [],
-      "approved-qa",
+      'approved-qa',
     ),
     withSafeSearch(
-      () => Promise.resolve(LawChatbotModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget)),
+      () =>
+        Promise.resolve(LawChatbotModel.searchKnowledge(expandedRetrievalMessage, effectiveTarget)),
       [],
-      "fallback-knowledge",
+      'fallback-knowledge',
     ),
     shouldSkipLawSourcesForOverview
       ? Promise.resolve([])
       : withSafeSearch(
           () => LawSearchModel.searchStructuredLaws(expandedRetrievalMessage, effectiveTarget, 6),
           [],
-          "structured-laws",
+          'structured-laws',
         ),
     shouldSkipLawSourcesForOverview
       ? Promise.resolve([])
-      : withSafeSearch(() => LawSearchModel.searchVinichai(expandedRetrievalMessage, 5), [], "vinichai"),
+      : withSafeSearch(
+          () => LawSearchModel.searchVinichai(expandedRetrievalMessage, 5),
+          [],
+          'vinichai',
+        ),
   ]);
   const hasHighPriorityStructuredLawMatch =
     !shouldSkipLawSourcesForOverview &&
-    (intent === "law_section" || lawPrioritySearch) &&
+    (intent === 'law_section' || lawPrioritySearch) &&
     Array.isArray(rawStructuredMatches) &&
     rawStructuredMatches.some((item) => Number(item?.score || 0) >= 90);
   const shouldSearchPdfLayer = !hasHighPriorityStructuredLawMatch;
   const [rawDocumentMatches, rawPdfMatches] = shouldSearchPdfLayer
     ? await Promise.all([
         LawChatbotPdfChunkModel.searchDocuments(expandedRetrievalMessage, 5),
-        withTimeout(() => LawChatbotPdfChunkModel.hybridSearch(expandedRetrievalMessage, 6), hybridTimeoutMs, [], "hybrid-search"),
+        withTimeout(
+          () => LawChatbotPdfChunkModel.hybridSearch(expandedRetrievalMessage, 6),
+          hybridTimeoutMs,
+          [],
+          'hybrid-search',
+        ),
       ])
     : [[], []];
 
@@ -2080,8 +2322,8 @@ async function searchDatabaseSources(message, target, options = {}) {
     },
   );
   return attachSearchTrace(finalResults, {
-    stages: stageTrace.concat(createSearchTraceEntry("fallback_combined", finalResults)),
-    selectedStage: "fallback_combined",
+    stages: stageTrace.concat(createSearchTraceEntry('fallback_combined', finalResults)),
+    selectedStage: 'fallback_combined',
     fallbackUsed: true,
   });
 }
@@ -2102,7 +2344,7 @@ function sortByScore(matches) {
     .sort((a, b) => (b.score || 0) - (a.score || 0));
 }
 
-function computeDbConfidence(matches, questionIntent = "general") {
+function computeDbConfidence(matches, questionIntent = 'general') {
   const ranked = sortByScore(matches);
   if (!ranked.length) {
     return 0;
@@ -2112,7 +2354,7 @@ function computeDbConfidence(matches, questionIntent = "general") {
   const aggregateScore = scoreMatchSet(ranked);
   let confidence = Math.round(Math.max(topScore / 10, aggregateScore / 8));
 
-  if (questionIntent === "law_section" && topScore >= 90) {
+  if (questionIntent === 'law_section' && topScore >= 90) {
     confidence += 2;
   }
 
@@ -2123,25 +2365,33 @@ function computeDbConfidence(matches, questionIntent = "general") {
   return Math.max(0, Math.min(20, confidence));
 }
 
-function isSimpleQuestion(message, questionIntent = "general") {
-  const text = normalizeForSearch(String(message || "")).toLowerCase();
+function isSimpleQuestion(message, questionIntent = 'general') {
+  const text = normalizeForSearch(String(message || '')).toLowerCase();
   if (!text) {
     return false;
   }
 
-  if (questionIntent === "short_answer") {
+  if (questionIntent === 'short_answer') {
     return true;
   }
 
-  if (questionIntent === "law_section" && isStandaloneLawLookup(text)) {
+  if (questionIntent === 'law_section' && isStandaloneLawLookup(text)) {
     return true;
   }
 
-  return text.length <= 60 && /คืออะไร|หมายถึง|เท่าไร|เท่าไหร่|กี่|เมื่อไร|เมื่อไหร่|ได้ไหม|ได้หรือไม่|ต้องไหม|ต้องหรือไม่/.test(text);
+  return (
+    text.length <= 60 &&
+    /คืออะไร|หมายถึง|เท่าไร|เท่าไหร่|กี่|เมื่อไร|เมื่อไหร่|ได้ไหม|ได้หรือไม่|ต้องไหม|ต้องหรือไม่/.test(
+      text,
+    )
+  );
 }
 
 function isBroadFollowUpExplainMessage(message) {
-  const text = normalizeForSearch(String(message || "")).toLowerCase().replace(/\s+/g, " ").trim();
+  const text = normalizeForSearch(String(message || ''))
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!text || !wantsExplanation(text)) {
     return false;
   }
@@ -2152,7 +2402,7 @@ function isBroadFollowUpExplainMessage(message) {
 }
 
 function isClearlyCurrentOrExternalQuestion(message) {
-  const text = normalizeForSearch(String(message || "")).toLowerCase();
+  const text = normalizeForSearch(String(message || '')).toLowerCase();
   if (!text) {
     return false;
   }
@@ -2162,7 +2412,7 @@ function isClearlyCurrentOrExternalQuestion(message) {
   );
 }
 
-function isLowConfidenceDatabaseResult(matches, questionIntent = "general") {
+function isLowConfidenceDatabaseResult(matches, questionIntent = 'general') {
   const ranked = sortByScore(matches);
   if (!ranked.length) {
     return true;
@@ -2172,15 +2422,20 @@ function isLowConfidenceDatabaseResult(matches, questionIntent = "general") {
   const secondScore = Number(ranked[1]?.score || 0);
   const aggregateScore = scoreMatchSet(ranked);
 
-  if (questionIntent === "law_section") {
+  if (questionIntent === 'law_section') {
     return topScore < 90;
   }
 
-  if (questionIntent === "short_answer") {
+  if (questionIntent === 'short_answer') {
     return topScore < 80 && aggregateScore < 110;
   }
 
-  return topScore < 85 || (ranked.length < 2 && topScore < 105) || aggregateScore < 120 || secondScore < 35;
+  return (
+    topScore < 85 ||
+    (ranked.length < 2 && topScore < 105) ||
+    aggregateScore < 120 ||
+    secondScore < 35
+  );
 }
 
 function buildSourceFocusSearchText(item = {}) {
@@ -2198,12 +2453,12 @@ function buildSourceFocusSearchText(item = {}) {
       item.sourceNote,
     ]
       .filter(Boolean)
-      .join(" "),
+      .join(' '),
   ).toLowerCase();
 }
 
 function isUnionFeeQuestion(message) {
-  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  const normalized = normalizeForSearch(String(message || '')).toLowerCase();
   if (!normalized) {
     return false;
   }
@@ -2211,18 +2466,22 @@ function isUnionFeeQuestion(message) {
   return /(ค่าบำรุง|บำรุง)/.test(normalized) && /สันนิบาต/.test(normalized);
 }
 
-function scoreTaxSourceFocus(item = {}, message = "") {
-  const sourceName = String(item.source || "").trim().toLowerCase();
+function scoreTaxSourceFocus(item = {}, message = '') {
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
   const sourceText = buildSourceFocusSearchText(item);
-  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  const normalizedMessage = normalizeForSearch(String(message || '')).toLowerCase();
   if (!sourceText || !isTaxQuestion(normalizedMessage)) {
     return -80;
   }
 
-  const hasTaxSignals = /(ภาษี|อากร|ภาษีเงินได้|ภาษีมูลค่าเพิ่ม|ภาษีธุรกิจเฉพาะ|ภาษีหัก ณ ที่จ่าย)/.test(sourceText);
-  const hasFeeSignals = /(ค่าธรรมเนียม|ค่าจดทะเบียน|ยกเว้นค่าธรรมเนียม|ค่าธรรมเนียมการจดทะเบียน|ค่าธรรมเนียมการโอน|ค่าธรรมเนียมการจดทะเบียนอสังหาริมทรัพย์)/.test(
-    sourceText,
-  );
+  const hasTaxSignals =
+    /(ภาษี|อากร|ภาษีเงินได้|ภาษีมูลค่าเพิ่ม|ภาษีธุรกิจเฉพาะ|ภาษีหัก ณ ที่จ่าย)/.test(sourceText);
+  const hasFeeSignals =
+    /(ค่าธรรมเนียม|ค่าจดทะเบียน|ยกเว้นค่าธรรมเนียม|ค่าธรรมเนียมการจดทะเบียน|ค่าธรรมเนียมการโอน|ค่าธรรมเนียมการจดทะเบียนอสังหาริมทรัพย์)/.test(
+      sourceText,
+    );
   const hasStrongTaxFeeContext =
     /(ยกเว้นภาษี|ลดหย่อนภาษี|ได้รับยกเว้นภาษี|ภาษีของสหกรณ์|อากรแสตมป์|ภาษีมูลค่าเพิ่ม|ภาษีเงินได้)/.test(
       sourceText,
@@ -2244,7 +2503,12 @@ function scoreTaxSourceFocus(item = {}, message = "") {
     score -= 14;
   }
 
-  if (sourceName === "tbl_laws" || sourceName === "tbl_glaws" || sourceName === "pdf_chunks" || sourceName === "documents") {
+  if (
+    sourceName === 'tbl_laws' ||
+    sourceName === 'tbl_glaws' ||
+    sourceName === 'pdf_chunks' ||
+    sourceName === 'documents'
+  ) {
     score += 8;
   }
 
@@ -2253,7 +2517,9 @@ function scoreTaxSourceFocus(item = {}, message = "") {
 }
 
 function scoreUnionFeeSourceFocus(item = {}) {
-  const sourceName = String(item.source || "").trim().toLowerCase();
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
   const sourceText = buildSourceFocusSearchText(item);
   if (!sourceText) {
     return Number.NEGATIVE_INFINITY;
@@ -2263,7 +2529,10 @@ function scoreUnionFeeSourceFocus(item = {}) {
 
   if (/ค่าบำรุง\s*สันนิบาต|บำรุง\s*สันนิบาต/.test(sourceText)) {
     score += 60;
-  } else if (/สันนิบาต/.test(sourceText) && /(?:ค่าบำรุง|บำรุง|อัตรา|ร้อยละ|เปอร์เซ็นต์|กำไรสุทธิ|กฎกระทรวง)/.test(sourceText)) {
+  } else if (
+    /สันนิบาต/.test(sourceText) &&
+    /(?:ค่าบำรุง|บำรุง|อัตรา|ร้อยละ|เปอร์เซ็นต์|กำไรสุทธิ|กฎกระทรวง)/.test(sourceText)
+  ) {
     score += 32;
   } else {
     score -= 80;
@@ -2277,15 +2546,15 @@ function scoreUnionFeeSourceFocus(item = {}) {
     score += 14;
   }
 
-  if (sourceName === "pdf_chunks" || sourceName === "documents") {
+  if (sourceName === 'pdf_chunks' || sourceName === 'documents') {
     score += 12;
   }
 
-  if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+  if (sourceName === 'tbl_laws' || sourceName === 'tbl_glaws') {
     score += 6;
   }
 
-  if (sourceName === "knowledge_base") {
+  if (sourceName === 'knowledge_base') {
     score -= 28;
   }
 
@@ -2297,21 +2566,29 @@ function scoreUnionFeeSourceFocus(item = {}) {
   return score;
 }
 
-function scoreCompensationGovernanceSourceFocus(item = {}, message = "") {
-  const sourceName = String(item.source || "").trim().toLowerCase();
+function scoreCompensationGovernanceSourceFocus(item = {}, message = '') {
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
   const sourceText = buildSourceFocusSearchText(item);
   if (!sourceText) {
     return Number.NEGATIVE_INFINITY;
   }
 
-  const { asksBonus, asksCompensation, asksMeetingAllowance } = getCompensationGovernanceProfile(message);
-  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  const { asksBonus, asksCompensation, asksMeetingAllowance } =
+    getCompensationGovernanceProfile(message);
+  const normalizedMessage = normalizeForSearch(String(message || '')).toLowerCase();
   const asksManagerStaff = /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ)/.test(normalizedMessage);
   const asksBoard = /(กรรมการ|คณะกรรมการดำเนินการ)/.test(normalizedMessage);
   let score = 0;
 
   if (asksMeetingAllowance) {
-    if (/(เบี้ยประชุม|ประชุมสัมมนา|ค่าใช้จ่ายประชุม|ค่าใช้จ่ายในการประชุม|ค่าใช้จ่ายสัมมนา|ค่าตอบแทน)/.test(sourceText) && /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ)/.test(sourceText)) {
+    if (
+      /(เบี้ยประชุม|ประชุมสัมมนา|ค่าใช้จ่ายประชุม|ค่าใช้จ่ายในการประชุม|ค่าใช้จ่ายสัมมนา|ค่าตอบแทน)/.test(
+        sourceText,
+      ) &&
+      /(ผู้จัดการ|เจ้าหน้าที่|ฝ่ายจัดการ)/.test(sourceText)
+    ) {
       score += 72;
     } else if (/(เบี้ยประชุม|ค่าตอบแทน)/.test(sourceText) && /ประชุมใหญ่/.test(sourceText)) {
       score += 40;
@@ -2329,7 +2606,9 @@ function scoreCompensationGovernanceSourceFocus(item = {}, message = "") {
     if (/(แผนงาน|งบประมาณ|มติที่ประชุมใหญ่|ส่วนได้ส่วนเสีย|ให้ตนเอง)/.test(sourceText)) {
       score += 34;
     }
-    if (/(ผิดนัดชำระหนี้|เงินเฉลี่ยคืน|สมาชิกที่ผิดนัดชำระหนี้|ชดเชยให้กับสมาชิก)/.test(sourceText)) {
+    if (
+      /(ผิดนัดชำระหนี้|เงินเฉลี่ยคืน|สมาชิกที่ผิดนัดชำระหนี้|ชดเชยให้กับสมาชิก)/.test(sourceText)
+    ) {
       score -= 84;
     }
   }
@@ -2357,15 +2636,19 @@ function scoreCompensationGovernanceSourceFocus(item = {}, message = "") {
     score += 18;
   }
 
-  if (sourceName === "tbl_vinichai") {
+  if (sourceName === 'tbl_vinichai') {
     score += 16;
-  } else if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion") {
+  } else if (sourceName === 'admin_knowledge' || sourceName === 'knowledge_suggestion') {
     score += 10;
-  } else if (sourceName === "pdf_chunks" || sourceName === "documents") {
+  } else if (sourceName === 'pdf_chunks' || sourceName === 'documents') {
     score -= 18;
   }
 
-  if (/(150 วัน|ผู้แทนสมาชิก|องค์ประชุม|หน่วยเลือกตั้ง|วิสามัญ|นับเวลา|วันสิ้นปีทางบัญชี)/.test(sourceText)) {
+  if (
+    /(150 วัน|ผู้แทนสมาชิก|องค์ประชุม|หน่วยเลือกตั้ง|วิสามัญ|นับเวลา|วันสิ้นปีทางบัญชี)/.test(
+      sourceText,
+    )
+  ) {
     score -= 64;
   }
 
@@ -2374,7 +2657,9 @@ function scoreCompensationGovernanceSourceFocus(item = {}, message = "") {
 }
 
 function scoreDissolutionSourceFocus(item = {}) {
-  const sourceName = String(item.source || "").trim().toLowerCase();
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
   const sourceText = buildSourceFocusSearchText(item);
   if (!sourceText) {
     return Number.NEGATIVE_INFINITY;
@@ -2406,51 +2691,74 @@ function scoreDissolutionSourceFocus(item = {}) {
     score += 38;
   }
 
-  if (/(เลิกกลุ่มเกษตรกร|กลุ่มเกษตรกรย่อมเลิก|สั่งเลิกกลุ่มเกษตรกร|การเลิกกลุ่มเกษตรกร)/.test(sourceText)) {
+  if (
+    /(เลิกกลุ่มเกษตรกร|กลุ่มเกษตรกรย่อมเลิก|สั่งเลิกกลุ่มเกษตรกร|การเลิกกลุ่มเกษตรกร)/.test(
+      sourceText,
+    )
+  ) {
     score += 48;
   }
 
-  if (/(มีเหตุตามที่กำหนดในข้อบังคับ|สมาชิกน้อยกว่าสิบคน|ที่ประชุมใหญ่ลงมติให้เลิก|ล้มละลาย)/.test(sourceText)) {
+  if (
+    /(มีเหตุตามที่กำหนดในข้อบังคับ|สมาชิกน้อยกว่าสิบคน|ที่ประชุมใหญ่ลงมติให้เลิก|ล้มละลาย)/.test(
+      sourceText,
+    )
+  ) {
     score += 24;
   }
 
-  if (/(สมาชิกน้อยกว่าสามสิบคน|นายทะเบียนสหกรณ์มีอำนาจสั่งเลิกกลุ่มเกษตรกร|กลุ่มเกษตรกรที่เลิก|ปิดประกาศการเลิกกลุ่มเกษตรกร)/.test(sourceText)) {
+  if (
+    /(สมาชิกน้อยกว่าสามสิบคน|นายทะเบียนสหกรณ์มีอำนาจสั่งเลิกกลุ่มเกษตรกร|กลุ่มเกษตรกรที่เลิก|ปิดประกาศการเลิกกลุ่มเกษตรกร)/.test(
+      sourceText,
+    )
+  ) {
     score += 26;
   }
 
-  if (/(ไม่เริ่มดำเนินกิจการภายในหนึ่งปี|หยุดดำเนินกิจการติดต่อกันเป็นเวลาสองปี|ไม่ส่งสำเนารายงานประจำปี|งบการเงินประจำปี|สามปีติดต่อกัน|ก่อให้เกิดความเสียหาย|ดำเนินกิจการไม่เป็นผลดี)/.test(sourceText)) {
+  if (
+    /(ไม่เริ่มดำเนินกิจการภายในหนึ่งปี|หยุดดำเนินกิจการติดต่อกันเป็นเวลาสองปี|ไม่ส่งสำเนารายงานประจำปี|งบการเงินประจำปี|สามปีติดต่อกัน|ก่อให้เกิดความเสียหาย|ดำเนินกิจการไม่เป็นผลดี)/.test(
+      sourceText,
+    )
+  ) {
     score += 28;
   }
 
-  if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion") {
+  if (sourceName === 'admin_knowledge' || sourceName === 'knowledge_suggestion') {
     score += 12;
   }
 
-  if (sourceName === "tbl_laws") {
+  if (sourceName === 'tbl_laws') {
     score += 8;
   }
 
-  if (sourceName === "tbl_glaws") {
+  if (sourceName === 'tbl_glaws') {
     score += 12;
   }
 
-  if (sourceName === "tbl_vinichai") {
+  if (sourceName === 'tbl_vinichai') {
     score -= 18;
   }
 
-  if (sourceName === "documents" || sourceName === "pdf_chunks") {
+  if (sourceName === 'documents' || sourceName === 'pdf_chunks') {
     score -= 22;
   }
 
-  if (sourceName === "knowledge_base") {
+  if (sourceName === 'knowledge_base') {
     score -= 30;
   }
 
-  if (/(องค์ประชุม|การประชุมใหญ่|ผู้ตรวจการสหกรณ์|กำหนดระบบบัญชี|อำนาจหน้าที่)/.test(sourceText) && !/(เลิก|สั่งเลิก)/.test(sourceText)) {
+  if (
+    /(องค์ประชุม|การประชุมใหญ่|ผู้ตรวจการสหกรณ์|กำหนดระบบบัญชี|อำนาจหน้าที่)/.test(sourceText) &&
+    !/(เลิก|สั่งเลิก)/.test(sourceText)
+  ) {
     score -= 44;
   }
 
-  if (sourceName === "tbl_laws" && /นายทะเบียนสหกรณ์มีอำนาจหน้าที่/.test(sourceText) && !/สั่งเลิกสหกรณ์/.test(sourceText)) {
+  if (
+    sourceName === 'tbl_laws' &&
+    /นายทะเบียนสหกรณ์มีอำนาจหน้าที่/.test(sourceText) &&
+    !/สั่งเลิกสหกรณ์/.test(sourceText)
+  ) {
     score -= 36;
   }
 
@@ -2458,8 +2766,10 @@ function scoreDissolutionSourceFocus(item = {}) {
   return score;
 }
 
-function scoreLiquidationSourceFocus(item = {}, message = "") {
-  const sourceName = String(item.source || "").trim().toLowerCase();
+function scoreLiquidationSourceFocus(item = {}, message = '') {
+  const sourceName = String(item.source || '')
+    .trim()
+    .toLowerCase();
   const sourceText = buildSourceFocusSearchText(item);
   if (!sourceText) {
     return Number.NEGATIVE_INFINITY;
@@ -2504,48 +2814,64 @@ function scoreLiquidationSourceFocus(item = {}, message = "") {
   }
 
   if (asksAppointmentAuthority) {
-    if (/(ที่ประชุมใหญ่(?:ต้อง)?(?:เลือกตั้ง|ตั้ง)ผู้ชำระบัญชี|เลือกตั้งผู้ชำระบัญชี.*ที่ประชุมใหญ่)/.test(sourceText)) {
+    if (
+      /(ที่ประชุมใหญ่(?:ต้อง)?(?:เลือกตั้ง|ตั้ง)ผู้ชำระบัญชี|เลือกตั้งผู้ชำระบัญชี.*ที่ประชุมใหญ่)/.test(
+        sourceText,
+      )
+    ) {
       score += 180;
     }
-    if (/(ได้รับความเห็นชอบจากนายทะเบียนสหกรณ์|นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี)/.test(sourceText)) {
+    if (
+      /(ได้รับความเห็นชอบจากนายทะเบียนสหกรณ์|นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี)/.test(
+        sourceText,
+      )
+    ) {
       score += 164;
     }
 
     const isDutyOnlyText =
-      /(ผู้ชำระบัญชีมีอำนาจหน้าที่|เรียกประชุมใหญ่|จำหน่ายทรัพย์สินของสหกรณ์|ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น)/.test(sourceText) &&
-      !/(เลือกตั้งผู้ชำระบัญชี|ตั้งผู้ชำระบัญชี|ได้รับความเห็นชอบจากนายทะเบียนสหกรณ์|นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี)/.test(sourceText);
+      /(ผู้ชำระบัญชีมีอำนาจหน้าที่|เรียกประชุมใหญ่|จำหน่ายทรัพย์สินของสหกรณ์|ดำเนินกิจการของสหกรณ์เท่าที่จำเป็น)/.test(
+        sourceText,
+      ) &&
+      !/(เลือกตั้งผู้ชำระบัญชี|ตั้งผู้ชำระบัญชี|ได้รับความเห็นชอบจากนายทะเบียนสหกรณ์|นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี)/.test(
+        sourceText,
+      );
     if (isDutyOnlyText) {
       score -= 220;
     }
 
-    if (sourceName === "tbl_laws" && /(มาตรา 81|มาตรา81)/.test(sourceText)) {
+    if (sourceName === 'tbl_laws' && /(มาตรา 81|มาตรา81)/.test(sourceText)) {
       score -= 260;
     }
   } else if (asksLiquidatorDuty) {
     if (hasLiquidatorDutySourceSignal(sourceText)) {
       score += 190;
     }
-    if (sourceName === "tbl_laws" && /(มาตรา 81|มาตรา81)/.test(sourceText)) {
+    if (sourceName === 'tbl_laws' && /(มาตรา 81|มาตรา81)/.test(sourceText)) {
       score += 180;
     }
     if (/(มาตรา 70|มาตรา70|สหกรณ์ย่อมเลิก|สั่งให้เลิก)/.test(sourceText)) {
       score -= 180;
     }
-    if (/(มาตรา 75|มาตรา75|เลือกตั้งผู้ชำระบัญชี|ตั้งผู้ชำระบัญชี|นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี)/.test(sourceText)) {
+    if (
+      /(มาตรา 75|มาตรา75|เลือกตั้งผู้ชำระบัญชี|ตั้งผู้ชำระบัญชี|นายทะเบียนสหกรณ์มีอำนาจตั้งผู้ชำระบัญชี)/.test(
+        sourceText,
+      )
+    ) {
       score -= 160;
     }
   }
 
-  if (sourceName === "tbl_laws" || sourceName === "tbl_glaws") {
+  if (sourceName === 'tbl_laws' || sourceName === 'tbl_glaws') {
     score += 14;
   }
-  if (sourceName === "admin_knowledge" || sourceName === "knowledge_suggestion") {
+  if (sourceName === 'admin_knowledge' || sourceName === 'knowledge_suggestion') {
     score += 10;
   }
-  if (sourceName === "documents" || sourceName === "pdf_chunks") {
+  if (sourceName === 'documents' || sourceName === 'pdf_chunks') {
     score -= 24;
   }
-  if (sourceName === "tbl_vinichai") {
+  if (sourceName === 'tbl_vinichai') {
     score -= 26;
   }
 
@@ -2554,52 +2880,56 @@ function scoreLiquidationSourceFocus(item = {}, message = "") {
 }
 
 function normalizeLawFocusDigits(text) {
-  return normalizeThaiNumberSearchText(thaiDigitsToArabic(String(text || "")));
+  return normalizeThaiNumberSearchText(thaiDigitsToArabic(String(text || '')));
 }
 
 function extractPrimaryLawFocusNumber(item = {}) {
   const candidates = [item.reference, item.title, item.keyword];
   const extractedNumbers = [];
   for (const candidate of candidates) {
-    const raw = normalizeLawFocusDigits(String(candidate || "").trim());
+    const raw = normalizeLawFocusDigits(String(candidate || '').trim());
     if (!raw) {
       continue;
     }
 
     const explicitMatch = raw.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]+(?:\s*\/\s*[0-9]+)?)/i);
     if (explicitMatch?.[1]) {
-      extractedNumbers.push(explicitMatch[1].replace(/\s*\/\s*/g, "/"));
+      extractedNumbers.push(explicitMatch[1].replace(/\s*\/\s*/g, '/'));
       continue;
     }
 
     const bareMatch = raw.match(/^([0-9]+(?:\s*\/\s*[0-9]+)?)$/);
     if (bareMatch?.[1]) {
-      extractedNumbers.push(bareMatch[1].replace(/\s*\/\s*/g, "/"));
+      extractedNumbers.push(bareMatch[1].replace(/\s*\/\s*/g, '/'));
     }
   }
 
-  return extractedNumbers.find((number) => String(number || "").includes("/")) || extractedNumbers[0] || "";
+  return (
+    extractedNumbers.find((number) => String(number || '').includes('/')) ||
+    extractedNumbers[0] ||
+    ''
+  );
 }
 
 function normalizeSourceIdentityText(value) {
-  return normalizeForSearch(String(value || ""))
+  return normalizeForSearch(String(value || ''))
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
 function buildDedupReferenceKey(item) {
-  return normalizeSourceIdentityText(item.reference || item.title || item.keyword || "");
+  return normalizeSourceIdentityText(item.reference || item.title || item.keyword || '');
 }
 
 function buildDedupContentKey(item) {
-  return normalizeSourceIdentityText(item.content || item.chunk_text || item.snippet || "");
+  return normalizeSourceIdentityText(item.content || item.chunk_text || item.snippet || '');
 }
 
 function areNearDuplicateSources(left, right) {
-  const leftSource = normalizeSourceIdentityText(left?.source || "");
-  const rightSource = normalizeSourceIdentityText(right?.source || "");
+  const leftSource = normalizeSourceIdentityText(left?.source || '');
+  const rightSource = normalizeSourceIdentityText(right?.source || '');
   if (!leftSource || !rightSource || leftSource !== rightSource) {
     return false;
   }
@@ -2656,7 +2986,7 @@ function dedupeSourcesConservatively(matches) {
   return deduped;
 }
 
-function rankSourcesForMessageFocus(items, message = "") {
+function rankSourcesForMessageFocus(items, message = '') {
   const ranked = dedupeSourcesConservatively(items);
   if (isCompensationGovernanceQuestion(message)) {
     return ranked
@@ -2665,7 +2995,8 @@ function rankSourcesForMessageFocus(items, message = "") {
         __messageFocusRank: scoreCompensationGovernanceSourceFocus(item, message),
       }))
       .sort((left, right) => {
-        const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+        const focusDiff =
+          Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
         if (focusDiff !== 0) {
           return focusDiff;
         }
@@ -2686,7 +3017,8 @@ function rankSourcesForMessageFocus(items, message = "") {
       }))
       .filter((item) => Number.isFinite(Number(item.__messageFocusRank)))
       .sort((left, right) => {
-        const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+        const focusDiff =
+          Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
         if (focusDiff !== 0) {
           return focusDiff;
         }
@@ -2713,7 +3045,8 @@ function rankSourcesForMessageFocus(items, message = "") {
       })
       .filter((item) => Number.isFinite(Number(item.__messageFocusRank)))
       .sort((left, right) => {
-        const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+        const focusDiff =
+          Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
         if (focusDiff !== 0) {
           return focusDiff;
         }
@@ -2733,7 +3066,8 @@ function rankSourcesForMessageFocus(items, message = "") {
         __messageFocusRank: scoreCoopFormationSourceFocus(message, item),
       }))
       .sort((left, right) => {
-        const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+        const focusDiff =
+          Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
         if (focusDiff !== 0) {
           return focusDiff;
         }
@@ -2753,7 +3087,8 @@ function rankSourcesForMessageFocus(items, message = "") {
         __messageFocusRank: getCoopBylawAmendmentFocusBoost(message, item),
       }))
       .sort((left, right) => {
-        const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+        const focusDiff =
+          Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
         if (focusDiff !== 0) {
           return focusDiff;
         }
@@ -2782,7 +3117,8 @@ function rankSourcesForMessageFocus(items, message = "") {
       };
     })
     .sort((left, right) => {
-      const focusDiff = Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
+      const focusDiff =
+        Number(right.__messageFocusRank || 0) - Number(left.__messageFocusRank || 0);
       if (focusDiff !== 0) {
         return focusDiff;
       }
@@ -2797,37 +3133,33 @@ function rankSourcesForMessageFocus(items, message = "") {
 
 function pruneFocusedQueryMatches(matches, message) {
   const ranked = sortByScore(matches);
-    const abbreviationDefinitionMatch =
-    normalizeForSearch(String(message || ""))
-      .toLowerCase()
-      .match(/([ก-๙]{2,8})\s*(?:คืออะไร|หมายถึง|คือ|หมายความว่าอะไร)/);
+  const abbreviationDefinitionMatch = normalizeForSearch(String(message || ''))
+    .toLowerCase()
+    .match(/([ก-๙]{2,8})\s*(?:คืออะไร|หมายถึง|คือ|หมายความว่าอะไร)/);
 
-    if (abbreviationDefinitionMatch?.[1]) {
+  if (abbreviationDefinitionMatch?.[1]) {
     const abbreviation = abbreviationDefinitionMatch[1];
     // Guard: only treat as an "abbreviation definition" query for short abbreviations.
     // Otherwise we may accidentally prune general definition queries like "สหกรณ์คืออะไร".
-    if (String(abbreviation || "").length > 4 && !/\./.test(String(message || ""))) {
+    if (String(abbreviation || '').length > 4 && !/\./.test(String(message || ''))) {
       // Continue with the normal pruning flow.
     } else {
+      const strictAbbreviationMatches = ranked.filter((item) => {
+        const sourceText = buildSourceFocusSearchText(item);
+        if (!sourceText) {
+          return false;
+        }
 
-    const strictAbbreviationMatches = ranked.filter((item) => {
-      const sourceText = buildSourceFocusSearchText(item);
-      if (!sourceText) {
-        return false;
-      }
-
-      const normalizedSource = normalizeForSearch(sourceText).toLowerCase();
-      return (
-        normalizedSource.includes(abbreviation) &&
-        (
+        const normalizedSource = normalizeForSearch(sourceText).toLowerCase();
+        return (
+          normalizedSource.includes(abbreviation) &&
           /คือ|หมายถึง|หมายความว่า|ย่อมาจาก|คณะกรรมการ|ประกอบด้วย/.test(normalizedSource)
-        )
-      );
-    });
+        );
+      });
 
-    if (strictAbbreviationMatches.length > 0) {
-      return strictAbbreviationMatches;
-    }
+      if (strictAbbreviationMatches.length > 0) {
+        return strictAbbreviationMatches;
+      }
     }
   }
   if (isCompensationGovernanceQuestion(message)) {
@@ -2839,7 +3171,8 @@ function pruneFocusedQueryMatches(matches, message) {
       .filter((item) => Number(item.__meetingCompensationScore || 0) >= 24)
       .sort((left, right) => {
         const focusDiff =
-          Number(right.__meetingCompensationScore || 0) - Number(left.__meetingCompensationScore || 0);
+          Number(right.__meetingCompensationScore || 0) -
+          Number(left.__meetingCompensationScore || 0);
         if (focusDiff !== 0) {
           return focusDiff;
         }
@@ -2889,7 +3222,8 @@ function pruneFocusedQueryMatches(matches, message) {
       }))
       .filter((item) => Number(item.__dissolutionScore || 0) >= 18)
       .sort((left, right) => {
-        const focusDiff = Number(right.__dissolutionScore || 0) - Number(left.__dissolutionScore || 0);
+        const focusDiff =
+          Number(right.__dissolutionScore || 0) - Number(left.__dissolutionScore || 0);
         if (focusDiff !== 0) {
           return focusDiff;
         }
@@ -2914,7 +3248,8 @@ function pruneFocusedQueryMatches(matches, message) {
       }))
       .filter((item) => Number(item.__liquidationScore || 0) >= 24)
       .sort((left, right) => {
-        const focusDiff = Number(right.__liquidationScore || 0) - Number(left.__liquidationScore || 0);
+        const focusDiff =
+          Number(right.__liquidationScore || 0) - Number(left.__liquidationScore || 0);
         if (focusDiff !== 0) {
           return focusDiff;
         }
@@ -2936,11 +3271,15 @@ function pruneFocusedQueryMatches(matches, message) {
     return ranked;
   }
 
-  const structuredSources = new Set(["tbl_laws", "tbl_glaws"]);
-  const secondaryFocusedSources = new Set(["admin_knowledge", "knowledge_suggestion", "tbl_vinichai"]);
-  const documentLikeSources = new Set(["documents", "pdf_chunks", "knowledge_base"]);
-  const generalMinimumFocusScore = focusProfile.intent === "general" ? 18 : 24;
-  const documentMinimumFocusScore = focusProfile.intent === "general" ? 26 : 32;
+  const structuredSources = new Set(['tbl_laws', 'tbl_glaws']);
+  const secondaryFocusedSources = new Set([
+    'admin_knowledge',
+    'knowledge_suggestion',
+    'tbl_vinichai',
+  ]);
+  const documentLikeSources = new Set(['documents', 'pdf_chunks', 'knowledge_base']);
+  const generalMinimumFocusScore = focusProfile.intent === 'general' ? 18 : 24;
+  const documentMinimumFocusScore = focusProfile.intent === 'general' ? 26 : 32;
 
   const scoredMatches = ranked.map((item) => ({
     ...item,
@@ -2948,7 +3287,9 @@ function pruneFocusedQueryMatches(matches, message) {
   }));
 
   let filtered = scoredMatches.filter((item) => {
-    const sourceName = String(item.source || "").trim().toLowerCase();
+    const sourceName = String(item.source || '')
+      .trim()
+      .toLowerCase();
     const focusScore = Number(item.__focusScore || 0);
 
     if (structuredSources.has(sourceName)) {
@@ -2966,21 +3307,28 @@ function pruneFocusedQueryMatches(matches, message) {
     return focusScore >= generalMinimumFocusScore;
   });
 
-  if (focusProfile.intent !== "general") {
+  if (focusProfile.intent !== 'general') {
     const strongStructured = filtered.filter((item) => {
-      const sourceName = String(item.source || "").trim().toLowerCase();
-      return structuredSources.has(sourceName) && Number(item.__focusScore || 0) >= generalMinimumFocusScore;
+      const sourceName = String(item.source || '')
+        .trim()
+        .toLowerCase();
+      return (
+        structuredSources.has(sourceName) &&
+        Number(item.__focusScore || 0) >= generalMinimumFocusScore
+      );
     });
 
     if (strongStructured.length > 0) {
       filtered = filtered.filter((item) => {
-        const sourceName = String(item.source || "").trim().toLowerCase();
+        const sourceName = String(item.source || '')
+          .trim()
+          .toLowerCase();
         if (structuredSources.has(sourceName)) {
           return true;
         }
 
         if (secondaryFocusedSources.has(sourceName)) {
-          const extraThreshold = sourceName === "admin_knowledge" ? 18 : 10;
+          const extraThreshold = sourceName === 'admin_knowledge' ? 18 : 10;
           return Number(item.__focusScore || 0) >= generalMinimumFocusScore + extraThreshold;
         }
 
@@ -3000,8 +3348,8 @@ function pruneFocusedQueryMatches(matches, message) {
   });
 }
 
-function getFinalSourceCompactionPlan(intent = "general", options = {}) {
-  const focusMessage = options.originalMessage || options.message || "";
+function getFinalSourceCompactionPlan(intent = 'general', options = {}) {
+  const focusMessage = options.originalMessage || options.message || '';
   const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
   const compensationProfile = getCompensationGovernanceProfile(focusMessage);
   const overviewQuery = isGeneralOverviewQuery(focusMessage);
@@ -3022,7 +3370,7 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
   }
 
   switch (intent) {
-    case "qa":
+    case 'qa':
       if (compensationGovernanceQuestion) {
         return {
           totalLimit: compensationProfile.asksBonus ? 2 : 1,
@@ -3047,7 +3395,7 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
           internet: 0,
         },
       };
-    case "law_section":
+    case 'law_section':
       return {
         totalLimit: 4,
         quotas: {
@@ -3059,7 +3407,7 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
           internet: 1,
         },
       };
-    case "short_answer":
+    case 'short_answer':
       if (overviewQuery && !legalQuery) {
         return {
           totalLimit: 3,
@@ -3084,7 +3432,7 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
           internet: 1,
         },
       };
-    case "document":
+    case 'document':
       return {
         totalLimit: 5,
         quotas: {
@@ -3096,7 +3444,7 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
           internet: 1,
         },
       };
-    case "explain":
+    case 'explain':
       return {
         totalLimit: 6,
         quotas: {
@@ -3136,14 +3484,14 @@ function getFinalSourceCompactionPlan(intent = "general", options = {}) {
   }
 }
 
-function compactSourcesForSummarization(groups, intent = "general", options = {}) {
+function compactSourcesForSummarization(groups, intent = 'general', options = {}) {
   const plan = getFinalSourceCompactionPlan(intent, options);
   const compacted = [];
-  const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const focusMessage = String(options.originalMessage || options.message || '').trim();
   const overviewStrict =
     isGeneralOverviewQuery(focusMessage) &&
     !hasLegalIntent(focusMessage) &&
-    (intent === "general" || intent === "short_answer");
+    (intent === 'general' || intent === 'short_answer');
   const strictStructuredLawFocus =
     isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage);
   const targetLimit = strictStructuredLawFocus
@@ -3151,7 +3499,9 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
     : Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
   const pushUnique = (items, limit) => {
-    const filtered = overviewStrict ? (items || []).filter((item) => isOverviewSafeCandidate(item)) : items;
+    const filtered = overviewStrict
+      ? (items || []).filter((item) => isOverviewSafeCandidate(item))
+      : items;
     rankSourcesForMessageFocus(filtered, focusMessage)
       .slice(0, limit)
       .forEach((item) => {
@@ -3175,7 +3525,11 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
   );
   pushUnique(groups.internet, plan.quotas.internet || 0);
 
-  if (compacted.length < targetLimit && !compensationGovernanceQuestion && !strictStructuredLawFocus) {
+  if (
+    compacted.length < targetLimit &&
+    !compensationGovernanceQuestion &&
+    !strictStructuredLawFocus
+  ) {
     const fallbackPool = overviewStrict
       ? [
           ...(groups.documents || []),
@@ -3203,9 +3557,13 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
   }
 
   // Coherence: for overview queries, keep chunks in the same "document context" when possible.
-  const anchor = ranked.find((item) => item && (item.source === "documents" || item.source === "pdf_chunks"));
+  const anchor = ranked.find(
+    (item) => item && (item.source === 'documents' || item.source === 'pdf_chunks'),
+  );
   const anchorDocumentId = Number(anchor?.documentId || anchor?.document_id || 0);
-  const anchorTitle = normalizeForSearch(String(anchor?.title || anchor?.reference || "")).toLowerCase();
+  const anchorTitle = normalizeForSearch(
+    String(anchor?.title || anchor?.reference || ''),
+  ).toLowerCase();
   const sameContext = (item) => {
     if (!item) return false;
     const docId = Number(item.documentId || item.document_id || 0);
@@ -3213,7 +3571,7 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
       return docId === anchorDocumentId;
     }
     if (anchorTitle) {
-      const title = normalizeForSearch(String(item.title || item.reference || "")).toLowerCase();
+      const title = normalizeForSearch(String(item.title || item.reference || '')).toLowerCase();
       return Boolean(title) && title === anchorTitle;
     }
     return true;
@@ -3224,8 +3582,10 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
     if (anchored.length >= (targetLimit || plan.totalLimit)) {
       break;
     }
-    const sourceName = String(item.source || "").trim().toLowerCase();
-    if (sourceName === "documents" || sourceName === "pdf_chunks") {
+    const sourceName = String(item.source || '')
+      .trim()
+      .toLowerCase();
+    if (sourceName === 'documents' || sourceName === 'pdf_chunks') {
       if (!sameContext(item)) {
         continue;
       }
@@ -3236,17 +3596,17 @@ function compactSourcesForSummarization(groups, intent = "general", options = {}
   return anchored.slice(0, targetLimit || plan.totalLimit);
 }
 
-function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
-  const focusMessage = options.originalMessage || options.message || "";
+function getDatabaseOnlySelectionPlan(intent = 'general', options = {}) {
+  const focusMessage = options.originalMessage || options.message || '';
   const overviewQuery = isGeneralOverviewQuery(focusMessage);
   const legalQuery = hasLegalIntent(focusMessage);
   const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(
     focusMessage,
-    options.target || "all",
+    options.target || 'all',
   );
   const exclusiveStructuredLawDomain = hasExclusiveStructuredLawDomain(
     focusMessage,
-    options.target || "all",
+    options.target || 'all',
   );
   const freePlan = isFreePlanSearch(options.planCode);
   const vinichaiPrioritySearch = isVinichaiPrioritySearch(focusMessage);
@@ -3260,15 +3620,15 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
         admin_knowledge: 1,
         knowledge_suggestion: 0,
         tbl_laws:
-          primaryLawSource === "tbl_laws"
+          primaryLawSource === 'tbl_laws'
             ? 4
-            : secondaryLawSource === "tbl_laws" && !exclusiveStructuredLawDomain
+            : secondaryLawSource === 'tbl_laws' && !exclusiveStructuredLawDomain
               ? 1
               : 0,
         tbl_glaws:
-          primaryLawSource === "tbl_glaws"
+          primaryLawSource === 'tbl_glaws'
             ? 4
-            : secondaryLawSource === "tbl_glaws" && !exclusiveStructuredLawDomain
+            : secondaryLawSource === 'tbl_glaws' && !exclusiveStructuredLawDomain
               ? 1
               : 0,
         pdf_chunks: 0,
@@ -3295,277 +3655,281 @@ function getDatabaseOnlySelectionPlan(intent = "general", options = {}) {
   }
 
   switch (intent) {
-  case "law_section":
-    return {
-      totalLimit: 8,
-      quotas: {
-        admin_knowledge: 2,
-        knowledge_suggestion: 1,
-        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 4, 3),
-        pdf_chunks: 1,
-        tbl_vinichai: 1,
-        documents: 0,
-        knowledge_base: 1,
-      },
-    };
-  case "short_answer":
-    if (overviewQuery && !legalQuery) {
+    case 'law_section':
       return {
-        totalLimit: 3,
+        totalLimit: 8,
         quotas: {
-          admin_knowledge: 1,
-          knowledge_suggestion: 0,
-          tbl_laws: 0,
-          tbl_glaws: 0,
-          pdf_chunks: 2,
-          tbl_vinichai: 0,
-          documents: 1,
-          knowledge_base: 0,
-        },
-      };
-    }
-    return {
-      totalLimit: 5,
-      quotas: {
-        admin_knowledge: 3,
-        knowledge_suggestion: 1,
-        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 2, 1),
-        pdf_chunks: 1,
-        tbl_vinichai: 0,  // ตัด tbl_vinichai ออกจาก short_answer
-        documents: 0,
-        knowledge_base: 1,
-      },
-    };
-  case "document":
-    return {
-      totalLimit: 7,
-      quotas: {
-        admin_knowledge: freePlan ? 3 : 2,
-        knowledge_suggestion: 1,
-        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 2, 1),
-        pdf_chunks: 1,
-        tbl_vinichai: 1,
-        documents: freePlan ? 1 : 2,
-        knowledge_base: 1,
-      },
-    };
-  case "qa":
-    if (compensationGovernanceQuestion) {
-      return {
-        totalLimit: compensationProfile.asksBonus ? 2 : 1,
-        quotas: {
-          admin_knowledge: 0,
-          knowledge_suggestion: 0,
-          ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, compensationProfile.asksBonus ? 1 : 0, 0),
-          pdf_chunks: 0,
+          admin_knowledge: 2,
+          knowledge_suggestion: 1,
+          ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 4, 3),
+          pdf_chunks: 1,
           tbl_vinichai: 1,
           documents: 0,
-          knowledge_base: 0,
+          knowledge_base: 1,
         },
       };
-    }
-    return {
-      totalLimit: 6,
-      quotas: {
-        admin_knowledge: 3,
-        knowledge_suggestion: 2,
-        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 1, 0),
-        pdf_chunks: 1,
-        tbl_vinichai: vinichaiPrioritySearch ? 2 : 1,
-        documents: 0,
-        knowledge_base: 1,
-      },
-    };
-  case "explain":
-    return {
-      totalLimit: freePlan ? 12 : 10,
-      quotas: {
-        admin_knowledge: freePlan ? 3 : 3,
-        knowledge_suggestion: freePlan ? 2 : 2,
-        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, freePlan ? 3 : 3, freePlan ? 2 : 2),
-        pdf_chunks: freePlan ? 1 : 1,
-        tbl_vinichai: freePlan ? 2 : 1,
-        documents: freePlan ? 2 : 1,
-        knowledge_base: freePlan ? 2 : 1,
-      },
-    };
-  default:
-    if (overviewQuery && !legalQuery) {
+    case 'short_answer':
+      if (overviewQuery && !legalQuery) {
+        return {
+          totalLimit: 3,
+          quotas: {
+            admin_knowledge: 1,
+            knowledge_suggestion: 0,
+            tbl_laws: 0,
+            tbl_glaws: 0,
+            pdf_chunks: 2,
+            tbl_vinichai: 0,
+            documents: 1,
+            knowledge_base: 0,
+          },
+        };
+      }
       return {
-        totalLimit: 3,
+        totalLimit: 5,
         quotas: {
-          admin_knowledge: 1,
-          knowledge_suggestion: 0,
-          tbl_laws: 0,
-          tbl_glaws: 0,
-          pdf_chunks: 2,
-          tbl_vinichai: 0,
-          documents: 1,
-          knowledge_base: 0,
+          admin_knowledge: 3,
+          knowledge_suggestion: 1,
+          ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 2, 1),
+          pdf_chunks: 1,
+          tbl_vinichai: 0, // ตัด tbl_vinichai ออกจาก short_answer
+          documents: 0,
+          knowledge_base: 1,
         },
       };
-    }
-    return {
-      totalLimit: 8,
-      quotas: {
-        admin_knowledge: 3,
-        knowledge_suggestion: 1,
-        ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, freePlan ? 2 : 3, 1),
-        pdf_chunks: 1,
-        tbl_vinichai: freePlan ? 2 : 1,
-        documents: 0,
-        knowledge_base: 1,
-      },
-    };
+    case 'document':
+      return {
+        totalLimit: 7,
+        quotas: {
+          admin_knowledge: freePlan ? 3 : 2,
+          knowledge_suggestion: 1,
+          ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 2, 1),
+          pdf_chunks: 1,
+          tbl_vinichai: 1,
+          documents: freePlan ? 1 : 2,
+          knowledge_base: 1,
+        },
+      };
+    case 'qa':
+      if (compensationGovernanceQuestion) {
+        return {
+          totalLimit: compensationProfile.asksBonus ? 2 : 1,
+          quotas: {
+            admin_knowledge: 0,
+            knowledge_suggestion: 0,
+            ...buildStructuredLawQuota(
+              primaryLawSource,
+              secondaryLawSource,
+              compensationProfile.asksBonus ? 1 : 0,
+              0,
+            ),
+            pdf_chunks: 0,
+            tbl_vinichai: 1,
+            documents: 0,
+            knowledge_base: 0,
+          },
+        };
+      }
+      return {
+        totalLimit: 6,
+        quotas: {
+          admin_knowledge: 3,
+          knowledge_suggestion: 2,
+          ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, 1, 0),
+          pdf_chunks: 1,
+          tbl_vinichai: vinichaiPrioritySearch ? 2 : 1,
+          documents: 0,
+          knowledge_base: 1,
+        },
+      };
+    case 'explain':
+      return {
+        totalLimit: freePlan ? 12 : 10,
+        quotas: {
+          admin_knowledge: freePlan ? 3 : 3,
+          knowledge_suggestion: freePlan ? 2 : 2,
+          ...buildStructuredLawQuota(
+            primaryLawSource,
+            secondaryLawSource,
+            freePlan ? 3 : 3,
+            freePlan ? 2 : 2,
+          ),
+          pdf_chunks: freePlan ? 1 : 1,
+          tbl_vinichai: freePlan ? 2 : 1,
+          documents: freePlan ? 2 : 1,
+          knowledge_base: freePlan ? 2 : 1,
+        },
+      };
+    default:
+      if (overviewQuery && !legalQuery) {
+        return {
+          totalLimit: 3,
+          quotas: {
+            admin_knowledge: 1,
+            knowledge_suggestion: 0,
+            tbl_laws: 0,
+            tbl_glaws: 0,
+            pdf_chunks: 2,
+            tbl_vinichai: 0,
+            documents: 1,
+            knowledge_base: 0,
+          },
+        };
+      }
+      return {
+        totalLimit: 8,
+        quotas: {
+          admin_knowledge: 3,
+          knowledge_suggestion: 1,
+          ...buildStructuredLawQuota(primaryLawSource, secondaryLawSource, freePlan ? 2 : 3, 1),
+          pdf_chunks: 1,
+          tbl_vinichai: freePlan ? 2 : 1,
+          documents: 0,
+          knowledge_base: 1,
+        },
+      };
   }
 }
 
-
-
-
-function getDatabaseOnlySourceOrder(intent = "general", options = {}) {
-  const focusMessage = options.originalMessage || options.message || "";
+function getDatabaseOnlySourceOrder(intent = 'general', options = {}) {
+  const focusMessage = options.originalMessage || options.message || '';
   const overviewQuery = isGeneralOverviewQuery(focusMessage);
   const legalQuery = hasLegalIntent(focusMessage);
   const { primaryLawSource, secondaryLawSource } = resolvePreferredStructuredLawSources(
     focusMessage,
-    options.target || "all",
+    options.target || 'all',
   );
   const structuredLawOrder = buildStructuredLawSourceOrder(primaryLawSource, secondaryLawSource);
 
-  if (
-    isDissolutionPrioritySearch(focusMessage) ||
-    isLiquidationPrioritySearch(focusMessage)
-  ) {
+  if (isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage)) {
     return [
       primaryLawSource,
       secondaryLawSource,
-      "pdf_chunks",
-      "admin_knowledge",
-      "knowledge_suggestion",
-      "tbl_vinichai",
-      "documents",
-      "knowledge_base",
+      'pdf_chunks',
+      'admin_knowledge',
+      'knowledge_suggestion',
+      'tbl_vinichai',
+      'documents',
+      'knowledge_base',
     ];
   }
 
   if (options.forceStructuredLawFallback === true) {
     return [
       ...structuredLawOrder,
-      "admin_knowledge",
-      "knowledge_suggestion",
-      "pdf_chunks",
-      "tbl_vinichai",
-      "documents",
-      "knowledge_base",
+      'admin_knowledge',
+      'knowledge_suggestion',
+      'pdf_chunks',
+      'tbl_vinichai',
+      'documents',
+      'knowledge_base',
     ];
   }
 
-  if (intent === "law_section") {
+  if (intent === 'law_section') {
     return [
       ...structuredLawOrder,
-      "pdf_chunks",
-      "admin_knowledge",
-      "knowledge_suggestion",
-      "tbl_vinichai",
-      "documents",
-      "knowledge_base",
+      'pdf_chunks',
+      'admin_knowledge',
+      'knowledge_suggestion',
+      'tbl_vinichai',
+      'documents',
+      'knowledge_base',
     ];
   }
 
-  if (intent === "qa" || isVinichaiPrioritySearch(focusMessage)) {
+  if (intent === 'qa' || isVinichaiPrioritySearch(focusMessage)) {
     return [
       ...structuredLawOrder,
-      "pdf_chunks",
-      "admin_knowledge",
-      "knowledge_suggestion",
-      "tbl_vinichai",
-      "documents",
-      "knowledge_base",
+      'pdf_chunks',
+      'admin_knowledge',
+      'knowledge_suggestion',
+      'tbl_vinichai',
+      'documents',
+      'knowledge_base',
     ];
   }
 
-  if (intent === "short_answer") {
+  if (intent === 'short_answer') {
     if (overviewQuery && !legalQuery) {
       return [
-        "pdf_chunks",
-        "documents",
-        "admin_knowledge",
-        "knowledge_suggestion",
-        "knowledge_base",
-        "tbl_vinichai",
-        "tbl_laws",
-        "tbl_glaws",
+        'pdf_chunks',
+        'documents',
+        'admin_knowledge',
+        'knowledge_suggestion',
+        'knowledge_base',
+        'tbl_vinichai',
+        'tbl_laws',
+        'tbl_glaws',
       ];
     }
     return [
       ...structuredLawOrder,
-      "pdf_chunks",
-      "admin_knowledge",
-      "knowledge_suggestion",
-      "tbl_vinichai",
-      "documents",
-      "knowledge_base",
+      'pdf_chunks',
+      'admin_knowledge',
+      'knowledge_suggestion',
+      'tbl_vinichai',
+      'documents',
+      'knowledge_base',
     ];
   }
 
-  if (intent === "document") {
+  if (intent === 'document') {
     return [
       ...structuredLawOrder,
-      "pdf_chunks",
-      "admin_knowledge",
-      "knowledge_suggestion",
-      "tbl_vinichai",
-      "documents",
-      "knowledge_base",
+      'pdf_chunks',
+      'admin_knowledge',
+      'knowledge_suggestion',
+      'tbl_vinichai',
+      'documents',
+      'knowledge_base',
     ];
   }
 
-  if (intent === "explain") {
+  if (intent === 'explain') {
     return [
       ...structuredLawOrder,
-      "pdf_chunks",
-      "admin_knowledge",
-      "knowledge_suggestion",
-      "tbl_vinichai",
-      "documents",
-      "knowledge_base",
+      'pdf_chunks',
+      'admin_knowledge',
+      'knowledge_suggestion',
+      'tbl_vinichai',
+      'documents',
+      'knowledge_base',
     ];
   }
 
   if (overviewQuery && !legalQuery) {
     return [
-      "pdf_chunks",
-      "documents",
-      "admin_knowledge",
-      "knowledge_suggestion",
-      "knowledge_base",
-      "tbl_vinichai",
+      'pdf_chunks',
+      'documents',
+      'admin_knowledge',
+      'knowledge_suggestion',
+      'knowledge_base',
+      'tbl_vinichai',
       ...structuredLawOrder,
     ];
   }
 
   return [
     ...structuredLawOrder,
-    "pdf_chunks",
-    "admin_knowledge",
-    "knowledge_suggestion",
-    "tbl_vinichai",
-    "documents",
-    "knowledge_base",
+    'pdf_chunks',
+    'admin_knowledge',
+    'knowledge_suggestion',
+    'tbl_vinichai',
+    'documents',
+    'knowledge_base',
   ];
 }
 
-function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
+function selectDatabaseOnlySources(groups, intent = 'general', options = {}) {
   const plan = getDatabaseOnlySelectionPlan(intent, options);
   const selected = [];
   const usedTiers = [];
-  const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const focusMessage = String(options.originalMessage || options.message || '').trim();
   const overviewStrict =
     options.forceStructuredLawFallback !== true &&
     isGeneralOverviewQuery(focusMessage) &&
     !hasLegalIntent(focusMessage) &&
-    (intent === "general" || intent === "short_answer");
+    (intent === 'general' || intent === 'short_answer');
   const broadFollowUpExplainMessage = isBroadFollowUpExplainMessage(focusMessage);
   const strictStructuredLawFocus =
     isDissolutionPrioritySearch(focusMessage) || isLiquidationPrioritySearch(focusMessage);
@@ -3578,13 +3942,13 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
     ...(groups.pdf_chunks || []),
     ...(groups.knowledge_base || []),
   ].some((item) => item && item.contextCarry);
-  const strictFollowUpExplainMode = intent === "explain" && hasContextCarryCandidates;
+  const strictFollowUpExplainMode = intent === 'explain' && hasContextCarryCandidates;
   const targetLimit = strictStructuredLawFocus
     ? plan.totalLimit
     : Math.max(plan.totalLimit, Number(options.sourceLimit || 0) || 0);
   const compensationGovernanceQuestion = isCompensationGovernanceQuestion(focusMessage);
   const selectionTrace = {
-    mode: "database_only",
+    mode: 'database_only',
     tiers: [],
     fallbackUsed: false,
   };
@@ -3604,9 +3968,11 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
             return false;
           }
 
-          const sourceName = String(item.source || "").trim().toLowerCase();
+          const sourceName = String(item.source || '')
+            .trim()
+            .toLowerCase();
           const itemScore = Number(item.score || 0);
-          if (["documents", "pdf_chunks", "knowledge_base"].includes(sourceName)) {
+          if (['documents', 'pdf_chunks', 'knowledge_base'].includes(sourceName)) {
             return false;
           }
 
@@ -3646,8 +4012,8 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   const sourceBuckets = {
     admin_knowledge: groups.admin_knowledge || [],
     knowledge_suggestion: groups.knowledge_suggestion || [],
-    tbl_laws: structuredLaws.filter((item) => item && item.source === "tbl_laws"),
-    tbl_glaws: structuredLaws.filter((item) => item && item.source === "tbl_glaws"),
+    tbl_laws: structuredLaws.filter((item) => item && item.source === 'tbl_laws'),
+    tbl_glaws: structuredLaws.filter((item) => item && item.source === 'tbl_glaws'),
     pdf_chunks: groups.pdf_chunks || [],
     tbl_vinichai: groups.vinichai || [],
     documents: groups.documents || [],
@@ -3656,11 +4022,7 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   const sourceOrder = getDatabaseOnlySourceOrder(intent, options);
 
   sourceOrder.forEach((sourceName) => {
-    pushUnique(
-      sourceBuckets[sourceName] || [],
-      plan.quotas[sourceName] || 0,
-      sourceName,
-    );
+    pushUnique(sourceBuckets[sourceName] || [], plan.quotas[sourceName] || 0, sourceName);
   });
 
   if (
@@ -3681,22 +4043,32 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
       : [
           ...(groups.admin_knowledge || []),
           ...(groups.knowledge_suggestion || []),
-          ...structuredLaws.filter((item) => item && item.source === "tbl_laws"),
-          ...structuredLaws.filter((item) => item && item.source === "tbl_glaws"),
+          ...structuredLaws.filter((item) => item && item.source === 'tbl_laws'),
+          ...structuredLaws.filter((item) => item && item.source === 'tbl_glaws'),
           ...(groups.vinichai || []),
           ...(groups.documents || []),
           ...(groups.pdf_chunks || []),
           ...(groups.knowledge_base || []),
         ];
-    const fallbackPool = rankSourcesForMessageFocus(fallbackCandidates, focusMessage).sort((left, right) => {
-      const leftOrder = fallbackOrder.get(String(left?.source || "").trim().toLowerCase());
-      const rightOrder = fallbackOrder.get(String(right?.source || "").trim().toLowerCase());
-      if (leftOrder !== rightOrder) {
-        return (leftOrder ?? Number.MAX_SAFE_INTEGER) - (rightOrder ?? Number.MAX_SAFE_INTEGER);
-      }
+    const fallbackPool = rankSourcesForMessageFocus(fallbackCandidates, focusMessage).sort(
+      (left, right) => {
+        const leftOrder = fallbackOrder.get(
+          String(left?.source || '')
+            .trim()
+            .toLowerCase(),
+        );
+        const rightOrder = fallbackOrder.get(
+          String(right?.source || '')
+            .trim()
+            .toLowerCase(),
+        );
+        if (leftOrder !== rightOrder) {
+          return (leftOrder ?? Number.MAX_SAFE_INTEGER) - (rightOrder ?? Number.MAX_SAFE_INTEGER);
+        }
 
-      return Number(right?.score || 0) - Number(left?.score || 0);
-    });
+        return Number(right?.score || 0) - Number(left?.score || 0);
+      },
+    );
 
     fallbackPool.forEach((item) => {
       if (selected.length >= targetLimit) {
@@ -3713,46 +4085,65 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
 
   if (overviewStrict) {
     let overviewSelected = selected.slice();
-    let anchor = overviewSelected.find((item) => item && (item.source === "documents" || item.source === "pdf_chunks"));
+    let anchor = overviewSelected.find(
+      (item) => item && (item.source === 'documents' || item.source === 'pdf_chunks'),
+    );
     let anchorDocumentId = Number(anchor?.documentId || anchor?.document_id || 0);
-    let anchorTitle = normalizeForSearch(String(anchor?.title || anchor?.reference || "")).toLowerCase();
-    const hasPdfChunkSelected = overviewSelected.some((item) => String(item?.source || "").trim().toLowerCase() === "pdf_chunks");
+    let anchorTitle = normalizeForSearch(
+      String(anchor?.title || anchor?.reference || ''),
+    ).toLowerCase();
+    const hasPdfChunkSelected = overviewSelected.some(
+      (item) =>
+        String(item?.source || '')
+          .trim()
+          .toLowerCase() === 'pdf_chunks',
+    );
     if (!hasPdfChunkSelected && anchor) {
-      const matchingPdfChunk = rankSourcesForMessageFocus(groups.pdf_chunks || [], focusMessage).find((item) => {
+      const matchingPdfChunk = rankSourcesForMessageFocus(
+        groups.pdf_chunks || [],
+        focusMessage,
+      ).find((item) => {
         if (!item) return false;
         if (!isOverviewSafeCandidate(item)) return false;
         const docId = Number(item.documentId || item.document_id || 0);
         if (anchorDocumentId && docId) {
           return docId === anchorDocumentId;
         }
-        const title = normalizeForSearch(String(item.title || item.reference || "")).toLowerCase();
+        const title = normalizeForSearch(String(item.title || item.reference || '')).toLowerCase();
         return Boolean(anchorTitle) && title === anchorTitle;
       });
 
       if (matchingPdfChunk) {
-        overviewSelected = [matchingPdfChunk, ...overviewSelected.filter((item) => item !== anchor)];
+        overviewSelected = [
+          matchingPdfChunk,
+          ...overviewSelected.filter((item) => item !== anchor),
+        ];
         anchor = matchingPdfChunk;
         anchorDocumentId = Number(anchor?.documentId || anchor?.document_id || 0);
-        anchorTitle = normalizeForSearch(String(anchor?.title || anchor?.reference || "")).toLowerCase();
+        anchorTitle = normalizeForSearch(
+          String(anchor?.title || anchor?.reference || ''),
+        ).toLowerCase();
       }
     }
 
     const narrowed = overviewSelected.filter((item) => {
       if (!item) return false;
-      const sourceName = String(item.source || "").trim().toLowerCase();
-      if (sourceName === "documents" || sourceName === "pdf_chunks") {
+      const sourceName = String(item.source || '')
+        .trim()
+        .toLowerCase();
+      if (sourceName === 'documents' || sourceName === 'pdf_chunks') {
         const docId = Number(item.documentId || item.document_id || 0);
         if (anchorDocumentId && docId) {
           return docId === anchorDocumentId;
         }
-        const title = normalizeForSearch(String(item.title || item.reference || "")).toLowerCase();
+        const title = normalizeForSearch(String(item.title || item.reference || '')).toLowerCase();
         return Boolean(anchorTitle) && title === anchorTitle;
       }
       return isOverviewSafeCandidate(item);
     });
 
     return {
-      selectedSourceTier: usedTiers.join(" > ") || "none",
+      selectedSourceTier: usedTiers.join(' > ') || 'none',
       selectedSources: narrowed.slice(0, targetLimit || plan.totalLimit),
       selectionTrace: {
         ...selectionTrace,
@@ -3768,7 +4159,7 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   }
 
   return {
-    selectedSourceTier: usedTiers.join(" > ") || "none",
+    selectedSourceTier: usedTiers.join(' > ') || 'none',
     selectedSources: selected.slice(0, targetLimit || plan.totalLimit),
     selectionTrace: {
       ...selectionTrace,
@@ -3783,35 +4174,63 @@ function selectDatabaseOnlySources(groups, intent = "general", options = {}) {
   };
 }
 
-function selectTieredSources(groups, intent = "general", options = {}) {
+function selectTieredSources(groups, intent = 'general', options = {}) {
   if (options.databaseOnlyMode) {
     return selectDatabaseOnlySources(groups, intent, options);
   }
 
   const routingPlan = getSourceRoutingPlan(intent);
-  const focusMessage = String(options.originalMessage || options.message || "").trim();
+  const focusMessage = String(options.originalMessage || options.message || '').trim();
   const overviewQuery = isGeneralOverviewQuery(focusMessage);
   const legalQuery = hasLegalIntent(focusMessage);
 
   const planItems = [
-    { key: "structured_laws", limit: routingPlan.limits.structured_laws || 3, priority: routingPlan.priorities.structured_laws || 0 },
-    { key: "admin_knowledge", limit: routingPlan.limits.admin_knowledge || 2, priority: routingPlan.priorities.admin_knowledge || 0 },
-    { key: "knowledge_suggestion", limit: routingPlan.limits.knowledge_suggestion || 0, priority: routingPlan.priorities.knowledge_suggestion || 0 },
-    { key: "vinichai", limit: routingPlan.limits.vinichai || 2, priority: routingPlan.priorities.vinichai || 0 },
-    { key: "documents", limit: routingPlan.limits.documents || 2, priority: routingPlan.priorities.documents || 0 },
-    { key: "pdf_chunks", limit: routingPlan.limits.pdf_chunks || 3, priority: routingPlan.priorities.pdf_chunks || 0 },
-    { key: "internet", limit: 2, priority: 0 },
-    { key: "knowledge_base", limit: routingPlan.limits.knowledge_base || 1, priority: routingPlan.priorities.knowledge_base || 0 },
+    {
+      key: 'structured_laws',
+      limit: routingPlan.limits.structured_laws || 3,
+      priority: routingPlan.priorities.structured_laws || 0,
+    },
+    {
+      key: 'admin_knowledge',
+      limit: routingPlan.limits.admin_knowledge || 2,
+      priority: routingPlan.priorities.admin_knowledge || 0,
+    },
+    {
+      key: 'knowledge_suggestion',
+      limit: routingPlan.limits.knowledge_suggestion || 0,
+      priority: routingPlan.priorities.knowledge_suggestion || 0,
+    },
+    {
+      key: 'vinichai',
+      limit: routingPlan.limits.vinichai || 2,
+      priority: routingPlan.priorities.vinichai || 0,
+    },
+    {
+      key: 'documents',
+      limit: routingPlan.limits.documents || 2,
+      priority: routingPlan.priorities.documents || 0,
+    },
+    {
+      key: 'pdf_chunks',
+      limit: routingPlan.limits.pdf_chunks || 3,
+      priority: routingPlan.priorities.pdf_chunks || 0,
+    },
+    { key: 'internet', limit: 2, priority: 0 },
+    {
+      key: 'knowledge_base',
+      limit: routingPlan.limits.knowledge_base || 1,
+      priority: routingPlan.priorities.knowledge_base || 0,
+    },
   ];
 
   // For broad "overview" queries, avoid mixing statute-by-section sources into general answers.
-  if (overviewQuery && !legalQuery && (intent === "general" || intent === "short_answer")) {
+  if (overviewQuery && !legalQuery && (intent === 'general' || intent === 'short_answer')) {
     planItems.forEach((item) => {
-      if (item.key === "structured_laws" || item.key === "vinichai" || item.key === "internet") {
+      if (item.key === 'structured_laws' || item.key === 'vinichai' || item.key === 'internet') {
         // Keep deterministic/local grounding first; internet tends to add noisy context for broad queries.
         item.limit = 0;
       }
-      if (item.key === "documents" || item.key === "pdf_chunks") {
+      if (item.key === 'documents' || item.key === 'pdf_chunks') {
         item.limit = Math.max(item.limit || 0, 2);
       }
     });
@@ -3822,7 +4241,7 @@ function selectTieredSources(groups, intent = "general", options = {}) {
   const selected = [];
   const usedTiers = [];
   const selectionTrace = {
-    mode: "tiered",
+    mode: 'tiered',
     tiers: [],
   };
 
@@ -3851,21 +4270,25 @@ function selectTieredSources(groups, intent = "general", options = {}) {
   const compactedSelected = compactSourcesForSummarization(
     {
       ...groups,
-      structured_laws: selected.filter((item) => item && (item.source === "tbl_laws" || item.source === "tbl_glaws")),
-      admin_knowledge: selected.filter((item) => item && item.source === "admin_knowledge"),
-      knowledge_suggestion: selected.filter((item) => item && item.source === "knowledge_suggestion"),
-      vinichai: selected.filter((item) => item && item.source === "tbl_vinichai"),
-      documents: selected.filter((item) => item && item.source === "documents"),
-      pdf_chunks: selected.filter((item) => item && item.source === "pdf_chunks"),
-      knowledge_base: selected.filter((item) => item && item.source === "knowledge_base"),
-      internet: selected.filter((item) => item && item.source === "internet_search"),
+      structured_laws: selected.filter(
+        (item) => item && (item.source === 'tbl_laws' || item.source === 'tbl_glaws'),
+      ),
+      admin_knowledge: selected.filter((item) => item && item.source === 'admin_knowledge'),
+      knowledge_suggestion: selected.filter(
+        (item) => item && item.source === 'knowledge_suggestion',
+      ),
+      vinichai: selected.filter((item) => item && item.source === 'tbl_vinichai'),
+      documents: selected.filter((item) => item && item.source === 'documents'),
+      pdf_chunks: selected.filter((item) => item && item.source === 'pdf_chunks'),
+      knowledge_base: selected.filter((item) => item && item.source === 'knowledge_base'),
+      internet: selected.filter((item) => item && item.source === 'internet_search'),
     },
     intent,
     options,
   );
 
   return {
-    selectedSourceTier: usedTiers.join(" > ") || "none",
+    selectedSourceTier: usedTiers.join(' > ') || 'none',
     selectedSources: compactedSelected,
     selectionTrace: {
       ...selectionTrace,
@@ -3890,4 +4313,5 @@ module.exports = {
   selectDatabaseOnlySources,
   selectTieredSources,
   sortByScore,
+  withTimeout,
 };

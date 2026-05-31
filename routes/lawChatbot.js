@@ -83,11 +83,18 @@ router.post('/debug-decision', requireAdminAuth, async (req, res) => {
       message,
       target: target || 'all',
       selectedSourceTier: evidence.selectedSourceTier || 'none',
+      selectedQuery: evidence.queryRewriteTrace?.selectedQuery || evidence.effectiveMessage || message,
+      queryRewriteTrace: evidence.queryRewriteTrace || null,
+      searchTrace: evidence.searchTrace || null,
+      selectionDiagnostics: evidence.selectionDiagnostics || null,
       timing: evidence.timing || {},
       sources: (evidence.sources || []).map((item) => ({
         source: item.source || '',
         reference: item.reference || item.title || '',
         score: Number(item.score || 0),
+        rawScore: Number(item.rawScore || 0),
+        focusAlignmentRaw: Number(item.rankingTrace?.focusAlignmentRaw || 0),
+        matchedReference: item.rankingTrace?.matchedReference || '',
         content: String(item.content || item.chunk_text || '').slice(0, 500),
         retrievalPriority: Number(item.retrievalPriority || 0)
       })),
@@ -95,6 +102,9 @@ router.post('/debug-decision', requireAdminAuth, async (req, res) => {
         source: item.source || '',
         reference: item.reference || item.title || '',
         score: Number(item.score || 0),
+        rawScore: Number(item.rawScore || 0),
+        focusAlignmentRaw: Number(item.rankingTrace?.focusAlignmentRaw || 0),
+        matchedReference: item.rankingTrace?.matchedReference || '',
         content: String(item.content || item.chunk_text || '').slice(0, 500),
         retrievalPriority: Number(item.retrievalPriority || 0)
       })),

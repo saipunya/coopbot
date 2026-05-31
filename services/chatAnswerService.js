@@ -1501,6 +1501,10 @@ function isCoopFormationQuestion(message) {
 }
 
 function sourceMatchesCoopFormationAnswerFocus(source = {}) {
+  if (isRepealedAnswerSource(source)) {
+    return false;
+  }
+
   const sourceText = normalizeForSearch(buildSourceSearchText(source)).toLowerCase();
   if (!sourceText) {
     return false;
@@ -1520,6 +1524,14 @@ function sourceMatchesCoopFormationAnswerFocus(source = {}) {
       sourceText,
     );
   return hasStrongFormationSignal || !hasDissolutionSignal;
+}
+
+function isRepealedAnswerSource(source = {}) {
+  const body = String(source?.content || source?.detail || "").trim();
+  const combinedText = [source?.content, source?.detail, source?.comment, source?.note]
+    .filter(Boolean)
+    .join(" ");
+  return /^\(?ยกเลิก\)?$/i.test(body) || /ยกเลิกโดย/.test(combinedText);
 }
 
 function buildCoopFormationFocusedAnswer(sources, options = {}) {
@@ -3666,6 +3678,16 @@ function selectDbOnlyMainChatAnswerEntries(sources = [], options = {}) {
   if (isCoopFormationQuestion(message)) {
     const formationEntries = dedupedEntries.filter((entry) => sourceMatchesCoopFormationAnswerFocus(entry.source));
     if (formationEntries.length > 0) {
+      const section33 = formationEntries
+        .filter((entry) => isStructuredLawSource(entry.source) && entry.lawNumber === "33")
+        .sort((left, right) => sortLawSectionSources(left.source, right.source, "33"))[0];
+      const section34 = formationEntries
+        .filter((entry) => isStructuredLawSource(entry.source) && entry.lawNumber === "34")
+        .sort((left, right) => sortLawSectionSources(left.source, right.source, "34"))[0];
+      if (section33 && section34) {
+        return [section33, section34];
+      }
+
       answerEntries = formationEntries;
     }
   }

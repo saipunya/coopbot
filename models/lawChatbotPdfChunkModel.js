@@ -1,8 +1,8 @@
-const fs = require("node:fs/promises");
-const path = require("node:path");
-const { getDbPool } = require("../config/db");
-const { normalizeThai } = require("../utils/thaiNormalizer");
-const { expandKeywords } = require("../utils/synonyms");
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { getDbPool } = require('../config/db');
+const { normalizeThai } = require('../utils/thaiNormalizer');
+const { expandKeywords } = require('../utils/synonyms');
 const {
   hasExclusiveMeaningMismatch,
   makeBigrams,
@@ -12,13 +12,13 @@ const {
   segmentWords,
   uniqueTokens,
   detectTopicFamily,
-} = require("../services/thaiTextUtils");
+} = require('../services/thaiTextUtils');
 const {
   createEmbedding,
   bufferToEmbedding,
   cosineSimilarity,
   isEmbeddingEnabled,
-} = require("../services/embeddingService");
+} = require('../services/embeddingService');
 
 // Cache for embeddings to avoid repeated DB queries
 let embeddingCache = null;
@@ -26,7 +26,7 @@ let embeddingCacheTime = 0;
 const EMBEDDING_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 let pdfChunkFulltextSearchConfigCache = null;
 let pdfChunkColumnMetadataCache = null;
-const SEARCH_MISS_LOG_PATH = path.join(__dirname, "..", "logs", "search-misses.jsonl");
+const SEARCH_MISS_LOG_PATH = path.join(__dirname, '..', 'logs', 'search-misses.jsonl');
 const SEARCH_MISS_LOG_COOLDOWN_MS = 10 * 60 * 1000;
 const HYBRID_SEMANTIC_FALLBACK_MIN_SCORE = Number(
   process.env.HYBRID_SEMANTIC_FALLBACK_MIN_SCORE || 70,
@@ -35,18 +35,18 @@ const searchMissLogTimestamps = new Map();
 let searchMissLogWarned = false;
 
 const GENERIC_QUERY_TOKENS = new Set([
-  "ค่า",
-  "สหกรณ์",
-  "กลุ่ม",
-  "เกษตรกร",
-  "กฎหมาย",
-  "พระราชบัญญัติ",
-  "พรบ",
-  "พร",
-  "บ",
-  "มาตรา",
-  "ข้อ",
-  "ระเบียบ",
+  'ค่า',
+  'สหกรณ์',
+  'กลุ่ม',
+  'เกษตรกร',
+  'กฎหมาย',
+  'พระราชบัญญัติ',
+  'พรบ',
+  'พร',
+  'บ',
+  'มาตรา',
+  'ข้อ',
+  'ระเบียบ',
 ]);
 
 function normalizeSearchKeyword(text) {
@@ -54,14 +54,14 @@ function normalizeSearchKeyword(text) {
 }
 
 function compactThaiText(text) {
-  return normalizeSearchKeyword(text).replace(/\s+/g, "");
+  return normalizeSearchKeyword(text).replace(/\s+/g, '');
 }
 
 function isFulltextMatchingKeyError(error) {
   return Boolean(
     error &&
-      (error.code === "ER_FT_MATCHING_KEY_NOT_FOUND" ||
-        /FULLTEXT index matching the column list/i.test(String(error.message || ""))),
+    (error.code === 'ER_FT_MATCHING_KEY_NOT_FOUND' ||
+      /FULLTEXT index matching the column list/i.test(String(error.message || ''))),
   );
 }
 
@@ -104,13 +104,13 @@ function calculateDiceCoefficient(leftText, rightText) {
 }
 
 function isGarbage(text) {
-  const rawText = String(text || "");
+  const rawText = String(text || '');
   const normalizedText = normalizeSearchKeyword(rawText);
   if (!normalizedText) {
     return true;
   }
 
-  if (normalizedText.replace(/\s+/g, "").length < 4) {
+  if (normalizedText.replace(/\s+/g, '').length < 4) {
     return true;
   }
 
@@ -134,10 +134,7 @@ function buildCandidateTerms(message) {
     (token) => token && token.length >= 3 && !GENERIC_QUERY_TOKENS.has(token),
   );
 
-  const terms = uniqueTokens([
-    normalizedMessage,
-    ...specificTokens,
-  ]).filter(Boolean);
+  const terms = uniqueTokens([normalizedMessage, ...specificTokens]).filter(Boolean);
 
   if (terms.length > 0) {
     return terms.slice(0, 8);
@@ -149,7 +146,9 @@ function buildCandidateTerms(message) {
 
 function looksLikeAmountQuery(query) {
   const text = normalizeForSearch(query).toLowerCase();
-  return /เท่าไร|เท่าไหร่|กี่บาท|กี่เปอร์เซ็นต์|กี่ร้อยละ|อัตรา|จำนวนเงิน|ค่าบำรุง|ชำระ|จ่าย/.test(text);
+  return /เท่าไร|เท่าไหร่|กี่บาท|กี่เปอร์เซ็นต์|กี่ร้อยละ|อัตรา|จำนวนเงิน|ค่าบำรุง|ชำระ|จ่าย/.test(
+    text,
+  );
 }
 
 function scoreAmountSignals(query, rawText) {
@@ -157,7 +156,7 @@ function scoreAmountSignals(query, rawText) {
     return 0;
   }
 
-  const text = String(rawText || "");
+  const text = String(rawText || '');
   let score = 0;
 
   if (/\d/.test(text)) {
@@ -180,7 +179,7 @@ function scoreAmountSignals(query, rawText) {
 }
 
 function countRegexMatches(text, pattern) {
-  return (String(text || "").match(pattern) || []).length;
+  return (String(text || '').match(pattern) || []).length;
 }
 
 function isOpposingTopicConflict(query, rowText) {
@@ -207,8 +206,8 @@ function isOpposingTopicConflict(query, rowText) {
 }
 
 function classifyChunkQuality(row = {}) {
-  const rawKeyword = String(row.keyword || "");
-  const rawChunkText = String(row.chunk_text || "");
+  const rawKeyword = String(row.keyword || '');
+  const rawChunkText = String(row.chunk_text || '');
   const rawText = `${rawKeyword} ${rawChunkText}`.trim();
   const normalizedText = normalizeForSearch(rawText).toLowerCase();
   const thaiChars = countRegexMatches(rawText, /[ก-๙]/g);
@@ -227,14 +226,16 @@ function classifyChunkQuality(row = {}) {
     /(?:^|[\s|])(?:หน้า\s*\d+|page\s*\d+|เอกสารแนบ|สิ่งที่ส่งมาด้วย|หมายเหตุ|โทร\.?|โทรสาร|fax|email|www\.|https?:\/\/|เลขที่หนังสือ|ลงวันที่|ที่ตั้งสำนักงาน|ผู้สแกน|scan|scanner)(?:$|[\s|])/i;
   const sourceLabelPattern =
     /(เอกสารที่อัปโหลด|ฐานความรู้ที่ผู้ดูแลระบบเพิ่ม\/แก้ไข|พรบ\.สหกรณ์ พ\.ศ\. 2542|หนังสือวินิจฉัย\/ตีความ|Q&A ที่ผู้ดูแลเตรียมไว้)\s*:/i;
-  const fragmentedLineCount = String(rawChunkText || "")
+  const fragmentedLineCount = String(rawChunkText || '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
     .filter((line) => line.length <= 24 && !/[.!?ฯ:]$/.test(line)).length;
   const sentenceLikeCount = countRegexMatches(rawChunkText, /[.!?ฯ:]/g);
 
-  const tooManyReplacementGlyphs = replacementGlyphHits >= 3 || (rawChunkText.length > 0 && replacementGlyphHits / rawChunkText.length > 0.01);
+  const tooManyReplacementGlyphs =
+    replacementGlyphHits >= 3 ||
+    (rawChunkText.length > 0 && replacementGlyphHits / rawChunkText.length > 0.01);
   const tooManyControlChars = controlCharHits >= 3;
   const tooManyGarbledHits = garbledHits >= 2;
   const punctuationHeavy = rawChunkText.length > 0 && punctuationHits / rawChunkText.length > 0.2;
@@ -243,7 +244,10 @@ function classifyChunkQuality(row = {}) {
     sourceLabelPattern.test(rawKeyword) ||
     metadataPattern.test(rawChunkText) ||
     metadataPattern.test(rawKeyword) ||
-    (normalizedText.length > 0 && thaiChars < 12 && sentenceLikeCount === 0 && fragmentedLineCount >= 2);
+    (normalizedText.length > 0 &&
+      thaiChars < 12 &&
+      sentenceLikeCount === 0 &&
+      fragmentedLineCount >= 2);
   const fragmentedText =
     rawChunkText.length > 0 &&
     fragmentedLineCount >= 4 &&
@@ -264,24 +268,26 @@ function classifyChunkQuality(row = {}) {
   };
 }
 
-function isCoopFormationQuery(query = "") {
+function isCoopFormationQuery(query = '') {
   const normalizedQuery = normalizeForSearch(query).toLowerCase();
   if (!normalizedQuery) {
     return false;
   }
 
-  return /(?:การ)?จัดตั้ง(?:สหกรณ์)?|จดทะเบียนจัดตั้ง|ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|ประชุมจัดตั้ง/.test(normalizedQuery);
+  return /(?:การ)?จัดตั้ง(?:สหกรณ์)?|จดทะเบียนจัดตั้ง|ผู้เริ่มก่อการ|สมาชิกผู้ก่อการ|ประชุมจัดตั้ง/.test(
+    normalizedQuery,
+  );
 }
 
-function countFamilyTermHits(text = "", terms = []) {
-  const normalizedText = String(text || "");
+function countFamilyTermHits(text = '', terms = []) {
+  const normalizedText = String(text || '');
   if (!normalizedText || !Array.isArray(terms) || terms.length === 0) {
     return 0;
   }
 
   let hits = 0;
   for (const term of terms) {
-    const cleaned = normalizeForSearch(String(term || "")).toLowerCase();
+    const cleaned = normalizeForSearch(String(term || '')).toLowerCase();
     if (cleaned && normalizedText.includes(cleaned)) {
       hits += 1;
     }
@@ -301,11 +307,11 @@ function buildRowSearchCorpus(row = {}) {
     row.originalname,
   ]
     .filter(Boolean)
-    .join(" ");
+    .join(' ');
 }
 
 function applyTopicBoost(row, family, query, baseScore) {
-  if (!family || typeof family !== "object") {
+  if (!family || typeof family !== 'object') {
     return baseScore;
   }
 
@@ -333,26 +339,47 @@ function applyTopicBoost(row, family, query, baseScore) {
 
   // For PDF chunk retrieval, only apply preferredSources when "pdf_chunks" is explicitly preferred.
   const preferredSources = Array.isArray(family.preferredSources) ? family.preferredSources : [];
-  if (preferredSources.some((source) => String(source || "").trim().toLowerCase() === "pdf_chunks")) {
+  if (
+    preferredSources.some(
+      (source) =>
+        String(source || '')
+          .trim()
+          .toLowerCase() === 'pdf_chunks',
+    )
+  ) {
     score += 10;
   }
 
   return score;
 }
 
+// Bounded FIFO cache for the expensive query-dependent parts of scoreChunkMatch.
+// Within a single search batch, 30+ candidate rows are scored with the same query,
+// so we compute normalizeForSearch / segmentWords / makeBigrams only once per
+// unique query string and reuse the results for every row.
+const _scoreChunkQueryCache = new Map();
+
 function scoreChunkMatch(query, row) {
-  const normalizedQuery = normalizeForSearch(query).toLowerCase();
+  let _qp = _scoreChunkQueryCache.get(query);
+  if (!_qp) {
+    const _nq = normalizeForSearch(query).toLowerCase();
+    const _qt = uniqueTokens(segmentWords(query));
+    _qp = { normalizedQuery: _nq, queryTokens: _qt, queryBigrams: makeBigrams(_qt) };
+    if (_scoreChunkQueryCache.size >= 10) {
+      _scoreChunkQueryCache.delete(_scoreChunkQueryCache.keys().next().value);
+    }
+    _scoreChunkQueryCache.set(query, _qp);
+  }
+  const { normalizedQuery, queryTokens, queryBigrams } = _qp;
   const rowText = normalizeForSearch(buildRowSearchCorpus(row)).toLowerCase();
-  const rawKeyword = String(row.keyword || "");
-  const rawChunkText = String(row.chunk_text || "");
-  const rawTitle = String(row.title || "");
-  const rawDocumentNumber = String(row.document_number || "");
-  const rawDocumentSource = String(row.document_source || "");
+  const rawKeyword = String(row.keyword || '');
+  const rawChunkText = String(row.chunk_text || '');
+  const rawTitle = String(row.title || '');
+  const rawDocumentNumber = String(row.document_number || '');
+  const rawDocumentSource = String(row.document_source || '');
   const quality = classifyChunkQuality(row);
-  const queryTokens = uniqueTokens(segmentWords(query));
   const rowTokens = uniqueTokens(segmentWords(rowText));
   const rowTokenSet = new Set(rowTokens);
-  const queryBigrams = makeBigrams(queryTokens);
   const overviewStyleQuery =
     /(ความรู้ทั่วไป|ความรู้เกี่ยวกับ|ทั่วไปเกี่ยวกับ|เกี่ยวกับสหกรณ์|เบื้องต้น|ภาพรวม|สรุป|นิยาม|ความหมาย|หมายถึง|สหกรณ์คืออะไร|คืออะไร|ประโยชน์|ข้อดี|ดีอย่างไร|ช่วยอะไร)/.test(
       normalizedQuery,
@@ -382,7 +409,12 @@ function scoreChunkMatch(query, row) {
     }
   }
 
-  if (normalizedQuery && String(row.keyword || "").toLowerCase().includes(normalizedQuery)) {
+  if (
+    normalizedQuery &&
+    String(row.keyword || '')
+      .toLowerCase()
+      .includes(normalizedQuery)
+  ) {
     score += 18;
   }
 
@@ -394,7 +426,7 @@ function scoreChunkMatch(query, row) {
     score += 20;
   }
 
-  const keywordTokens = uniqueTokens(segmentWords(row.keyword || ""));
+  const keywordTokens = uniqueTokens(segmentWords(row.keyword || ''));
   const keywordHits = queryTokens.filter((token) => keywordTokens.includes(token)).length;
   score += keywordHits * 12;
 
@@ -403,7 +435,9 @@ function scoreChunkMatch(query, row) {
   score += titleHits * 10;
 
   const documentNumberTokens = uniqueTokens(segmentWords(rawDocumentNumber));
-  const documentNumberHits = queryTokens.filter((token) => documentNumberTokens.includes(token)).length;
+  const documentNumberHits = queryTokens.filter((token) =>
+    documentNumberTokens.includes(token),
+  ).length;
   score += documentNumberHits * 9;
 
   const sourceTokens = uniqueTokens(segmentWords(rawDocumentSource));
@@ -414,11 +448,11 @@ function scoreChunkMatch(query, row) {
   score += coverage * 20;
   score += scoreQueryFocusAlignment(query, `${rawKeyword} ${rawChunkText}`);
 
-  if (hasExclusiveMeaningMismatch(query, `${row.keyword || ""} ${row.chunk_text || ""}`)) {
+  if (hasExclusiveMeaningMismatch(query, `${row.keyword || ''} ${row.chunk_text || ''}`)) {
     score -= 120;
   }
 
-  if (isOpposingTopicConflict(query, `${row.keyword || ""} ${row.chunk_text || ""}`)) {
+  if (isOpposingTopicConflict(query, `${row.keyword || ''} ${row.chunk_text || ''}`)) {
     score -= 140;
   }
 
@@ -437,10 +471,18 @@ function scoreChunkMatch(query, row) {
 
   // Overview queries should avoid pulling statute-by-section chunks unless users clearly ask legal questions.
   if (overviewStyleQuery && !legalIntentQuery) {
-    if (/(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(rowText)) {
+    if (
+      /(มาตรา\s*\d+|มาตรา|วรรค|อนุมาตรา|พระราชบัญญัติ|กฎกระทรวง|ระเบียบ|ข้อบังคับ|นายทะเบียน|อำนาจหน้าที่)/.test(
+        rowText,
+      )
+    ) {
       score -= 90;
     }
-    if (/(นิยาม|ความหมาย|หมายถึง|คือ|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ|ทั่วไป|เบื้องต้น|ภาพรวม)/.test(rowText)) {
+    if (
+      /(นิยาม|ความหมาย|หมายถึง|คือ|ประโยชน์|ข้อดี|วัตถุประสงค์|หลักการ|ทั่วไป|เบื้องต้น|ภาพรวม)/.test(
+        rowText,
+      )
+    ) {
       score += 22;
     }
   }
@@ -479,34 +521,42 @@ function scoreChunkMatch(query, row) {
   }
 
   // Legacy, keep for safety: union-fee keyword shaping (family-driven rules also apply).
-  if (!topicFamily && (queryLower.includes("บำรุง") || queryLower.includes("สันนิบาต"))) {
+  if (!topicFamily && (queryLower.includes('บำรุง') || queryLower.includes('สันนิบาต'))) {
     // Strong boost for chunks directly about ค่าบำรุงสันนิบาต
-    if (keywordLower.includes("บำรุง") && keywordLower.includes("สันนิบาต")) {
+    if (keywordLower.includes('บำรุง') && keywordLower.includes('สันนิบาต')) {
       score += 40;
-    } else if (keywordLower.includes("บำรุง") || keywordLower.includes("สันนิบาต")) {
+    } else if (keywordLower.includes('บำรุง') || keywordLower.includes('สันนิบาต')) {
       score += 20;
     }
-    
+
     // Boost for content mentioning อัตรา, กฎกระทรวง, ร้อยละ (rate/regulation terms)
-    if (chunkLower.includes("อัตรา") || chunkLower.includes("กฎกระทรวง") || chunkLower.includes("ร้อยละ")) {
+    if (
+      chunkLower.includes('อัตรา') ||
+      chunkLower.includes('กฎกระทรวง') ||
+      chunkLower.includes('ร้อยละ')
+    ) {
       score += 15;
     }
-    
+
     // Penalize unrelated topics
-    if (keywordLower.includes("เดินทาง") || keywordLower.includes("ฝึกอบรม")) {
+    if (keywordLower.includes('เดินทาง') || keywordLower.includes('ฝึกอบรม')) {
       score -= 40;
     }
-    if (keywordLower.includes("ชำระบัญชี") || keywordLower.includes("จ่ายคืนค่าหุ้น")) {
+    if (keywordLower.includes('ชำระบัญชี') || keywordLower.includes('จ่ายคืนค่าหุ้น')) {
       score -= 25;
     }
-    if (keywordLower.includes("สมาชิกสมทบ") || keywordLower.includes("ข้อบังคับ")) {
+    if (keywordLower.includes('สมาชิกสมทบ') || keywordLower.includes('ข้อบังคับ')) {
       score -= 20;
     }
     // Penalize chunks about unrelated financial operations
-    if (keywordLower.includes("เฉลี่ยค่าหุ้น") || keywordLower.includes("จ่ายคืนค่าหุ้น") || keywordLower.includes("ปันผล")) {
+    if (
+      keywordLower.includes('เฉลี่ยค่าหุ้น') ||
+      keywordLower.includes('จ่ายคืนค่าหุ้น') ||
+      keywordLower.includes('ปันผล')
+    ) {
       score -= 35;
     }
-    if (keywordLower.includes("องค์ความรู้") || keywordLower.includes("km")) {
+    if (keywordLower.includes('องค์ความรู้') || keywordLower.includes('km')) {
       score -= 25;
     }
   }
@@ -538,9 +588,15 @@ function scoreChunkMatch(query, row) {
       /ชำระบัญชี/,
     ];
 
-    const strongFormationHits = strongFormationPatterns.filter((pattern) => pattern.test(combinedLower)).length;
-    const supportingFormationHits = supportingFormationPatterns.filter((pattern) => pattern.test(combinedLower)).length;
-    const registrarPowerHits = registrarPowerPatterns.filter((pattern) => pattern.test(combinedLower)).length;
+    const strongFormationHits = strongFormationPatterns.filter((pattern) =>
+      pattern.test(combinedLower),
+    ).length;
+    const supportingFormationHits = supportingFormationPatterns.filter((pattern) =>
+      pattern.test(combinedLower),
+    ).length;
+    const registrarPowerHits = registrarPowerPatterns.filter((pattern) =>
+      pattern.test(combinedLower),
+    ).length;
 
     if (strongFormationHits > 0) {
       score += strongFormationHits * 26;
@@ -551,7 +607,11 @@ function scoreChunkMatch(query, row) {
     }
 
     // If this chunk mainly mentions registrar powers without formation details, push it down hard.
-    if (/นายทะเบียน/.test(combinedLower) && strongFormationHits === 0 && supportingFormationHits === 0) {
+    if (
+      /นายทะเบียน/.test(combinedLower) &&
+      strongFormationHits === 0 &&
+      supportingFormationHits === 0
+    ) {
       score -= 42;
     }
 
@@ -561,7 +621,9 @@ function scoreChunkMatch(query, row) {
   }
 
   // Heavy penalty for garbled OCR text (Thai encoding issues)
-  const thaiGarbledHits = (rawChunkText.match(/[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/g) || []).length;
+  const thaiGarbledHits = (
+    rawChunkText.match(/[็์ิีุู่้๊๋]{3,}|~็|็~|◊|Ë|‡|∫|≈|¡|¥|å|ì|î|ï|ñ|ó|ô|ö|ù|û|ü/g) || []
+  ).length;
   if (thaiGarbledHits > 0) {
     score -= Math.min(thaiGarbledHits, 30) * 5;
   }
@@ -602,7 +664,7 @@ function buildSmartSearchTerms(message) {
     ...expandKeywords(expandedConceptText),
     ...queryTokens.flatMap((token) => expandKeywords(token)),
   ]).filter(Boolean);
-  const genericExpansionTerms = new Set([...GENERIC_QUERY_TOKENS, "coop", "สหกรณ"]);
+  const genericExpansionTerms = new Set([...GENERIC_QUERY_TOKENS, 'coop', 'สหกรณ']);
   const specificExpandedTerms = expandedTerms.filter((term) => !genericExpansionTerms.has(term));
   const filteredTerms =
     specificExpandedTerms.length > 0
@@ -639,25 +701,32 @@ function buildSmartSearchTerms(message) {
     expandedConceptText,
     searchTerms,
     fallbackTerms,
-    queryTokens: queryTokens.filter((token) => token.length >= 2 && !GENERIC_QUERY_TOKENS.has(token)),
+    queryTokens: queryTokens.filter(
+      (token) => token.length >= 2 && !GENERIC_QUERY_TOKENS.has(token),
+    ),
   };
 }
 
 function buildBooleanModeQuery(terms = []) {
   const booleanTerms = uniqueTokens(
     terms
-      .flatMap((term) => String(term || "").split(/\s+/))
+      .flatMap((term) => String(term || '').split(/\s+/))
       .map((term) => normalizeSearchKeyword(term))
       .filter((term) => term && term.length >= 2),
   )
     .slice(0, 6)
     .map((term) => `${term}*`);
 
-  return booleanTerms.join(" ");
+  return booleanTerms.join(' ');
 }
 
 function scoreApproximateTokenHits(queryTokens = [], rowTokens = []) {
-  if (!Array.isArray(queryTokens) || !Array.isArray(rowTokens) || queryTokens.length === 0 || rowTokens.length === 0) {
+  if (
+    !Array.isArray(queryTokens) ||
+    !Array.isArray(rowTokens) ||
+    queryTokens.length === 0 ||
+    rowTokens.length === 0
+  ) {
     return 0;
   }
 
@@ -685,7 +754,10 @@ function scoreApproximateTokenHits(queryTokens = [], rowTokens = []) {
         const lengthRatio =
           Math.min(rowToken.length, compactQuery.length) /
           Math.max(rowToken.length, compactQuery.length);
-        if ((rowToken.includes(compactQuery) || compactQuery.includes(rowToken)) && lengthRatio >= 0.75) {
+        if (
+          (rowToken.includes(compactQuery) || compactQuery.includes(rowToken)) &&
+          lengthRatio >= 0.75
+        ) {
           bestSimilarity = 1;
           break;
         }
@@ -712,37 +784,43 @@ function scoreApproximateTokenHits(queryTokens = [], rowTokens = []) {
 function buildRowPresentation(row) {
   return {
     ...row,
-    source: "pdf_chunks",
-    title: row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
+    source: 'pdf_chunks',
+    title: row.title || row.originalname || row.keyword || 'เอกสารที่อัปโหลด',
     reference:
-      row.document_number || row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
-    documentNumber: row.document_number || "",
-    documentDateText: row.document_date_text || "",
-    documentSource: row.document_source || "",
+      row.document_number || row.title || row.originalname || row.keyword || 'เอกสารที่อัปโหลด',
+    documentNumber: row.document_number || '',
+    documentDateText: row.document_date_text || '',
+    documentSource: row.document_source || '',
   };
 }
 
 function evaluateSearchMissReason(results = []) {
   if (!Array.isArray(results) || results.length === 0) {
-    return "no_results";
+    return 'no_results';
   }
 
   const topScore = Number(results[0]?.score || 0);
   if (topScore < 45) {
-    return "low_top_score";
+    return 'low_top_score';
   }
 
   if (results.length === 1 && topScore < 70) {
-    return "thin_result_set";
+    return 'thin_result_set';
   }
 
-  return "";
+  return '';
 }
 
 function shouldAppendSearchMissLog(record = {}) {
-  const normalizedQuery = String(record.normalizedQuery || "").trim().toLowerCase();
-  const reason = String(record.reason || "").trim().toLowerCase();
-  const topKeyword = String(record.topResultKeyword || "").trim().toLowerCase();
+  const normalizedQuery = String(record.normalizedQuery || '')
+    .trim()
+    .toLowerCase();
+  const reason = String(record.reason || '')
+    .trim()
+    .toLowerCase();
+  const topKeyword = String(record.topResultKeyword || '')
+    .trim()
+    .toLowerCase();
   const topScoreBucket = Math.floor(Number(record.topResultScore || 0) / 10);
   const key = `${normalizedQuery}|${reason}|${topKeyword}|${topScoreBucket}`;
   const now = Date.now();
@@ -763,7 +841,7 @@ async function appendSearchMissLog(record = {}) {
     }
 
     await fs.mkdir(path.dirname(SEARCH_MISS_LOG_PATH), { recursive: true });
-    await fs.appendFile(SEARCH_MISS_LOG_PATH, `${JSON.stringify(record)}\n`, "utf8");
+    await fs.appendFile(SEARCH_MISS_LOG_PATH, `${JSON.stringify(record)}\n`, 'utf8');
   } catch (error) {
     if (!searchMissLogWarned) {
       searchMissLogWarned = true;
@@ -782,11 +860,11 @@ function logSearchMissIfNeeded(message, searchContext, results) {
   void appendSearchMissLog({
     timestamp: new Date().toISOString(),
     reason,
-    originalQuery: String(message || ""),
-    normalizedQuery: searchContext?.normalizedMessage || "",
+    originalQuery: String(message || ''),
+    normalizedQuery: searchContext?.normalizedMessage || '',
     expandedTerms: Array.isArray(searchContext?.searchTerms) ? searchContext.searchTerms : [],
     totalResults: Array.isArray(results) ? results.length : 0,
-    topResultKeyword: topResult?.keyword || "",
+    topResultKeyword: topResult?.keyword || '',
     topResultScore: Number(topResult?.score || 0),
   });
 }
@@ -799,13 +877,13 @@ function rankChunkRows(message, rows, searchContext, limit) {
       const combinedText = buildRowSearchCorpus(row).trim();
       const haystack = normalizeSearchKeyword(combinedText);
       const rowTokens = uniqueTokens([
-        ...segmentWords(row.keyword || ""),
-        ...segmentWords(row.chunk_text || ""),
-        ...segmentWords(row.clean_text || ""),
-        ...segmentWords(row.title || ""),
-        ...segmentWords(row.document_number || ""),
-        ...segmentWords(row.document_source || ""),
-        ...segmentWords(row.originalname || ""),
+        ...segmentWords(row.keyword || ''),
+        ...segmentWords(row.chunk_text || ''),
+        ...segmentWords(row.clean_text || ''),
+        ...segmentWords(row.title || ''),
+        ...segmentWords(row.document_number || ''),
+        ...segmentWords(row.document_source || ''),
+        ...segmentWords(row.originalname || ''),
         ...segmentWords(haystack),
       ])
         .map((token) => normalizeSearchKeyword(token))
@@ -894,12 +972,13 @@ class LawChatbotPdfChunkModel {
     documents.forEach((document, index) => {
       memoryDocuments.push({
         id: Number(document.id || index + 1),
-        title: String(document.title || ""),
-        documentNumber: String(document.documentNumber || ""),
-        documentDateText: String(document.documentDateText || ""),
-        documentSource: String(document.documentSource || ""),
-        originalname: String(document.originalname || ""),
-        isSearchable: document.isSearchable === false || Number(document.isSearchable) === 0 ? 0 : 1,
+        title: String(document.title || ''),
+        documentNumber: String(document.documentNumber || ''),
+        documentDateText: String(document.documentDateText || ''),
+        documentSource: String(document.documentSource || ''),
+        originalname: String(document.originalname || ''),
+        isSearchable:
+          document.isSearchable === false || Number(document.isSearchable) === 0 ? 0 : 1,
         created_at: document.created_at || new Date().toISOString(),
       });
     });
@@ -907,9 +986,9 @@ class LawChatbotPdfChunkModel {
     chunks.forEach((chunk, index) => {
       memoryChunks.push({
         id: Number(chunk.id || index + 1),
-        keyword: String(chunk.keyword || ""),
-        chunk_text: String(chunk.chunk_text || chunk.chunkText || ""),
-        clean_text: String(chunk.clean_text || chunk.cleanText || ""),
+        keyword: String(chunk.keyword || ''),
+        chunk_text: String(chunk.chunk_text || chunk.chunkText || ''),
+        clean_text: String(chunk.clean_text || chunk.cleanText || ''),
         is_active: chunk.is_active === false || Number(chunk.is_active) === 0 ? 0 : 1,
         quality_score: Number.isFinite(Number(chunk.quality_score))
           ? Number(chunk.quality_score)
@@ -934,12 +1013,15 @@ class LawChatbotPdfChunkModel {
 
     try {
       const [rows] = await pool.query("SHOW INDEX FROM pdf_chunks WHERE Index_type = 'FULLTEXT'");
-      const effectiveColumnMetadata = columnMetadata || (await this.resolvePdfChunkColumnMetadata(pool));
+      const effectiveColumnMetadata =
+        columnMetadata || (await this.resolvePdfChunkColumnMetadata(pool));
       const indexColumnsByName = new Map();
 
       (rows || []).forEach((row) => {
-        const indexName = String(row.Key_name || "").trim();
-        const columnName = String(row.Column_name || "").trim().toLowerCase();
+        const indexName = String(row.Key_name || '').trim();
+        const columnName = String(row.Column_name || '')
+          .trim()
+          .toLowerCase();
         const sequence = Number(row.Seq_in_index || 0);
         if (!indexName || !columnName || !sequence) {
           return;
@@ -952,23 +1034,31 @@ class LawChatbotPdfChunkModel {
 
       const candidateColumnSets = [];
       if (effectiveColumnMetadata.hasCleanText) {
-        candidateColumnSets.push(["keyword", "chunk_text", "clean_text"]);
+        candidateColumnSets.push(['keyword', 'chunk_text', 'clean_text']);
       }
-      candidateColumnSets.push(["keyword", "chunk_text"]);
+      candidateColumnSets.push(['keyword', 'chunk_text']);
       if (
         effectiveColumnMetadata.hasTitle &&
         effectiveColumnMetadata.hasQuestion &&
         effectiveColumnMetadata.hasAnswer &&
         effectiveColumnMetadata.hasCleanText
       ) {
-        candidateColumnSets.push(["keyword", "title", "question", "answer", "chunk_text", "clean_text"]);
+        candidateColumnSets.push([
+          'keyword',
+          'title',
+          'question',
+          'answer',
+          'chunk_text',
+          'clean_text',
+        ]);
       }
 
       const matchingColumns =
         candidateColumnSets.find((candidateColumns) =>
-          [...indexColumnsByName.values()].some((indexColumns) =>
-            indexColumns.length === candidateColumns.length &&
-            indexColumns.every((columnName, index) => columnName === candidateColumns[index]),
+          [...indexColumnsByName.values()].some(
+            (indexColumns) =>
+              indexColumns.length === candidateColumns.length &&
+              indexColumns.every((columnName, index) => columnName === candidateColumns[index]),
           ),
         ) || [];
 
@@ -1003,18 +1093,24 @@ class LawChatbotPdfChunkModel {
     }
 
     try {
-      const [rows] = await pool.query("SHOW COLUMNS FROM pdf_chunks");
-      const fields = new Set((rows || []).map((row) => String(row.Field || "").trim().toLowerCase()));
+      const [rows] = await pool.query('SHOW COLUMNS FROM pdf_chunks');
+      const fields = new Set(
+        (rows || []).map((row) =>
+          String(row.Field || '')
+            .trim()
+            .toLowerCase(),
+        ),
+      );
       pdfChunkColumnMetadataCache = {
-        hasCleanText: fields.has("clean_text"),
-        hasIsActive: fields.has("is_active"),
-        hasQualityScore: fields.has("quality_score"),
-        hasOriginalText: fields.has("original_text"),
-        hasChunkType: fields.has("chunk_type"),
-        hasSortOrder: fields.has("sort_order"),
-        hasTitle: fields.has("title"),
-        hasQuestion: fields.has("question"),
-        hasAnswer: fields.has("answer"),
+        hasCleanText: fields.has('clean_text'),
+        hasIsActive: fields.has('is_active'),
+        hasQualityScore: fields.has('quality_score'),
+        hasOriginalText: fields.has('original_text'),
+        hasChunkType: fields.has('chunk_type'),
+        hasSortOrder: fields.has('sort_order'),
+        hasTitle: fields.has('title'),
+        hasQuestion: fields.has('question'),
+        hasAnswer: fields.has('answer'),
       };
     } catch (_error) {
       pdfChunkColumnMetadataCache = {
@@ -1034,22 +1130,30 @@ class LawChatbotPdfChunkModel {
   }
 
   static async queryChunkRows(pool, searchTerms, options = {}) {
-    const normalizedTerms = uniqueTokens(searchTerms.map((term) => normalizeSearchKeyword(term)).filter(Boolean));
+    const normalizedTerms = uniqueTokens(
+      searchTerms.map((term) => normalizeSearchKeyword(term)).filter(Boolean),
+    );
     const limitedTerms = normalizedTerms
       .filter((term) => term.length >= (options.fallback ? 2 : 3))
       .slice(0, options.fallback ? 8 : 12);
 
-    const fulltextConfig = options.fulltextConfig && options.fulltextConfig.enabled ? options.fulltextConfig : null;
+    const fulltextConfig =
+      options.fulltextConfig && options.fulltextConfig.enabled ? options.fulltextConfig : null;
     const hasFulltext = Boolean(fulltextConfig && options.fulltextQuery);
     if (limitedTerms.length === 0 && !hasFulltext) {
       return [];
     }
-    const columnMetadata = options.columnMetadata || (await this.resolvePdfChunkColumnMetadata(pool));
-    const cleanTextSelect = columnMetadata.hasCleanText ? "c.clean_text AS clean_text" : "NULL AS clean_text";
-    const isActiveSelect = columnMetadata.hasIsActive ? "c.is_active AS is_active" : "1 AS is_active";
+    const columnMetadata =
+      options.columnMetadata || (await this.resolvePdfChunkColumnMetadata(pool));
+    const cleanTextSelect = columnMetadata.hasCleanText
+      ? 'c.clean_text AS clean_text'
+      : 'NULL AS clean_text';
+    const isActiveSelect = columnMetadata.hasIsActive
+      ? 'c.is_active AS is_active'
+      : '1 AS is_active';
     const qualityScoreSelect = columnMetadata.hasQualityScore
-      ? "c.quality_score AS quality_score"
-      : "NULL AS quality_score";
+      ? 'c.quality_score AS quality_score'
+      : 'NULL AS quality_score';
 
     const whereParts = [];
     const whereParams = [];
@@ -1058,14 +1162,14 @@ class LawChatbotPdfChunkModel {
 
     if (options.normalizedMessage) {
       const exactLike = `%${options.normalizedMessage}%`;
-      scoreParts.push("CASE WHEN LOWER(c.keyword) LIKE ? THEN 18 ELSE 0 END");
-      scoreParts.push("CASE WHEN LOWER(c.chunk_text) LIKE ? THEN 9 ELSE 0 END");
+      scoreParts.push('CASE WHEN LOWER(c.keyword) LIKE ? THEN 18 ELSE 0 END');
+      scoreParts.push('CASE WHEN LOWER(c.chunk_text) LIKE ? THEN 9 ELSE 0 END');
       scoreParams.push(exactLike, exactLike);
     }
 
     limitedTerms.forEach((term) => {
       const like = `%${term}%`;
-      const cleanTextLikeSql = columnMetadata.hasCleanText ? " OR LOWER(c.clean_text) LIKE ?" : "";
+      const cleanTextLikeSql = columnMetadata.hasCleanText ? ' OR LOWER(c.clean_text) LIKE ?' : '';
       whereParts.push(
         `(LOWER(c.keyword) LIKE ? OR LOWER(c.chunk_text) LIKE ?${cleanTextLikeSql} OR LOWER(COALESCE(d.title, '')) LIKE ? OR LOWER(COALESCE(d.document_number, '')) LIKE ? OR LOWER(COALESCE(d.document_source, '')) LIKE ? OR LOWER(COALESCE(d.originalname, '')) LIKE ?)`,
       );
@@ -1079,19 +1183,29 @@ class LawChatbotPdfChunkModel {
         like,
       );
 
-      scoreParts.push(`CASE WHEN LOWER(c.keyword) LIKE ? THEN ${options.fallback ? 6 : 12} ELSE 0 END`);
-      scoreParts.push(`CASE WHEN LOWER(c.chunk_text) LIKE ? THEN ${options.fallback ? 3 : 7} ELSE 0 END`);
+      scoreParts.push(
+        `CASE WHEN LOWER(c.keyword) LIKE ? THEN ${options.fallback ? 6 : 12} ELSE 0 END`,
+      );
+      scoreParts.push(
+        `CASE WHEN LOWER(c.chunk_text) LIKE ? THEN ${options.fallback ? 3 : 7} ELSE 0 END`,
+      );
       if (columnMetadata.hasCleanText) {
-        scoreParts.push(`CASE WHEN LOWER(c.clean_text) LIKE ? THEN ${options.fallback ? 3 : 7} ELSE 0 END`);
+        scoreParts.push(
+          `CASE WHEN LOWER(c.clean_text) LIKE ? THEN ${options.fallback ? 3 : 7} ELSE 0 END`,
+        );
       }
-      scoreParts.push(`CASE WHEN LOWER(COALESCE(d.title, '')) LIKE ? THEN ${options.fallback ? 5 : 11} ELSE 0 END`);
+      scoreParts.push(
+        `CASE WHEN LOWER(COALESCE(d.title, '')) LIKE ? THEN ${options.fallback ? 5 : 11} ELSE 0 END`,
+      );
       scoreParts.push(
         `CASE WHEN LOWER(COALESCE(d.document_number, '')) LIKE ? THEN ${options.fallback ? 4 : 9} ELSE 0 END`,
       );
       scoreParts.push(
         `CASE WHEN LOWER(COALESCE(d.document_source, '')) LIKE ? THEN ${options.fallback ? 2 : 5} ELSE 0 END`,
       );
-      scoreParts.push(`CASE WHEN LOWER(COALESCE(d.originalname, '')) LIKE ? THEN ${options.fallback ? 2 : 4} ELSE 0 END`);
+      scoreParts.push(
+        `CASE WHEN LOWER(COALESCE(d.originalname, '')) LIKE ? THEN ${options.fallback ? 2 : 4} ELSE 0 END`,
+      );
       scoreParams.push(
         like,
         like,
@@ -1103,16 +1217,18 @@ class LawChatbotPdfChunkModel {
       );
     });
 
-    let fulltextSelect = "0 AS fulltext_score";
+    let fulltextSelect = '0 AS fulltext_score';
     if (hasFulltext) {
-      const matchColumnSql = fulltextConfig.columns.map((columnName) => `c.${columnName}`).join(", ");
+      const matchColumnSql = fulltextConfig.columns
+        .map((columnName) => `c.${columnName}`)
+        .join(', ');
       fulltextSelect = `MATCH(${matchColumnSql}) AGAINST (? IN BOOLEAN MODE) AS fulltext_score`;
       whereParts.push(`MATCH(${matchColumnSql}) AGAINST (? IN BOOLEAN MODE)`);
       scoreParams.push(options.fulltextQuery);
       whereParams.push(options.fulltextQuery);
     }
 
-    const sqlScoreExpression = scoreParts.length > 0 ? scoreParts.join(" + ") : "0";
+    const sqlScoreExpression = scoreParts.length > 0 ? scoreParts.join(' + ') : '0';
     const fetchLimit = options.fetchLimit || 250;
 
     try {
@@ -1126,7 +1242,7 @@ class LawChatbotPdfChunkModel {
                 ${fulltextSelect}
          FROM pdf_chunks AS c
          LEFT JOIN documents AS d ON d.id = c.document_id
-         WHERE (${whereParts.join(" OR ")})
+         WHERE (${whereParts.join(' OR ')})
            AND (d.id IS NULL OR d.is_searchable = 1)
          ORDER BY sql_score DESC, fulltext_score DESC, c.id DESC
          LIMIT ?`,
@@ -1160,7 +1276,7 @@ class LawChatbotPdfChunkModel {
 
     if (searchContext.searchTerms.length === 0 && searchContext.fallbackTerms.length === 0) {
       return {
-        query: String(message || ""),
+        query: String(message || ''),
         normalizedQuery: searchContext.normalizedMessage,
         searchContext,
         totalResults: 0,
@@ -1183,14 +1299,14 @@ class LawChatbotPdfChunkModel {
 
           return {
             ...row,
-            title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
-            document_number: document?.documentNumber || "",
-            document_date_text: document?.documentDateText || "",
-            document_source: document?.documentSource || "",
-            originalname: document?.originalname || "",
+            title: document?.title || row.keyword || 'เอกสารที่อัปโหลด',
+            document_number: document?.documentNumber || '',
+            document_date_text: document?.documentDateText || '',
+            document_source: document?.documentSource || '',
+            originalname: document?.originalname || '',
             sql_score: searchContext.searchTerms.reduce((sum, term) => {
               const haystack = normalizeSearchKeyword(
-                `${row.keyword || ""} ${row.chunk_text || ""} ${row.clean_text || ""}`,
+                `${row.keyword || ''} ${row.chunk_text || ''} ${row.clean_text || ''}`,
               );
               return sum + (haystack.includes(term) ? 1 : 0);
             }, 0),
@@ -1199,7 +1315,12 @@ class LawChatbotPdfChunkModel {
         })
         .filter(Boolean);
 
-      let rankedResults = rankChunkRows(message, primaryRows, searchContext, Number.MAX_SAFE_INTEGER);
+      let rankedResults = rankChunkRows(
+        message,
+        primaryRows,
+        searchContext,
+        Number.MAX_SAFE_INTEGER,
+      );
       let usedFallback = false;
       let rawCandidateCount = primaryRows.length;
 
@@ -1214,14 +1335,14 @@ class LawChatbotPdfChunkModel {
 
             return {
               ...row,
-              title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
-              document_number: document?.documentNumber || "",
-              document_date_text: document?.documentDateText || "",
-              document_source: document?.documentSource || "",
-              originalname: document?.originalname || "",
+              title: document?.title || row.keyword || 'เอกสารที่อัปโหลด',
+              document_number: document?.documentNumber || '',
+              document_date_text: document?.documentDateText || '',
+              document_source: document?.documentSource || '',
+              originalname: document?.originalname || '',
               sql_score: searchContext.fallbackTerms.reduce((sum, term) => {
                 const haystack = compactThaiText(
-                  `${row.keyword || ""} ${row.chunk_text || ""} ${row.clean_text || ""}`,
+                  `${row.keyword || ''} ${row.chunk_text || ''} ${row.clean_text || ''}`,
                 );
                 return sum + (haystack.includes(term) ? 1 : 0);
               }, 0),
@@ -1243,7 +1364,7 @@ class LawChatbotPdfChunkModel {
       }
 
       return {
-        query: String(message || ""),
+        query: String(message || ''),
         normalizedQuery: searchContext.normalizedMessage,
         searchContext,
         totalResults: rankedResults.length,
@@ -1298,7 +1419,7 @@ class LawChatbotPdfChunkModel {
     }
 
     return {
-      query: String(message || ""),
+      query: String(message || ''),
       normalizedQuery: searchContext.normalizedMessage,
       searchContext,
       totalResults: rankedResults.length,
@@ -1313,8 +1434,8 @@ class LawChatbotPdfChunkModel {
     const record = {
       id: uploadedFiles.length + 1,
       createdAt: new Date().toISOString(),
-      status: "queued",
-      processingMessage: "",
+      status: 'queued',
+      processingMessage: '',
       insertedChunkCount: 0,
       ...entry,
     };
@@ -1348,22 +1469,22 @@ class LawChatbotPdfChunkModel {
 
   static async createDocument(entry) {
     const normalizedEntry = {
-      title: String(entry.title || "").slice(0, 255),
-      documentNumber: String(entry.documentNumber || "").slice(0, 100),
+      title: String(entry.title || '').slice(0, 255),
+      documentNumber: String(entry.documentNumber || '').slice(0, 100),
       documentDate: entry.documentDate || null,
-      documentDateText: String(entry.documentDateText || "").slice(0, 100),
-      documentSource: String(entry.documentSource || "").slice(0, 255),
-      filename: String(entry.filename || "").slice(0, 255),
-      originalname: String(entry.originalname || "").slice(0, 255),
-      mimetype: String(entry.mimetype || "").slice(0, 150),
+      documentDateText: String(entry.documentDateText || '').slice(0, 100),
+      documentSource: String(entry.documentSource || '').slice(0, 255),
+      filename: String(entry.filename || '').slice(0, 255),
+      originalname: String(entry.originalname || '').slice(0, 255),
+      mimetype: String(entry.mimetype || '').slice(0, 150),
       fileSize: Number(entry.fileSize || 0),
-      extractionMethod: String(entry.extractionMethod || "").slice(0, 50),
+      extractionMethod: String(entry.extractionMethod || '').slice(0, 50),
       extractionQualityScore: Number.isFinite(Number(entry.extractionQualityScore))
         ? Number(entry.extractionQualityScore)
         : null,
-      extractionNotes: String(entry.extractionNotes || "").slice(0, 2000),
+      extractionNotes: String(entry.extractionNotes || '').slice(0, 2000),
       isSearchable: entry.isSearchable === false ? 0 : 1,
-      qualityStatus: String(entry.qualityStatus || "accepted").slice(0, 20) || "accepted",
+      qualityStatus: String(entry.qualityStatus || 'accepted').slice(0, 20) || 'accepted',
     };
 
     const pool = getDbPool();
@@ -1411,11 +1532,13 @@ class LawChatbotPdfChunkModel {
 
   static async insertChunks(chunks, documentId = null) {
     const normalizedChunks = chunks.map((chunk) => ({
-      keyword: String(chunk.keyword || "").slice(0, 255),
-      chunkText: String(chunk.chunkText || ""),
-      originalText: String(chunk.originalText || chunk.original_text || chunk.chunkText || ""),
-      cleanText: String(chunk.cleanText || chunk.clean_text || normalizeThai(String(chunk.chunkText || ""))),
-      chunkType: String(chunk.chunkType || chunk.chunk_type || "").slice(0, 20),
+      keyword: String(chunk.keyword || '').slice(0, 255),
+      chunkText: String(chunk.chunkText || ''),
+      originalText: String(chunk.originalText || chunk.original_text || chunk.chunkText || ''),
+      cleanText: String(
+        chunk.cleanText || chunk.clean_text || normalizeThai(String(chunk.chunkText || '')),
+      ),
+      chunkType: String(chunk.chunkType || chunk.chunk_type || '').slice(0, 20),
       sortOrder: Number.isFinite(Number(chunk.sortOrder || chunk.sort_order))
         ? Number(chunk.sortOrder || chunk.sort_order)
         : 0,
@@ -1451,26 +1574,26 @@ class LawChatbotPdfChunkModel {
     }
 
     const columnMetadata = await this.resolvePdfChunkColumnMetadata(pool);
-    const columns = ["keyword", "chunk_text"];
+    const columns = ['keyword', 'chunk_text'];
     if (columnMetadata.hasCleanText) {
-      columns.push("clean_text");
+      columns.push('clean_text');
     }
     if (columnMetadata.hasOriginalText) {
-      columns.push("original_text");
+      columns.push('original_text');
     }
     if (columnMetadata.hasChunkType) {
-      columns.push("chunk_type");
+      columns.push('chunk_type');
     }
     if (columnMetadata.hasSortOrder) {
-      columns.push("sort_order");
+      columns.push('sort_order');
     }
     if (columnMetadata.hasIsActive) {
-      columns.push("is_active");
+      columns.push('is_active');
     }
     if (columnMetadata.hasQualityScore) {
-      columns.push("quality_score");
+      columns.push('quality_score');
     }
-    columns.push("document_id");
+    columns.push('document_id');
 
     const values = normalizedChunks.map((chunk) => {
       const rowValues = [chunk.keyword, chunk.chunkText];
@@ -1497,7 +1620,7 @@ class LawChatbotPdfChunkModel {
     });
 
     if (values.length > 0) {
-      await pool.query(`INSERT INTO pdf_chunks (${columns.join(", ")}) VALUES ?`, [values]);
+      await pool.query(`INSERT INTO pdf_chunks (${columns.join(', ')}) VALUES ?`, [values]);
       this.clearEmbeddingCache();
     }
     return values.length;
@@ -1510,7 +1633,7 @@ class LawChatbotPdfChunkModel {
       return memoryChunks.length;
     }
 
-    const [rows] = await pool.query("SELECT COUNT(*) AS total FROM pdf_chunks");
+    const [rows] = await pool.query('SELECT COUNT(*) AS total FROM pdf_chunks');
     return rows[0]?.total || 0;
   }
 
@@ -1535,17 +1658,13 @@ class LawChatbotPdfChunkModel {
 
       return {
         ...row,
-        source: "pdf_chunks",
-        content: row.chunk_text || "",
-        title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
-        reference:
-          document?.documentNumber ||
-          document?.title ||
-          row.keyword ||
-          "เอกสารที่อัปโหลด",
-        documentNumber: document?.documentNumber || "",
-        documentDateText: document?.documentDateText || "",
-        documentSource: document?.documentSource || "",
+        source: 'pdf_chunks',
+        content: row.chunk_text || '',
+        title: document?.title || row.keyword || 'เอกสารที่อัปโหลด',
+        reference: document?.documentNumber || document?.title || row.keyword || 'เอกสารที่อัปโหลด',
+        documentNumber: document?.documentNumber || '',
+        documentDateText: document?.documentDateText || '',
+        documentSource: document?.documentSource || '',
         documentId: row.document_id || null,
       };
     }
@@ -1567,13 +1686,14 @@ class LawChatbotPdfChunkModel {
 
     return {
       ...row,
-      source: "pdf_chunks",
-      content: row.chunk_text || "",
-      title: row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
-      reference: row.document_number || row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
-      documentNumber: row.document_number || "",
-      documentDateText: row.document_date_text || "",
-      documentSource: row.document_source || "",
+      source: 'pdf_chunks',
+      content: row.chunk_text || '',
+      title: row.title || row.originalname || row.keyword || 'เอกสารที่อัปโหลด',
+      reference:
+        row.document_number || row.title || row.originalname || row.keyword || 'เอกสารที่อัปโหลด',
+      documentNumber: row.document_number || '',
+      documentDateText: row.document_date_text || '',
+      documentSource: row.document_source || '',
       documentId: row.document_id || null,
     };
   }
@@ -1595,22 +1715,22 @@ class LawChatbotPdfChunkModel {
       }
 
       return memoryChunks
-        .filter((row) => Number(row.document_id) === normalizedDocumentId && Number(row.id) > afterChunkId)
+        .filter(
+          (row) =>
+            Number(row.document_id) === normalizedDocumentId && Number(row.id) > afterChunkId,
+        )
         .sort((a, b) => Number(a.id) - Number(b.id))
         .slice(0, normalizedLimit)
         .map((row) => ({
           ...row,
-          source: "pdf_chunks",
-          content: row.chunk_text || "",
-          title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
+          source: 'pdf_chunks',
+          content: row.chunk_text || '',
+          title: document?.title || row.keyword || 'เอกสารที่อัปโหลด',
           reference:
-            document?.documentNumber ||
-            document?.title ||
-            row.keyword ||
-            "เอกสารที่อัปโหลด",
-          documentNumber: document?.documentNumber || "",
-          documentDateText: document?.documentDateText || "",
-          documentSource: document?.documentSource || "",
+            document?.documentNumber || document?.title || row.keyword || 'เอกสารที่อัปโหลด',
+          documentNumber: document?.documentNumber || '',
+          documentDateText: document?.documentDateText || '',
+          documentSource: document?.documentSource || '',
           documentId: row.document_id || null,
         }));
     }
@@ -1630,13 +1750,14 @@ class LawChatbotPdfChunkModel {
 
     return rows.map((row) => ({
       ...row,
-      source: "pdf_chunks",
-      content: row.chunk_text || "",
-      title: row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
-      reference: row.document_number || row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
-      documentNumber: row.document_number || "",
-      documentDateText: row.document_date_text || "",
-      documentSource: row.document_source || "",
+      source: 'pdf_chunks',
+      content: row.chunk_text || '',
+      title: row.title || row.originalname || row.keyword || 'เอกสารที่อัปโหลด',
+      reference:
+        row.document_number || row.title || row.originalname || row.keyword || 'เอกสารที่อัปโหลด',
+      documentNumber: row.document_number || '',
+      documentDateText: row.document_date_text || '',
+      documentSource: row.document_source || '',
       documentId: row.document_id || null,
     }));
   }
@@ -1670,14 +1791,14 @@ class LawChatbotPdfChunkModel {
 
             return {
               ...row,
-              title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
-              document_number: document?.documentNumber || "",
-              document_date_text: document?.documentDateText || "",
-              document_source: document?.documentSource || "",
-              originalname: document?.originalname || "",
+              title: document?.title || row.keyword || 'เอกสารที่อัปโหลด',
+              document_number: document?.documentNumber || '',
+              document_date_text: document?.documentDateText || '',
+              document_source: document?.documentSource || '',
+              originalname: document?.originalname || '',
               sql_score: searchContext.searchTerms.reduce((sum, term) => {
                 const haystack = normalizeSearchKeyword(
-                  `${row.keyword || ""} ${row.chunk_text || ""} ${row.clean_text || ""}`,
+                  `${row.keyword || ''} ${row.chunk_text || ''} ${row.clean_text || ''}`,
                 );
                 return sum + (haystack.includes(term) ? 1 : 0);
               }, 0),
@@ -1701,14 +1822,14 @@ class LawChatbotPdfChunkModel {
 
               return {
                 ...row,
-                title: document?.title || row.keyword || "เอกสารที่อัปโหลด",
-                document_number: document?.documentNumber || "",
-                document_date_text: document?.documentDateText || "",
-                document_source: document?.documentSource || "",
-                originalname: document?.originalname || "",
+                title: document?.title || row.keyword || 'เอกสารที่อัปโหลด',
+                document_number: document?.documentNumber || '',
+                document_date_text: document?.documentDateText || '',
+                document_source: document?.documentSource || '',
+                originalname: document?.originalname || '',
                 sql_score: searchContext.fallbackTerms.reduce((sum, term) => {
                   const haystack = compactThaiText(
-                    `${row.keyword || ""} ${row.chunk_text || ""} ${row.clean_text || ""}`,
+                    `${row.keyword || ''} ${row.chunk_text || ''} ${row.clean_text || ''}`,
                   );
                   return sum + (haystack.includes(term) ? 1 : 0);
                 }, 0),
@@ -1792,23 +1913,29 @@ class LawChatbotPdfChunkModel {
         .filter((row) => row.isSearchable !== 0)
         .map((row) => {
           const rowText = normalizeForSearch(
-            `${row.title || ""} ${row.documentNumber || ""} ${row.documentDateText || ""} ${row.documentSource || ""} ${row.originalname || ""}`,
+            `${row.title || ''} ${row.documentNumber || ''} ${row.documentDateText || ''} ${row.documentSource || ''} ${row.originalname || ''}`,
           ).toLowerCase();
-          const coarseScore = terms.reduce((sum, term) => sum + (rowText.includes(term) ? 1 : 0), 0);
-          const score = scoreChunkMatch(message, {
-            keyword: `${row.title || ""} ${row.documentNumber || ""}`,
-            chunk_text: `${row.documentSource || ""} ${row.documentDateText || ""} ${row.originalname || ""}`,
-          }) + coarseScore;
+          const coarseScore = terms.reduce(
+            (sum, term) => sum + (rowText.includes(term) ? 1 : 0),
+            0,
+          );
+          const score =
+            scoreChunkMatch(message, {
+              keyword: `${row.title || ''} ${row.documentNumber || ''}`,
+              chunk_text: `${row.documentSource || ''} ${row.documentDateText || ''} ${row.originalname || ''}`,
+            }) + coarseScore;
 
           return {
             id: row.id,
-            source: "documents",
-            title: row.title || row.originalname || "เอกสารที่อัปโหลด",
-            reference: row.documentNumber || row.title || row.originalname || "เอกสารที่อัปโหลด",
-            content: [row.documentSource, row.documentDateText, row.originalname].filter(Boolean).join(" | "),
-            documentNumber: row.documentNumber || "",
-            documentDateText: row.documentDateText || "",
-            documentSource: row.documentSource || "",
+            source: 'documents',
+            title: row.title || row.originalname || 'เอกสารที่อัปโหลด',
+            reference: row.documentNumber || row.title || row.originalname || 'เอกสารที่อัปโหลด',
+            content: [row.documentSource, row.documentDateText, row.originalname]
+              .filter(Boolean)
+              .join(' | '),
+            documentNumber: row.documentNumber || '',
+            documentDateText: row.documentDateText || '',
+            documentSource: row.documentSource || '',
             score,
           };
         })
@@ -1820,9 +1947,9 @@ class LawChatbotPdfChunkModel {
     const whereClause = terms
       .map(
         () =>
-          "(LOWER(title) LIKE ? OR LOWER(document_number) LIKE ? OR LOWER(document_date_text) LIKE ? OR LOWER(document_source) LIKE ? OR LOWER(originalname) LIKE ?)",
+          '(LOWER(title) LIKE ? OR LOWER(document_number) LIKE ? OR LOWER(document_date_text) LIKE ? OR LOWER(document_source) LIKE ? OR LOWER(originalname) LIKE ?)',
       )
-      .join(" OR ");
+      .join(' OR ');
     const params = terms.flatMap((term) => {
       const like = `%${term}%`;
       return [like, like, like, like, like];
@@ -1841,23 +1968,26 @@ class LawChatbotPdfChunkModel {
     return rows
       .map((row) => {
         const rowText = normalizeForSearch(
-          `${row.title || ""} ${row.document_number || ""} ${row.document_date_text || ""} ${row.document_source || ""} ${row.originalname || ""}`,
+          `${row.title || ''} ${row.document_number || ''} ${row.document_date_text || ''} ${row.document_source || ''} ${row.originalname || ''}`,
         ).toLowerCase();
         const coarseScore = terms.reduce((sum, term) => sum + (rowText.includes(term) ? 1 : 0), 0);
-        const score = scoreChunkMatch(message, {
-          keyword: `${row.title || ""} ${row.document_number || ""}`,
-          chunk_text: `${row.document_source || ""} ${row.document_date_text || ""} ${row.originalname || ""}`,
-        }) + coarseScore;
+        const score =
+          scoreChunkMatch(message, {
+            keyword: `${row.title || ''} ${row.document_number || ''}`,
+            chunk_text: `${row.document_source || ''} ${row.document_date_text || ''} ${row.originalname || ''}`,
+          }) + coarseScore;
 
         return {
           id: row.id,
-          source: "documents",
-          title: row.title || row.originalname || "เอกสารที่อัปโหลด",
-          reference: row.document_number || row.title || row.originalname || "เอกสารที่อัปโหลด",
-          content: [row.document_source, row.document_date_text, row.originalname].filter(Boolean).join(" | "),
-          documentNumber: row.document_number || "",
-          documentDateText: row.document_date_text || "",
-          documentSource: row.document_source || "",
+          source: 'documents',
+          title: row.title || row.originalname || 'เอกสารที่อัปโหลด',
+          reference: row.document_number || row.title || row.originalname || 'เอกสารที่อัปโหลด',
+          content: [row.document_source, row.document_date_text, row.originalname]
+            .filter(Boolean)
+            .join(' | '),
+          documentNumber: row.document_number || '',
+          documentDateText: row.document_date_text || '',
+          documentSource: row.document_source || '',
           score,
         };
       })
@@ -1890,11 +2020,13 @@ class LawChatbotPdfChunkModel {
     `);
 
     // Pre-convert embeddings to Float32Array
-    embeddingCache = rows.map((row) => ({
-      ...row,
-      embeddingVector: bufferToEmbedding(row.embedding),
-      embedding: undefined,
-    })).filter((row) => row.embeddingVector);
+    embeddingCache = rows
+      .map((row) => ({
+        ...row,
+        embeddingVector: bufferToEmbedding(row.embedding),
+        embedding: undefined,
+      }))
+      .filter((row) => row.embeddingVector);
 
     embeddingCacheTime = now;
     return embeddingCache;
@@ -1939,11 +2071,16 @@ class LawChatbotPdfChunkModel {
           document_source: row.document_source,
           originalname: row.originalname,
           similarity,
-          source: "pdf_chunks",
-          reference: row.document_number || row.title || row.originalname || row.keyword || "เอกสารที่อัปโหลด",
-          documentNumber: row.document_number || "",
-          documentDateText: row.document_date_text || "",
-          documentSource: row.document_source || "",
+          source: 'pdf_chunks',
+          reference:
+            row.document_number ||
+            row.title ||
+            row.originalname ||
+            row.keyword ||
+            'เอกสารที่อัปโหลด',
+          documentNumber: row.document_number || '',
+          documentDateText: row.document_date_text || '',
+          documentSource: row.document_source || '',
           // Convert similarity (0-1) to score scale similar to keyword search
           score: Math.round(similarity * 200),
         };

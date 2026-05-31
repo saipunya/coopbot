@@ -13,8 +13,9 @@ const { normalizeThaiNumberSearchText } = require("./thaiNumberNormalizer");
 
 const QUERY_REWRITE_TIMEOUT_MS = Number(process.env.LAW_CHATBOT_QUERY_REWRITE_TIMEOUT_MS || 3500);
 const QUERY_REWRITE_AI_ENABLED = String(process.env.LAW_CHATBOT_QUERY_REWRITE_AI_ENABLED || "1") !== "0";
-const QUERY_REWRITE_MAX_KEYWORDS = 8;
-const QUERY_REWRITE_MAX_ALIASES = 6;
+const QUERY_REWRITE_MAX_KEYWORDS = 5;
+const QUERY_REWRITE_MAX_ALIASES = 3;
+const QUERY_REWRITE_MAX_QUERY_LENGTH = 180;
 const LOW_VALUE_REWRITE_TOKENS = new Set([
   "ความ",
   "รู้",
@@ -23,7 +24,29 @@ const LOW_VALUE_REWRITE_TOKENS = new Set([
   "ของ",
   "เรื่อง",
   "ทั่วไป",
+  "อย่างไร",
+  "ยังไง",
+  "ต้อง",
+  "ผู้",
+  "ใคร",
+  "เป็น",
+  "ดูแล",
+  "ระบบ",
+  "q",
+  "a",
+  "qa",
 ]);
+const REWRITE_NOISE_PATTERNS = [
+  /\bq\s*&?\s*a\b/gi,
+  /q\s*a/gi,
+  /ผู้ดูแลระบบ/gi,
+  /ผู้ดูแล/gi,
+  /ระบบบันทึกอัตโนมัติ/gi,
+  /คำตอบเดิม/gi,
+  /ประชุมใหญ่3ัญประจำปี/gi,
+  /ประชุมใหญ่วิ3ัญ/gi,
+  /\bcoop\b/gi,
+];
 
 const QUERY_REWRITE_SYSTEM_PROMPT = [
   "คุณเป็นระบบ rewrite คำค้นสำหรับ chatbot กฎหมายสหกรณ์ไทย",
@@ -44,6 +67,91 @@ const QUERY_REWRITE_SYSTEM_PROMPT = [
 
 function normalizeRewriteQuery(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function stripRewriteNoise(value = "") {
+  return REWRITE_NOISE_PATTERNS.reduce(
+    (text, pattern) => text.replace(pattern, " "),
+    normalizeRewriteQuery(value),
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function dedupeSpaceSeparatedTerms(value = "") {
+  const seen = new Set();
+  return normalizeRewriteQuery(value)
+    .split(/\s+/)
+    .filter((term) => {
+      const key = normalizeRewriteTermKey(term);
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .join(" ");
+}
+
+function clipRewriteQuery(value = "", maxLength = QUERY_REWRITE_MAX_QUERY_LENGTH) {
+  const text = normalizeRewriteQuery(value);
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  const pieces = [];
+  for (const term of text.split(/\s+/).filter(Boolean)) {
+    const candidate = normalizeRewriteQuery([...pieces, term].join(" "));
+    if (candidate.length > maxLength) {
+      break;
+    }
+    pieces.push(term);
+  }
+
+  return normalizeRewriteQuery(pieces.join(" ")) || text.slice(0, maxLength).trim();
+}
+
+function normalizeRewriteTermKey(value = "") {
+  return normalizeForSearch(stripRewriteNoise(value)).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function isLowValueRewriteTerm(term = "") {
+  const normalized = normalizeRewriteTermKey(term);
+  if (!normalized) {
+    return true;
+  }
+
+  if (LOW_VALUE_REWRITE_TOKENS.has(normalized)) {
+    return true;
+  }
+
+  if (/^(?:q|a|qa|q a)$/.test(normalized)) {
+    return true;
+  }
+
+  return false;
+}
+
+function isOffTopicRewriteTermForQuestion(term = "", question = "") {
+  const normalizedTerm = normalizeRewriteTermKey(term);
+  const normalizedQuestion = normalizeRewriteTermKey(question);
+  if (!normalizedTerm || !normalizedQuestion) {
+    return false;
+  }
+
+  if (/ชำระบัญชี|ผู้ชำระบัญชี/.test(normalizedQuestion)) {
+    return /ประชุมใหญ่|องค์ประชุม|วาระการประชุม/.test(normalizedTerm);
+  }
+
+  if (/ลาออก/.test(normalizedQuestion)) {
+    return /รับสมาชิก|สมัครสมาชิก|สมัครเข้าเป็นสมาชิก/.test(normalizedTerm);
+  }
+
+  if (/ถือหุ้น|หุ้น/.test(normalizedQuestion)) {
+    return /รับสมาชิก|สมัครสมาชิก|สมัครเข้าเป็นสมาชิก/.test(normalizedTerm);
+  }
+
+  return false;
 }
 
 function stripFollowUpLeadText(message) {
@@ -93,21 +201,38 @@ function containsDisallowedLawReference(text, allowedReferences = []) {
 }
 
 function sanitizeRewriteTerms(terms, allowedReferences = [], maxItems = 8) {
-  return uniqueTokens(
-    (Array.isArray(terms) ? terms : [])
-      .map((term) => normalizeRewriteQuery(term))
-      .filter((term) => {
+  const seen = new Set();
+  const sanitized = [];
+
+  for (const rawTerm of Array.isArray(terms) ? terms : []) {
+    const term = stripRewriteNoise(rawTerm);
+    const key = normalizeRewriteTermKey(term);
+    if (seen.has(key)) {
+      continue;
+    }
+
+    if (
+      (() => {
         if (!term) {
           return false;
         }
 
-        if (term.length < 2 || term.length > 60) {
+        if (isLowValueRewriteTerm(term) || term.length < 2 || term.length > 60) {
           return false;
         }
 
         return !containsDisallowedLawReference(term, allowedReferences);
-      }),
-  ).slice(0, maxItems);
+      })()
+    ) {
+      seen.add(key);
+      sanitized.push(term);
+      if (sanitized.length >= maxItems) {
+        break;
+      }
+    }
+  }
+
+  return sanitized;
 }
 
 function getRecentRewriteAnchors(session, target) {
@@ -194,13 +319,47 @@ function getLegalRewriteAliases(message) {
 }
 
 function buildRetrievalQuery(effectiveQuery, expandedKeywords = [], legalAliases = []) {
-  return normalizeRewriteQuery(
-    [
-      effectiveQuery,
-      ...expandedKeywords.slice(0, 3),
-      ...legalAliases.slice(0, 2),
-    ].join(" "),
-  ) || normalizeRewriteQuery(effectiveQuery);
+  const baseQuery = clipRewriteQuery(dedupeSpaceSeparatedTerms(stripRewriteNoise(effectiveQuery)));
+  const baseKey = normalizeRewriteTermKey(baseQuery);
+  const pieces = [baseQuery];
+  const seen = new Set([baseKey].filter(Boolean));
+
+  for (const term of [...expandedKeywords.slice(0, 3), ...legalAliases.slice(0, 2)]) {
+    const cleaned = stripRewriteNoise(term);
+    const key = normalizeRewriteTermKey(cleaned);
+    if (
+      !cleaned ||
+      !key ||
+      seen.has(key) ||
+      isLowValueRewriteTerm(cleaned) ||
+      isOffTopicRewriteTermForQuestion(cleaned, baseQuery)
+    ) {
+      continue;
+    }
+
+    if (baseKey && (baseKey.includes(key) || key.includes(baseKey))) {
+      continue;
+    }
+
+    pieces.push(cleaned);
+    seen.add(key);
+  }
+
+  const query = normalizeRewriteQuery(pieces.join(" "));
+  if (query.length <= QUERY_REWRITE_MAX_QUERY_LENGTH) {
+    return query || baseQuery;
+  }
+
+  const clippedPieces = [baseQuery];
+  for (const piece of pieces.slice(1)) {
+    const candidate = normalizeRewriteQuery([...clippedPieces, piece].join(" "));
+    if (candidate.length > QUERY_REWRITE_MAX_QUERY_LENGTH) {
+      break;
+    }
+    clippedPieces.push(piece);
+  }
+
+  return normalizeRewriteQuery(clippedPieces.join(" ")) || baseQuery;
 }
 
 function getGroupBylawRewriteBoost(message) {
@@ -265,8 +424,9 @@ function buildHeuristicQueryRewrite(message, context = {}) {
   }
 
   const expandedQueryText = normalizeRewriteQuery(expandSearchConcepts(baseMessage)) || baseMessage;
+  const effectiveQuery = stripRewriteNoise(baseMessage) || baseMessage;
   const focusProfile = getQueryFocusProfile(expandedQueryText);
-  const groupBylawBoost = getGroupBylawRewriteBoost(expandedQueryText);
+  const groupBylawBoost = getGroupBylawRewriteBoost(effectiveQuery);
   const topicAliases = uniqueTokens(
     focusProfile.topics.flatMap((topic) => [topic.primary, ...(topic.aliases || [])]).filter(Boolean),
   );
@@ -276,15 +436,15 @@ function buildHeuristicQueryRewrite(message, context = {}) {
   const legalAliases = sanitizeRewriteTerms([
     ...topicAliases,
     ...(groupBylawBoost.legalAliases || []),
-    ...getLegalRewriteAliases(expandedQueryText),
+    ...getLegalRewriteAliases(effectiveQuery),
   ], getAllowedLawReferenceTokens(message, context), QUERY_REWRITE_MAX_ALIASES)
     .filter((alias) => alias.toLowerCase() !== expandedQueryText.toLowerCase());
   const expandedKeywords = sanitizeRewriteTerms([
     ...(context.topicAnchor ? [context.topicAnchor] : []),
     ...(context.sourceAnchors || []),
-    ...extractExplicitTopicHints(expandedQueryText),
+    ...extractExplicitTopicHints(effectiveQuery),
     ...(groupBylawBoost.expandedKeywords || []),
-    ...segmentWords(stripFollowUpLeadText(expandedQueryText)).filter((token) => {
+    ...segmentWords(stripFollowUpLeadText(effectiveQuery)).filter((token) => {
       const normalizedToken = String(token || "").trim().toLowerCase();
       if (normalizedToken.length < 3) {
         return false;
@@ -300,12 +460,16 @@ function buildHeuristicQueryRewrite(message, context = {}) {
         return false;
       }
 
+      if (isOffTopicRewriteTermForQuestion(keyword, effectiveQuery)) {
+        return false;
+      }
+
       return !legalAliases.some((alias) => alias.toLowerCase() === normalizedKeyword);
     });
 
   return {
-    effectiveQuery: expandedQueryText,
-    retrievalQuery: buildRetrievalQuery(expandedQueryText, expandedKeywords, legalAliases),
+    effectiveQuery,
+    retrievalQuery: buildRetrievalQuery(effectiveQuery, expandedKeywords, legalAliases),
     expandedKeywords,
     legalAliases,
     method: "heuristic",

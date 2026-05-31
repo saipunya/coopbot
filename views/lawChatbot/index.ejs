@@ -6386,6 +6386,394 @@ body {
   }
 }
 
+/* Modern government workspace refresh */
+body {
+  background: linear-gradient(180deg, #eef4fb 0%, #f8fbff 42%, #edf4fb 100%);
+}
+
+.cooplaw-layout {
+  gap: clamp(1rem, 1.8vw, 1.35rem);
+  padding: clamp(0.8rem, 1.4vw, 1.35rem);
+}
+
+.cooplaw-sidebar {
+  border-radius: 1.15rem;
+  border-color: rgba(194, 211, 231, 0.92);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 42px rgba(34, 73, 124, 0.1);
+}
+
+.cooplaw-sidebar-brand {
+  border-bottom: 1px solid rgba(218, 228, 240, 0.9);
+  margin-bottom: 0.2rem;
+}
+
+.cooplaw-sidebar-brand-icon {
+  border-radius: 0.92rem;
+  background: linear-gradient(145deg, #3275b9, #1b5f9f);
+  box-shadow: 0 10px 22px rgba(27, 95, 159, 0.18);
+}
+
+.cooplaw-sidebar-brand-copy strong {
+  color: #13233f;
+  font-size: 1.22rem;
+}
+
+.cooplaw-sidebar-recent {
+  margin-top: 0;
+  border-radius: 0.9rem;
+  background: #f9fbfe;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.cooplaw-sidebar-recent-head {
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid rgba(221, 230, 242, 0.86);
+}
+
+.cooplaw-sidebar-recent-item {
+  min-height: 3.25rem;
+  padding: 0.72rem 0.18rem;
+  color: #233757;
+  line-height: 1.45;
+}
+
+.cooplaw-sidebar-recent-item:hover,
+.cooplaw-sidebar-recent-item:focus-visible,
+.cooplaw-sidebar-recent-item.is-active {
+  color: #164f86;
+  background: rgba(231, 241, 252, 0.72);
+  border-radius: 0.72rem;
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
+}
+
+.cooplaw-sidebar-legal {
+  margin-top: auto;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(218, 228, 240, 0.9);
+}
+
+.cooplaw-main {
+  gap: 0.9rem;
+}
+
+.page-header {
+  position: static;
+  width: min(1180px, calc(100% - 1rem));
+  margin: 0 auto;
+  padding: 0.62rem 0.76rem;
+  border: 1px solid rgba(199, 214, 232, 0.9);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 14px 34px rgba(33, 70, 125, 0.08);
+  backdrop-filter: blur(14px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.page-brand {
+  display: flex !important;
+}
+
+.brand-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.82rem;
+  background: #f1f7fd;
+  border: 1px solid #d8e6f5;
+  box-shadow: none;
+}
+
+.brand-icon img {
+  filter: none;
+}
+
+.brand-title h6 {
+  color: #152640;
+  font-size: 0.98rem;
+}
+
+.brand-title p {
+  color: #6c7c92;
+}
+
+#onlineBadge.status-chip {
+  color: #146c43;
+  background: #e9f8ef;
+  border-color: #c7efd5;
+  box-shadow: none;
+}
+
+.header-assistant {
+  display: none !important;
+}
+
+.page-toolbar {
+  display: flex;
+  align-items: center;
+}
+
+.page-actions .cooplaw-save-btn,
+.page-actions .cooplaw-clear-history-btn {
+  display: inline-flex !important;
+}
+
+.page-actions .btn {
+  min-height: 2.5rem;
+  border-radius: 0.78rem;
+  font-weight: 700;
+}
+
+.page-actions .icon-chip-btn {
+  width: 2.5rem;
+  min-width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.78rem;
+}
+
+.chat-shell {
+  width: min(1180px, calc(100% - 1rem));
+  border-radius: 1rem;
+  border-color: rgba(199, 214, 232, 0.92);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 38px rgba(34, 73, 124, 0.09);
+}
+
+.chat-messages {
+  min-height: min(72dvh, 760px);
+  padding: clamp(1.05rem, 2vw, 1.7rem);
+  background:
+    linear-gradient(180deg, rgba(247, 250, 254, 0.96), rgba(255, 255, 255, 0.98));
+}
+
+.chat-messages::before {
+  opacity: 0.025;
+}
+
+.bubble-bot {
+  border-color: rgba(207, 220, 236, 0.96);
+  box-shadow: 0 12px 26px rgba(31, 67, 112, 0.08);
+}
+
+.bubble-user {
+  background: linear-gradient(145deg, #2f73b7, #1e5d98);
+}
+
+.bubble-welcome-modern {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.welcome-modern-kicker {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.26rem 0.62rem;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #1b5f9f;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.welcome-modern-title {
+  margin: 0;
+  color: #172a45;
+  font-size: 1.04rem;
+  font-weight: 800;
+}
+
+.welcome-modern-text {
+  margin: 0;
+  color: #4d6178;
+  line-height: 1.65;
+}
+
+.welcome-modern-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.welcome-suggestion-btn {
+  min-height: 2.72rem;
+  border: 1px solid #d7e5f4;
+  border-radius: 0.72rem;
+  background: #fff;
+  color: #203957;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.46rem;
+  padding: 0.55rem 0.68rem;
+  text-align: left;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.welcome-suggestion-btn:hover,
+.welcome-suggestion-btn:focus-visible {
+  color: #164f86;
+  border-color: #b8d5ef;
+  background: #f7fbff;
+  outline: none;
+}
+
+.chat-input-wrap {
+  margin: 0.9rem clamp(0.85rem, 2vw, 1.4rem) 1rem;
+  padding: 0.66rem 0.72rem;
+  border-radius: 0.95rem;
+  border-color: rgba(199, 214, 232, 0.92);
+  box-shadow: 0 14px 30px rgba(35, 72, 118, 0.08);
+}
+
+.chat-input-wrap .input-group > .form-control {
+  min-height: 3rem;
+  font-size: 0.98rem;
+}
+
+#voiceBtn,
+#debugBtn {
+  background: #f4f8fc;
+  border: 1px solid #d7e5f4;
+  color: #526b86;
+}
+
+#debugBtn {
+  min-width: auto;
+  padding-inline: 1rem;
+  font-size: 0.84rem;
+}
+
+#sendBtn {
+  background: linear-gradient(145deg, #3678bd, #1f62a4);
+  box-shadow: 0 10px 22px rgba(31, 98, 164, 0.22);
+}
+
+.composer-hint {
+  justify-content: center;
+  color: #8998ad;
+  font-size: 0.76rem;
+}
+
+.floating-controls .account-btn,
+.floating-controls .clear-chat-btn {
+  display: none !important;
+}
+
+.floating-controls .header-toggle-btn {
+  border-radius: 0.86rem;
+  background: rgba(47, 115, 183, 0.92);
+}
+
+@media (max-width: 991.98px) {
+  .cooplaw-layout {
+    padding: 0.65rem;
+  }
+
+  .page-header {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 0;
+  }
+
+  .page-toolbar {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+
+  .page-actions {
+    flex-wrap: nowrap;
+  }
+
+  .chat-shell {
+    width: 100%;
+  }
+
+  .welcome-modern-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-input-wrap {
+    border-radius: 0.86rem;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .page-actions .cooplaw-save-btn span,
+  .page-actions .cooplaw-clear-history-btn span,
+  .brand-title p,
+  .composer-hint span:last-child {
+    display: none;
+  }
+
+  .chat-input-wrap .input-group {
+    gap: 0.42rem;
+  }
+
+  #voiceBtn,
+  #debugBtn {
+    width: 2.55rem;
+    min-width: 2.55rem;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .chat-shell {
+    height: calc(100dvh - 4.9rem);
+    min-height: 0;
+  }
+
+  .chat-messages {
+    min-height: 0;
+    padding: 0.78rem;
+  }
+
+  .message-bot .message-avatar {
+    display: none;
+  }
+
+  .bubble-bot {
+    width: 100%;
+  }
+
+  .bubble-welcome-modern {
+    gap: 0.62rem;
+  }
+
+  .welcome-modern-title {
+    font-size: 0.98rem;
+  }
+
+  .welcome-modern-text {
+    display: none;
+  }
+
+  .welcome-suggestion-btn {
+    min-height: 2.35rem;
+    padding: 0.46rem 0.55rem;
+    font-size: 0.8rem;
+  }
+
+  .chat-input-wrap {
+    margin: 0.48rem;
+    padding: 0.42rem;
+  }
+
+  .chat-input-wrap .input-group > .form-control {
+    min-height: 2.72rem;
+    font-size: 0.9rem;
+  }
+
+  #sendBtn {
+    width: 2.85rem;
+    min-width: 2.85rem;
+    height: 2.85rem;
+  }
+}
+
   </style>
 </head>
 <body data-bot-plan="free">
@@ -6629,9 +7017,6 @@ body {
           <button type="button" class="header-action-btn header-action-btn-danger" data-clear-chat-control="1" title="ล้างการสนทนา" aria-label="ล้างการสนทนา">
             <i class="bi bi-trash3"></i>
           </button>
-          <button type="button" class="header-action-btn" data-bs-toggle="modal" data-bs-target="#developerModal" title="เกี่ยวกับระบบ" aria-label="เกี่ยวกับระบบ">
-            <i class="bi bi-info-circle"></i>
-          </button>
         </div>
       </div>
       <div class="page-toolbar">
@@ -6685,11 +7070,6 @@ body {
             <i class="bi bi-trash3"></i>
             <span>เคลียร์ประวัติ</span>
           </button>
-          <button type="button" class="btn btn-sm btn-outline-secondary icon-chip-btn" data-bs-toggle="modal" data-bs-target="#developerModal" title="ข้อมูลผู้พัฒนา" aria-label="ผู้พัฒนาระบบ">
-            <i class="bi bi-sun"></i>
-            <span class="visually-hidden">ผู้พัฒนาระบบ</span>
-          </button>
-
           <button id="installBtn" class="btn btn-sm btn-success btn-install icon-chip-btn" title="ติดตั้งแอป" aria-label="ติดตั้งแอป">
             <i class="bi bi-android2"></i>
             <span class="visually-hidden">ติดตั้งแอป</span>
@@ -7227,15 +7607,40 @@ body {
       }
 
       function buildAssistantWelcomeHtml(options = {}) {
-        const normalizedProfile = normalizeAssistantProfile(options.assistantProfile) || currentAssistantProfile;
-        const welcomeText = buildAssistantWelcomeText({
-          ...options,
-          assistantProfile: normalizedProfile,
-        });
+        if (options.afterClear) {
+          const normalizedProfile = normalizeAssistantProfile(options.assistantProfile) || currentAssistantProfile;
+          const welcomeText = buildAssistantWelcomeText({
+            ...options,
+            assistantProfile: normalizedProfile,
+          });
 
-        return formatBotMessageHtml(welcomeText, [], {
-          assistantProfile: normalizedProfile,
-        });
+          return formatBotMessageHtml(welcomeText, [], {
+            assistantProfile: normalizedProfile,
+          });
+        }
+
+        const exampleQuestions = [
+          'การจัดตั้งสหกรณ์',
+          'สมาชิกลาออกต้องทำอย่างไร',
+          'แก้ไขข้อบังคับสหกรณ์',
+          'ใครแต่งตั้งผู้ชำระบัญชี'
+        ];
+
+        return `
+          <div class="bubble-welcome-modern">
+            <span class="welcome-modern-kicker"><i class="bi bi-shield-check"></i> พร้อมค้นจากฐานข้อมูล</span>
+            <p class="welcome-modern-title">ถามเรื่องกฎหมายสหกรณ์ได้เลยครับ</p>
+            <p class="welcome-modern-text">ระบบจะค้นจากฐานข้อมูลกฎหมายและคำตอบที่ผ่านการจัดการไว้ แล้วสรุปให้ตรงประเด็นที่สุด</p>
+            <div class="welcome-modern-actions" aria-label="ตัวอย่างคำถาม">
+              ${exampleQuestions.map((question) => `
+                <button type="button" class="welcome-suggestion-btn" data-welcome-question="${escapeHtml(question)}">
+                  <i class="bi bi-search"></i>
+                  <span>${escapeHtml(question)}</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `;
       }
 
       function getComposerSuggestionPageCount() {
@@ -9155,6 +9560,13 @@ function buildAnswerSectionHtml(title, icon, text, terms, options = {}) {
       }
 
       chatMessages.addEventListener('click', async (event) => {
+        const welcomeSuggestionButton = event.target.closest('[data-welcome-question]');
+        if (welcomeSuggestionButton) {
+          if (isSubmitting) return;
+          await submitMessage(welcomeSuggestionButton.dataset.welcomeQuestion || '');
+          return;
+        }
+
         const referenceToggle = event.target.closest('[data-reference-toggle="1"]');
         if (referenceToggle) {
           window.setTimeout(() => {

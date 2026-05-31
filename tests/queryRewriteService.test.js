@@ -32,3 +32,34 @@ test("explicit law section follow-up stays a fresh query without previous sectio
   assert.doesNotMatch(rewrite.candidates[0].retrievalQuery, /มาตรา\s*17/);
   assert.match(rewrite.candidates[0].retrievalQuery, /มาตรา\s*18/);
 });
+
+test("rewrite keeps noisy managed Q&A queries short and focused", async () => {
+  const rewrite = await buildQueryRewriteCandidates(
+    "สมาชิกลาออกต้องทำอย่างไร สมาชิกลาออกต้อง q a ผู้ดูแลระบบ ออก สมาชิก สมาชิกสามัญ สมาชิกสามัญ สมาชิก",
+    "coop",
+    {},
+    { usedContext: false, topicHints: [] },
+    { timeoutMs: 10 },
+  );
+  const query = rewrite.candidates[0]?.retrievalQuery || "";
+
+  assert.ok(query.length <= 180);
+  assert.doesNotMatch(query, /q\s*a|ผู้ดูแลระบบ|ผู้ดูแล/i);
+  assert.match(query, /สมาชิกลาออก/);
+  assert.ok((query.match(/สมาชิกสามัญ/g) || []).length <= 1);
+});
+
+test("rewrite does not let expansion swamp short formation query", async () => {
+  const rewrite = await buildQueryRewriteCandidates(
+    "ตั้งสหกรณ์",
+    "coop",
+    {},
+    { usedContext: false, topicHints: [] },
+    { timeoutMs: 10 },
+  );
+  const query = rewrite.candidates[0]?.retrievalQuery || "";
+
+  assert.ok(query.length <= 180);
+  assert.match(query, /^ตั้งสหกรณ์/);
+  assert.doesNotMatch(query, /แก้ไขเพิ่มเติมข้อบังคับสหกรณ์/);
+});

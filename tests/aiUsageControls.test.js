@@ -101,6 +101,39 @@ test("AI summary sources are limited to top 3 and safely truncated", () => {
   assert.equal(sources[0].content.endsWith("..."), false);
 });
 
+test("no-answer queue creates one pending suggestion and reports duplicate repeats", async () => {
+  const { __private } = require("../services/lawChatbotService");
+  const message = `คำถามทดสอบไม่พบคำตอบ ${Date.now()}`;
+  const retrievalEvaluation = {
+    shouldReturnNoAnswer: true,
+    trace: {
+      humanReadableDecision: "confidence below threshold",
+      reasonCodes: ["semantic_mismatch"],
+    },
+  };
+
+  const firstResult = await __private.queueNoAnswerKnowledgeSuggestion(
+    message,
+    "coop",
+    retrievalEvaluation,
+    {
+      selectionDiagnostics: {
+        selected: [{ source: "tbl_laws" }],
+      },
+    },
+  );
+  const duplicateResult = await __private.queueNoAnswerKnowledgeSuggestion(
+    message,
+    "coop",
+    retrievalEvaluation,
+  );
+
+  assert.equal(firstResult.queued, true);
+  assert.equal(firstResult.duplicate, false);
+  assert.equal(duplicateResult.queued, false);
+  assert.equal(duplicateResult.duplicate, true);
+});
+
 test("generateChatSummary records usedAI and limits AI prompt context to 3 sources", async (t) => {
   const chatAnswerPath = require.resolve("../services/chatAnswerService");
   const openAiPath = require.resolve("../services/openAiService");

@@ -364,6 +364,64 @@ test("formation query does not select dissolution sources when formation evidenc
   assert.doesNotMatch(result.answer, /สหกรณ์ย่อมเลิก/);
 });
 
+test("formation query answers with sections 33 and 34 together when both are available", () => {
+  const result = buildDbOnlyMainChatAnswerResult(
+    [
+      {
+        id: 70,
+        source: "tbl_laws",
+        score: 1200,
+        reference: "มาตรา 70",
+        lawNumber: "มาตรา 70",
+        content:
+          "สหกรณ์ย่อมเลิก เมื่อมีเหตุตามข้อบังคับหรือสมาชิกเหลือน้อยกว่าสิบคน",
+      },
+      {
+        id: 60,
+        source: "tbl_laws",
+        score: 998,
+        reference: "มาตรา 33",
+        lawNumber: "มาตรา 33",
+        title: "วรรคแรก",
+        content:
+          "สหกรณ์จะตั้งขึ้นได้ โดยการจดทะเบียนตามพระราชบัญญัตินี้ และต้องมีวัตถุประสงค์เพื่อส่งเสริมผลประโยชน์ทางเศรษฐกิจและสังคมของบรรดาสมาชิก",
+      },
+      {
+        id: 61,
+        source: "tbl_laws",
+        score: 998,
+        reference: "มาตรา 33",
+        lawNumber: "มาตรา 33",
+        title: "วรรคสอง",
+        content: "(ยกเลิก)",
+        comment: "ยกเลิกโดยมาตรา 12 แห่งพระราชบัญญัติสหกรณ์ (ฉบับที่ 3) พ.ศ. 2562",
+      },
+      {
+        id: 64,
+        source: "tbl_laws",
+        score: 998,
+        reference: "มาตรา 34",
+        lawNumber: "มาตรา 34",
+        title: "วรรคแรก",
+        content:
+          "ผู้ซึ่งประสงค์จะเป็นสมาชิกของสหกรณ์ที่จะขอจัดตั้งขึ้น ต้องประชุมกันเพื่อคัดเลือกผู้ที่มาประชุมให้เป็นคณะผู้จัดตั้งสหกรณ์ จำนวนไม่น้อยกว่าสิบคน",
+      },
+    ],
+    {
+      message: "การจัดตั้งสหกรณ์",
+    },
+  );
+
+  assert.deepEqual(
+    result.selectedSources.map((source) => source.reference),
+    ["มาตรา 33", "มาตรา 34"],
+  );
+  assert.match(result.answer, /สหกรณ์จะตั้งขึ้นได้/);
+  assert.match(result.answer, /คณะผู้จัดตั้งสหกรณ์/);
+  assert.doesNotMatch(result.answer, /ยกเลิกโดย/);
+  assert.doesNotMatch(result.answer, /สหกรณ์ย่อมเลิก/);
+});
+
 test("exact section query prefers matching structured law over nearby section suggestions", () => {
   const result = buildDbOnlyMainChatAnswerResult(
     [

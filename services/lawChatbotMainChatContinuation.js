@@ -605,6 +605,51 @@ async function paginateContinuationState(state = {}, options = {}) {
   };
 }
 
+function getContinuationCharBudget(promptProfile = {}) {
+  return Math.max(280, Number(promptProfile.aiSourceContextCharLimit || 700));
+}
+
+async function expandCarrySourcesForContinuation(carrySources = [], promptProfile = {}) {
+  const sourceList = Array.isArray(carrySources) ? carrySources : [];
+  if (sourceList.length === 0) {
+    return [];
+  }
+
+  const charBudget = getContinuationCharBudget(promptProfile);
+  const expanded = await Promise.all(
+    sourceList.map(async (source) => {
+      if (!source || typeof source !== "object") {
+        return null;
+      }
+
+      try {
+        const paginated = await paginateContinuationState(
+          {
+            activeSourceIndex: 0,
+            sources: [source],
+          },
+          {
+            maxCharacters: charBudget,
+            maxSourceChunks: MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS,
+          },
+        );
+
+        return paginated.renderSources[0] || source;
+      } catch (err) {
+        if (process.env.CHATBOT_DEBUG === "1") {
+          console.error(
+            "[law-chatbot] expandCarrySourcesForContinuation: hydration failed, using original source",
+            err?.message,
+          );
+        }
+        return source;
+      }
+    }),
+  );
+
+  return expanded.filter(Boolean);
+}
+
 module.exports = {
   MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
   MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS,
@@ -612,6 +657,7 @@ module.exports = {
   MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
   buildContinuationSourceState,
   createContinuationSessionState,
+  expandCarrySourcesForContinuation,
   getSessionContinuationState,
   paginateContinuationState,
   resolveContinuationState,

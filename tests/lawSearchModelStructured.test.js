@@ -91,6 +91,171 @@ test("searchStructuredLaws resolves direct coop law sections from tbl_laws befor
   );
 });
 
+test("searchStructuredLaws resolves multiple direct coop law sections from one query", async (t) => {
+  const dbPath = require.resolve("../config/db");
+  const modelPath = require.resolve("../models/lawSearchModel");
+
+  const restoreDb = setMockedModule(dbPath, {
+    getDbPool: () => ({
+      query: async (sql, params = []) => {
+        if (/SHOW COLUMNS FROM tbl_laws LIKE/i.test(sql)) {
+          return [[{ Field: "law_search" }]];
+        }
+
+        if (/SHOW COLUMNS FROM tbl_glaws LIKE/i.test(sql)) {
+          return [[{ Field: "glaw_search" }]];
+        }
+
+        if (/FROM tbl_laws/i.test(sql) && /TRIM\(law_number\)/i.test(sql)) {
+          if (params.includes("มาตรา 33")) {
+            return [
+              [
+                {
+                  id: 60,
+                  law_number: "มาตรา 33",
+                  law_part: "วรรคแรก",
+                  law_detail: "สหกรณ์จะตั้งขึ้นได้ โดยการจดทะเบียนตามพระราชบัญญัตินี้",
+                  law_comment: "",
+                  law_search: "จัดตั้งสหกรณ์ มาตรา 33",
+                },
+              ],
+            ];
+          }
+
+          if (params.includes("มาตรา 34")) {
+            return [
+              [
+                {
+                  id: 64,
+                  law_number: "มาตรา 34",
+                  law_part: "วรรคแรก",
+                  law_detail: "ผู้ซึ่งประสงค์จะเป็นสมาชิกต้องประชุมกันเพื่อคัดเลือกคณะผู้จัดตั้งสหกรณ์",
+                  law_comment: "",
+                  law_search: "คณะผู้จัดตั้งสหกรณ์ มาตรา 34",
+                },
+              ],
+            ];
+          }
+        }
+
+        return [[]];
+      },
+    }),
+  });
+
+  t.after(() => {
+    delete require.cache[modelPath];
+    restoreDb();
+  });
+
+  delete require.cache[modelPath];
+  const LawSearchModel = require(modelPath);
+  const results = await LawSearchModel.searchStructuredLaws("มาตรา 33 และ มาตรา 34", "coop", 5);
+
+  assert.deepEqual(
+    results.map((row) => row.lawNumber),
+    ["มาตรา 33", "มาตรา 34"],
+  );
+});
+
+test("searchStructuredLaws falls back to sections 33 and 34 for cooperative formation queries", async (t) => {
+  const dbPath = require.resolve("../config/db");
+  const modelPath = require.resolve("../models/lawSearchModel");
+
+  const restoreDb = setMockedModule(dbPath, {
+    getDbPool: () => ({
+      query: async (sql, params = []) => {
+        if (/SHOW COLUMNS FROM tbl_laws LIKE/i.test(sql)) {
+          return [[{ Field: "law_search" }]];
+        }
+
+        if (/SHOW COLUMNS FROM tbl_glaws LIKE/i.test(sql)) {
+          return [[{ Field: "glaw_search" }]];
+        }
+
+        if (/FROM tbl_laws/i.test(sql) && /TRIM\(law_number\)/i.test(sql)) {
+          if (params.includes("มาตรา 33")) {
+            return [
+              [
+                {
+                  id: 60,
+                  law_number: "มาตรา 33",
+                  law_part: "วรรคแรก",
+                  law_detail: "สหกรณ์จะตั้งขึ้นได้ โดยการจดทะเบียนตามพระราชบัญญัตินี้",
+                  law_comment: "",
+                  law_search: "",
+                },
+                {
+                  id: 61,
+                  law_number: "มาตรา 33",
+                  law_part: "วรรคสอง",
+                  law_detail: "(ยกเลิก)",
+                  law_comment: "ยกเลิกโดยมาตรา 12 แห่งพระราชบัญญัติสหกรณ์ (ฉบับที่ 3) พ.ศ. 2562",
+                  law_search: "",
+                },
+              ],
+            ];
+          }
+
+          if (params.includes("มาตรา 34")) {
+            return [
+              [
+                {
+                  id: 64,
+                  law_number: "มาตรา 34",
+                  law_part: "วรรคแรก",
+                  law_detail: "ผู้ซึ่งประสงค์จะเป็นสมาชิกต้องประชุมกันเพื่อคัดเลือกคณะผู้จัดตั้งสหกรณ์",
+                  law_comment: "",
+                  law_search: "",
+                },
+              ],
+            ];
+          }
+        }
+
+        if (/LOWER\(law_search\) LIKE/i.test(sql)) {
+          return [
+            [
+              {
+                id: 47,
+                law_number: "มาตรา 24",
+                law_part: "วรรคสอง",
+                law_detail: "ก่อนที่จะพ้นจากตำแหน่งให้คณะกรรมการชั่วคราวจัดให้มีการประชุมใหญ่",
+                law_comment: "",
+                law_search: "สหกรณ์ ประชุมใหญ่",
+              },
+            ],
+          ];
+        }
+
+        return [[]];
+      },
+    }),
+  });
+
+  t.after(() => {
+    delete require.cache[modelPath];
+    restoreDb();
+  });
+
+  delete require.cache[modelPath];
+  const LawSearchModel = require(modelPath);
+
+  const keywordResults = await LawSearchModel.searchStructuredLaws("การจัดตั้งสหกรณ์", "coop", 5, {
+    searchMode: "keyword",
+  });
+  assert.deepEqual(
+    keywordResults.map((row) => row.lawNumber),
+    ["มาตรา 33", "มาตรา 34"],
+  );
+
+  const fullResults = await LawSearchModel.searchStructuredLaws("การจัดตั้งสหกรณ์", "coop", 5);
+  assert.deepEqual(
+    fullResults.map((row) => row.lawNumber),
+    ["มาตรา 33", "มาตรา 34"],
+  );
+});
+
 test("searchStructuredLaws expands liquidator appointment query to section 75 before keyword-only matches", async (t) => {
   const dbPath = require.resolve("../config/db");
   const modelPath = require.resolve("../models/lawSearchModel");

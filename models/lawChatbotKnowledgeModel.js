@@ -1,4 +1,4 @@
-const { getDbPool } = require("../config/db");
+const { getDbPool } = require('../config/db');
 const {
   hasExclusiveMeaningMismatch,
   makeBigrams,
@@ -6,23 +6,27 @@ const {
   scoreQueryFocusAlignment,
   segmentWords,
   uniqueTokens,
-} = require("../services/thaiTextUtils");
+} = require('../services/thaiTextUtils');
 
 const memoryKnowledgeEntries = [];
 
 function invalidateAnswerCache() {
-  const { clearAnswerCache } = require("../services/answerStateService");
+  const { clearAnswerCache } = require('../services/answerStateService');
   clearAnswerCache();
 }
 
 function normalizeKnowledgeDomain(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return ["legal", "general", "mixed"].includes(normalized) ? normalized : "general";
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return ['legal', 'general', 'mixed'].includes(normalized) ? normalized : 'general';
 }
 
 function normalizeKnowledgeReviewStatus(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return ["approved", "archived"].includes(normalized) ? normalized : "approved";
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return ['approved', 'archived'].includes(normalized) ? normalized : 'approved';
 }
 
 function normalizeKnowledgeSourceId(value) {
@@ -30,44 +34,66 @@ function normalizeKnowledgeSourceId(value) {
   return normalized > 0 ? normalized : null;
 }
 
-function normalizeKnowledgeTarget(value, fallback = "general") {
-  const normalized = String(value || "").trim().toLowerCase();
-  return ["coop", "group", "all", "general"].includes(normalized) ? normalized : fallback;
+function normalizeKnowledgeTarget(value, fallback = 'general') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return ['coop', 'group', 'all', 'general'].includes(normalized) ? normalized : fallback;
 }
 
 function normalizeEntry(entry) {
   return {
     domain: normalizeKnowledgeDomain(entry.domain),
     target: normalizeKnowledgeTarget(entry.target),
-    title: String(entry.title || "").trim().slice(0, 255),
-    lawNumber: String(entry.lawNumber || "").trim().slice(0, 100),
-    content: String(entry.content || "").trim(),
-    sourceNote: String(entry.sourceNote || "").trim().slice(0, 255),
+    title: String(entry.title || '')
+      .trim()
+      .slice(0, 255),
+    lawNumber: String(entry.lawNumber || '')
+      .trim()
+      .slice(0, 100),
+    content: String(entry.content || '').trim(),
+    sourceNote: String(entry.sourceNote || '')
+      .trim()
+      .slice(0, 255),
     sourceId: normalizeKnowledgeSourceId(entry.sourceId || entry.source_id),
     reviewStatus: normalizeKnowledgeReviewStatus(entry.reviewStatus || entry.review_status),
   };
 }
 
-function buildKnowledgeSearchText(row = {}, searchMode = "full") {
-  const normalizedMode = String(searchMode || "full").trim().toLowerCase();
-  if (normalizedMode === "subject" || normalizedMode === "title_subject") {
-    return `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.source_note || row.sourceNote || ""}`.trim();
+function buildKnowledgeSearchText(row = {}, searchMode = 'full') {
+  const normalizedMode = String(searchMode || 'full')
+    .trim()
+    .toLowerCase();
+  if (normalizedMode === 'subject' || normalizedMode === 'title_subject') {
+    return `${row.title || ''} ${row.law_number || row.lawNumber || ''} ${row.source_note || row.sourceNote || ''}`.trim();
   }
 
-  if (normalizedMode === "content") {
-    return `${row.content || ""}`.trim();
+  if (normalizedMode === 'content') {
+    return `${row.content || ''}`.trim();
   }
 
-  return `${row.title || ""} ${row.law_number || row.lawNumber || ""} ${row.content || ""} ${row.source_note || row.sourceNote || ""}`.trim();
+  return `${row.title || ''} ${row.law_number || row.lawNumber || ''} ${row.content || ''} ${row.source_note || row.sourceNote || ''}`.trim();
 }
 
-function scoreKnowledgeMatch(query, row, searchMode = "full") {
-  const normalizedQuery = normalizeForSearch(query).toLowerCase();
+// Bounded FIFO cache for query-dependent parts computed inside scoreKnowledgeMatch.
+// Avoids recomputing normalization/segmentation for every candidate row in a batch.
+const _scoreKnowledgeQueryCache = new Map();
+
+function scoreKnowledgeMatch(query, row, searchMode = 'full') {
+  let qp = _scoreKnowledgeQueryCache.get(query);
+  if (!qp) {
+    const nq = normalizeForSearch(query).toLowerCase();
+    const qt = uniqueTokens(segmentWords(query));
+    qp = { normalizedQuery: nq, queryTokens: qt, queryBigrams: makeBigrams(qt) };
+    if (_scoreKnowledgeQueryCache.size >= 10) {
+      _scoreKnowledgeQueryCache.delete(_scoreKnowledgeQueryCache.keys().next().value);
+    }
+    _scoreKnowledgeQueryCache.set(query, qp);
+  }
+  const { normalizedQuery, queryTokens, queryBigrams } = qp;
   const rowText = normalizeForSearch(buildKnowledgeSearchText(row, searchMode)).toLowerCase();
-  const queryTokens = uniqueTokens(segmentWords(query));
   const rowTokens = uniqueTokens(segmentWords(rowText));
   const rowTokenSet = new Set(rowTokens);
-  const queryBigrams = makeBigrams(queryTokens);
 
   let score = 0;
 
@@ -86,21 +112,13 @@ function scoreKnowledgeMatch(query, row, searchMode = "full") {
 
   const coverage = queryTokens.length > 0 ? tokenHits / queryTokens.length : 0;
   score += coverage * 18;
-  score += scoreQueryFocusAlignment(
-    query,
-    buildKnowledgeSearchText(row, searchMode),
-  );
+  score += scoreQueryFocusAlignment(query, buildKnowledgeSearchText(row, searchMode));
 
-  if (String(row.title || row.law_number || row.lawNumber || "").trim()) {
+  if (String(row.title || row.law_number || row.lawNumber || '').trim()) {
     score += 8;
   }
 
-  if (
-    hasExclusiveMeaningMismatch(
-      query,
-      buildKnowledgeSearchText(row, searchMode),
-    )
-  ) {
+  if (hasExclusiveMeaningMismatch(query, buildKnowledgeSearchText(row, searchMode))) {
     score -= 120;
   }
 
@@ -108,26 +126,26 @@ function scoreKnowledgeMatch(query, row, searchMode = "full") {
 }
 
 const GENERIC_THAI_TOKENS = new Set([
-  "การ",
-  "เรื่อง",
-  "เกี่ยวกับ",
-  "ของ",
-  "ใน",
-  "ที่",
-  "และ",
-  "หรือ",
-  "ตาม",
-  "เพื่อ",
-  "จาก",
-  "โดย",
-  "ให้",
-  "ได้",
-  "ไม่",
+  'การ',
+  'เรื่อง',
+  'เกี่ยวกับ',
+  'ของ',
+  'ใน',
+  'ที่',
+  'และ',
+  'หรือ',
+  'ตาม',
+  'เพื่อ',
+  'จาก',
+  'โดย',
+  'ให้',
+  'ได้',
+  'ไม่',
 ]);
 
 function getMeaningfulTokens(text) {
   return uniqueTokens(segmentWords(text)).filter((token) => {
-    const trimmed = String(token || "").trim();
+    const trimmed = String(token || '').trim();
     if (!trimmed) {
       return false;
     }
@@ -140,13 +158,8 @@ function getMeaningfulTokens(text) {
   });
 }
 
-function hasKnowledgeRelevance(query, row, searchMode = "full") {
-  if (
-    hasExclusiveMeaningMismatch(
-      query,
-      buildKnowledgeSearchText(row, searchMode),
-    )
-  ) {
+function hasKnowledgeRelevance(query, row, searchMode = 'full') {
+  if (hasExclusiveMeaningMismatch(query, buildKnowledgeSearchText(row, searchMode))) {
     return false;
   }
 
@@ -166,7 +179,9 @@ function hasKnowledgeRelevance(query, row, searchMode = "full") {
   // If the query has multiple important words, the document must contain all of them,
   // unless a more specific phrase or bigram matches.
   if (queryTokens.length > 1 && !(hasExactPhrase || hasBigramMatch)) {
-    const isTypeOrCountQuestion = /(กี่|จำนวน|ประเภท|ชนิด|แบบ|ลักษณะ|เท่าไร|เท่าไหร่)/.test(normalizedQuery);
+    const isTypeOrCountQuestion = /(กี่|จำนวน|ประเภท|ชนิด|แบบ|ลักษณะ|เท่าไร|เท่าไหร่)/.test(
+      normalizedQuery,
+    );
     const minimumHits = isTypeOrCountQuestion ? 1 : queryTokens.length;
     return tokenHits >= minimumHits;
   }
@@ -178,20 +193,20 @@ function hasKnowledgeRelevance(query, row, searchMode = "full") {
 function mapRow(row) {
   return {
     id: row.id,
-    domain: row.domain || "general",
-    target: normalizeKnowledgeTarget(row.target, "general"),
-    title: row.title || "ฐานความรู้ภายในระบบ",
-    lawNumber: row.law_number || row.lawNumber || "",
-    content: row.content || "",
-    sourceNote: row.source_note || row.sourceNote || "",
+    domain: row.domain || 'general',
+    target: normalizeKnowledgeTarget(row.target, 'general'),
+    title: row.title || 'ฐานความรู้ภายในระบบ',
+    lawNumber: row.law_number || row.lawNumber || '',
+    content: row.content || '',
+    sourceNote: row.source_note || row.sourceNote || '',
     sourceId: Number(row.source_id || row.sourceId || 0) || null,
-    reviewStatus: row.review_status || row.reviewStatus || "approved",
-    source: "admin_knowledge",
-    reference: row.law_number || row.title || "ฐานความรู้ภายในระบบ",
-    comment: row.source_note || row.sourceNote || "",
-    score: scoreKnowledgeMatch(row.title || row.content || "", row),
-    createdAt: row.created_at || row.createdAt || "",
-    updatedAt: row.updated_at || row.updatedAt || "",
+    reviewStatus: row.review_status || row.reviewStatus || 'approved',
+    source: 'admin_knowledge',
+    reference: row.law_number || row.title || 'ฐานความรู้ภายในระบบ',
+    comment: row.source_note || row.sourceNote || '',
+    score: scoreKnowledgeMatch(row.title || row.content || '', row),
+    createdAt: row.created_at || row.createdAt || '',
+    updatedAt: row.updated_at || row.updatedAt || '',
   };
 }
 
@@ -253,7 +268,7 @@ class LawChatbotKnowledgeModel {
       return memoryKnowledgeEntries.length;
     }
 
-    const [rows] = await pool.query("SELECT COUNT(*) AS total FROM chatbot_knowledge");
+    const [rows] = await pool.query('SELECT COUNT(*) AS total FROM chatbot_knowledge');
     return rows[0]?.total || 0;
   }
 
@@ -399,10 +414,9 @@ class LawChatbotKnowledgeModel {
       return true;
     }
 
-    const [result] = await pool.query(
-      "DELETE FROM chatbot_knowledge WHERE id = ? LIMIT 1",
-      [normalizedId],
-    );
+    const [result] = await pool.query('DELETE FROM chatbot_knowledge WHERE id = ? LIMIT 1', [
+      normalizedId,
+    ]);
 
     const removed = Number(result.affectedRows || 0) > 0;
     if (removed) {
@@ -418,19 +432,23 @@ class LawChatbotKnowledgeModel {
     const normalizedOffset = Math.max(0, Number(offset || 0));
 
     if (!pool) {
-      return memoryKnowledgeEntries.slice(normalizedOffset, normalizedOffset + normalizedLimit).map((row) => mapRow({
-        id: row.id,
-        domain: row.domain,
-        target: row.target,
-        title: row.title,
-        law_number: row.lawNumber,
-        content: row.content,
-        source_note: row.sourceNote,
-        source_id: row.sourceId,
-        review_status: row.reviewStatus,
-        created_at: row.createdAt,
-        updated_at: row.updatedAt,
-      }));
+      return memoryKnowledgeEntries
+        .slice(normalizedOffset, normalizedOffset + normalizedLimit)
+        .map((row) =>
+          mapRow({
+            id: row.id,
+            domain: row.domain,
+            target: row.target,
+            title: row.title,
+            law_number: row.lawNumber,
+            content: row.content,
+            source_note: row.sourceNote,
+            source_id: row.sourceId,
+            review_status: row.reviewStatus,
+            created_at: row.createdAt,
+            updated_at: row.updatedAt,
+          }),
+        );
     }
 
     const [rows] = await pool.query(
@@ -444,16 +462,18 @@ class LawChatbotKnowledgeModel {
     return rows.map(mapRow);
   }
 
-  static async searchKnowledge(message, target = "all", limit = 5, options = {}) {
-    const searchMode = String(options.searchMode || "full").trim().toLowerCase();
+  static async searchKnowledge(message, target = 'all', limit = 5, options = {}) {
+    const searchMode = String(options.searchMode || 'full')
+      .trim()
+      .toLowerCase();
     const terms = uniqueTokens(segmentWords(message)).slice(0, 8);
     if (terms.length === 0) {
       return [];
     }
 
     const pool = getDbPool();
-    const normalizedTarget = normalizeKnowledgeTarget(target, "all");
-    const shouldFilterByTarget = normalizedTarget !== "all" && normalizedTarget !== "general";
+    const normalizedTarget = normalizeKnowledgeTarget(target, 'all');
+    const shouldFilterByTarget = normalizedTarget !== 'all' && normalizedTarget !== 'general';
 
     if (!pool) {
       return memoryKnowledgeEntries
@@ -463,14 +483,24 @@ class LawChatbotKnowledgeModel {
             return null;
           }
 
-          const haystack = normalizeForSearch(buildKnowledgeSearchText(row, searchMode)).toLowerCase();
-          const coarseScore = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
-          const score = scoreKnowledgeMatch(message, {
-            title: row.title,
-            law_number: row.lawNumber,
-            content: row.content,
-            source_note: row.sourceNote,
-          }, searchMode) + coarseScore;
+          const haystack = normalizeForSearch(
+            buildKnowledgeSearchText(row, searchMode),
+          ).toLowerCase();
+          const coarseScore = terms.reduce(
+            (sum, term) => sum + (haystack.includes(term) ? 1 : 0),
+            0,
+          );
+          const score =
+            scoreKnowledgeMatch(
+              message,
+              {
+                title: row.title,
+                law_number: row.lawNumber,
+                content: row.content,
+                source_note: row.sourceNote,
+              },
+              searchMode,
+            ) + coarseScore;
 
           return {
             id: row.id,
@@ -482,9 +512,9 @@ class LawChatbotKnowledgeModel {
             sourceNote: row.sourceNote,
             sourceId: row.sourceId,
             reviewStatus: row.reviewStatus,
-            source: "admin_knowledge",
-            reference: row.lawNumber || row.title || "ฐานความรู้ภายในระบบ",
-            comment: row.sourceNote || "",
+            source: 'admin_knowledge',
+            reference: row.lawNumber || row.title || 'ฐานความรู้ภายในระบบ',
+            comment: row.sourceNote || '',
             score,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
@@ -500,40 +530,43 @@ class LawChatbotKnowledgeModel {
             return true;
           }
 
-          const rowTarget = normalizeKnowledgeTarget(row.target, "general");
-          return rowTarget === normalizedTarget || rowTarget === "all" || rowTarget === "general";
+          const rowTarget = normalizeKnowledgeTarget(row.target, 'general');
+          return rowTarget === normalizedTarget || rowTarget === 'all' || rowTarget === 'general';
         })
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
     }
 
     const searchColumns =
-      searchMode === "subject" || searchMode === "title_subject"
-        ? ["title", "law_number", "source_note"]
-        : searchMode === "content"
-          ? ["content"]
-          : ["title", "law_number", "content", "source_note"];
+      searchMode === 'subject' || searchMode === 'title_subject'
+        ? ['title', 'law_number', 'source_note']
+        : searchMode === 'content'
+          ? ['content']
+          : ['title', 'law_number', 'content', 'source_note'];
     const whereClause = terms
-      .map(() => searchColumns.map((column) => `LOWER(COALESCE(${column}, '')) LIKE ?`).join(" OR "))
-      .join(" OR ");
+      .map(() =>
+        searchColumns.map((column) => `LOWER(COALESCE(${column}, '')) LIKE ?`).join(' OR '),
+      )
+      .join(' OR ');
     const params = terms.flatMap((term) => {
       const like = `%${term}%`;
       return searchColumns.map(() => like);
     });
 
-    const sql =
-      !shouldFilterByTarget
-        ? `SELECT id, domain, target, title, law_number, content, source_note, source_id, review_status, created_at, updated_at
+    const sql = !shouldFilterByTarget
+      ? `SELECT id, domain, target, title, law_number, content, source_note, source_id, review_status, created_at, updated_at
            FROM chatbot_knowledge
            WHERE ${whereClause}
            ORDER BY id DESC
            LIMIT 50`
-        : `SELECT id, domain, target, title, law_number, content, source_note, source_id, review_status, created_at, updated_at
+      : `SELECT id, domain, target, title, law_number, content, source_note, source_id, review_status, created_at, updated_at
            FROM chatbot_knowledge
            WHERE target IN (?, 'all', 'general') AND (${whereClause})
            ORDER BY CASE WHEN target = ? THEN 0 ELSE 1 END, id DESC
            LIMIT 50`;
-    const sqlParams = !shouldFilterByTarget ? params : [normalizedTarget, ...params, normalizedTarget];
+    const sqlParams = !shouldFilterByTarget
+      ? params
+      : [normalizedTarget, ...params, normalizedTarget];
 
     const [rows] = await pool.query(sql, sqlParams);
 

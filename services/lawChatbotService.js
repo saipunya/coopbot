@@ -1,16 +1,11 @@
-const LawChatbotModel = require("../models/lawChatbotModel");
-const LawChatbotFeedbackModel = require("../models/lawChatbotFeedbackModel");
-const LawChatbotKnowledgeModel = require("../models/lawChatbotKnowledgeModel");
-const LawChatbotKnowledgeSuggestionModel = require("../models/lawChatbotKnowledgeSuggestionModel");
-const LawChatbotPdfChunkModel = require("../models/lawChatbotPdfChunkModel");
-const LawChatbotAnswerCacheModel = require("../models/lawChatbotAnswerCacheModel");
-const LawSearchModel = require("../models/lawSearchModel");
-const UserMonthlyUsageModel = require("../models/userMonthlyUsageModel");
-const runtimeFlags = require("../config/runtimeFlags");
-const { isAiEnabled } = require("./runtimeSettingsService");
-const { getOpenAiConfig } = require("./openAiService");
-const { rewriteLegalText, splitAnswerReferenceSection } = require("./aiRewriteService");
-const { buildQuestionCacheIdentity } = require("./lawChatbotAnswerCacheUtils");
+const LawChatbotModel = require('../models/lawChatbotModel');
+const LawChatbotFeedbackModel = require('../models/lawChatbotFeedbackModel');
+const LawChatbotKnowledgeSuggestionModel = require('../models/lawChatbotKnowledgeSuggestionModel');
+const LawChatbotPdfChunkModel = require('../models/lawChatbotPdfChunkModel');
+const UserMonthlyUsageModel = require('../models/userMonthlyUsageModel');
+const { isAiEnabled } = require('./runtimeSettingsService');
+const { getOpenAiConfig } = require('./openAiService');
+const { rewriteLegalText, splitAnswerReferenceSection } = require('./aiRewriteService');
 const {
   buildDbOnlyMainChatAnswerResult,
   generateChatSummary,
@@ -19,37 +14,23 @@ const {
   buildTonePresentation,
   wantsExplanation,
   SOURCE_LABELS,
-} = require("./chatAnswerService");
+} = require('./chatAnswerService');
 const {
   getConversationHistory,
   getFollowUpCarrySources,
   mergeUniqueSources,
   storeConversationContext,
-} = require("./contextService");
+} = require('./contextService');
 const {
   applyEconomyDatabaseOnlyMode,
-  buildDbCachedChatResult,
   findManagedSuggestedQuestionMatch,
   getRemainingBudgetMs,
-  isTruthyFlag,
   nowMs,
   recordUserSearchHistory,
   resolveChatPlanContext,
-  resolveThreeLayerChatResponse,
   resolveSearchPlan,
-  shouldPersistDbAnswerCache,
   shouldSearchInternetForPlan,
-  shouldUseAnswerCache,
-} = require("./chatOrchestrationService");
-const {
-  attachAiPreviewState,
-  buildAiPreviewMeta,
-  buildAnswerCacheKey,
-  buildAnswerCacheScope,
-  buildFreeAiPreviewPlanContext,
-  getCachedAnswer,
-  setCachedAnswer,
-} = require("./answerStateService");
+} = require('./chatOrchestrationService');
 const {
   approveKnowledgeSuggestion,
   deleteKnowledgeEntry,
@@ -64,8 +45,8 @@ const {
   updateKnowledgeEntry,
   updateKnowledgeSuggestion,
   updateSuggestedQuestionEntry,
-} = require("./knowledgeAdminService");
-const { recordUpload } = require("./uploadIngestionService");
+} = require('./knowledgeAdminService');
+const { recordUpload } = require('./uploadIngestionService');
 const {
   adminUpdateUserPlan,
   approvePaymentRequest,
@@ -82,35 +63,46 @@ const {
   rejectPaymentRequest,
   submitPaymentRequest,
   updatePaymentRequestPlan,
-} = require("./userAdminPaymentService");
-const { expandSearchConcepts, isTimeFollowUpQuestion, normalizeForSearch, detectTopicFamily } = require("./thaiTextUtils");
+} = require('./userAdminPaymentService');
+const {
+  expandSearchConcepts,
+  isTimeFollowUpQuestion,
+  normalizeForSearch,
+  detectTopicFamily,
+} = require('./thaiTextUtils');
 const {
   classifyQuestionIntent,
   resolveSearchTarget,
   selectTieredSources,
-} = require("./sourceSelectionService");
-const { evaluateRetrievalResult } = require("./retrievalEvaluationService");
-const { searchInternetSources } = require("./internetSearchService");
-const { logSearchQuery } = require("./searchLogService");
-const { appendTrainingExample } = require("./lawChatbotTrainingDataService");
-const { canUseAiPreview } = require("./planService");
-const { buildPaginationMeta, normalizePageNumber, normalizePageSize } = require("./paginationUtils");
+} = require('./sourceSelectionService');
+const { evaluateRetrievalResult } = require('./retrievalEvaluationService');
+const { searchInternetSources } = require('./internetSearchService');
+const { logSearchQuery } = require('./searchLogService');
+const { appendTrainingExample } = require('./lawChatbotTrainingDataService');
+const {
+  buildPaginationMeta,
+  normalizePageNumber,
+  normalizePageSize,
+} = require('./paginationUtils');
 const {
   MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
   MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS,
   MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
   createContinuationSessionState,
+  expandCarrySourcesForContinuation,
   getSessionContinuationState,
   paginateContinuationState,
   resolveContinuationState,
   setSessionContinuationState,
   signContinuationToken,
-} = require("./lawChatbotMainChatContinuation");
+} = require('./lawChatbotMainChatContinuation');
 
 const CHAT_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_REQUEST_TIMEOUT_MS || 25000);
 const CHAT_BUDGET_BUFFER_MS = Number(process.env.CHAT_BUDGET_BUFFER_MS || 3000);
 const CHAT_REPLY_BUDGET_MS = Math.max(2000, CHAT_REQUEST_TIMEOUT_MS - CHAT_BUDGET_BUFFER_MS);
-const MIN_INTERNET_SEARCH_BUDGET_MS = Number(process.env.LAW_CHATBOT_INTERNET_SEARCH_MIN_BUDGET_MS || 5000);
+const MIN_INTERNET_SEARCH_BUDGET_MS = Number(
+  process.env.LAW_CHATBOT_INTERNET_SEARCH_MIN_BUDGET_MS || 5000,
+);
 const MIN_AI_SUMMARY_BUDGET_MS = Number(process.env.LAW_CHATBOT_AI_SUMMARY_MIN_BUDGET_MS || 2500);
 const DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS = 1;
 const DB_ONLY_LAW_SECTION_MAX_SOURCE_CHUNKS = 6;
@@ -119,67 +111,69 @@ const AI_SUMMARY_SOURCE_TEXT_LIMIT = Math.max(
   280,
   Number(process.env.LAW_CHATBOT_AI_SOURCE_CONTEXT_CHAR_LIMIT || 700),
 );
-const PREPARED_QA_NOTICE = "คำตอบนี้มาจาก Q&A/ฐานข้อมูลในระบบ โดยไม่ได้เรียก AI";
-const AI_SUMMARY_NOTICE = "คำตอบนี้สรุปโดย AI จากข้อมูลที่ระบบค้นพบ";
-const DB_LOOKUP_NOTICE = "คำตอบนี้มาจากการค้นฐานข้อมูลโดยตรง";
+const PREPARED_QA_NOTICE = 'คำตอบนี้มาจาก Q&A/ฐานข้อมูลในระบบ โดยไม่ได้เรียก AI';
+const AI_SUMMARY_NOTICE = 'คำตอบนี้สรุปโดย AI จากข้อมูลที่ระบบค้นพบ';
+const DB_LOOKUP_NOTICE = 'คำตอบนี้มาจากการค้นฐานข้อมูลโดยตรง';
 const FAQ_HIGH_CONFIDENCE_THRESHOLD = Number(process.env.FAQ_HIGH_CONFIDENCE_THRESHOLD || 0.85);
-const LAW_CHATBOT_ASSISTANT_SESSION_KEY = "lawChatbotAssistantProfile";
+const LAW_CHATBOT_ASSISTANT_SESSION_KEY = 'lawChatbotAssistantProfile';
 const LAW_CHATBOT_ASSISTANT_PROFILES = [
   {
-    id: "male",
-    label: "ผู้ช่วยกฤต",
-    gender: "male",
-    politeParticle: "ครับ",
+    id: 'male',
+    label: 'ผู้ช่วยกฤต',
+    gender: 'male',
+    politeParticle: 'ครับ',
   },
   {
-    id: "female",
-    label: "ผู้ช่วยดาว",
-    gender: "female",
-    politeParticle: "ครับ",
+    id: 'female',
+    label: 'ผู้ช่วยดาว',
+    gender: 'female',
+    politeParticle: 'ครับ',
   },
 ];
 
 const SOURCE_TABLE_NAMES = {
-  managed_suggested_question: "chatbot_suggested_questions",
-  admin_knowledge: "chatbot_knowledge",
-  knowledge_suggestion: "chatbot_knowledge_suggestions",
-  knowledge_base: "law_chatbot",
-  documents: "law_chatbot_pdf_chunks",
-  pdf_chunks: "law_chatbot_pdf_chunks",
-  tbl_laws: "tbl_laws",
-  tbl_glaws: "tbl_glaws",
-  tbl_vinichai: "tbl_vinichai",
-  internet_search: "internet_search",
+  managed_suggested_question: 'chatbot_suggested_questions',
+  admin_knowledge: 'chatbot_knowledge',
+  knowledge_suggestion: 'chatbot_knowledge_suggestions',
+  knowledge_base: 'law_chatbot',
+  documents: 'law_chatbot_pdf_chunks',
+  pdf_chunks: 'law_chatbot_pdf_chunks',
+  tbl_laws: 'tbl_laws',
+  tbl_glaws: 'tbl_glaws',
+  tbl_vinichai: 'tbl_vinichai',
+  internet_search: 'internet_search',
 };
 
-function getSourceDisplayLabel(sourceName = "") {
-  return SOURCE_LABELS[String(sourceName || "").trim()] || String(sourceName || "").trim();
+function getSourceDisplayLabel(sourceName = '') {
+  return SOURCE_LABELS[String(sourceName || '').trim()] || String(sourceName || '').trim();
 }
 
-function getSourceTableName(sourceName = "") {
-  const normalized = String(sourceName || "").trim();
+function getSourceTableName(sourceName = '') {
+  const normalized = String(sourceName || '').trim();
   return SOURCE_TABLE_NAMES[normalized] || normalized;
 }
-function resolveSuggestedQuestionTargets(message = "", requestedTarget = "all") {
-  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
-  const normalizedRequestedTarget = String(requestedTarget || "").trim().toLowerCase();
+function resolveSuggestedQuestionTargets(message = '', requestedTarget = 'all') {
+  const normalizedMessage = normalizeForSearch(String(message || '')).toLowerCase();
+  const normalizedRequestedTarget = String(requestedTarget || '')
+    .trim()
+    .toLowerCase();
 
   const targets = [];
 
-  if (normalizedRequestedTarget === "group" || /กลุ่มเกษตรกร|กลุ่มเกษต/.test(normalizedMessage)) {
-    targets.push("group");
+  if (normalizedRequestedTarget === 'group' || /กลุ่มเกษตรกร|กลุ่มเกษต/.test(normalizedMessage)) {
+    targets.push('group');
   }
 
-  if (normalizedRequestedTarget === "coop" || /สหกรณ์/.test(normalizedMessage)) {
-    targets.push("coop");
+  if (normalizedRequestedTarget === 'coop' || /สหกรณ์/.test(normalizedMessage)) {
+    targets.push('coop');
   }
 
   if (normalizedRequestedTarget && !targets.includes(normalizedRequestedTarget)) {
     targets.push(normalizedRequestedTarget);
   }
 
-  if (!targets.includes("all")) {
-    targets.push("all");
+  if (!targets.includes('all')) {
+    targets.push('all');
   }
 
   return Array.from(new Set(targets.filter(Boolean)));
@@ -189,7 +183,7 @@ function getUniqueSourceTableNames(sources = []) {
   return Array.from(
     new Set(
       (Array.isArray(sources) ? sources : [])
-        .map((item) => getSourceTableName(item?.source || ""))
+        .map((item) => getSourceTableName(item?.source || ''))
         .filter(Boolean),
     ),
   );
@@ -200,13 +194,13 @@ function buildClientSourceReferences(sources = []) {
   const references = [];
 
   for (const source of Array.isArray(sources) ? sources : []) {
-    const label = getSourceDisplayLabel(source?.source || "");
-    const reference = String(source?.reference || source?.title || source?.keyword || "").trim();
+    const label = getSourceDisplayLabel(source?.source || '');
+    const reference = String(source?.reference || source?.title || source?.keyword || '').trim();
     if (!reference) {
       continue;
     }
 
-    const line = [label, reference].filter(Boolean).join(": ");
+    const line = [label, reference].filter(Boolean).join(': ');
     const key = line.toLowerCase();
     if (seen.has(key)) {
       continue;
@@ -219,14 +213,14 @@ function buildClientSourceReferences(sources = []) {
   return references;
 }
 
-function extractSourceLawReferences(text = "") {
-  const normalized = normalizeForSearch(String(text || "")).toLowerCase();
+function extractSourceLawReferences(text = '') {
+  const normalized = normalizeForSearch(String(text || '')).toLowerCase();
   const refs = [];
   const matcher = /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]{1,4}(?:\s*\/\s*[0-9]{1,3})?)/g;
   let match = matcher.exec(normalized);
   while (match) {
     if (match[1]) {
-      refs.push(match[1].replace(/\s*\/\s*/g, "/"));
+      refs.push(match[1].replace(/\s*\/\s*/g, '/'));
     }
     match = matcher.exec(normalized);
   }
@@ -247,7 +241,7 @@ function buildFaqSupportText(source = {}) {
       source?.rawContent,
     ]
       .filter(Boolean)
-      .join(" "),
+      .join(' '),
   ).toLowerCase();
 }
 
@@ -271,23 +265,28 @@ function filterDatabaseSourcesForFaqSupport(faqSource = null, databaseSources = 
     });
   }
 
-  const faqReference = normalizeForSearch(String(faqSource.reference || faqSource.title || "")).toLowerCase();
+  const faqReference = normalizeForSearch(
+    String(faqSource.reference || faqSource.title || ''),
+  ).toLowerCase();
   if (!faqReference || faqReference.length < 4) {
     return [];
   }
 
   return sources.filter((source) => {
-    const sourceReference = normalizeForSearch(String(source?.reference || source?.title || "")).toLowerCase();
-    return sourceReference && (
-      faqReference.includes(sourceReference) ||
-      sourceReference.includes(faqReference) ||
-      faqText.includes(sourceReference)
+    const sourceReference = normalizeForSearch(
+      String(source?.reference || source?.title || ''),
+    ).toLowerCase();
+    return (
+      sourceReference &&
+      (faqReference.includes(sourceReference) ||
+        sourceReference.includes(faqReference) ||
+        faqText.includes(sourceReference))
     );
   });
 }
 
-function hasExplicitLawReferenceQuery(message = "") {
-  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+function hasExplicitLawReferenceQuery(message = '') {
+  const normalized = normalizeForSearch(String(message || '')).toLowerCase();
   if (!normalized) {
     return false;
   }
@@ -295,18 +294,18 @@ function hasExplicitLawReferenceQuery(message = "") {
   return /มาตรา/.test(normalized);
 }
 
-function shouldSkipFaqForQuestion(message = "") {
+function shouldSkipFaqForQuestion(message = '') {
   return hasExplicitLawReferenceQuery(message);
 }
 
-function isHighConfidenceFaqMatch(match = null, message = "") {
+function isHighConfidenceFaqMatch(match = null, message = '') {
   if (!match?.answerText) {
     return false;
   }
 
-  const normalizedMessage = normalizeForSearch(String(message || "")).toLowerCase();
+  const normalizedMessage = normalizeForSearch(String(message || '')).toLowerCase();
   const normalizedQuestion = normalizeForSearch(
-    String(match.normalizedQuestion || match.questionText || ""),
+    String(match.normalizedQuestion || match.questionText || ''),
   ).toLowerCase();
 
   if (normalizedMessage && normalizedQuestion && normalizedMessage === normalizedQuestion) {
@@ -317,15 +316,15 @@ function isHighConfidenceFaqMatch(match = null, message = "") {
   return Number.isFinite(similarity) && similarity >= FAQ_HIGH_CONFIDENCE_THRESHOLD;
 }
 
-function isBylawAmendmentQuestion(message = "") {
-  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+function isBylawAmendmentQuestion(message = '') {
+  const normalized = normalizeForSearch(String(message || '')).toLowerCase();
   return (
     /ข้อบังคับ/.test(normalized) &&
     /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน|ขั้นตอน)/.test(normalized)
   );
 }
 
-function isRelevantFaqMatchForQuestion(match = null, message = "") {
+function isRelevantFaqMatchForQuestion(match = null, message = '') {
   if (!match) {
     return false;
   }
@@ -343,7 +342,7 @@ function isRelevantFaqMatchForQuestion(match = null, message = "") {
       match.source?.reference,
     ]
       .filter(Boolean)
-      .join(" "),
+      .join(' '),
   ).toLowerCase();
 
   if (!normalizedMatchText) {
@@ -354,41 +353,45 @@ function isRelevantFaqMatchForQuestion(match = null, message = "") {
     /ข้อบังคับ/.test(normalizedMatchText) &&
     /(แก้ไข|เพิ่มเติม|เปลี่ยนแปลง|จดทะเบียน|ขั้นตอน)/.test(normalizedMatchText);
   const hasCommitteeAuthoritySignal =
-    /(คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ|คณะกรรมการพัฒนาสหกรณ์แห่งชาติ|คพช)/.test(normalizedMatchText);
+    /(คณะกรรมการพัฒนาการสหกรณ์แห่งชาติ|คณะกรรมการพัฒนาสหกรณ์แห่งชาติ|คพช)/.test(
+      normalizedMatchText,
+    );
 
   return hasBylawAmendmentSignal && !hasCommitteeAuthoritySignal;
 }
 
-function resolveDbOnlyMainChatMaxSourceChunks(message = "", questionIntent = "") {
-  const normalizedIntent = String(questionIntent || "").trim().toLowerCase();
-  if (normalizedIntent === "law_section") {
+function resolveDbOnlyMainChatMaxSourceChunks(message = '', questionIntent = '') {
+  const normalizedIntent = String(questionIntent || '')
+    .trim()
+    .toLowerCase();
+  if (normalizedIntent === 'law_section') {
     return DB_ONLY_LAW_SECTION_MAX_SOURCE_CHUNKS;
   }
 
   return DB_ONLY_MAIN_CHAT_MAX_SOURCE_CHUNKS;
 }
 
-function shouldCollapseExactLawSectionPreview(message = "", questionIntent = "") {
+function shouldCollapseExactLawSectionPreview(message = '', questionIntent = '') {
   void message;
   void questionIntent;
   return false;
 }
 
 function resolveAnswerConfidenceLevel(retrievalEvaluation = null) {
-  if (!retrievalEvaluation || typeof retrievalEvaluation !== "object") {
-    return "";
+  if (!retrievalEvaluation || typeof retrievalEvaluation !== 'object') {
+    return '';
   }
 
-  return String(retrievalEvaluation.confidenceLevel || "").trim();
+  return String(retrievalEvaluation.confidenceLevel || '').trim();
 }
 
-function applyAnswerConfidenceNotice(answer = "", retrievalEvaluation = null) {
-  const text = String(answer || "").trim();
+function applyAnswerConfidenceNotice(answer = '', retrievalEvaluation = null) {
+  const text = String(answer || '').trim();
   if (!text || !retrievalEvaluation?.shouldAnswer) {
     return text;
   }
 
-  const note = String(retrievalEvaluation.answerNote || "").trim();
+  const note = String(retrievalEvaluation.answerNote || '').trim();
   if (!note) {
     return text;
   }
@@ -400,30 +403,45 @@ function applyAnswerConfidenceNotice(answer = "", retrievalEvaluation = null) {
   return `${text}\n\n${note}`;
 }
 
-function buildResponseMeta(answerMode = "", sources = [], retrievalEvaluation = null, options = {}) {
+function buildResponseMeta(
+  answerMode = '',
+  sources = [],
+  retrievalEvaluation = null,
+  options = {},
+) {
   const sourceTables = getUniqueSourceTableNames(sources);
-  const preparedQaModes = new Set(["prepared_qa_db_only", "managed_answer"]);
-  const aiModes = new Set(["ai", "ai_preview", "ai_preview_compact", "mock_ai"]);
-  const databaseModes = new Set(["db_only", "economy_db_only", "db_only_main_chat"]);
-  const normalizedAnswerMode = String(answerMode || "").trim();
-  const usesPreparedQa = preparedQaModes.has(String(answerMode || "").trim());
+  const preparedQaModes = new Set(['prepared_qa_db_only', 'managed_answer']);
+  const aiModes = new Set(['ai', 'ai_preview', 'ai_preview_compact', 'mock_ai']);
+  const databaseModes = new Set(['db_only', 'economy_db_only', 'db_only_main_chat']);
+  const normalizedAnswerMode = String(answerMode || '').trim();
+  const usesPreparedQa = preparedQaModes.has(String(answerMode || '').trim());
   const usesAiSummary = aiModes.has(normalizedAnswerMode);
-  const usesDatabaseLookup = !usesPreparedQa && !usesAiSummary && databaseModes.has(normalizedAnswerMode);
+  const usesDatabaseLookup =
+    !usesPreparedQa && !usesAiSummary && databaseModes.has(normalizedAnswerMode);
 
   return {
     answerMode: normalizedAnswerMode,
-    kind: usesPreparedQa ? "prepared_qa" : usesAiSummary ? "ai_summary" : usesDatabaseLookup ? "database_lookup" : "generic",
+    kind: usesPreparedQa
+      ? 'prepared_qa'
+      : usesAiSummary
+        ? 'ai_summary'
+        : usesDatabaseLookup
+          ? 'database_lookup'
+          : 'generic',
     usesPreparedQa,
     preparedQaTitle: usesPreparedQa
-      ? String((Array.isArray(sources) && sources[0] && (sources[0].title || sources[0].reference)) || "").trim()
-      : "",
+      ? String(
+          (Array.isArray(sources) && sources[0] && (sources[0].title || sources[0].reference)) ||
+            '',
+        ).trim()
+      : '',
     notice: usesPreparedQa
       ? PREPARED_QA_NOTICE
       : usesAiSummary
         ? AI_SUMMARY_NOTICE
         : usesDatabaseLookup
           ? DB_LOOKUP_NOTICE
-          : "",
+          : '',
     answerConfidence: resolveAnswerConfidenceLevel(retrievalEvaluation),
     answerConfidenceScore: retrievalEvaluation?.confidence ?? null,
     usedAI: Boolean(options.usedAI),
@@ -431,51 +449,60 @@ function buildResponseMeta(answerMode = "", sources = [], retrievalEvaluation = 
   };
 }
 
-async function recordSearchQueryLog(query, effectiveQuery, retrievalEvaluation, usedAI, searchTrace = null) {
+async function recordSearchQueryLog(
+  query,
+  effectiveQuery,
+  retrievalEvaluation,
+  usedAI,
+  searchTrace = null,
+) {
+  const expandedQuery = expandSearchConcepts(effectiveQuery || query);
+
   await logSearchQuery({
     query,
-    expandedQuery: expandSearchConcepts(effectiveQuery || query),
+    expandedQuery,
     confidence: retrievalEvaluation?.confidence ?? null,
     usedAI,
-    searchStage: String(searchTrace?.selectedStage || "").trim(),
+    searchStage: String(searchTrace?.selectedStage || '').trim(),
     searchTrace,
   });
 
   await appendTrainingExample({
-    type: "search",
+    type: 'search',
     question: query,
-    answer: "",
+    answer: '',
     usedAI,
     confidence: retrievalEvaluation?.confidence ?? null,
-    searchStage: String(searchTrace?.selectedStage || "").trim(),
+    searchStage: String(searchTrace?.selectedStage || '').trim(),
     searchTrace,
     metadata: {
-      expandedQuery: expandSearchConcepts(effectiveQuery || query),
+      expandedQuery,
       retrievalConfidence: retrievalEvaluation?.confidence ?? null,
       shouldReturnNoAnswer: retrievalEvaluation?.shouldReturnNoAnswer === true,
     },
   });
 }
 
-function safeTruncateSourceText(text = "", limit = AI_SUMMARY_SOURCE_TEXT_LIMIT) {
-  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+function safeTruncateSourceText(text = '', limit = AI_SUMMARY_SOURCE_TEXT_LIMIT) {
+  const normalized = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const safeLimit = Math.max(0, Number(limit || 0));
   if (!normalized || safeLimit <= 0 || normalized.length <= safeLimit) {
     return normalized;
   }
 
-  const clipped = Array.from(normalized).slice(0, safeLimit).join("").trim();
+  const clipped = Array.from(normalized).slice(0, safeLimit).join('').trim();
   const boundaryIndex = Math.max(
-    clipped.lastIndexOf(" "),
-    clipped.lastIndexOf("。"),
-    clipped.lastIndexOf("."),
-    clipped.lastIndexOf(";"),
-    clipped.lastIndexOf(":"),
+    clipped.lastIndexOf(' '),
+    clipped.lastIndexOf('。'),
+    clipped.lastIndexOf('.'),
+    clipped.lastIndexOf(';'),
+    clipped.lastIndexOf(':'),
   );
 
-  return (boundaryIndex >= Math.floor(safeLimit * 0.7)
-    ? clipped.slice(0, boundaryIndex)
-    : clipped
+  return (
+    boundaryIndex >= Math.floor(safeLimit * 0.7) ? clipped.slice(0, boundaryIndex) : clipped
   ).trim();
 }
 
@@ -483,14 +510,12 @@ function prepareAiSummarySources(sources = [], options = {}) {
   const limit = Math.max(1, Number(options.limit || AI_SUMMARY_SOURCE_LIMIT));
   const textLimit = Math.max(280, Number(options.textLimit || AI_SUMMARY_SOURCE_TEXT_LIMIT));
 
-  return (Array.isArray(sources) ? sources : [])
-    .slice(0, limit)
-    .map((source) => ({
-      ...source,
-      content: safeTruncateSourceText(source?.content || "", textLimit),
-      chunk_text: safeTruncateSourceText(source?.chunk_text || "", textLimit),
-      comment: safeTruncateSourceText(source?.comment || "", textLimit),
-    }));
+  return (Array.isArray(sources) ? sources : []).slice(0, limit).map((source) => ({
+    ...source,
+    content: safeTruncateSourceText(source?.content || '', textLimit),
+    chunk_text: safeTruncateSourceText(source?.chunk_text || '', textLimit),
+    comment: safeTruncateSourceText(source?.comment || '', textLimit),
+  }));
 }
 
 function isSummarizeModeEnabled(payload = {}) {
@@ -501,33 +526,33 @@ function resolveSummaryAiControl(retrievalEvaluation = null, planContext = {}, p
   const confidenceLevel = resolveAnswerConfidenceLevel(retrievalEvaluation);
   const summarizeModeEnabled = isSummarizeModeEnabled(payload);
 
-  if (confidenceLevel === "high") {
+  if (confidenceLevel === 'high') {
     return {
       allowAI: false,
-      reason: "high_confidence",
+      reason: 'high_confidence',
       summarizeModeEnabled,
     };
   }
 
-  if (confidenceLevel === "low") {
+  if (confidenceLevel === 'low') {
     return {
       allowAI: false,
-      reason: "low_confidence",
+      reason: 'low_confidence',
       summarizeModeEnabled,
     };
   }
 
-  if (confidenceLevel === "medium" && summarizeModeEnabled && planContext?.useAI === true) {
+  if (confidenceLevel === 'medium' && summarizeModeEnabled && planContext?.useAI === true) {
     return {
       allowAI: true,
-      reason: "medium_confidence_summary",
+      reason: 'medium_confidence_summary',
       summarizeModeEnabled,
     };
   }
 
   return {
     allowAI: false,
-    reason: summarizeModeEnabled ? "ai_disabled_for_plan" : "summary_mode_disabled",
+    reason: summarizeModeEnabled ? 'ai_disabled_for_plan' : 'summary_mode_disabled',
     summarizeModeEnabled,
   };
 }
@@ -537,28 +562,31 @@ function logAiUsageGuardViolation(aiControl = {}, retrievalEvaluation = null, de
     return;
   }
 
-  console.warn("[law-chatbot] blocked AI usage rule violation", {
-    confidenceLevel: resolveAnswerConfidenceLevel(retrievalEvaluation) || "unknown",
-    reason: aiControl?.reason || "unknown",
+  console.warn('[law-chatbot] blocked AI usage rule violation', {
+    confidenceLevel: resolveAnswerConfidenceLevel(retrievalEvaluation) || 'unknown',
+    reason: aiControl?.reason || 'unknown',
     summarizeModeEnabled: aiControl?.summarizeModeEnabled === true,
-    query: String(details.query || "").slice(0, 160),
+    query: String(details.query || '').slice(0, 160),
   });
 }
 
 function getLawChatbotAssistantProfile(session) {
-  if (!session || typeof session !== "object") {
+  if (!session || typeof session !== 'object') {
     return LAW_CHATBOT_ASSISTANT_PROFILES[0];
   }
 
-  const existingProfileId = String(session[LAW_CHATBOT_ASSISTANT_SESSION_KEY]?.id || "").trim();
-  const existingProfile = LAW_CHATBOT_ASSISTANT_PROFILES.find((profile) => profile.id === existingProfileId);
+  const existingProfileId = String(session[LAW_CHATBOT_ASSISTANT_SESSION_KEY]?.id || '').trim();
+  const existingProfile = LAW_CHATBOT_ASSISTANT_PROFILES.find(
+    (profile) => profile.id === existingProfileId,
+  );
   if (existingProfile) {
     return existingProfile;
   }
 
-  const selectedProfile = LAW_CHATBOT_ASSISTANT_PROFILES[
-    Math.floor(Math.random() * LAW_CHATBOT_ASSISTANT_PROFILES.length)
-  ] || LAW_CHATBOT_ASSISTANT_PROFILES[0];
+  const selectedProfile =
+    LAW_CHATBOT_ASSISTANT_PROFILES[
+      Math.floor(Math.random() * LAW_CHATBOT_ASSISTANT_PROFILES.length)
+    ] || LAW_CHATBOT_ASSISTANT_PROFILES[0];
 
   session[LAW_CHATBOT_ASSISTANT_SESSION_KEY] = {
     id: selectedProfile.id,
@@ -567,44 +595,50 @@ function getLawChatbotAssistantProfile(session) {
   return selectedProfile;
 }
 
-function applyThaiPoliteParticle(text = "", politeParticle = "ครับ") {
-  const trimmed = String(text || "").trim();
+function applyThaiPoliteParticle(text = '', politeParticle = 'ครับ') {
+  const trimmed = String(text || '').trim();
   if (!trimmed) {
     return trimmed;
   }
 
   const trailingPunctuationMatch = trimmed.match(/([\s"'”’)\]\u0E2F\u0E46.!?…]+)$/u);
-  const trailingPunctuation = trailingPunctuationMatch ? trailingPunctuationMatch[0] : "";
-  const baseText = trailingPunctuation ? trimmed.slice(0, -trailingPunctuation.length).trimEnd() : trimmed;
+  const trailingPunctuation = trailingPunctuationMatch ? trailingPunctuationMatch[0] : '';
+  const baseText = trailingPunctuation
+    ? trimmed.slice(0, -trailingPunctuation.length).trimEnd()
+    : trimmed;
 
-  const normalizedBaseText = baseText.replace(/(ครับ|ค่ะ|คะ)$/u, "").trimEnd();
-  const separator = normalizedBaseText ? " " : "";
+  const normalizedBaseText = baseText.replace(/(ครับ|ค่ะ|คะ)$/u, '').trimEnd();
+  const separator = normalizedBaseText ? ' ' : '';
 
   return `${normalizedBaseText}${separator}${politeParticle}${trailingPunctuation}`.trim();
 }
 
-function personalizeAnswerWithAssistantProfile(answer = "", assistantProfile = LAW_CHATBOT_ASSISTANT_PROFILES[0]) {
-  const rawAnswer = String(answer || "");
+function personalizeAnswerWithAssistantProfile(
+  answer = '',
+  assistantProfile = LAW_CHATBOT_ASSISTANT_PROFILES[0],
+) {
+  const rawAnswer = String(answer || '');
   if (!rawAnswer.trim()) {
     return rawAnswer;
   }
 
   const { mainText, referenceText } = splitAnswerReferenceSection(rawAnswer);
   const mainAnswer = mainText || rawAnswer;
-  const referenceSection = referenceText ? `\n\n${referenceText}` : "";
+  const referenceSection = referenceText ? `\n\n${referenceText}` : '';
 
   return `${applyThaiPoliteParticle(mainAnswer, assistantProfile.politeParticle)}${referenceSection}`;
 }
 
 function personalizeChatResult(session, result = {}, options = {}) {
-  if (!result || typeof result !== "object") {
+  if (!result || typeof result !== 'object') {
     return result;
   }
 
   const assistantProfile = getLawChatbotAssistantProfile(session);
-  const answer = options.applyPoliteEnding === true
-    ? personalizeAnswerWithAssistantProfile(result.answer, assistantProfile)
-    : result.answer;
+  const answer =
+    options.applyPoliteEnding === true
+      ? personalizeAnswerWithAssistantProfile(result.answer, assistantProfile)
+      : result.answer;
 
   return {
     ...result,
@@ -618,7 +652,7 @@ function personalizeChatResult(session, result = {}, options = {}) {
 }
 
 async function applyAiRewriteLayer(result = {}, options = {}) {
-  const rawAnswer = String(result?.answer || "").trim();
+  const rawAnswer = String(result?.answer || '').trim();
   if (!rawAnswer) {
     return result;
   }
@@ -626,24 +660,25 @@ async function applyAiRewriteLayer(result = {}, options = {}) {
   try {
     const { mainText, referenceText } = splitAnswerReferenceSection(rawAnswer);
     const simplifiedAnswer = await rewriteLegalText(rawAnswer, {
-      explicitLawSectionQuery: hasExplicitLawReferenceQuery(options.message || ""),
+      explicitLawSectionQuery: hasExplicitLawReferenceQuery(options.message || ''),
     });
 
     if (!simplifiedAnswer) {
       return result;
     }
 
-    const cleanedSimplifiedAnswer = splitAnswerReferenceSection(simplifiedAnswer).mainText || simplifiedAnswer;
-    const rewrittenAnswer = [cleanedSimplifiedAnswer, referenceText].filter(Boolean).join("\n\n");
+    const cleanedSimplifiedAnswer =
+      splitAnswerReferenceSection(simplifiedAnswer).mainText || simplifiedAnswer;
+    const rewrittenAnswer = [cleanedSimplifiedAnswer, referenceText].filter(Boolean).join('\n\n');
 
     return {
       ...result,
       answer: rewrittenAnswer,
       simplifiedAnswer: rewrittenAnswer,
-      rawAnswer: [mainText, referenceText].filter(Boolean).join("\n\n"),
+      rawAnswer: [mainText, referenceText].filter(Boolean).join('\n\n'),
     };
   } catch (error) {
-    console.error("[law-chatbot] AI rewrite failed:", error.message || error);
+    console.error('[law-chatbot] AI rewrite failed:', error.message || error);
     return result;
   }
 }
@@ -658,20 +693,19 @@ function getInitialAssistantProfile(session) {
   };
 }
 
-function buildAutoSuggestionQueueMeta(meta = {}, tag = "auto-feedback") {
-  const submittedBy = String(meta.submittedBy || "").trim();
+function buildAutoSuggestionQueueMeta(meta = {}, tag = 'auto-feedback') {
+  const submittedBy = String(meta.submittedBy || '').trim();
 
   return {
-    submittedBy: submittedBy
-      ? `${submittedBy} [${tag}]`
-      : `ระบบบันทึกอัตโนมัติ [${tag}]`,
-    submittedByUserId: Number(meta.submittedByUserId || 0) > 0 ? Number(meta.submittedByUserId) : null,
-    sessionId: String(meta.sessionId || "").trim(),
-    ip: String(meta.ip || "").trim(),
+    submittedBy: submittedBy ? `${submittedBy} [${tag}]` : `ระบบบันทึกอัตโนมัติ [${tag}]`,
+    submittedByUserId:
+      Number(meta.submittedByUserId || 0) > 0 ? Number(meta.submittedByUserId) : null,
+    sessionId: String(meta.sessionId || '').trim(),
+    ip: String(meta.ip || '').trim(),
   };
 }
 
-async function queueAutomaticKnowledgeSuggestion(payload = {}, meta = {}, tag = "auto-feedback") {
+async function queueAutomaticKnowledgeSuggestion(payload = {}, meta = {}, tag = 'auto-feedback') {
   try {
     await submitKnowledgeSuggestion(payload, buildAutoSuggestionQueueMeta(meta, tag));
     return {
@@ -679,15 +713,15 @@ async function queueAutomaticKnowledgeSuggestion(payload = {}, meta = {}, tag = 
       duplicate: false,
     };
   } catch (error) {
-    const errorMessage = String(error?.message || "").trim();
-    if (errorMessage.includes("มีการส่งข้อเสนอแนะเดิมเข้ามาแล้ว")) {
+    const errorMessage = String(error?.message || '').trim();
+    if (errorMessage.includes('มีการส่งข้อเสนอแนะเดิมเข้ามาแล้ว')) {
       return {
         queued: false,
         duplicate: true,
       };
     }
 
-    console.error("[law-chatbot] failed to queue automatic knowledge suggestion:", error);
+    console.error('[law-chatbot] failed to queue automatic knowledge suggestion:', error);
 
     return {
       queued: false,
@@ -697,18 +731,20 @@ async function queueAutomaticKnowledgeSuggestion(payload = {}, meta = {}, tag = 
 }
 
 function resolveRuntimeAiPlanContext(planContext = {}, usage = null) {
-  if (!planContext || typeof planContext !== "object") {
+  if (!planContext || typeof planContext !== 'object') {
     return planContext;
   }
 
-  const planCode = String(planContext.code || planContext.plan || "").trim().toLowerCase();
-  if (planCode !== "premium" || planContext.useAI !== true) {
+  const planCode = String(planContext.code || planContext.plan || '')
+    .trim()
+    .toLowerCase();
+  if (planCode !== 'premium' || planContext.useAI !== true) {
     return planContext;
   }
 
   const promptProfile = planContext.promptProfile || {};
-  const primaryModel = String(planContext.aiModel || promptProfile.aiModel || "").trim();
-  const secondaryModel = String(planContext.secondaryAiModel || "").trim();
+  const primaryModel = String(planContext.aiModel || promptProfile.aiModel || '').trim();
+  const secondaryModel = String(planContext.secondaryAiModel || '').trim();
   const primaryLimit = Math.max(0, Number(planContext.primaryAiModelQuestionLimit || 0));
   if (!primaryModel || !secondaryModel || primaryLimit <= 0) {
     return planContext;
@@ -727,47 +763,46 @@ function resolveRuntimeAiPlanContext(planContext = {}, usage = null) {
   };
 }
 
-function normalizeContinuationText(text = "") {
-  return String(text || "").replace(/\s+/g, " ").trim();
-}
-
-function stripTrailingAnswerReferenceSection(text = "") {
-  return String(text || "")
-    .replace(/(?:^|\n)\s*(?:แหล่งอ้างอิง|อ้างอิง)\s*[:：]\s*\n[\s\S]*$/u, "")
+function stripTrailingAnswerReferenceSection(text = '') {
+  return String(text || '')
+    .replace(/(?:^|\n)\s*(?:แหล่งอ้างอิง|อ้างอิง)\s*[:：]\s*\n[\s\S]*$/u, '')
     .trim();
 }
 
-function cleanAssistantAnswer(rawAnswer = "", originalMessage = "") {
-  let text = String(rawAnswer || "");
-  if (!text) return "";
+function cleanAssistantAnswer(rawAnswer = '', originalMessage = '') {
+  let text = String(rawAnswer || '');
+  if (!text) return '';
 
   // Normalize line endings and whitespace
-  text = text.replace(/\r\n/g, "\n").replace(/\t/g, " ");
+  text = text.replace(/\r\n/g, '\n').replace(/\t/g, ' ');
 
   // Remove lines starting with forbidden prefixes
-  const lines = text.split(/\n/).map((ln) => {
-    const t = String(ln || "").trim();
-    if (/^เนื้อหาที่เกี่ยวข้อง\s*[:：]\s*/iu.test(t)) {
-      return t.replace(/^เนื้อหาที่เกี่ยวข้อง\s*[:：]\s*/iu, "").trim();
-    }
-    return t;
-  }).filter((t) => {
-    if (!t) return false;
-    if (/^\s*(คำถาม:)/.test(t)) return false;
-    if (/^\s*(KR\b)/.test(t)) return false;
-    if (/^\s*(ผู้ช่วย\b)/.test(t)) return false;
-    if (/^\s*(?:แหล่งข้อมูลที่|source\s*\d+|source\s*#?\s*\d+)/iu.test(t)) return false;
-    if (/^\s*(?:ประเภท|หัวข้อ|อ้างอิง)\s*[:：]/iu.test(t)) return false;
-    return true;
-  });
+  const lines = text
+    .split(/\n/)
+    .map((ln) => {
+      const t = String(ln || '').trim();
+      if (/^เนื้อหาที่เกี่ยวข้อง\s*[:：]\s*/iu.test(t)) {
+        return t.replace(/^เนื้อหาที่เกี่ยวข้อง\s*[:：]\s*/iu, '').trim();
+      }
+      return t;
+    })
+    .filter((t) => {
+      if (!t) return false;
+      if (/^\s*(คำถาม:)/.test(t)) return false;
+      if (/^\s*(KR\b)/.test(t)) return false;
+      if (/^\s*(ผู้ช่วย\b)/.test(t)) return false;
+      if (/^\s*(?:แหล่งข้อมูลที่|source\s*\d+|source\s*#?\s*\d+)/iu.test(t)) return false;
+      if (/^\s*(?:ประเภท|หัวข้อ|อ้างอิง)\s*[:：]/iu.test(t)) return false;
+      return true;
+    });
 
-  text = lines.join("\n").trim();
+  text = lines.join('\n').trim();
 
   // If content contains explicit Q/A markers, extract the answer part
   try {
     const qaMatch = text.match(/(?:คำถาม[:\s].*?\n+)?(?:คำตอบ[:\s]*)?(.*)/s);
     if (qaMatch && qaMatch[1]) {
-      const candidate = String(qaMatch[1] || "").trim();
+      const candidate = String(qaMatch[1] || '').trim();
       if (candidate) text = candidate;
     }
   } catch (e) {
@@ -775,23 +810,28 @@ function cleanAssistantAnswer(rawAnswer = "", originalMessage = "") {
   }
 
   // If originalMessage is present and appears at the start of the answer, remove it
-  const orig = String(originalMessage || "").replace(/\s+/g, " ").trim();
+  const orig = String(originalMessage || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (orig) {
-    const normalized = text.replace(/\s+/g, " ").trim();
+    const normalized = text.replace(/\s+/g, ' ').trim();
     if (normalized.startsWith(orig)) {
       text = normalized.slice(orig.length).trim();
     }
   }
 
   // Remove any leading labels like "คำตอบ:" or "Answer:" after trimming
-  text = text.replace(/^\s*(คำตอบ[:\s]*)+/i, "").trim();
+  text = text.replace(/^\s*(คำตอบ[:\s]*)+/i, '').trim();
   text = stripTrailingAnswerReferenceSection(text);
 
   return text;
 }
 
-function isShortExplainFollowUpMessage(message = "") {
-  const text = String(message || "").replace(/\s+/g, " ").trim().toLowerCase();
+function isShortExplainFollowUpMessage(message = '') {
+  const text = String(message || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
   if (!text) {
     return false;
   }
@@ -801,229 +841,43 @@ function isShortExplainFollowUpMessage(message = "") {
     return false;
   }
 
-  return /^(?:อธิบาย|ช่วยอธิบาย|รายละเอียด|แสดงรายละเอียด|รายละเอียดหน่อย|ฉันไม่เข้าใจ|ไม่เข้าใจ|แจ้งเพิ่มเติม)$/.test(text);
+  return /^(?:อธิบาย|ช่วยอธิบาย|รายละเอียด|แสดงรายละเอียด|รายละเอียดหน่อย|ฉันไม่เข้าใจ|ไม่เข้าใจ|แจ้งเพิ่มเติม)$/.test(
+    text,
+  );
 }
 
-function shouldPreferStructuredLawAfterFaqMiss(message = "", target = "all") {
-  const hasQuestion = Boolean(String(message || "").trim());
-  const normalizedTarget = String(target || "").trim().toLowerCase();
-  return hasQuestion && ["all", "coop", "group", ""].includes(normalizedTarget);
+function shouldPreferStructuredLawAfterFaqMiss(message = '', target = 'all') {
+  const hasQuestion = Boolean(String(message || '').trim());
+  const normalizedTarget = String(target || '')
+    .trim()
+    .toLowerCase();
+  return hasQuestion && ['all', 'coop', 'group', ''].includes(normalizedTarget);
 }
 
 async function getMonthlyUsageSafe(userId, usageMonth) {
-  if (!Number(userId || 0) || !String(usageMonth || "").trim()) {
+  if (!Number(userId || 0) || !String(usageMonth || '').trim()) {
     return null;
   }
 
   try {
     return await UserMonthlyUsageModel.findByUserAndMonth(userId, usageMonth);
   } catch (error) {
-    console.error("[law-chatbot] Failed to load monthly usage:", error.message || error);
+    console.error('[law-chatbot] Failed to load monthly usage:', error.message || error);
     return null;
   }
-}
-
-function getContinuationCharBudget(promptProfile = {}) {
-  return Math.max(280, Number(promptProfile.aiSourceContextCharLimit || 700));
-}
-
-async function hydrateContinuationRecord(source = {}) {
-  const sourceName = String(source.source || "").trim().toLowerCase();
-  const normalizedId = Number(source.id || 0);
-
-  if (sourceName === "admin_knowledge" && normalizedId) {
-    return LawChatbotKnowledgeModel.findById(normalizedId);
-  }
-
-  if (sourceName === "knowledge_suggestion" && normalizedId) {
-    return LawChatbotKnowledgeSuggestionModel.findById(normalizedId);
-  }
-
-  if (sourceName === "knowledge_base" && normalizedId) {
-    return LawChatbotModel.findKnowledgeById(normalizedId);
-  }
-
-  if (["tbl_laws", "tbl_glaws", "tbl_vinichai"].includes(sourceName) && normalizedId) {
-    return LawSearchModel.findBySourceId(sourceName, normalizedId);
-  }
-
-  if (sourceName === "pdf_chunks" && normalizedId) {
-    return LawChatbotPdfChunkModel.findChunkById(normalizedId);
-  }
-
-  return null;
-}
-
-function buildTextContinuationSource(source = {}, record = {}, promptProfile = {}) {
-  const charBudget = getContinuationCharBudget(promptProfile);
-  const mergedRecord = record && typeof record === "object" ? record : {};
-  const fullText = normalizeContinuationText(
-    [mergedRecord.content, mergedRecord.chunk_text, mergedRecord.comment]
-      .filter(Boolean)
-      .join(" ") || [source.content, source.chunk_text, source.comment].filter(Boolean).join(" "),
-  );
-  const currentOffset = Math.max(0, Number(source.continuationNextOffset || source.continuationCursor || 0));
-  if (!fullText || currentOffset >= fullText.length) {
-    return null;
-  }
-
-  const rawSlice = fullText.slice(currentOffset, currentOffset + charBudget);
-  const continuationText = normalizeContinuationText(rawSlice);
-  if (!continuationText) {
-    return null;
-  }
-
-  const nextOffset = Math.min(fullText.length, currentOffset + rawSlice.length);
-  return {
-    ...source,
-    ...mergedRecord,
-    id: mergedRecord.id || source.id || null,
-    source: source.source || mergedRecord.source || "",
-    title: mergedRecord.title || source.title || "",
-    reference: mergedRecord.reference || source.reference || source.title || "",
-    lawNumber: mergedRecord.lawNumber || source.lawNumber || "",
-    url: mergedRecord.url || source.url || "",
-    keyword: mergedRecord.keyword || source.keyword || "",
-    documentId: mergedRecord.documentId || mergedRecord.document_id || source.documentId || null,
-    content: continuationText,
-    comment: "",
-    score: Math.max(Number(source.score || 0), Number(mergedRecord.score || 0)),
-    contextCarry: true,
-    continuationMode: source.continuationMode || "text",
-    continuationCursor: currentOffset,
-    continuationNextOffset: nextOffset,
-    continuationTotalLength: fullText.length,
-    continuationHasMore: nextOffset < fullText.length,
-  };
-}
-
-async function buildDocumentContinuationSource(source = {}, promptProfile = {}) {
-  const charBudget = getContinuationCharBudget(promptProfile);
-  const documentId = Number(source.documentId || source.document_id || (source.source === "documents" ? source.id || 0 : 0));
-  let remainingBudget = charBudget;
-  let currentChunkId = Number(source.continuationChunkId || (source.source === "pdf_chunks" ? source.id || 0 : 0));
-  let currentChunkOffset = Math.max(0, Number(source.continuationChunkOffset || 0));
-  let currentChunkLength = Math.max(0, Number(source.continuationTotalLength || 0));
-  let activeRecord = null;
-  const pieces = [];
-  let additionalChunksFetched = 0;
-
-  const appendChunkText = (chunk, startOffset = 0) => {
-    const chunkText = normalizeContinuationText(chunk?.content || chunk?.chunk_text || "");
-    if (!chunkText || startOffset >= chunkText.length || remainingBudget <= 0) {
-      return false;
-    }
-
-    const rawSlice = chunkText.slice(startOffset, startOffset + remainingBudget);
-    const normalizedSlice = normalizeContinuationText(rawSlice);
-    if (!normalizedSlice) {
-      return false;
-    }
-
-    pieces.push(normalizedSlice);
-    remainingBudget = Math.max(0, remainingBudget - rawSlice.length);
-    currentChunkId = Number(chunk.id || currentChunkId || 0);
-    currentChunkOffset = Math.min(chunkText.length, startOffset + rawSlice.length);
-    currentChunkLength = chunkText.length;
-    activeRecord = chunk;
-    return true;
-  };
-
-  if (currentChunkId) {
-    const currentChunk = await LawChatbotPdfChunkModel.findChunkById(currentChunkId);
-    if (currentChunk) {
-      appendChunkText(currentChunk, currentChunkOffset);
-    }
-  }
-
-  if (remainingBudget > 0 && documentId > 0) {
-    const nextChunks = await LawChatbotPdfChunkModel.listChunksByDocumentId(documentId, {
-      afterChunkId: currentChunkId,
-      limit: 4,
-    });
-
-    for (const chunk of nextChunks) {
-      if (remainingBudget <= 0) {
-        break;
-      }
-
-      if (appendChunkText(chunk, 0)) {
-        additionalChunksFetched += 1;
-      }
-    }
-
-    if (!activeRecord && nextChunks[0]) {
-      activeRecord = nextChunks[0];
-    }
-  }
-
-  if (pieces.length === 0) {
-    return null;
-  }
-
-  const mergedRecord = activeRecord || source;
-  const hasMore =
-    remainingBudget <= 0 ||
-    currentChunkOffset < currentChunkLength ||
-    (documentId > 0 && additionalChunksFetched >= 4);
-
-  return {
-    ...source,
-    ...mergedRecord,
-    id: source.id || mergedRecord.id || null,
-    source: source.source || mergedRecord.source || "documents",
-    title: mergedRecord.title || source.title || "",
-    reference: mergedRecord.reference || source.reference || source.title || "",
-    lawNumber: mergedRecord.lawNumber || source.lawNumber || "",
-    url: mergedRecord.url || source.url || "",
-    keyword: mergedRecord.keyword || source.keyword || "",
-    documentId: documentId || mergedRecord.documentId || mergedRecord.document_id || null,
-    content: normalizeContinuationText(pieces.join(" ")),
-    comment: "",
-    score: Math.max(Number(source.score || 0), Number(mergedRecord.score || 0)),
-    contextCarry: true,
-    continuationMode: "document_chunks",
-    continuationChunkId: currentChunkId || null,
-    continuationChunkOffset: currentChunkOffset,
-    continuationTotalLength: currentChunkLength,
-    continuationHasMore: hasMore,
-  };
-}
-
-async function expandCarrySourcesForContinuation(carrySources = [], promptProfile = {}) {
-  const expanded = await Promise.all(
-    (Array.isArray(carrySources) ? carrySources : []).map(async (source) => {
-      const sourceName = String(source?.source || "").trim().toLowerCase();
-      if (!source || typeof source !== "object") {
-        return null;
-      }
-
-      if (sourceName === "documents" || sourceName === "pdf_chunks" || source.continuationMode === "document_chunks") {
-        const continuedDocumentSource = await buildDocumentContinuationSource(source, promptProfile);
-        return continuedDocumentSource || source;
-      }
-
-      const hydratedRecord = await hydrateContinuationRecord(source);
-      const continuedTextSource = buildTextContinuationSource(source, hydratedRecord || source, promptProfile);
-      return continuedTextSource || source;
-    }),
-  );
-
-  return mergeUniqueSources(expanded.filter(Boolean));
 }
 
 async function collectAnswerSources(message, target, session, options = {}) {
   const startedAt = nowMs();
   const questionIntent = classifyQuestionIntent(message);
-  const effectiveMessage = String(message || "").trim();
+  const effectiveMessage = String(message || '').trim();
   const allowInternetFallback =
-    typeof options.allowInternetFallback === "boolean"
+    typeof options.allowInternetFallback === 'boolean'
       ? options.allowInternetFallback
       : await isAiEnabled();
 
   const searchPlan =
-    options.searchPlan ||
-    (await resolveSearchPlan(message, target, session, options));
+    options.searchPlan || (await resolveSearchPlan(message, target, session, options));
   const afterDbSearchAt = nowMs();
 
   const resolvedEffectiveMessage = searchPlan.effectiveMessage || effectiveMessage;
@@ -1044,19 +898,26 @@ async function collectAnswerSources(message, target, session, options = {}) {
     isShortExplainFollowUpMessage(message);
   const databaseMatches = shouldNarrowToCarrySources
     ? mergeUniqueSources(carrySources)
-    : mergeUniqueSources(
-        carrySources,
-        Array.isArray(searchPlan.matches) ? searchPlan.matches : [],
-      );
-  const topicFamilyId = String(searchPlan?.resolvedContext?.topicFamilyId || "").trim().toLowerCase();
-  const timeFollowUpBound = searchPlan?.resolvedContext?.usedContext === true && isTimeFollowUpQuestion(message);
+    : mergeUniqueSources(carrySources, Array.isArray(searchPlan.matches) ? searchPlan.matches : []);
+  const topicFamilyId = String(searchPlan?.resolvedContext?.topicFamilyId || '')
+    .trim()
+    .toLowerCase();
+  const timeFollowUpBound =
+    searchPlan?.resolvedContext?.usedContext === true && isTimeFollowUpQuestion(message);
   const guardedDatabaseMatches =
-    timeFollowUpBound && topicFamilyId === "coop_dissolution"
+    timeFollowUpBound && topicFamilyId === 'coop_dissolution'
       ? databaseMatches.filter((source) => {
           const text = normalizeForSearch(
-            [source?.reference, source?.title, source?.keyword, source?.content, source?.chunk_text, source?.comment]
+            [
+              source?.reference,
+              source?.title,
+              source?.keyword,
+              source?.content,
+              source?.chunk_text,
+              source?.comment,
+            ]
               .filter(Boolean)
-              .join(" "),
+              .join(' '),
           ).toLowerCase();
           if (!text) {
             return false;
@@ -1065,7 +926,9 @@ async function collectAnswerSources(message, target, session, options = {}) {
           const looksLikeMeetingTimeline =
             /(150 วัน|วันสิ้นปีทางบัญชี|ประชุมใหญ่|มาตรา 54|มาตรา 56|มาตรา 57|มาตรา 58)/.test(text);
           const hasDissolutionSignal =
-            /(เลิกสหกรณ์|สหกรณ์(?:ย่อม)?เลิก|สั่งเลิกสหกรณ์|มาตรา 70|มาตรา 71|ชำระบัญชี|ผู้ชำระบัญชี|แจ้ง)/.test(text);
+            /(เลิกสหกรณ์|สหกรณ์(?:ย่อม)?เลิก|สั่งเลิกสหกรณ์|มาตรา 70|มาตรา 71|ชำระบัญชี|ผู้ชำระบัญชี|แจ้ง)/.test(
+              text,
+            );
 
           if (looksLikeMeetingTimeline && !hasDissolutionSignal) {
             return false;
@@ -1082,7 +945,12 @@ async function collectAnswerSources(message, target, session, options = {}) {
     allowInternetFallback &&
     !shouldNarrowToCarrySources &&
     !suppressInternetForFollowUpExplanation &&
-    shouldSearchInternetForPlan(options.planCode || "free", resolvedEffectiveMessage, databaseMatches, questionIntent);
+    shouldSearchInternetForPlan(
+      options.planCode || 'free',
+      resolvedEffectiveMessage,
+      databaseMatches,
+      questionIntent,
+    );
   let internetMatches = [];
   const remainingBudgetBeforeInternetMs = getRemainingBudgetMs(
     options.requestStartedAt,
@@ -1105,44 +973,44 @@ async function collectAnswerSources(message, target, session, options = {}) {
 
   const grouped = {
     structured_laws: guardedDatabaseMatches.filter(
-      (item) => item && (item.source === "tbl_laws" || item.source === "tbl_glaws"),
+      (item) => item && (item.source === 'tbl_laws' || item.source === 'tbl_glaws'),
     ),
-    admin_knowledge: guardedDatabaseMatches.filter((item) => item && item.source === "admin_knowledge"),
-    knowledge_suggestion: guardedDatabaseMatches.filter((item) => item && item.source === "knowledge_suggestion"),
-    vinichai: guardedDatabaseMatches.filter((item) => item && item.source === "tbl_vinichai"),
-    documents: guardedDatabaseMatches.filter((item) => item && item.source === "documents"),
-    pdf_chunks: guardedDatabaseMatches.filter((item) => item && item.source === "pdf_chunks"),
-    knowledge_base: guardedDatabaseMatches.filter((item) => item && item.source === "knowledge_base"),
+    admin_knowledge: guardedDatabaseMatches.filter(
+      (item) => item && item.source === 'admin_knowledge',
+    ),
+    knowledge_suggestion: guardedDatabaseMatches.filter(
+      (item) => item && item.source === 'knowledge_suggestion',
+    ),
+    vinichai: guardedDatabaseMatches.filter((item) => item && item.source === 'tbl_vinichai'),
+    documents: guardedDatabaseMatches.filter((item) => item && item.source === 'documents'),
+    pdf_chunks: guardedDatabaseMatches.filter((item) => item && item.source === 'pdf_chunks'),
+    knowledge_base: guardedDatabaseMatches.filter(
+      (item) => item && item.source === 'knowledge_base',
+    ),
     internet: internetMatches,
   };
 
   const isBylawAmendmentFamily =
-    String(detectTopicFamily(resolvedEffectiveMessage || message)?.id || "").trim().toLowerCase() ===
-    "coop_bylaw_amendment";
+    String(detectTopicFamily(resolvedEffectiveMessage || message)?.id || '')
+      .trim()
+      .toLowerCase() === 'coop_bylaw_amendment';
   const hasBylawAmendmentSignal = (item = {}) => {
     const sourceText = normalizeForSearch(
-      [
-        item?.reference,
-        item?.title,
-        item?.keyword,
-        item?.content,
-        item?.chunk_text,
-        item?.comment,
-      ]
+      [item?.reference, item?.title, item?.keyword, item?.content, item?.chunk_text, item?.comment]
         .filter(Boolean)
-        .join(" "),
+        .join(' '),
     ).toLowerCase();
     return (
       /แก้ไข(?:เพิ่มเติม)?ข้อบังคับ/.test(sourceText) ||
       /ข้อบังคับสหกรณ์/.test(sourceText) ||
-      /ข้อบังคับ/.test(sourceText) && /(ที่ประชุมใหญ่|มติสองในสาม|นายทะเบียนสหกรณ์|มาตรา 44)/.test(sourceText)
+      (/ข้อบังคับ/.test(sourceText) &&
+        /(ที่ประชุมใหญ่|มติสองในสาม|นายทะเบียนสหกรณ์|มาตรา 44)/.test(sourceText))
     );
   };
 
-  const knowledgeBasePool =
-    isBylawAmendmentFamily
-      ? grouped.knowledge_base.filter((item) => hasBylawAmendmentSignal(item))
-      : grouped.knowledge_base;
+  const knowledgeBasePool = isBylawAmendmentFamily
+    ? grouped.knowledge_base.filter((item) => hasBylawAmendmentSignal(item))
+    : grouped.knowledge_base;
 
   const filteredGroups = isBylawAmendmentFamily
     ? {
@@ -1151,20 +1019,18 @@ async function collectAnswerSources(message, target, session, options = {}) {
       }
     : grouped;
 
-  const {
-    selectedSourceTier,
-    selectedSources,
-    selectionTrace,
-    selectionDiagnostics,
-  } = selectTieredSources(filteredGroups, questionIntent, {
-    databaseOnlyMode: options.databaseOnlyMode === true,
-    sourceLimit: options.sourceLimit,
-    planCode: options.planCode,
-    message,
-    originalMessage: message,
-  });
+  const { selectedSourceTier, selectedSources, selectionTrace, selectionDiagnostics } =
+    selectTieredSources(filteredGroups, questionIntent, {
+      databaseOnlyMode: options.databaseOnlyMode === true,
+      sourceLimit: options.sourceLimit,
+      planCode: options.planCode,
+      message,
+      originalMessage: message,
+    });
   const afterSourceSelectionAt = nowMs();
-  const usedInternetFallback = selectedSources.some((item) => item && item.source === "internet_search");
+  const usedInternetFallback = selectedSources.some(
+    (item) => item && item.source === 'internet_search',
+  );
 
   return {
     ...searchPlan,
@@ -1187,14 +1053,16 @@ async function collectAnswerSources(message, target, session, options = {}) {
       sourceSelectionMs: Math.round(afterSourceSelectionAt - afterInternetSearchAt),
       totalSourceCollectionMs: Math.round(afterSourceSelectionAt - startedAt),
       remainingBudgetBeforeInternetMs:
-        remainingBudgetBeforeInternetMs === Number.POSITIVE_INFINITY ? null : remainingBudgetBeforeInternetMs,
+        remainingBudgetBeforeInternetMs === Number.POSITIVE_INFINITY
+          ? null
+          : remainingBudgetBeforeInternetMs,
       carrySourceCount: carrySources.length,
     },
   };
 }
 
-function buildDbOnlyMainChatContinuation(message = "", nextState = null, options = {}) {
-  const label = String(options.label || "ดูคำตอบต่อ").trim() || "ดูคำตอบต่อ";
+function buildDbOnlyMainChatContinuation(message = '', nextState = null, options = {}) {
+  const label = String(options.label || 'ดูคำตอบต่อ').trim() || 'ดูคำตอบต่อ';
   if (!nextState || !Array.isArray(nextState.sources) || nextState.sources.length === 0) {
     return {
       available: false,
@@ -1205,7 +1073,7 @@ function buildDbOnlyMainChatContinuation(message = "", nextState = null, options
   return {
     available: true,
     label,
-    target: String(nextState.target || "all").trim() || "all",
+    target: String(nextState.target || 'all').trim() || 'all',
     token: signContinuationToken(nextState),
   };
 }
@@ -1221,7 +1089,10 @@ async function hasRenderableContinuationState(nextState = null, options = {}) {
 
   const preview = await paginateContinuationState(nextState, {
     maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
-    maxSourceChunks: Math.max(1, Number(options.maxSourceChunks || MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS)),
+    maxSourceChunks: Math.max(
+      1,
+      Number(options.maxSourceChunks || MAIN_CHAT_CONTINUATION_MAX_SOURCE_CHUNKS),
+    ),
   });
 
   return Array.isArray(preview.renderSources) && preview.renderSources.length > 0;
@@ -1230,15 +1101,15 @@ async function hasRenderableContinuationState(nextState = null, options = {}) {
 function buildDbOnlyMainChatErrorResult(answer) {
   return {
     hasContext: false,
-    answer: String(answer || "").trim(),
+    answer: String(answer || '').trim(),
     highlightTerms: [],
     usedFollowUpContext: false,
     usedInternetFallback: false,
-    responseMeta: buildResponseMeta("db_only_main_chat", []),
+    responseMeta: buildResponseMeta('db_only_main_chat', []),
     fromCache: false,
     continuation: {
       available: false,
-      label: "ดูคำตอบต่อ",
+      label: 'ดูคำตอบต่อ',
     },
   };
 }
@@ -1247,7 +1118,7 @@ async function buildDbOnlyMainChatAnswer(message, target, sources, options = {})
   return buildDbOnlyMainChatAnswerResult(sources, {
     message: options.effectiveMessage || message,
     originalMessage: message,
-    questionIntent: options.questionIntent || "",
+    questionIntent: options.questionIntent || '',
     collapseExactLawSectionPreview: options.collapseExactLawSectionPreview === true,
     maxPrimarySections: 3,
   });
@@ -1263,7 +1134,10 @@ async function tryResolveFaqAnswer(message, target, session, planContext, starte
   let managedSuggestedQuestionTarget = target;
 
   for (const candidateTarget of suggestedQuestionTargets) {
-    managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(message, candidateTarget);
+    managedSuggestedQuestionMatch = await findManagedSuggestedQuestionMatch(
+      message,
+      candidateTarget,
+    );
 
     if (isHighConfidenceFaqMatch(managedSuggestedQuestionMatch, message)) {
       managedSuggestedQuestionTarget = candidateTarget;
@@ -1278,30 +1152,37 @@ async function tryResolveFaqAnswer(message, target, session, planContext, starte
     return null;
   }
 
-  const resolvedTarget = managedSuggestedQuestionMatch.target || managedSuggestedQuestionTarget || target;
-  const selectedSources = managedSuggestedQuestionMatch.source ? [managedSuggestedQuestionMatch.source] : [];
-  const effectiveMessage = String(
-    managedSuggestedQuestionMatch.questionText ||
-      managedSuggestedQuestionMatch.topicHint ||
-      message,
-  ).trim() || message;
-  const answer = cleanAssistantAnswer(managedSuggestedQuestionMatch.answerText, "");
-  const faqSource = selectedSources.length > 0
-    ? {
-        ...selectedSources[0],
-        source: "managed_suggested_question",
-        title: managedSuggestedQuestionMatch.questionText || selectedSources[0].title || "",
-        content: answer,
-        supportText: [
-          managedSuggestedQuestionMatch.answerText,
-          selectedSources[0].content,
-          selectedSources[0].answer,
-          selectedSources[0].reference,
-        ].filter(Boolean).join(" "),
-        reference: selectedSources[0].reference || "Q&A ที่ผู้ดูแลเตรียมไว้",
-        score: Math.max(Number(selectedSources[0].score || 0), 1000),
-      }
-    : null;
+  const resolvedTarget =
+    managedSuggestedQuestionMatch.target || managedSuggestedQuestionTarget || target;
+  const selectedSources = managedSuggestedQuestionMatch.source
+    ? [managedSuggestedQuestionMatch.source]
+    : [];
+  const effectiveMessage =
+    String(
+      managedSuggestedQuestionMatch.questionText ||
+        managedSuggestedQuestionMatch.topicHint ||
+        message,
+    ).trim() || message;
+  const answer = cleanAssistantAnswer(managedSuggestedQuestionMatch.answerText, '');
+  const faqSource =
+    selectedSources.length > 0
+      ? {
+          ...selectedSources[0],
+          source: 'managed_suggested_question',
+          title: managedSuggestedQuestionMatch.questionText || selectedSources[0].title || '',
+          content: answer,
+          supportText: [
+            managedSuggestedQuestionMatch.answerText,
+            selectedSources[0].content,
+            selectedSources[0].answer,
+            selectedSources[0].reference,
+          ]
+            .filter(Boolean)
+            .join(' '),
+          reference: selectedSources[0].reference || 'Q&A ที่ผู้ดูแลเตรียมไว้',
+          score: Math.max(Number(selectedSources[0].score || 0), 1000),
+        }
+      : null;
 
   setSessionContinuationState(session, null);
 
@@ -1330,8 +1211,8 @@ async function tryResolveFaqAnswer(message, target, session, planContext, starte
       id: item.id || item.url || item.reference || item.title,
       title: item.title || item.keyword || item.reference,
       lawNumber: item.lawNumber || item.reference || item.keyword,
-      source: item.source || "",
-      url: item.url || "",
+      source: item.source || '',
+      url: item.url || '',
       score: Number(item.score || 0),
     })),
   });
@@ -1349,37 +1230,39 @@ async function tryResolveFaqAnswer(message, target, session, planContext, starte
     highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
     usedFollowUpContext: false,
     usedInternetFallback: false,
-    responseMeta: buildResponseMeta("managed_answer", selectedSources),
+    responseMeta: buildResponseMeta('managed_answer', selectedSources),
     fromCache: false,
     continuation: {
       available: false,
-      label: "ดูคำตอบต่อ",
+      label: 'ดูคำตอบต่อ',
     },
   };
 
   if (debugMode) {
     result.debug = {
-      selectedSourceTier: "managed_suggested_question",
-      selectedSourceTierLabel: "managed_suggested_question",
+      selectedSourceTier: 'managed_suggested_question',
+      selectedSourceTierLabel: 'managed_suggested_question',
       sourceTables: result.responseMeta?.sourceTables || [],
-      consideredSourceTables: ["chatbot_suggested_questions"],
+      consideredSourceTables: ['chatbot_suggested_questions'],
       sourceCount: selectedSources.length,
       databaseMatches: selectedSources.length,
       internetMatches: 0,
-      answerMode: "managed_answer",
-      promptProfile: planContext.promptProfile?.code || "template",
+      answerMode: 'managed_answer',
+      promptProfile: planContext.promptProfile?.code || 'template',
       timing: {
         totalReplyMs: Math.round(nowMs() - startedAt),
       },
       suggestedQuestionTargets,
       matchedSuggestedQuestionTarget: managedSuggestedQuestionTarget,
       sources: selectedSources.map((item) => ({
-        source: item.source || "",
-        sourceLabel: getSourceDisplayLabel(item.source || ""),
-        sourceTable: getSourceTableName(item.source || ""),
-        reference: item.reference || item.title || "",
+        source: item.source || '',
+        sourceLabel: getSourceDisplayLabel(item.source || ''),
+        sourceTable: getSourceTableName(item.source || ''),
+        reference: item.reference || item.title || '',
         score: Number(item.score || 0),
-        preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
+        preview: String(item.content || item.chunk_text || '')
+          .replace(/\s+/g, ' ')
+          .slice(0, 180),
       })),
     };
   }
@@ -1387,18 +1270,18 @@ async function tryResolveFaqAnswer(message, target, session, planContext, starte
   return { result, resolvedTarget, source: faqSource };
 }
 
-function extractAnswerReferenceLines(referenceText = "") {
-  return String(referenceText || "")
+function extractAnswerReferenceLines(referenceText = '') {
+  return String(referenceText || '')
     .split(/\n+/)
-    .map((line) => String(line || "").trim())
+    .map((line) => String(line || '').trim())
     .filter(Boolean)
     .flatMap((line) => {
-      const cleaned = line.replace(/^(?:แหล่งอ้างอิง|อ้างอิง)\s*[:：]\s*/u, "").trim();
+      const cleaned = line.replace(/^(?:แหล่งอ้างอิง|อ้างอิง)\s*[:：]\s*/u, '').trim();
       if (!cleaned) {
         return [];
       }
       if (/^\s*[-*]\s*/u.test(cleaned)) {
-        return [cleaned.replace(/^\s*[*]\s*/u, "- ").trim()];
+        return [cleaned.replace(/^\s*[*]\s*/u, '- ').trim()];
       }
       return cleaned
         .split(/\s+(?=-\s+\S)/u)
@@ -1413,38 +1296,41 @@ function mergeAnswerReferenceSections(referenceSections = []) {
 
   for (const referenceText of Array.isArray(referenceSections) ? referenceSections : []) {
     for (const line of extractAnswerReferenceLines(referenceText)) {
-      const normalizedLine = line.replace(/\s+/g, " ").trim().toLowerCase();
+      const normalizedLine = line.replace(/\s+/g, ' ').trim().toLowerCase();
       if (!normalizedLine || seen.has(normalizedLine)) {
         continue;
       }
       seen.add(normalizedLine);
-      lines.push(line.startsWith("-") ? line : `- ${line}`);
+      lines.push(line.startsWith('-') ? line : `- ${line}`);
     }
   }
 
   if (lines.length === 0) {
-    return "";
+    return '';
   }
 
-  return ["แหล่งอ้างอิง:", ...lines].join("\n");
+  return ['แหล่งอ้างอิง:', ...lines].join('\n');
 }
 
-function normalizeAnswerForDuplicateCheck(text = "") {
-  return normalizeForSearch(String(text || ""))
+function normalizeAnswerForDuplicateCheck(text = '') {
+  return normalizeForSearch(String(text || ''))
     .toLowerCase()
-    .replace(/(?:สรุปสาระสำคัญ|คำตอบแบบเข้าใจง่าย|คำตอบจากฐานข้อมูล|ข้อมูลเพิ่มเติม|เพิ่มเติมจากข้อมูลอื่น|แหล่งอ้างอิง|อ้างอิง)\s*[:：]?/gu, " ")
-    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .replace(
+      /(?:สรุปสาระสำคัญ|คำตอบแบบเข้าใจง่าย|คำตอบจากฐานข้อมูล|ข้อมูลเพิ่มเติม|เพิ่มเติมจากข้อมูลอื่น|แหล่งอ้างอิง|อ้างอิง)\s*[:：]?/gu,
+      ' ',
+    )
+    .replace(/[^\p{L}\p{N}]+/gu, '')
     .trim();
 }
 
-function tokenizeAnswerForDuplicateCheck(text = "") {
-  const normalized = normalizeForSearch(String(text || "")).toLowerCase();
+function tokenizeAnswerForDuplicateCheck(text = '') {
+  const normalized = normalizeForSearch(String(text || '')).toLowerCase();
   return Array.from(normalized.matchAll(/[\p{L}\p{N}]+/gu))
     .map((match) => match[0])
     .filter((token) => token.length >= 2);
 }
 
-function answerTextsLookDuplicate(left = "", right = "") {
+function answerTextsLookDuplicate(left = '', right = '') {
   const normalizedLeft = normalizeAnswerForDuplicateCheck(left);
   const normalizedRight = normalizeAnswerForDuplicateCheck(right);
   if (!normalizedLeft || !normalizedRight) {
@@ -1475,10 +1361,10 @@ function answerTextsLookDuplicate(left = "", right = "") {
   return overlapRatio >= 0.86;
 }
 
-function removeDuplicateDatabaseAnswerText(faqMain = "", databaseMain = "") {
-  const cleanedDatabaseMain = String(databaseMain || "").trim();
+function removeDuplicateDatabaseAnswerText(faqMain = '', databaseMain = '') {
+  const cleanedDatabaseMain = String(databaseMain || '').trim();
   if (!cleanedDatabaseMain || answerTextsLookDuplicate(faqMain, cleanedDatabaseMain)) {
-    return "";
+    return '';
   }
 
   const blocks = cleanedDatabaseMain
@@ -1491,7 +1377,7 @@ function removeDuplicateDatabaseAnswerText(faqMain = "", databaseMain = "") {
 
   return blocks
     .filter((block) => !answerTextsLookDuplicate(faqMain, block))
-    .join("\n\n")
+    .join('\n\n')
     .trim();
 }
 
@@ -1502,16 +1388,16 @@ function buildSourceAnswerTextForDuplicateCheck(source = {}) {
       source?.chunk_text ||
       source?.comment ||
       source?.summary ||
-      "",
+      '',
   ).trim();
 }
 
-function removeDuplicateAnswerSourcesForContinuation(faqAnswer = "", sources = []) {
+function removeDuplicateAnswerSourcesForContinuation(faqAnswer = '', sources = []) {
   if (!faqAnswer || !Array.isArray(sources) || sources.length === 0) {
     return Array.isArray(sources) ? sources : [];
   }
 
-  const faqMain = splitAnswerReferenceSection(cleanAssistantAnswer(faqAnswer, "")).mainText;
+  const faqMain = splitAnswerReferenceSection(cleanAssistantAnswer(faqAnswer, '')).mainText;
   if (!faqMain) {
     return sources;
   }
@@ -1522,9 +1408,9 @@ function removeDuplicateAnswerSourcesForContinuation(faqAnswer = "", sources = [
   });
 }
 
-function composeFaqAndDatabaseAnswer(faqAnswer = "", databaseAnswer = "") {
-  const preparedFaqAnswer = cleanAssistantAnswer(faqAnswer, "");
-  const preparedDatabaseAnswer = cleanAssistantAnswer(databaseAnswer, "");
+function composeFaqAndDatabaseAnswer(faqAnswer = '', databaseAnswer = '') {
+  const preparedFaqAnswer = cleanAssistantAnswer(faqAnswer, '');
+  const preparedDatabaseAnswer = cleanAssistantAnswer(databaseAnswer, '');
   const faqParts = splitAnswerReferenceSection(preparedFaqAnswer);
   const databaseParts = splitAnswerReferenceSection(preparedDatabaseAnswer);
   const faqMain = faqParts.mainText;
@@ -1549,26 +1435,19 @@ function composeFaqAndDatabaseAnswer(faqAnswer = "", databaseAnswer = "") {
     answerParts.push(referenceSection);
   }
 
-  return answerParts.filter(Boolean).join("\n\n").trim();
+  return answerParts.filter(Boolean).join('\n\n').trim();
 }
 
-async function replyToDbOnlyMainChat(payload, session) {
-  const startedAt = nowMs();
-  const requestedMessage = String(payload.message || "").trim();
+function resolveDbOnlyChatRequest(payload = {}, session) {
+  const requestedMessage = String(payload.message || '').trim();
   const requestedTarget =
-    payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all";
+    payload.target === 'group' ? 'group' : payload.target === 'coop' ? 'coop' : 'all';
   const continueFromPrevious =
-    payload.continueFromPrevious === true || payload.continueFromPrevious === "true";
-  const continuationToken = String(payload.continuationToken || "").trim();
-  const debugMode =
-    payload && (payload.debug === true || payload.debug === "true" || process.env.CHATBOT_DEBUG === "1");
-  const planContext = resolveChatPlanContext(session, {
-    aiAvailable: false,
-  });
-
+    payload.continueFromPrevious === true || payload.continueFromPrevious === 'true';
+  const continuationToken = String(payload.continuationToken || '').trim();
   let continuationState = null;
-  let continuationSource = "";
-  let invalidContinuationMessage = "";
+  let continuationSource = '';
+  let invalidContinuationMessage = '';
 
   if (continueFromPrevious) {
     try {
@@ -1580,15 +1459,17 @@ async function replyToDbOnlyMainChat(payload, session) {
       continuationState = resolvedContinuation.state;
       continuationSource = resolvedContinuation.source;
     } catch (_error) {
-      invalidContinuationMessage = "ลิงก์คำตอบต่อหมดอายุหรือไม่ถูกต้อง กรุณาถามใหม่อีกครั้ง";
+      invalidContinuationMessage = 'ลิงก์คำตอบต่อหมดอายุหรือไม่ถูกต้อง กรุณาถามใหม่อีกครั้ง';
     }
 
     if (!continuationState && !invalidContinuationMessage) {
-      invalidContinuationMessage = "ไม่พบข้อมูลคำตอบต่อ กรุณาถามใหม่อีกครั้ง";
+      invalidContinuationMessage = 'ไม่พบข้อมูลคำตอบต่อ กรุณาถามใหม่อีกครั้ง';
     }
 
     if (!continuationState) {
-      return buildDbOnlyMainChatErrorResult(invalidContinuationMessage);
+      return {
+        errorResult: buildDbOnlyMainChatErrorResult(invalidContinuationMessage),
+      };
     }
   }
 
@@ -1596,183 +1477,225 @@ async function replyToDbOnlyMainChat(payload, session) {
   // Note: token-based continuation should also provide the original message from the token
   const message =
     requestedMessage ||
-    (continuationState?.originalMessage ? String(continuationState.originalMessage || "").trim() : "");
+    (continuationState?.originalMessage
+      ? String(continuationState.originalMessage || '').trim()
+      : '');
   if (!message) {
-    return buildDbOnlyMainChatErrorResult("กรุณาระบุคำถามหรือประเด็นที่ต้องการสอบถามก่อนส่งข้อความ");
+    return {
+      errorResult: buildDbOnlyMainChatErrorResult(
+        'กรุณาระบุคำถามหรือประเด็นที่ต้องการสอบถามก่อนส่งข้อความ',
+      ),
+    };
   }
-  let target = resolveSearchTarget(message, requestedTarget);
-  let faqSource = null;
 
-  if (!continueFromPrevious) {
-    const faqResolution = await tryResolveFaqAnswer(message, target, session, planContext, startedAt, debugMode);
-    if (faqResolution) {
-      target = faqResolution.resolvedTarget;
-      faqSource = faqResolution.source || null;
-    }
+  return {
+    requestedTarget,
+    continueFromPrevious,
+    continuationState,
+    continuationSource,
+    message,
+  };
+}
+
+async function buildContinuationAnswerState({
+  message,
+  target,
+  questionIntent,
+  continuationState,
+  planContext,
+}) {
+  const paginated = await paginateContinuationState(continuationState, {
+    maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
+    maxSourceChunks: resolveDbOnlyMainChatMaxSourceChunks(message, questionIntent),
+  });
+
+  if (!Array.isArray(paginated.renderSources) || paginated.renderSources.length === 0) {
+    return {
+      errorResult: buildDbOnlyMainChatErrorResult('ไม่พบข้อมูลคำตอบต่อ กรุณาถามใหม่อีกครั้ง'),
+    };
   }
+
+  const selectedSources = paginated.renderSources;
+  const answerResult = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
+    effectiveMessage: continuationState?.effectiveMessage || message,
+    usedFollowUpContext: true,
+    questionIntent,
+    promptProfile: planContext.promptProfile,
+    planCode: planContext.code,
+  });
+
+  return {
+    answer: answerResult.answer,
+    selectedSources: answerResult.selectedSources,
+    effectiveMessage: continuationState?.effectiveMessage || message,
+    resolvedContext: { usedContext: false, topicHints: [] },
+    retrievalEvaluation: null,
+    searchTrace: null,
+    paginated,
+    continuationSessionState: continuationState,
+    contextCarrySources: [],
+    continuationLabel: 'ดูคำตอบต่อ',
+  };
+}
+
+async function buildFreshDbOnlyAnswerState({
+  message,
+  requestedTarget,
+  target,
+  session,
+  planContext,
+  faqSource,
+  startedAt,
+}) {
   const forceStructuredLawFallback =
-    !continueFromPrevious &&
-    !faqSource &&
-    shouldPreferStructuredLawAfterFaqMiss(message, requestedTarget);
-
-  let effectiveMessage = message;
-  let resolvedContext = { usedContext: false, topicHints: [] };
-  let selectedSources = [];
-  let questionIntent = classifyQuestionIntent(message);
-  let retrievalEvaluation = null;
-  let searchTrace = null;
+    !faqSource && shouldPreferStructuredLawAfterFaqMiss(message, requestedTarget);
+  const searchPlan = await resolveSearchPlan(message, target, session, {
+    requestStartedAt: startedAt,
+    totalBudgetMs: CHAT_REPLY_BUDGET_MS,
+    planCode: planContext.code,
+    forceStructuredLawFallback,
+  });
+  const evidence = await collectAnswerSources(message, target, session, {
+    searchPlan,
+    requestStartedAt: startedAt,
+    totalBudgetMs: CHAT_REPLY_BUDGET_MS,
+    allowInternetFallback: false,
+    databaseOnlyMode: true,
+    sourceLimit: planContext.sourceLimit,
+    internetLimit: 0,
+    promptProfile: planContext.promptProfile,
+    planCode: planContext.code,
+    forceStructuredLawFallback,
+  });
+  const effectiveMessage = evidence.effectiveMessage || message;
+  const resolvedContext = evidence.resolvedContext || { usedContext: false, topicHints: [] };
+  const databaseSources = evidence.sources || [];
+  const faqSupportSources = filterDatabaseSourcesForFaqSupport(faqSource, databaseSources);
+  const questionIntent = evidence.questionIntent || classifyQuestionIntent(message);
+  const retrievalEvaluation = evaluateRetrievalResult({
+    message,
+    effectiveMessage,
+    questionIntent,
+    queryRewriteTrace: evidence.queryRewriteTrace,
+    databaseMatches: evidence.databaseMatches,
+    internetMatches: [],
+    selectedSources: databaseSources,
+    usedInternetFallback: false,
+    usedInternetSearch: false,
+    resolvedContext,
+  });
+  const combinedSources = faqSource ? [faqSource, ...faqSupportSources] : databaseSources;
+  const faqAnswer = faqSource ? String(faqSource.content || faqSource.answer || '').trim() : '';
+  let selectedSources = databaseSources;
+  let answer = '';
   let paginated = null;
-  let continuationSessionState = continuationState;
-  let answer = "";
+  let continuationSessionState = null;
   let contextCarrySources = [];
-  let answerSourcePool = [];
-  let continuationLabel = "ดูคำตอบต่อ";
+  let continuationLabel = 'ดูคำตอบต่อ';
 
-  if (continueFromPrevious) {
-    paginated = await paginateContinuationState(continuationSessionState, {
-      maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
-      maxSourceChunks: resolveDbOnlyMainChatMaxSourceChunks(message, questionIntent),
-    });
-
-    if (!Array.isArray(paginated.renderSources) || paginated.renderSources.length === 0) {
-      setSessionContinuationState(session, null);
-      return buildDbOnlyMainChatErrorResult("ไม่พบข้อมูลคำตอบต่อ กรุณาถามใหม่อีกครั้ง");
-    }
-
-    selectedSources = paginated.renderSources;
-    if (Array.isArray(selectedSources) && selectedSources.length > 0) {
-      const answerResult = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
-        effectiveMessage: continuationSessionState?.effectiveMessage || effectiveMessage,
-        usedFollowUpContext: true,
-        questionIntent,
-        promptProfile: planContext.promptProfile,
-        planCode: planContext.code,
-      });
-      answer = answerResult.answer;
-      selectedSources = answerResult.selectedSources;
-    } else {
-      const answerResult = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
-        effectiveMessage,
-        usedFollowUpContext: true,
-        questionIntent,
-        promptProfile: planContext.promptProfile,
-        planCode: planContext.code,
-      });
-      answer = answerResult.answer;
-      selectedSources = answerResult.selectedSources;
-    }
+  if (!retrievalEvaluation.shouldAnswer) {
+    answer = faqAnswer || retrievalEvaluation.userFacingMessage;
+    const hasSemanticMismatch =
+      Array.isArray(retrievalEvaluation.reasonCodes) &&
+      retrievalEvaluation.reasonCodes.includes('semantic_mismatch');
+    selectedSources = hasSemanticMismatch && !faqSource ? [] : combinedSources;
   } else {
-    const searchPlan = await resolveSearchPlan(message, target, session, {
-      requestStartedAt: startedAt,
-      totalBudgetMs: CHAT_REPLY_BUDGET_MS,
-      planCode: planContext.code,
-      forceStructuredLawFallback,
-    });
-    const evidence = await collectAnswerSources(message, target, session, {
-      searchPlan,
-      requestStartedAt: startedAt,
-      totalBudgetMs: CHAT_REPLY_BUDGET_MS,
-      allowInternetFallback: false,
-      databaseOnlyMode: true,
-      sourceLimit: planContext.sourceLimit,
-      internetLimit: 0,
-      promptProfile: planContext.promptProfile,
-      planCode: planContext.code,
-      forceStructuredLawFallback,
-    });
-    searchTrace = evidence.searchTrace || searchPlan?.matches?.searchTrace || null;
-
-    effectiveMessage = evidence.effectiveMessage || message;
-    resolvedContext = evidence.resolvedContext || resolvedContext;
-    const databaseSources = evidence.sources || [];
-    const faqSupportSources = filterDatabaseSourcesForFaqSupport(faqSource, databaseSources);
-    selectedSources = databaseSources;
-    questionIntent = evidence.questionIntent || questionIntent;
-    retrievalEvaluation = evaluateRetrievalResult({
-      message,
-      effectiveMessage,
-      questionIntent,
-      queryRewriteTrace: evidence.queryRewriteTrace,
-      databaseMatches: evidence.databaseMatches,
-      internetMatches: [],
-      selectedSources: databaseSources,
-      usedInternetFallback: false,
-      usedInternetSearch: false,
-      resolvedContext,
-    });
-    const combinedSources = faqSource ? [faqSource, ...faqSupportSources] : databaseSources;
-    const faqAnswer = faqSource ? String(faqSource.content || faqSource.answer || "").trim() : "";
-
-    if (!retrievalEvaluation.shouldAnswer) {
-      setSessionContinuationState(session, null);
-      answer = faqAnswer || retrievalEvaluation.userFacingMessage;
-      const hasSemanticMismatch = Array.isArray(retrievalEvaluation.reasonCodes) &&
-        retrievalEvaluation.reasonCodes.includes("semantic_mismatch");
-      selectedSources = hasSemanticMismatch && !faqSource ? [] : combinedSources;
-    } else {
-      answerSourcePool = selectDbOnlyMainChatAnswerEntries(faqSource ? faqSupportSources : databaseSources, {
+    let answerSourcePool = selectDbOnlyMainChatAnswerEntries(
+      faqSource ? faqSupportSources : databaseSources,
+      {
         message: effectiveMessage,
         originalMessage: message,
         maxPrimarySections: 3,
-      }).map((entry) => entry.source).filter(Boolean);
-      answerSourcePool = removeDuplicateAnswerSourcesForContinuation(faqAnswer, answerSourcePool);
-      contextCarrySources = answerSourcePool.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT);
-      const collapseExactLawSectionPreview = shouldCollapseExactLawSectionPreview(message, questionIntent);
-      if (collapseExactLawSectionPreview && answerSourcePool.length > 1) {
-        continuationLabel = "ดูเพิ่มเติม";
-      }
+      },
+    )
+      .map((entry) => entry.source)
+      .filter(Boolean);
+    answerSourcePool = removeDuplicateAnswerSourcesForContinuation(faqAnswer, answerSourcePool);
+    contextCarrySources = answerSourcePool.slice(0, MAIN_CHAT_CONTINUATION_SOURCE_LIMIT);
+    const collapseExactLawSectionPreview = shouldCollapseExactLawSectionPreview(
+      message,
+      questionIntent,
+    );
+    if (collapseExactLawSectionPreview && answerSourcePool.length > 1) {
+      continuationLabel = 'ดูเพิ่มเติม';
+    }
 
-      if (answerSourcePool.length === 0) {
-        setSessionContinuationState(session, null);
-        answer = faqAnswer || composeFaqAndDatabaseAnswer("", retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้");
+    if (answerSourcePool.length === 0) {
+      answer =
+        faqAnswer ||
+        composeFaqAndDatabaseAnswer(
+          '',
+          retrievalEvaluation.userFacingMessage || 'ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้',
+        );
+      selectedSources = combinedSources;
+    } else {
+      continuationSessionState = createContinuationSessionState({
+        target,
+        originalMessage: message,
+        effectiveMessage,
+        sources: answerSourcePool,
+      });
+      paginated = await paginateContinuationState(continuationSessionState, {
+        maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
+        maxSourceChunks: collapseExactLawSectionPreview
+          ? 1
+          : resolveDbOnlyMainChatMaxSourceChunks(message, questionIntent),
+      });
+      selectedSources = paginated.renderSources || [];
+
+      if (selectedSources.length === 0) {
+        answer = composeFaqAndDatabaseAnswer(
+          faqAnswer,
+          retrievalEvaluation.userFacingMessage || 'ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้',
+        );
         selectedSources = combinedSources;
       } else {
-        continuationSessionState = createContinuationSessionState({
-          target,
-          originalMessage: message,
+        const answerResult = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
           effectiveMessage,
-          sources: answerSourcePool,
+          usedFollowUpContext: resolvedContext.usedContext,
+          topicLabel:
+            resolvedContext.topicHints && resolvedContext.topicHints[0]
+              ? resolvedContext.topicHints[0]
+              : '',
+          questionIntent,
+          collapseExactLawSectionPreview,
+          promptProfile: planContext.promptProfile,
+          planCode: planContext.code,
         });
-        paginated = await paginateContinuationState(continuationSessionState, {
-          maxCharacters: MAIN_CHAT_CONTINUATION_MAX_CHARACTERS,
-          maxSourceChunks: collapseExactLawSectionPreview
-            ? 1
-            : resolveDbOnlyMainChatMaxSourceChunks(message, questionIntent),
-        });
-        selectedSources = paginated.renderSources || [];
-
-        if (selectedSources.length === 0) {
-          setSessionContinuationState(session, null);
-          answer = composeFaqAndDatabaseAnswer(faqAnswer, retrievalEvaluation.userFacingMessage || "ขออภัย ขณะนี้ยังไม่พบข้อมูลที่ตรงกับคำถามนี้");
-          selectedSources = combinedSources;
-        } else {
-          const answerResult = await buildDbOnlyMainChatAnswer(message, target, selectedSources, {
-            effectiveMessage,
-            usedFollowUpContext: resolvedContext.usedContext,
-            topicLabel:
-              resolvedContext.topicHints && resolvedContext.topicHints[0]
-                ? resolvedContext.topicHints[0]
-                : "",
-            questionIntent,
-            collapseExactLawSectionPreview,
-            promptProfile: planContext.promptProfile,
-            planCode: planContext.code,
-          });
-          answer = composeFaqAndDatabaseAnswer(faqAnswer, answerResult.answer);
-          selectedSources = combinedSources;
-        }
+        answer = composeFaqAndDatabaseAnswer(faqAnswer, answerResult.answer);
+        selectedSources = combinedSources;
       }
     }
   }
 
+  return {
+    answer,
+    selectedSources,
+    effectiveMessage,
+    resolvedContext,
+    questionIntent,
+    retrievalEvaluation,
+    searchTrace: evidence.searchTrace || searchPlan?.matches?.searchTrace || null,
+    paginated,
+    continuationSessionState,
+    contextCarrySources,
+    continuationLabel,
+  };
+}
+
+async function resolveDbOnlyContinuationState({
+  message,
+  questionIntent,
+  paginated,
+  continuationSessionState,
+  continuationLabel,
+}) {
   const nextContinuationState =
     paginated && Array.isArray(paginated.renderSources) && paginated.renderSources.length > 0
       ? {
           ...continuationSessionState,
-          originalMessage:
-            continuationSessionState?.originalMessage || message,
-          effectiveMessage:
-            continuationSessionState?.effectiveMessage || effectiveMessage,
+          originalMessage: continuationSessionState?.originalMessage || message,
+          effectiveMessage: continuationSessionState?.effectiveMessage || message,
           activeSourceIndex: paginated.nextState.activeSourceIndex,
           sources: paginated.nextState.sources,
         }
@@ -1783,59 +1706,13 @@ async function replyToDbOnlyMainChat(payload, session) {
     nextContinuationState.activeSourceIndex < nextContinuationState.sources.length;
   const hasContinuation =
     hasContinuationCandidate &&
-    await hasRenderableContinuationState(nextContinuationState, {
+    (await hasRenderableContinuationState(nextContinuationState, {
       maxSourceChunks: resolveDbOnlyMainChatMaxSourceChunks(message, questionIntent),
-    });
+    }));
 
-  setSessionContinuationState(session, hasContinuation ? nextContinuationState : null);
-
-  if (answer && (continueFromPrevious || retrievalEvaluation?.shouldAnswer)) {
-    storeConversationContext(session, target, message, effectiveMessage, selectedSources, resolvedContext, {
-      answerText: answer,
-      usedSourcesForContinuation: continueFromPrevious
-        ? selectedSources
-        : contextCarrySources,
-      continuationSourceLimit: MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
-    });
-  }
-  // Clean answer content before storing and returning
-  const cleanedAnswer = cleanAssistantAnswer(answer, message);
-  answer = applyAnswerConfidenceNotice(cleanedAnswer, retrievalEvaluation);
-
-  if (!continueFromPrevious) {
-    await recordSearchQueryLog(message, effectiveMessage, retrievalEvaluation, false, searchTrace);
-  }
-
-  LawChatbotModel.create({
-    message,
-    effectiveMessage,
-    target,
-    answer,
-    matchedSources: (selectedSources || []).map((item) => ({
-      id: item.id || item.url || item.reference || item.title,
-      title: item.title || item.keyword || item.reference,
-      lawNumber: item.lawNumber || item.reference || item.keyword,
-      source: item.source || "",
-      url: item.url || "",
-      score: Number(item.score || 0),
-    })),
-  });
-
-  await recordUserSearchHistory(session, planContext, {
-    questionText: message,
-    target,
-    answerText: answer,
-  });
-
-  const result = {
-    hasContext: Boolean(answer && selectedSources.length > 0),
-    answer,
-    sourceReferences: buildClientSourceReferences(selectedSources),
-    highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
-    usedFollowUpContext: Boolean(resolvedContext.usedContext),
-    usedInternetFallback: false,
-    responseMeta: buildResponseMeta("db_only_main_chat", selectedSources, retrievalEvaluation),
-    fromCache: false,
+  return {
+    nextContinuationState,
+    hasContinuation,
     continuation: hasContinuation
       ? buildDbOnlyMainChatContinuation(message, nextContinuationState, {
           label: continuationLabel,
@@ -1845,46 +1722,274 @@ async function replyToDbOnlyMainChat(payload, session) {
           label: continuationLabel,
         },
   };
+}
 
-  const rewrittenResult = await applyAiRewriteLayer(result, { message });
+function buildMatchedSourcesSnapshot(sources = []) {
+  return (Array.isArray(sources) ? sources : []).map((item) => ({
+    id: item.id || item.url || item.reference || item.title,
+    title: item.title || item.keyword || item.reference,
+    lawNumber: item.lawNumber || item.reference || item.keyword,
+    source: item.source || '',
+    url: item.url || '',
+    score: Number(item.score || 0),
+  }));
+}
 
-  if (retrievalEvaluation?.shouldReturnNoAnswer) {
-    rewrittenResult.reviewQueue = await queueNoAnswerKnowledgeSuggestion(
+async function settleDbOnlySideEffects(tasks = []) {
+  const results = await Promise.allSettled(tasks.map((task) => task()));
+  results.forEach((result) => {
+    if (result.status === 'rejected') {
+      console.error('[law-chatbot] DB-only chat side effect failed:', result.reason?.message || result.reason);
+    }
+  });
+}
+
+async function persistDbOnlyChatSideEffects({
+  continueFromPrevious,
+  message,
+  effectiveMessage,
+  target,
+  answer,
+  selectedSources,
+  retrievalEvaluation,
+  searchTrace,
+  session,
+  planContext,
+  resolvedContext,
+  requestMeta,
+}) {
+  const tasks = [
+    !continueFromPrevious
+      ? () => recordSearchQueryLog(message, effectiveMessage, retrievalEvaluation, false, searchTrace)
+      : null,
+    () =>
+      LawChatbotModel.create({
+        message,
+        effectiveMessage,
+        target,
+        answer,
+        matchedSources: buildMatchedSourcesSnapshot(selectedSources),
+      }),
+    () =>
+      recordUserSearchHistory(session, planContext, {
+        questionText: message,
+        target,
+        answerText: answer,
+      }),
+  ].filter(Boolean);
+
+  const reviewQueuePromise = retrievalEvaluation?.shouldReturnNoAnswer
+    ? queueNoAnswerKnowledgeSuggestion(
+        message,
+        target,
+        retrievalEvaluation,
+        {
+          resolvedContext,
+          selectionDiagnostics: { selected: [] },
+        },
+        requestMeta || {},
+      ).catch((error) => {
+        console.error('[law-chatbot] no-answer suggestion queue failed:', error.message || error);
+        return {
+          queued: false,
+          duplicate: false,
+        };
+      })
+    : Promise.resolve(null);
+
+  const [reviewQueue] = await Promise.all([
+    reviewQueuePromise,
+    settleDbOnlySideEffects(tasks),
+  ]);
+
+  return { reviewQueue };
+}
+
+function buildDbOnlyDebugData({
+  continueFromPrevious,
+  continuationSource,
+  selectedSources,
+  responseMeta,
+  planContext,
+  startedAt,
+}) {
+  return {
+    selectedSourceTier: continueFromPrevious
+      ? `continuation_${continuationSource}`
+      : 'db_only_main_chat',
+    selectedSourceTierLabel: continueFromPrevious
+      ? `continuation_${continuationSource}`
+      : 'db_only_main_chat',
+    sourceTables: responseMeta?.sourceTables || [],
+    consideredSourceTables: [],
+    sourceCount: selectedSources.length,
+    databaseMatches: selectedSources.length,
+    internetMatches: 0,
+    answerMode: 'db_only_main_chat',
+    usedAI: false,
+    promptProfile: planContext.promptProfile?.code || 'template',
+    timing: {
+      totalReplyMs: Math.round(nowMs() - startedAt),
+    },
+    sources: selectedSources.map((item) => ({
+      source: item.source || '',
+      sourceLabel: getSourceDisplayLabel(item.source || ''),
+      sourceTable: getSourceTableName(item.source || ''),
+      reference: item.reference || item.title || '',
+      score: Number(item.score || 0),
+      preview: String(item.content || item.chunk_text || '')
+        .replace(/\s+/g, ' ')
+        .slice(0, 180),
+    })),
+  };
+}
+
+async function replyToDbOnlyMainChat(payload, session) {
+  const startedAt = nowMs();
+  const debugMode =
+    payload &&
+    (payload.debug === true || payload.debug === 'true' || process.env.CHATBOT_DEBUG === '1');
+  const planContext = resolveChatPlanContext(session, {
+    aiAvailable: false,
+  });
+  const request = resolveDbOnlyChatRequest(payload, session);
+
+  if (request.errorResult) {
+    return request.errorResult;
+  }
+
+  const { requestedTarget, continueFromPrevious, continuationState, continuationSource, message } =
+    request;
+  let target = resolveSearchTarget(message, requestedTarget);
+  let faqSource = null;
+
+  if (!continueFromPrevious) {
+    const faqResolution = await tryResolveFaqAnswer(
       message,
       target,
-      retrievalEvaluation,
+      session,
+      planContext,
+      startedAt,
+      debugMode,
+    );
+    if (faqResolution) {
+      target = faqResolution.resolvedTarget;
+      faqSource = faqResolution.source || null;
+    }
+  }
+
+  const questionIntent = classifyQuestionIntent(message);
+  const answerState = continueFromPrevious
+    ? await buildContinuationAnswerState({
+        message,
+        target,
+        questionIntent,
+        continuationState,
+        planContext,
+      })
+    : await buildFreshDbOnlyAnswerState({
+        message,
+        requestedTarget,
+        target,
+        session,
+        planContext,
+        faqSource,
+        startedAt,
+      });
+
+  if (answerState.errorResult) {
+    setSessionContinuationState(session, null);
+    return answerState.errorResult;
+  }
+
+  let {
+    answer,
+    selectedSources,
+    effectiveMessage,
+    resolvedContext,
+    retrievalEvaluation,
+    searchTrace,
+    paginated,
+    continuationSessionState,
+    contextCarrySources,
+    continuationLabel,
+  } = answerState;
+  const resolvedQuestionIntent = answerState.questionIntent || questionIntent;
+  const continuationStateResult = await resolveDbOnlyContinuationState({
+    message,
+    questionIntent: resolvedQuestionIntent,
+    paginated,
+    continuationSessionState,
+    continuationLabel,
+  });
+
+  setSessionContinuationState(
+    session,
+    continuationStateResult.hasContinuation ? continuationStateResult.nextContinuationState : null,
+  );
+
+  if (answer && (continueFromPrevious || retrievalEvaluation?.shouldAnswer)) {
+    storeConversationContext(
+      session,
+      target,
+      message,
+      effectiveMessage,
+      selectedSources,
+      resolvedContext,
       {
-        resolvedContext,
-        selectionDiagnostics: { selected: [] },
+        answerText: answer,
+        usedSourcesForContinuation: continueFromPrevious ? selectedSources : contextCarrySources,
+        continuationSourceLimit: MAIN_CHAT_CONTINUATION_SOURCE_LIMIT,
       },
-      payload?.requestMeta || {},
     );
   }
 
+  const cleanedAnswer = cleanAssistantAnswer(answer, message);
+  answer = applyAnswerConfidenceNotice(cleanedAnswer, retrievalEvaluation);
+
+  const responseMeta = buildResponseMeta('db_only_main_chat', selectedSources, retrievalEvaluation);
+  const sideEffects = await persistDbOnlyChatSideEffects({
+    continueFromPrevious,
+    message,
+    effectiveMessage,
+    target,
+    answer,
+    selectedSources,
+    retrievalEvaluation,
+    searchTrace,
+    session,
+    planContext,
+    resolvedContext,
+    requestMeta: payload?.requestMeta,
+  });
+
+  const result = {
+    hasContext: Boolean(answer && selectedSources.length > 0),
+    answer,
+    sourceReferences: buildClientSourceReferences(selectedSources),
+    highlightTerms: effectiveMessage.split(/\s+/).filter(Boolean).slice(0, 8),
+    usedFollowUpContext: Boolean(resolvedContext.usedContext),
+    usedInternetFallback: false,
+    responseMeta,
+    fromCache: false,
+    continuation: continuationStateResult.continuation,
+  };
+
+  const rewrittenResult = await applyAiRewriteLayer(result, { message });
+
+  if (sideEffects.reviewQueue) {
+    rewrittenResult.reviewQueue = sideEffects.reviewQueue;
+  }
+
   if (debugMode) {
-    rewrittenResult.debug = {
-      selectedSourceTier: continueFromPrevious ? `continuation_${continuationSource}` : "db_only_main_chat",
-      selectedSourceTierLabel: continueFromPrevious ? `continuation_${continuationSource}` : "db_only_main_chat",
-      sourceTables: rewrittenResult.responseMeta?.sourceTables || [],
-      consideredSourceTables: [],
-      sourceCount: selectedSources.length,
-      databaseMatches: selectedSources.length,
-      internetMatches: 0,
-      answerMode: "db_only_main_chat",
-      usedAI: false,
-      promptProfile: planContext.promptProfile?.code || "template",
-      timing: {
-        totalReplyMs: Math.round(nowMs() - startedAt),
-      },
-      sources: selectedSources.map((item) => ({
-        source: item.source || "",
-        sourceLabel: getSourceDisplayLabel(item.source || ""),
-        sourceTable: getSourceTableName(item.source || ""),
-        reference: item.reference || item.title || "",
-        score: Number(item.score || 0),
-        preview: String(item.content || item.chunk_text || "").replace(/\s+/g, " ").slice(0, 180),
-      })),
-    };
+    rewrittenResult.debug = buildDbOnlyDebugData({
+      continueFromPrevious,
+      continuationSource,
+      selectedSources,
+      responseMeta: rewrittenResult.responseMeta,
+      planContext,
+      startedAt,
+    });
   }
 
   return personalizeChatResult(session, rewrittenResult);
@@ -1894,7 +1999,7 @@ async function replyToChat(payload, session) {
   const responseTone = normalizeResponseTone(payload?.responseTone);
   const result = await replyToDbOnlyMainChat(payload, session);
   const continueFromPrevious =
-    payload?.continueFromPrevious === true || payload?.continueFromPrevious === "true";
+    payload?.continueFromPrevious === true || payload?.continueFromPrevious === 'true';
   const hasMoreContinuation = result?.continuation?.available === true;
   const tonePresentation = buildTonePresentation(result?.answer, responseTone, payload?.message, {
     includeIntro: !continueFromPrevious,
@@ -1911,9 +2016,9 @@ async function replyToChat(payload, session) {
 }
 
 async function summarizeChat(payload, session) {
-  const message = String(payload.message || "").trim();
+  const message = String(payload.message || '').trim();
   if (!message) {
-    return { summary: "" };
+    return { summary: '' };
   }
   const aiRuntimeEnabled = await isAiEnabled();
   const openAiConfig = getOpenAiConfig();
@@ -1925,11 +2030,10 @@ async function summarizeChat(payload, session) {
   const usageMonth = UserMonthlyUsageModel.getYearMonth();
   const monthlyUsage = await getMonthlyUsageSafe(userId, usageMonth);
 
-  const target =
-    resolveSearchTarget(
-      message,
-      payload.target === "group" ? "group" : payload.target === "coop" ? "coop" : "all",
-    );
+  const target = resolveSearchTarget(
+    message,
+    payload.target === 'group' ? 'group' : payload.target === 'coop' ? 'coop' : 'all',
+  );
   const searchPlan = await resolveSearchPlan(message, target, session, {
     planCode: basePlanContext.code,
   });
@@ -1974,23 +2078,24 @@ async function summarizeChat(payload, session) {
       evidence?.searchTrace || null,
     );
 
-    const hasSemanticMismatch = Array.isArray(retrievalEvaluation.reasonCodes) &&
-      retrievalEvaluation.reasonCodes.includes("semantic_mismatch");
+    const hasSemanticMismatch =
+      Array.isArray(retrievalEvaluation.reasonCodes) &&
+      retrievalEvaluation.reasonCodes.includes('semantic_mismatch');
     const responseSources = hasSemanticMismatch ? [] : sources;
 
     return {
       summary: retrievalEvaluation.userFacingMessage,
       usedAI: false,
-      responseMeta: buildResponseMeta("db_only", responseSources, retrievalEvaluation, { usedAI: false }),
+      responseMeta: buildResponseMeta('db_only', responseSources, retrievalEvaluation, {
+        usedAI: false,
+      }),
     };
   }
 
   const assistantProfile = getLawChatbotAssistantProfile(session);
   const aiControl = resolveSummaryAiControl(retrievalEvaluation, planContext, payload);
   const answerDiagnostics = {};
-  const summarySources = aiControl.allowAI
-    ? prepareAiSummarySources(sources)
-    : sources;
+  const summarySources = aiControl.allowAI ? prepareAiSummarySources(sources) : sources;
   const summaryPromptProfile = aiControl.allowAI
     ? {
         ...planContext.promptProfile,
@@ -1998,22 +2103,30 @@ async function summarizeChat(payload, session) {
         aiSourceContextCharLimit: AI_SUMMARY_SOURCE_TEXT_LIMIT,
       }
     : planContext.promptProfile;
-  const summary = personalizeAnswerWithAssistantProfile(await generateChatSummary(message, summarySources, {
-    conversationalFollowUp: resolvedContext.usedContext,
-    conversationHistory: getConversationHistory(session, target),
-    topicLabel: resolvedContext.topicHints && resolvedContext.topicHints[0] ? resolvedContext.topicHints[0] : "",
-    questionIntent: evidence.questionIntent,
-    databaseOnlyMode: !aiControl.allowAI,
-    promptProfile: summaryPromptProfile,
-    planCode: planContext.code,
-    target,
-    answerDiagnostics,
-  }), assistantProfile);
+  const summary = personalizeAnswerWithAssistantProfile(
+    await generateChatSummary(message, summarySources, {
+      conversationalFollowUp: resolvedContext.usedContext,
+      conversationHistory: getConversationHistory(session, target),
+      topicLabel:
+        resolvedContext.topicHints && resolvedContext.topicHints[0]
+          ? resolvedContext.topicHints[0]
+          : '',
+      questionIntent: evidence.questionIntent,
+      databaseOnlyMode: !aiControl.allowAI,
+      promptProfile: summaryPromptProfile,
+      planCode: planContext.code,
+      target,
+      answerDiagnostics,
+    }),
+    assistantProfile,
+  );
   const usedAI = answerDiagnostics.usedAI === true;
   if (usedAI && !aiControl.allowAI) {
     logAiUsageGuardViolation(aiControl, retrievalEvaluation, { query: message });
   }
-  const responseMeta = buildResponseMeta(usedAI ? "ai" : "db_only", sources, retrievalEvaluation, { usedAI });
+  const responseMeta = buildResponseMeta(usedAI ? 'ai' : 'db_only', sources, retrievalEvaluation, {
+    usedAI,
+  });
   await recordSearchQueryLog(
     message,
     evidence.effectiveMessage || message,
@@ -2032,7 +2145,7 @@ async function summarizeChat(payload, session) {
     },
   };
 
-  if (payload?.debug === true || payload?.debug === "true") {
+  if (payload?.debug === true || payload?.debug === 'true') {
     result.debug = {
       usedAI,
       aiControl,
@@ -2048,8 +2161,8 @@ async function summarizeChat(payload, session) {
 
 function buildAutoSuggestionSourceReference(payload = {}) {
   const parts = [];
-  const suggestedLawNumber = String(payload.suggestedLawNumber || "").trim();
-  const sourceLabel = String(payload.sourceLabel || payload.source || "").trim();
+  const suggestedLawNumber = String(payload.suggestedLawNumber || '').trim();
+  const sourceLabel = String(payload.sourceLabel || payload.source || '').trim();
 
   if (suggestedLawNumber) {
     parts.push(suggestedLawNumber);
@@ -2059,49 +2172,58 @@ function buildAutoSuggestionSourceReference(payload = {}) {
     parts.push(`อ้างอิงคำตอบเดิมจาก ${sourceLabel}`);
   }
 
-  return parts.join("\n");
+  return parts.join('\n');
 }
 
-function buildAutoNoAnswerSuggestionContent(message = "", retrievalEvaluation = null) {
-  const reasonText = String(retrievalEvaluation?.trace?.humanReadableDecision || "").trim();
+function buildAutoNoAnswerSuggestionContent(message = '', retrievalEvaluation = null) {
+  const reasonText = String(retrievalEvaluation?.trace?.humanReadableDecision || '').trim();
 
   return [
-    `ระบบยังไม่พบคำตอบที่มั่นใจเพียงพอสำหรับคำถามนี้: ${String(message || "").trim()}`,
-    reasonText ? `เหตุผล: ${reasonText}` : "",
-    "กรุณาแก้ไขข้อความนี้ให้เป็นคำตอบที่ถูกต้องก่อนอนุมัติ",
+    `ระบบยังไม่พบคำตอบที่มั่นใจเพียงพอสำหรับคำถามนี้: ${String(message || '').trim()}`,
+    reasonText ? `เหตุผล: ${reasonText}` : '',
+    'กรุณาแก้ไขข้อความนี้ให้เป็นคำตอบที่ถูกต้องก่อนอนุมัติ',
   ]
     .filter(Boolean)
-    .join("\n\n");
+    .join('\n\n');
 }
 
-function buildAutoNoAnswerSourceReference(message = "", retrievalEvaluation = null, evidence = {}) {
+function buildAutoNoAnswerSourceReference(message = '', retrievalEvaluation = null, evidence = {}) {
   const parts = [];
   const reasonCodes = Array.isArray(retrievalEvaluation?.trace?.reasonCodes)
     ? retrievalEvaluation.trace.reasonCodes.filter(Boolean)
     : [];
   const sourceTables = Array.from(
     new Set(
-      (Array.isArray(evidence?.selectionDiagnostics?.selected) ? evidence.selectionDiagnostics.selected : [])
-        .map((item) => getSourceTableName(item?.source || ""))
+      (Array.isArray(evidence?.selectionDiagnostics?.selected)
+        ? evidence.selectionDiagnostics.selected
+        : []
+      )
+        .map((item) => getSourceTableName(item?.source || ''))
         .filter(Boolean),
     ),
   );
 
-  parts.push(`คำถามต้นฉบับ: ${String(message || "").trim()}`);
+  parts.push(`คำถามต้นฉบับ: ${String(message || '').trim()}`);
 
   if (reasonCodes.length > 0) {
-    parts.push(`รหัสเหตุผล: ${reasonCodes.join(", ")}`);
+    parts.push(`รหัสเหตุผล: ${reasonCodes.join(', ')}`);
   }
 
   if (sourceTables.length > 0) {
-    parts.push(`แหล่งที่ระบบพิจารณา: ${sourceTables.join(", ")}`);
+    parts.push(`แหล่งที่ระบบพิจารณา: ${sourceTables.join(', ')}`);
   }
 
-  return parts.join("\n");
+  return parts.join('\n');
 }
 
-async function queueNoAnswerKnowledgeSuggestion(message, target, retrievalEvaluation, evidence = {}, meta = {}) {
-  const question = String(message || "").trim();
+async function queueNoAnswerKnowledgeSuggestion(
+  message,
+  target,
+  retrievalEvaluation,
+  evidence = {},
+  meta = {},
+) {
+  const question = String(message || '').trim();
   if (!question || !retrievalEvaluation?.shouldReturnNoAnswer) {
     return {
       queued: false,
@@ -2110,9 +2232,9 @@ async function queueNoAnswerKnowledgeSuggestion(message, target, retrievalEvalua
   }
 
   const hasDuplicatePending = await LawChatbotKnowledgeSuggestionModel.hasPendingDuplicate({
-    target: target || "all",
+    target: target || 'all',
     title: question,
-    sourceType: "auto_no_answer",
+    sourceType: 'auto_no_answer',
   });
 
   if (hasDuplicatePending) {
@@ -2124,49 +2246,49 @@ async function queueNoAnswerKnowledgeSuggestion(message, target, retrievalEvalua
 
   return queueAutomaticKnowledgeSuggestion(
     {
-      target: target || "all",
+      target: target || 'all',
       title: question,
       content: buildAutoNoAnswerSuggestionContent(question, retrievalEvaluation),
       sourceReference: buildAutoNoAnswerSourceReference(question, retrievalEvaluation, evidence),
-      sourceType: "auto_no_answer",
+      sourceType: 'auto_no_answer',
     },
     meta,
-    "auto-no-answer",
+    'auto-no-answer',
   );
 }
 
 async function saveChatFeedback(payload, meta = {}) {
   const feedbackEntry = LawChatbotFeedbackModel.create({
-    name: "Chat Feedback",
-    email: "",
-    message: payload.message || "",
-    answerShown: payload.answerShown || "",
+    name: 'Chat Feedback',
+    email: '',
+    message: payload.message || '',
+    answerShown: payload.answerShown || '',
     isHelpful: Boolean(payload.isHelpful),
-    target: payload.target || "all",
-    source: payload.source || payload.sourceName || "",
-    sourceLabel: payload.sourceLabel || "",
-    expectedAnswer: payload.expectedAnswer || "",
-    suggestedLawNumber: payload.suggestedLawNumber || "",
+    target: payload.target || 'all',
+    source: payload.source || payload.sourceName || '',
+    sourceLabel: payload.sourceLabel || '',
+    expectedAnswer: payload.expectedAnswer || '',
+    suggestedLawNumber: payload.suggestedLawNumber || '',
   });
 
   const isHelpful = Boolean(payload.isHelpful);
-  const question = String(payload.message || "").trim();
-  const expectedAnswer = String(payload.expectedAnswer || "").trim();
+  const question = String(payload.message || '').trim();
+  const expectedAnswer = String(payload.expectedAnswer || '').trim();
 
   await appendTrainingExample({
-    type: "feedback",
+    type: 'feedback',
     question,
-    answer: String(payload.answerShown || "").trim(),
-    target: payload.target || "all",
+    answer: String(payload.answerShown || '').trim(),
+    target: payload.target || 'all',
     planCode: meta.planCode || null,
-    source: payload.source || payload.sourceName || "",
-    sourceLabel: payload.sourceLabel || "",
+    source: payload.source || payload.sourceName || '',
+    sourceLabel: payload.sourceLabel || '',
     helpful: isHelpful,
     confidence: meta.retrievalEvaluation?.confidence ?? null,
     answerMode: meta.answerMode || null,
     metadata: {
       expectedAnswer: expectedAnswer || null,
-      suggestedLawNumber: String(payload.suggestedLawNumber || "").trim() || null,
+      suggestedLawNumber: String(payload.suggestedLawNumber || '').trim() || null,
     },
   });
 
@@ -2180,14 +2302,14 @@ async function saveChatFeedback(payload, meta = {}) {
 
   const queueResult = await queueAutomaticKnowledgeSuggestion(
     {
-      target: payload.target || "all",
+      target: payload.target || 'all',
       title: question,
       content: expectedAnswer,
       sourceReference: buildAutoSuggestionSourceReference(payload),
-      sourceType: "auto_feedback",
+      sourceType: 'auto_feedback',
     },
     meta,
-    "auto-feedback",
+    'auto-feedback',
   );
 
   return {
@@ -2198,9 +2320,11 @@ async function saveChatFeedback(payload, meta = {}) {
 }
 
 async function getUploadPageData(options = {}) {
-  const uploadedChunkCount = await LawChatbotPdfChunkModel.countChunks();
+  const [uploadedChunkCount, uploadedPdfCount] = await Promise.all([
+    LawChatbotPdfChunkModel.countChunks(),
+    Promise.resolve(LawChatbotPdfChunkModel.countDocuments()),
+  ]);
   const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES || 20 * 1024 * 1024);
-  const uploadedPdfCount = LawChatbotPdfChunkModel.countDocuments();
   const page = normalizePageNumber(options.page || 1);
   const pageSize = normalizePageSize(options.pageSize || 10, 10, 100);
   const pagination = buildPaginationMeta({
@@ -2208,27 +2332,32 @@ async function getUploadPageData(options = {}) {
     pageSize,
     totalItems: uploadedPdfCount,
   });
+  const uploadedFiles = await Promise.resolve(
+    LawChatbotPdfChunkModel.list(pagination.pageSize, pagination.offset),
+  );
 
   return {
-    appName: "Coopbot Law Chatbot",
-    uploadPath: "/law-chatbot/upload",
+    appName: 'Coopbot Law Chatbot',
+    uploadPath: '/law-chatbot/upload',
     acceptedTypes: [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     ],
     maxUploadBytes,
     maxUploadMb: Math.floor(maxUploadBytes / (1024 * 1024)),
     uploadedPdfCount,
     uploadedChunkCount,
     pagination,
-    uploadedFiles: LawChatbotPdfChunkModel.list(pagination.pageSize, pagination.offset),
+    uploadedFiles,
   };
 }
 
 async function getFeedbackPageData(options = {}) {
-  const stats = LawChatbotFeedbackModel.stats();
-  const feedbackCount = LawChatbotFeedbackModel.count();
+  const [stats, feedbackCount] = await Promise.all([
+    Promise.resolve(LawChatbotFeedbackModel.stats()),
+    Promise.resolve(LawChatbotFeedbackModel.count()),
+  ]);
   const page = normalizePageNumber(options.page || 1);
   const pageSize = normalizePageSize(options.pageSize || 10, 10, 100);
   const pagination = buildPaginationMeta({
@@ -2236,22 +2365,25 @@ async function getFeedbackPageData(options = {}) {
     pageSize,
     totalItems: feedbackCount,
   });
+  const recentFeedback = await Promise.resolve(
+    LawChatbotFeedbackModel.list(pagination.pageSize, pagination.offset),
+  );
 
   return {
-    appName: "Coopbot Law Chatbot",
+    appName: 'Coopbot Law Chatbot',
     feedbackCount,
     helpfulCount: stats.helpful,
     needsImprovementCount: stats.needsImprovement,
     pagination,
-    recentFeedback: LawChatbotFeedbackModel.list(pagination.pageSize, pagination.offset),
+    recentFeedback,
   };
 }
 
 async function saveFeedback(payload) {
   return LawChatbotFeedbackModel.create({
-    name: payload.name || "Anonymous",
-    email: payload.email || "",
-    message: payload.message || "",
+    name: payload.name || 'Anonymous',
+    email: payload.email || '',
+    message: payload.message || '',
   });
 }
 
@@ -2302,5 +2434,6 @@ module.exports = {
     composeFaqAndDatabaseAnswer,
     removeDuplicateAnswerSourcesForContinuation,
     hasRenderableContinuationState,
+    queueNoAnswerKnowledgeSuggestion,
   },
 };

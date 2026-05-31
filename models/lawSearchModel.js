@@ -59,13 +59,11 @@ const STRUCTURED_LAW_ADMIN_SOURCES = {
 };
 
 function extractLawNumber(text) {
-  const normalized = normalizeThaiNumberSearchText(String(text || ""));
-  const match = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*([0-9]{1,4}(?:\s*\/\s*[0-9]{1,3})?)/);
-  if (!match?.[1]) {
-    return null;
-  }
+  return extractLawNumbers(text)[0] || null;
+}
 
-  const parts = String(match[1]).split("/").map((part) => part.trim());
+function normalizeLawNumberMatch(value) {
+  const parts = String(value || "").split("/").map((part) => part.trim());
   const primary = String(Number(parts[0] || 0));
   if (!primary || primary === "0") {
     return null;
@@ -77,6 +75,34 @@ function extractLawNumber(text) {
 
   const secondary = String(Number(parts[1] || 0));
   return secondary ? `${primary}/${secondary}` : primary;
+}
+
+function extractLawNumbers(text) {
+  const normalized = normalizeThaiNumberSearchText(String(text || ""))
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const numbers = [];
+  const matcher =
+    /(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*([0-9]{1,4}(?:\s*\/\s*[0-9]{1,3})?)|(?:และ|กับ|หรือ|,)\s*(?:(?:มาตรา|ข้อ|วรรค|อนุมาตรา)\s*)?([0-9]{1,4}(?:\s*\/\s*[0-9]{1,3})?)/g;
+  for (const match of normalized.matchAll(matcher)) {
+    const number = normalizeLawNumberMatch(match[1] || match[2]);
+    if (number) {
+      numbers.push(number);
+    }
+  }
+
+  if (numbers.length > 0) {
+    return uniqueTokens(numbers);
+  }
+
+  const fallback = normalized.match(/(?:มาตรา|ข้อ|วรรค|อนุมาตรา)?\s*([0-9]{1,4}(?:\s*\/\s*[0-9]{1,3})?)/);
+  const number = normalizeLawNumberMatch(fallback?.[1]);
+  return number ? [number] : [];
 }
 
 function escapeRegExp(text) {
@@ -139,6 +165,10 @@ function rowMatchesLawNumber(row = {}, queryLawNumber = "") {
 
   return [row.law_number, row.reference, row.title, row.law_part]
     .some((candidate) => extractLawNumber(candidate) === normalizedQueryLawNumber);
+}
+
+function rowMatchesAnyLawNumber(row = {}, queryLawNumbers = []) {
+  return queryLawNumbers.some((lawNumber) => rowMatchesLawNumber(row, lawNumber));
 }
 
 function detectLawScope(text) {
@@ -240,6 +270,14 @@ function isSmokeFixtureLawRow(row = {}) {
   return /^SMOKE_FIXTURE_/i.test(String(row.law_part || row.title || "").trim());
 }
 
+function isRepealedLawRow(row = {}) {
+  const text = [row.law_detail, row.content, row.law_comment, row.comment]
+    .filter(Boolean)
+    .join(" ");
+  return /^\s*\(?ยกเลิก\)?\s*$/i.test(String(row.law_detail || row.content || "").trim()) ||
+    /ยกเลิกโดย/.test(text);
+}
+
 function isCoopDissolutionTopicQuery(message = "") {
   const normalized = normalizeForSearch(String(message || "")).toLowerCase();
   if (!normalized) {
@@ -283,7 +321,26 @@ function isLiquidatorAppointmentQuery(message = "") {
   return /(ใคร|ผู้มีอำนาจ|อำนาจ).*(แต่งตั้ง|ตั้ง|เลือกตั้ง).*ผู้ชำระบัญชี|ผู้ชำระบัญชี.*(แต่งตั้ง|ตั้ง|เลือกตั้ง).*โดยใคร/.test(normalized);
 }
 
+function isCoopFormationTopicQuery(message = "") {
+  const normalized = normalizeForSearch(String(message || "")).toLowerCase();
+  if (!normalized || /กลุ่มเกษตรกร/.test(normalized)) {
+    return false;
+  }
+
+  if (isCoopDissolutionTopicQuery(normalized)) {
+    return false;
+  }
+
+  return /(?:ตั้งสหกรณ์|จัดตั้งสหกรณ์|จดทะเบียนจัดตั้งสหกรณ์|ขอจัดตั้งสหกรณ์|ผู้จัดตั้งสหกรณ์|คณะผู้จัดตั้งสหกรณ์|ผู้เริ่มก่อการ|ประชุมจัดตั้ง)/.test(
+    normalized,
+  );
+}
+
 function getTopicExpansionLawNumbers(message = "", sourceName = "") {
+  if (String(sourceName || "").trim().toLowerCase() === "tbl_laws" && isCoopFormationTopicQuery(message)) {
+    return ["33", "34"];
+  }
+
   if (String(sourceName || "").trim().toLowerCase() === "tbl_laws" && isLiquidatorAppointmentQuery(message)) {
     return ["75"];
   }
@@ -1205,7 +1262,8 @@ class LawSearchModel {
     const searchMode = String(options.searchMode || "all").trim().toLowerCase();
     const keywordOnlyMode = searchMode === "keyword";
     const contentOnlyMode = searchMode === "content";
-    const queryLawNumber = extractLawNumber(message);
+    const queryLawNumbers = extractLawNumbers(message);
+    const queryLawNumber = queryLawNumbers[0] || null;
     const terms = buildStructuredSearchTerms(message, queryLawNumber).slice(0, 12);
     if (terms.length === 0) {
       return [];
@@ -1233,9 +1291,27 @@ class LawSearchModel {
               ["tbl_glaws", "glaw_id", "glaw_number", "glaw_part", "glaw_detail", "glaw_comment", "tbl_glaws", glawSearchField],
           ];
 
-    if (queryLawNumber && isDirectLawNumberQuery(message)) {
+    const topicExpansionRows = await findTopicExpansionLawRows(pool, tableConfigs, message);
+    const topicExpansionResults = topicExpansionRows
+      .filter((row) => !isSmokeFixtureLawRow(row))
+      .filter((row) => !(isCoopFormationTopicQuery(message) && isRepealedLawRow(row)))
+      .map((row) => mapStructuredLawRow(message, row, { inferredScope, queryLawNumber }))
+      .filter(isRelevantStructuredLawResult)
+      .map(stripStructuredLawInternalFlags)
+      .filter((row, index, list) => {
+        const key = `${row.source || ""}::${row.id || ""}`;
+        return list.findIndex((item) => `${item.source || ""}::${item.id || ""}` === key) === index;
+      })
+      .sort((a, b) => b.score - a.score);
+
+    if (queryLawNumbers.length > 0 && isDirectLawNumberQuery(message)) {
       const exactRowGroups = await Promise.all(
-        tableConfigs.map((tableConfig) => findExactLawRows(pool, tableConfig, queryLawNumber)),
+        queryLawNumbers.flatMap((lawNumber) =>
+          tableConfigs.map(async (tableConfig) => {
+            const rows = await findExactLawRows(pool, tableConfig, lawNumber);
+            return rows.map((row) => ({ ...row, __queryLawNumber: lawNumber }));
+          }),
+        ),
       );
 
       const exactRanked = exactRowGroups
@@ -1248,9 +1324,15 @@ class LawSearchModel {
           lawNumber: row.law_number || "",
           content: row.law_detail || "",
           comment: row.law_comment || "",
+          __queryLawNumber: row.__queryLawNumber || "",
           score: 999,
         }))
-        .filter((row) => rowMatchesLawNumber(row, queryLawNumber));
+        .filter((row) => rowMatchesLawNumber(row, row.__queryLawNumber))
+        .filter((row, index, list) => {
+          const key = `${row.source || ""}::${row.id || ""}`;
+          return list.findIndex((item) => `${item.source || ""}::${item.id || ""}` === key) === index;
+        })
+        .map(({ __queryLawNumber, ...row }) => row);
 
       if (exactRanked.length > 0) {
         return exactRanked.slice(0, limit);
@@ -1258,6 +1340,10 @@ class LawSearchModel {
     }
 
     if (keywordOnlyMode) {
+      if (isCoopFormationTopicQuery(message) && topicExpansionResults.length > 0) {
+        return topicExpansionResults.slice(0, limit);
+      }
+
       const keywordRowGroups = await Promise.all(
         tableConfigs.map((tableConfig) => findKeywordLawRows(pool, tableConfig, message)),
       );
@@ -1302,11 +1388,14 @@ class LawSearchModel {
       })
       .sort((a, b) => b.score - a.score);
 
+    if (isCoopFormationTopicQuery(message) && topicExpansionResults.length > 0) {
+      return topicExpansionResults.slice(0, limit);
+    }
+
     if (keywordResults.length > 0 && !isLiquidatorAppointmentQuery(message)) {
       return keywordResults.slice(0, limit);
     }
 
-    const topicExpansionRows = await findTopicExpansionLawRows(pool, tableConfigs, message);
     const liquidatorDutyRows = isLiquidatorDutyQuery(message)
       ? (await Promise.all(tableConfigs.map((tableConfig) => findLiquidatorDutyLawRows(pool, tableConfig)))).flat()
       : [];
@@ -1402,12 +1491,12 @@ class LawSearchModel {
         return b.score - a.score;
       });
 
-    if (queryLawNumber && isDirectLawNumberQuery(message)) {
+    if (queryLawNumbers.length > 0 && isDirectLawNumberQuery(message)) {
       const exactLawMatches = rankedResults.filter(
-        (row) => rowMatchesLawNumber(row, queryLawNumber),
+        (row) => rowMatchesAnyLawNumber(row, queryLawNumbers),
       );
 
-      if (exactLawMatches.length > 0 || queryLawNumber.includes("/")) {
+      if (exactLawMatches.length > 0 || queryLawNumbers.some((lawNumber) => lawNumber.includes("/"))) {
         return exactLawMatches.slice(0, limit);
       }
     }
